@@ -4,7 +4,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import ContextItem from 'juggler/context-item';
-import { mcpSnapshot, mcpCallTool } from 'juggler/ops';
+import { mcpSnapshot, mcpCallTool, uploadAssetBase64 } from 'juggler/ops';
 // First-party builtin reaching a core singleton, the same way @juggler/core
 // reaches ../../../js/services/*. This is the websocket the engine already uses;
 // importing the module by its stable URL yields that same singleton instance.
@@ -207,6 +207,60 @@ try {
   // refresh above still applies.
 }
 
+/** Image types every provider accepts, as the image viewer claims them. */
+const ATTACHABLE_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
+
+/** Largest image attached: the smallest common provider ceiling (5 MB). */
+const MAX_ATTACHED_IMAGE_BYTES = 5 << 20;
+
+/**
+ * Store the images a tool returned in the conversation's assets, so the model
+ * is sent them as image parts beside the tool's result, as it is a read image.
+ * No block keeps its base64 bytes: they would sit in the document for the life
+ * of the conversation. An image that is stored names its asset as `attached`;
+ * one that is not says why in `note`, and the model is told.
+ * @param {import('../../../js/services/ops-api.js').McpContentBlock[]} blocks - The tool's content
+ * @param {object} deps
+ * @param {(convId: string, base64: string, mime: string, signal?: AbortSignal) => Promise<import('../../../js/services/ops-api.js').AssetRef>} deps.upload - The asset upload
+ * @param {string|undefined} deps.conversationId - Whose assets
+ * @param {AbortSignal} [deps.signal] - The call's signal
+ * @returns {Promise<{blocks: Array<Record<string, any>>, images: import('../../../js/services/ops-api.js').AssetRef[]}>} The blocks without bytes, and the images stored
+ */
+export async function storeMcpImages(blocks, { upload, conversationId, signal }) {
+  /** @type {Array<Record<string, any>>} */
+  const out = [];
+  /** @type {import('../../../js/services/ops-api.js').AssetRef[]} */
+  const images = [];
+  for (const block of blocks) {
+    if (block?.type !== 'image' && block?.type !== 'audio') {
+      out.push(block);
+      continue;
+    }
+    const { data, ...rest } = /** @type {Record<string, any>} */ (block);
+    if (block.type === 'audio') {
+      out.push(rest);
+      continue;
+    }
+    const mime = typeof rest.mimeType === 'string' ? rest.mimeType : '';
+    if (!ATTACHABLE_IMAGE_TYPES.has(mime)) {
+      out.push({ ...rest, note: `not a type the model can be sent (${mime || 'unknown'})` });
+    } else if (typeof data !== 'string' || !conversationId) {
+      out.push({ ...rest, note: 'nowhere to keep it' });
+    } else if (Math.floor(data.length * 3 / 4) > MAX_ATTACHED_IMAGE_BYTES) {
+      out.push({ ...rest, note: 'too large to attach' });
+    } else {
+      try {
+        const ref = await upload(conversationId, data, mime, signal);
+        images.push(ref);
+        out.push({ ...rest, attached: ref.id });
+      } catch (err) {
+        out.push({ ...rest, note: `could not be stored: ${err instanceof Error ? err.message : String(err)}` });
+      }
+    }
+  }
+  return { blocks: out, images };
+}
+
 /**
  * MCP tool bridge. ONE context-item class exposes MANY tools: one per tool
  * discovered across all connected MCP servers. Each tool result is a first-class
@@ -370,7 +424,7 @@ class McpToolContextItem extends ContextItem {
   /**
    * Invoke the tool via the Go manager, honoring cancellation.
    * @param {Record<string, unknown>} params - Prepared arguments
-   * @returns {Promise<{server: string, tool: string, content: import('../../../js/services/ops-api.js').McpContentBlock[], isError: boolean, text: string}>} The tool call result
+   * @returns {Promise<{server: string, tool: string, content: Array<Record<string, any>>, isError: boolean, text: string, images: import('../../../js/services/ops-api.js').AssetRef[]}>} The tool call result
    */
   async execute(params) {
     const { server, tool, info, llm } = this._target();
@@ -378,8 +432,11 @@ class McpToolContextItem extends ContextItem {
       throw new Error(`Unknown MCP tool "${llm}"`);
     }
     const result = await mcpCallTool({ server, tool, args: /** @type {object} */ (params) }, this.signal);
-    const blocks = Array.isArray(result?.content) ? result.content : [];
-    return { server, tool, content: blocks, isError: !!result?.isError, text: McpToolContextItem._extractText(blocks) };
+    const raw = Array.isArray(result?.content) ? result.content : [];
+    const { blocks, images } = await storeMcpImages(raw, {
+      upload: uploadAssetBase64, conversationId: this.conversation?.id, signal: this.signal
+    });
+    return { server, tool, content: blocks, isError: !!result?.isError, text: McpToolContextItem._extractText(raw), images };
   }
 
   /**
@@ -398,13 +455,18 @@ class McpToolContextItem extends ContextItem {
 
   /**
    * Summarize a non-text block for the LLM when there is no text content.
-   * @param {import('../../../js/services/ops-api.js').McpContentBlock} b
+   * @param {Record<string, any>} b
+   * @param {import('../../../js/services/ops-api.js').AssetRef} [ref] - The asset an image was stored as
    * @returns {string} Result value
    * @private
    */
-  static _describeBlock(b) {
+  static _describeBlock(b, ref) {
     switch (b?.type) {
-      case 'image': return `[image: ${b.mimeType || 'image'}]`;
+      case 'image': {
+        const what = b.mimeType || 'image';
+        if (ref) return `[image: ${what}${ref.width && ref.height ? `, ${ref.width}\u00d7${ref.height}` : ''}, attached below]`;
+        return `[image: ${what}${b.note ? `, not attached: ${b.note}` : ''}]`;
+      }
       case 'audio': return `[audio: ${b.mimeType || 'audio'}]`;
       case 'resource': return `[resource: ${b.uri || ''}]`;
       case 'resource_link': return `[resource link: ${b.uri || ''}${b.name ? ` (${b.name})` : ''}]`;
@@ -422,17 +484,24 @@ class McpToolContextItem extends ContextItem {
     if (!outcome.success) {
       return this.failureSummary(outcome.error || 'MCP tool call failed');
     }
-    const result = /** @type {{content: any[], isError: boolean, text: string}} */ (outcome.result || {});
+    const result = /** @type {{content: any[], isError: boolean, text: string, images?: any[]}} */ (outcome.result || {});
+    const blocks = Array.isArray(result.content) ? result.content : [];
+    const images = Array.isArray(result.images) ? result.images : [];
+    const refOf = (/** @type {any} */ b) => images.find((r) => r.id === b?.attached);
     let text = result.text || '';
     if (!text) {
-      const blocks = Array.isArray(result.content) ? result.content : [];
-      text = blocks.map((b) => McpToolContextItem._describeBlock(b)).join('\n') || '(no content)';
+      text = blocks.map((b) => McpToolContextItem._describeBlock(b, refOf(b))).join('\n') || '(no content)';
+    } else {
+      // Beside text, the images are still named, so the model knows what is
+      // attached and what could not be.
+      const imageLines = blocks.filter((b) => b?.type === 'image').map((b) => McpToolContextItem._describeBlock(b, refOf(b)));
+      if (imageLines.length) text = `${text}\n${imageLines.join('\n')}`;
     }
     // The call itself succeeded; `isError` is the server marking its own result
     // as a failure, which the item carries through as a failed summary.
     return result.isError
       ? this.failureSummary(this.truncateForLLM(text))
-      : this.successSummary(this.truncateForLLM(text));
+      : this.successSummary(this.truncateForLLM(text), images.length ? { attachments: images } : undefined);
   }
 
   /**

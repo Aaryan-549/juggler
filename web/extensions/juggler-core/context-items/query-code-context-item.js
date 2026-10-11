@@ -8,7 +8,9 @@ import ContextItem from 'juggler/context-item';
 // code (below), so the ops primitives are bound under distinct local names.
 import { runInSandbox } from 'juggler/sandbox';
 import { createLlmDescription } from 'juggler/ui';
+import { uploadAssetBase64 } from 'juggler/ops';
 import { gitignoreDisabled } from './path-approval.js';
+import { createProgramImages, imagePathLoader, attachedImagesNote, pointImageReadsAtImage } from './code/program-images.js';
 
 /**
  * QueryCodeContextItem - Run JavaScript against a read-only filesystem SDK
@@ -55,7 +57,7 @@ class QueryCodeContextItem extends ContextItem {
         properties: {
           code: {
             type: 'string',
-            description: 'JavaScript to execute (async/await OK; must return a value). Browser realm, NOT Node: no `process`/`require`/`Buffer`. In-scope bindings:\n- `fs` — read-only fs.promises subset\n- `path` — POSIX path (forward-slash, even on Windows)\n- `grep(pattern, {cwd?, glob?, maxResults?, ignoreCase?})` → [{file, line, content}]\n- `glob(pattern, {cwd?})` → string[]\n- `projectRoot` — absolute root of the tree you are working in (forward-slashed). `import()` any JavaScript/JSON module under it by absolute path (e.g. `${projectRoot}/src/foo.js`) to call its real exports.'
+            description: 'JavaScript to execute (async/await OK; must return a value). Browser realm, NOT Node: no `process`/`require`/`Buffer`. In-scope bindings:\n- `fs` — read-only fs.promises subset\n- `path` — POSIX path (forward-slash, even on Windows)\n- `grep(pattern, {cwd?, glob?, maxResults?, ignoreCase?})` → [{file, line, content}]\n- `glob(pattern, {cwd?})` → string[]\n- `projectRoot` — absolute root of the tree you are working in (forward-slashed). `import()` any JavaScript/JSON module under it by absolute path (e.g. `${projectRoot}/src/foo.js`) to call its real exports.\n- `await image(path)` — attach a PNG/JPEG/GIF/WebP file to your result, so you see it'
           },
           description: {
             type: 'string',
@@ -128,8 +130,9 @@ class QueryCodeContextItem extends ContextItem {
         + 'created, was closed, or its directory has gone.');
     }
 
-    const fs = this.ops.readOnlyFileSystem();
+    const fs = pointImageReadsAtImage(this.ops.readOnlyFileSystem());
     const { grep, glob } = this._createSearchHelpers();
+    const images = this._programImages();
 
     // The signal is what makes Escape mean anything here. Without it the script
     // is only bounded by its own timeout — up to ten minutes — and a cancel
@@ -139,7 +142,7 @@ class QueryCodeContextItem extends ContextItem {
     let result;
     try {
       result = await runInSandbox(code, {
-        capabilities: { fs, grep, glob },
+        capabilities: { fs, grep, glob, image: images.show },
         timeoutMs,
         projectRoot: workspaceRoot,
         signal: this.signal,
@@ -148,6 +151,7 @@ class QueryCodeContextItem extends ContextItem {
     } catch (err) {
       // What the script printed matters most when it failed, so it rides the
       // error. A cancel stays a bare AbortError: nobody is reading the output.
+      this._holdAssets([]);
       if (consoleLines.length === 0 || (err instanceof Error && err.name === 'AbortError')) throw err;
       const message = err instanceof Error ? err.message : String(err);
       throw new Error(withConsole(message, consoleLines));
@@ -156,6 +160,7 @@ class QueryCodeContextItem extends ContextItem {
     /** @type {Record<string, unknown>} */
     const out = { result: result === undefined ? null : result };
     if (consoleLines.length > 0) out.console = consoleLines;
+    this._attachShown(out, images);
     if (fs.filesRead.size > 0) {
       /** @type {Record<string, string|null>} */
       const filesRead = {};
@@ -163,6 +168,76 @@ class QueryCodeContextItem extends ContextItem {
       out.filesRead = filesRead;
     }
     return out;
+  }
+
+  /**
+   * The images a script holds and attaches (code/program-images.js). `image()`
+   * takes a path, read on the footing `fs.readFile` reads on, and every image
+   * held is named on this item so the asset store keeps it until the run ends.
+   * @param {Map<string, any>} [received] - Images an earlier pass was given
+   * @param {(path: string) => Promise<import('./code/program-images.js').AssetRef>} [loadPath] - Reads and
+   *   stores a path's image; _imagePathLoader's by default
+   * @returns {ReturnType<typeof createProgramImages>} The run's images
+   * @protected
+   */
+  _programImages(received, loadPath = this._imagePathLoader()) {
+    return createProgramImages({
+      received,
+      loadPath,
+      onHeld: (ids) => this._holdAssets(ids)
+    });
+  }
+
+  /**
+   * Read the image at a path and store it in this conversation's assets.
+   * @returns {(path: string) => Promise<import('./code/program-images.js').AssetRef>} The loader
+   * @protected
+   */
+  _imagePathLoader() {
+    return imagePathLoader({
+      readFile: (params, signal) => this.ops.readFile(/** @type {any} */ (params), signal),
+      upload: uploadAssetBase64,
+      conversationId: this.conversation?.id,
+      signal: this.signal
+    });
+  }
+
+  /**
+   * Put what a run attached on its result: the refs as `attachments`, which
+   * getSummary hands the model, and their labels for the note saying what they
+   * are. What it held and did not attach is let go.
+   * @param {Record<string, unknown>} out - The result
+   * @param {ReturnType<typeof createProgramImages>} images - The run's images
+   * @protected
+   */
+  _attachShown(out, images) {
+    const shown = images.shown();
+    this._holdAssets(shown.map((ref) => ref.id));
+    if (shown.length === 0) return;
+    out.attachments = shown;
+    /** @type {Record<string, string>} */
+    const labels = {};
+    for (const ref of shown) {
+      const label = images.labelOf(ref.id);
+      if (label) labels[ref.id] = label;
+    }
+    out.imageLabels = labels;
+  }
+
+  /**
+   * Name the assets this item holds (`heldAssets`), which the asset store keeps
+   * however long the item takes; none removes the field.
+   * @param {string[]} ids - Asset ids
+   * @protected
+   */
+  _holdAssets(ids) {
+    const toolAction = /** @type {any} */ (this.toolUseId ? this.messageThread?.getToolAction?.(this.toolUseId) : undefined);
+    if (!toolAction) return;
+    if (ids.length === 0 && !toolAction.has('heldAssets')) return;
+    this.messageThread.transact(() => {
+      if (ids.length === 0) toolAction.delete('heldAssets');
+      else toolAction.set('heldAssets', [...ids]);
+    });
   }
 
   /**
@@ -249,8 +324,7 @@ class QueryCodeContextItem extends ContextItem {
       content = '(no return value)';
     }
     if (Array.isArray(result.console)) content = withConsole(content, result.console);
-
-    return this.successSummary(this.truncateForLLM(content));
+    return summaryWithImages(this, this.truncateForLLM(content), result);
   }
 
   /**
@@ -325,6 +399,21 @@ class QueryCodeContextItem extends ContextItem {
   static _prettyPrintCode(src) {
     return prettyPrintQueryScript(src);
   }
+}
+
+/**
+ * A successful run's summary, carrying the images it attached and a note of
+ * what they are after the text.
+ * @param {ContextItem} item - The item summarising
+ * @param {string} text - The text the model reads
+ * @param {Record<string, any>} result - The run's result
+ * @returns {import('juggler/context-item').ItemSummary} The summary
+ */
+export function summaryWithImages(item, text, result) {
+  const attachments = Array.isArray(result?.attachments) ? result.attachments : [];
+  if (attachments.length === 0) return item.successSummary(text);
+  const labels = result.imageLabels || {};
+  return item.successSummary(text + attachedImagesNote(attachments, (id) => labels[id]), { attachments });
 }
 
 /**

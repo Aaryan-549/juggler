@@ -4,7 +4,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import ContextItem from 'juggler/context-item';
-import { webFetch } from 'juggler/ops';
+import { webFetch, uploadAssetBase64 } from 'juggler/ops';
+import { formatFileSize } from 'juggler/item-utils';
 
 /**
  * @typedef {object} WebFetchParams
@@ -24,6 +25,11 @@ import { webFetch } from 'juggler/ops';
  * @property {boolean} [redirect] - Whether a redirect was detected
  * @property {string} [redirect_url] - The redirect URL if redirect is true
  * @property {string} [error] - Error message if redirect or failure
+ * @property {boolean} [isImage] - The URL is an image: its bytes came back, not page text
+ * @property {string} [mime] - An image's type
+ * @property {number} [size] - An image's size in bytes
+ * @property {string} [imageBase64] - An image's bytes, stored as `attachment` and then dropped
+ * @property {import('../../../js/services/ops-api.js').AssetRef} [attachment] - The stored image
  */
 
 /**
@@ -205,13 +211,38 @@ class WebFetchContextItem extends ContextItem {
    */
   async execute(params) {
     const fetchParams = /** @type {WebFetchParams} */ (params);
+    const result = await this.fetchPage({ url: fetchParams.url, prompt: fetchParams.prompt });
+    // An image is stored as the read tool stores one, and attached to the
+    // result so the model is sent the image itself; its bytes never reach the
+    // document.
+    if (result?.isImage && typeof result.imageBase64 === 'string') {
+      const base64 = result.imageBase64;
+      delete result.imageBase64;
+      result.attachment = await this.storeImage(base64, result.mime || 'application/octet-stream');
+    }
+    return result;
+  }
 
-    const result = await webFetch(
-      { url: fetchParams.url, prompt: fetchParams.prompt },
-      this.signal
-    );
+  /**
+   * Fetch a URL. Its own method so tests can stub the network.
+   * @param {{url: string, prompt?: string}} params - What to fetch
+   * @returns {Promise<WebFetchResult>} The fetch result
+   */
+  async fetchPage(params) {
+    return /** @type {WebFetchResult} */ (await webFetch(params, this.signal));
+  }
 
-    return /** @type {WebFetchResult} */ (result);
+  /**
+   * Store a fetched image in the conversation's assets. Its own method so
+   * tests can stub the upload.
+   * @param {string} base64 - The image's bytes
+   * @param {string} mime - Its type
+   * @returns {Promise<import('../../../js/services/ops-api.js').AssetRef>} The stored image
+   */
+  async storeImage(base64, mime) {
+    const conversationId = this.conversation?.id;
+    if (!conversationId) throw new Error('Couldn\'t attach the image: there is no conversation to keep it in.');
+    return uploadAssetBase64(conversationId, base64, mime, this.signal);
   }
 
   /**
@@ -235,6 +266,18 @@ class WebFetchContextItem extends ContextItem {
       return this.successSummary(
         `Redirect detected: ${result.redirect_url}\n${result.error || ''}`,
         { icon: '→' }
+      );
+    }
+
+    // An image: the pixels ride the result as an attachment, as a read
+    // image's do, so the text only says what it is.
+    if (result.attachment) {
+      const ref = result.attachment;
+      const dims = ref.width && ref.height ? `${ref.width}\u00d7${ref.height}` : 'image';
+      const size = ref.bytes ? `, ${formatFileSize(ref.bytes)}` : '';
+      return this.successSummary(
+        `Fetched image ${result.url || url} (${dims}${size}). The image is attached below.`,
+        { attachments: [ref] }
       );
     }
 

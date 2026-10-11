@@ -1167,7 +1167,10 @@ transaction use **`mutate(fn)`** (it also runs `assertInvariants()` in dev mode)
 
 A tool whose work is itself a program of tool calls can call the conversation's
 tools through **`this.createToolInvoker()`** (on `ContextItem`). Its
-`invoke(name, args)` runs one tool and resolves to the tool's result text. Every
+`invoke(name, args)` runs one tool and resolves to the tool's result text;
+`invoke(name, args, { withAttachments: true })` resolves to `{ content,
+attachments }`, adding the asset refs of any images the call produced, which
+your item can attach to its own result through its summary's `attachments`. Every
 call is checked against the tools this item's thread was offered, put to the
 same approval decision the model's own call would get (saved rules, hooks, the
 strategy), and run through the ordinary execute path. Nothing is written to the

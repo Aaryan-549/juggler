@@ -106,6 +106,17 @@ func collectAssetIDsFromItems(items []ConversationItem, dst map[string]bool) {
 				dst[att.ID] = true
 			}
 		}
+		// A hold lasts only while the item is at work. One that settled without
+		// running again to let go (a denial cancels it from outside the tool)
+		// holds nothing, and what a finished item shows is in its Attachments,
+		// written in the same transaction as its state.
+		if !isToolTerminal(it) {
+			for _, id := range it.HeldAssets {
+				if id != "" {
+					dst[id] = true
+				}
+			}
+		}
 		// Threads carry their nested items in Items as JSON.
 		if it.Type == ItemTypeThread && len(it.Items) > 0 {
 			var nested []ConversationItem

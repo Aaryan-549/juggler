@@ -47,6 +47,8 @@ import { extractErrorMessage } from '../../sdk/lib/error-utils.js';
 import { isComposableTool } from './composable-tools.js';
 import { INTERACTION_KIND } from '../../sdk/context-item.js';
 
+/** @typedef {import('./ops-api.js').AssetRef} AssetRef */
+
 /** A tool ran and failed, or could not be run. A program may catch it. */
 export class ToolError extends Error {
   /** @param {string} message - What went wrong */
@@ -220,7 +222,7 @@ function effectLine(name, args) {
  * @typedef {object} InvokerDeps
  * @property {() => Promise<Array<Record<string, any>>>} offeredTools - The thread's composable offered tools
  * @property {(call: {toolName: string, toolInput: Record<string, unknown>, toolUseId: string}) => Promise<{verdict: string, reason: string}>} decide - The approval decision
- * @property {(call: {toolName: string, input: Record<string, unknown>, toolUseId: string}) => Promise<{success: boolean, cancelled?: boolean, content: string, error?: string}>} run - Run the tool
+ * @property {(call: {toolName: string, input: Record<string, unknown>, toolUseId: string}) => Promise<{success: boolean, cancelled?: boolean, content: string, error?: string, attachments?: AssetRef[]}>} run - Run the tool
  * @property {(toolUseId: string) => void} cancel - Cancel a running call
  * @property {(call: {name: string, args: Record<string, unknown>}, decision: any) => Promise<Suspension>} suspension - A parked call, as the user is asked about it
  * @property {(toolName: string, input: Record<string, unknown>, response: string) => Record<string, unknown>} answer - Fold the user's answer into an elicitation's input
@@ -254,11 +256,17 @@ function defaultDeps(conversation, messageThread) {
         toolName,
         _approvalHandled: true
       });
+      // A tool's images ride its summary as asset refs, as they reach the
+      // model's tool_result; the caller asks for them (invoke's withAttachments).
+      const attachments = Array.isArray(result.formatted?.attachments)
+        ? result.formatted.attachments.filter((/** @type {any} */ a) => a && a.id)
+        : [];
       return {
         success: !!result.success,
         cancelled: !!result.cancelled,
         content: toolResultContent(result.formatted) || result.error || '',
-        error: result.error
+        error: result.error,
+        attachments
       };
     },
     cancel: (toolUseId) => {
@@ -303,7 +311,7 @@ function defaultDeps(conversation, messageThread) {
  * @param {number} [opts.limit] - Calls running at once
  * @param {number} [opts.maxRecords] - Calls kept in the record
  * @param {Partial<InvokerDeps>} [opts.deps] - Seams to replace, for tests
- * @returns {{invoke: (name: string, args: Record<string, unknown>) => Promise<string>, record: NestedCallRecord, offered: () => Promise<Map<string, Record<string, any>>>, approveNext: (name: string, args: Record<string, unknown>, response: string) => void}} The invoker
+ * @returns {{invoke: (name: string, args: Record<string, unknown>, how?: {withAttachments?: boolean}) => Promise<any>, record: NestedCallRecord, offered: () => Promise<Map<string, Record<string, any>>>, approveNext: (name: string, args: Record<string, unknown>, response: string) => void}} The invoker
  */
 export function createToolInvoker(opts) {
   const limit = Math.max(1, opts.limit ?? DEFAULT_LIMIT);
@@ -329,7 +337,7 @@ export function createToolInvoker(opts) {
    * @property {{response: string}|null} approval - The user's answer, for the held call a replay hands over
    * @property {NestedCall} entry - Its record entry
    * @property {'queued'|'running'|'done'} phase - Where it is in its life
-   * @property {(v: string) => void} resolve - Settles the program's await with a value
+   * @property {(v: {content: string, attachments: AssetRef[]}) => void} resolve - Settles the program's await with a value
    * @property {(e: Error) => void} reject - Settles the program's await with an error
    */
   /** @type {Pending[]} */
@@ -359,7 +367,7 @@ export function createToolInvoker(opts) {
    * Settle a call, finishing its record entry.
    * @param {Pending} call
    * @param {NestedCall['status']} status
-   * @param {{value?: string, error?: Error, startedAt?: number, ran?: boolean}} how -
+   * @param {{value?: {content: string, attachments: AssetRef[]}, error?: Error, startedAt?: number, ran?: boolean}} how -
    *   `ran`: the tool itself was run, past its decision
    */
   const settle = (call, status, how) => {
@@ -374,7 +382,7 @@ export function createToolInvoker(opts) {
       call.entry.error = how.error.message;
       call.reject(how.error);
     } else {
-      call.resolve(/** @type {string} */ (how.value));
+      call.resolve(/** @type {{content: string, attachments: AssetRef[]}} */ (how.value));
     }
     pump();
   };
@@ -456,7 +464,7 @@ export function createToolInvoker(opts) {
       } else if (!result.success) {
         settle(call, 'error', { error: new ToolError(result.content || result.error || `${call.name} failed`), startedAt, ran });
       } else {
-        settle(call, 'ok', { value: result.content, startedAt, ran });
+        settle(call, 'ok', { value: { content: result.content, attachments: result.attachments ?? [] }, startedAt, ran });
       }
     } catch (err) {
       settle(call, 'error', { error: new ToolError(extractErrorMessage(err)), startedAt, ran });
@@ -491,9 +499,12 @@ export function createToolInvoker(opts) {
    * Call one tool from the program.
    * @param {string} name - Tool name
    * @param {Record<string, unknown>} args - Its arguments
-   * @returns {Promise<string>} What the tool returned
+   * @param {{withAttachments?: boolean}} [how] - withAttachments: resolve
+   *   `{content, attachments}`, the asset refs of any images the call produced,
+   *   rather than the content alone. The record never holds either.
+   * @returns {Promise<any>} What the tool returned: its content, or with its attachments
    */
-  async function invoke(name, args) {
+  async function invoke(name, args, how = {}) {
     const input = (args && typeof args === 'object') ? args : {};
     // Taken before the first await, by the call approveNext named — the same
     // tool with the same arguments — and by no other: the user approved that
@@ -518,7 +529,8 @@ export function createToolInvoker(opts) {
     const alongside = def.category === 'read' || def.category === 'meta';
     if (!alongside) entry.effect = effectLine(name, input);
     keep(entry);
-    return new Promise((resolve, reject) => {
+    /** @type {Promise<{content: string, attachments: AssetRef[]}>} */
+    const settled = new Promise((resolve, reject) => {
       calls.push({
         name, args: input, alongside, entry, phase: 'queued', resolve, reject, approval,
         toolUseId: `code_${opts.parentToolUseId}_${++ordinal}`,
@@ -529,6 +541,8 @@ export function createToolInvoker(opts) {
       }
       pump();
     });
+    const value = await settled;
+    return how.withAttachments ? value : value.content;
   }
 
   /**

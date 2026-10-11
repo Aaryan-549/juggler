@@ -234,6 +234,75 @@ func TestCollectLiveAssetIDs_IncludesPendingAttachments(t *testing.T) {
 	}
 }
 
+// TestCollectLiveAssetIDs_IncludesHeldAssets pins that an item still at work
+// can keep an asset alive that nothing yet attaches: a tool that has stored an
+// image it may attach once it finishes names it in `heldAssets`, which the
+// sweep counts like an attachment. Without it, a tool that waits on the user
+// for longer than the staging grace finds its image reclaimed. Covers an item
+// at root and one inside a thread.
+func TestCollectLiveAssetIDs_IncludesHeldAssets(t *testing.T) {
+	w := NewConversationWorker("conv-held-gc", "user:test")
+
+	const rootAsset = "root-held-sha"
+	const threadAsset = "thread-held-sha"
+
+	w.doc.AppendMessage(ConversationItem{Type: ItemTypeToolAction, ItemID: "a1", ToolUseID: "call_1"})
+	if err := w.doc.UpdateItemByID("a1", "heldAssets", []any{rootAsset}); err != nil {
+		t.Fatalf("set root heldAssets: %v", err)
+	}
+	nested, _ := json.Marshal([]map[string]any{{
+		"type": ItemTypeToolAction, "itemId": "a2", "toolUseId": "call_2", "heldAssets": []string{threadAsset},
+	}})
+	w.doc.AppendMessage(ConversationItem{Type: ItemTypeThread, ItemID: "t1", Items: nested})
+
+	live, keepAll := w.collectLiveAssetIDs()
+	if keepAll {
+		t.Fatal("collectLiveAssetIDs returned keepAll=true; want a concrete live set")
+	}
+	if !live[rootAsset] {
+		t.Errorf("root held asset missing from live set; live=%v", live)
+	}
+	if !live[threadAsset] {
+		t.Errorf("thread held asset missing from live set; live=%v", live)
+	}
+}
+
+// TestCollectLiveAssetIDs_SettledItemHoldsNothing pins that `heldAssets` keeps
+// an asset only while its item is at work. An item that settled without being
+// run again to clear the field (a denial cancels it from outside the tool)
+// would otherwise keep what it held for good; what a settled item does show is
+// in its own attachments. Covers both settled states, at root and in a thread,
+// beside a pending item whose hold still counts.
+func TestCollectLiveAssetIDs_SettledItemHoldsNothing(t *testing.T) {
+	w := NewConversationWorker("conv-held-settled", "user:test")
+
+	w.doc.AppendMessage(ConversationItem{Type: ItemTypeToolAction, ItemID: "a1", ToolUseID: "call_1", State: StateCancelled})
+	if err := w.doc.UpdateItemByID("a1", "heldAssets", []any{"denied-sha"}); err != nil {
+		t.Fatalf("set heldAssets: %v", err)
+	}
+	w.doc.AppendMessage(ConversationItem{Type: ItemTypeToolAction, ItemID: "a2", ToolUseID: "call_2", State: StatePending})
+	if err := w.doc.UpdateItemByID("a2", "heldAssets", []any{"suspended-sha"}); err != nil {
+		t.Fatalf("set heldAssets: %v", err)
+	}
+	nested, _ := json.Marshal([]map[string]any{{
+		"type": ItemTypeToolAction, "itemId": "a3", "toolUseId": "call_3", "state": StateCompleted,
+		"heldAssets": []string{"completed-sha"}, "attachments": []map[string]any{{"id": "shown-sha", "mime": "image/png"}},
+	}})
+	w.doc.AppendMessage(ConversationItem{Type: ItemTypeThread, ItemID: "t1", Items: nested})
+
+	live, _ := w.collectLiveAssetIDs()
+	for _, id := range []string{"denied-sha", "completed-sha"} {
+		if live[id] {
+			t.Errorf("%s is held by a settled item but was kept; live=%v", id, live)
+		}
+	}
+	for _, id := range []string{"suspended-sha", "shown-sha"} {
+		if !live[id] {
+			t.Errorf("%s missing from live set; live=%v", id, live)
+		}
+	}
+}
+
 // TestAssetStore_SaveIsContentAddressedDedup confirms saving identical bytes
 // twice yields one stable id and one on-disk file — the property the sweep's
 // content-hash live set relies on.

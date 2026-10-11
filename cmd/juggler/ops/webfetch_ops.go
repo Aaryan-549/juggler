@@ -182,10 +182,24 @@ func (ops *WebFetchOperations) fetch(ctx context.Context, params map[string]any)
 		return nil, fmt.Errorf("HTTP error: %d %s", resp.StatusCode, resp.Status)
 	}
 
-	// Read body with size limit
-	body, truncated, err := readCappedBody(resp.Body, maxContentLength)
+	// Read body with size limit. An image is read whole, up to the cap the read
+	// op inlines images under, and is never cached: the cache holds page text.
+	// A body whose label leaves it open (none, or octet-stream) is read on the
+	// image cap too, and cut back to the text cap if it is not one.
+	contentType := resp.Header.Get("Content-Type")
+	limit := maxContentLength
+	if mayBeImage(contentType) {
+		limit = MaxImageReadBytes
+	}
+	body, truncated, err := readCappedBody(resp.Body, limit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+	if m := fetchedImageMime(contentType, body); m != "" {
+		return imageFetchResult(urlStr, prompt, m, body, truncated)
+	}
+	if len(body) > maxContentLength {
+		body, truncated = body[:maxContentLength], true
 	}
 
 	// Convert HTML to readable text/markdown

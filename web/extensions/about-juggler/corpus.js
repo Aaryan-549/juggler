@@ -113,8 +113,11 @@ core provides:
 - **bash** — run a shell command; supports long-running background processes.
 - **query_code** — run reads/greps/globs inside one sandboxed JavaScript call
   and return only the computed value, keeping intermediate output out of context.
+  A script can also attach an image file to its result with image(path), so the
+  model sees it.
 - **batch_read / batch_grep** — read or search several files in one call.
-- **WebFetch** — fetch a URL and convert it to markdown (with a short cache).
+- **WebFetch** — fetch a URL and convert it to markdown (with a short cache). An
+  image URL (PNG, JPEG, GIF or WebP, up to 5 MB) comes back as the image itself.
 - **WebSearch** — web search returning titles, URLs, and descriptions.
 - **create_thread** — run a self-contained sub-task in an isolated sub-conversation
   whose intermediate steps stay out of the parent context.

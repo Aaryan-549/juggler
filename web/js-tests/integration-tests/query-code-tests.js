@@ -108,7 +108,7 @@ export const tests = [
     'query-parse-error',
     'query_code: parse error reported without timeout',
     'const fs = require("fs/promises");\nreturn "unreachable";',
-    'Cannot declare a const variable twice: \'fs\'. It is already in scope: use it directly rather than importing or requiring it. In scope: path, projectRoot, fs, grep, glob.',
+    'Cannot declare a const variable twice: \'fs\'. It is already in scope: use it directly rather than importing or requiring it. In scope: path, projectRoot, fs, grep, glob, image.',
     true
   ),
 

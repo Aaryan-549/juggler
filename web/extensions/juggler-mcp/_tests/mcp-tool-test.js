@@ -12,14 +12,16 @@
  * @module unit-tests/mcp-tool-test
  */
 
-import { assert } from '../../../js-tests/utilities/test-helpers.js';
+import { assert, createTestSession, createTestConversation } from '../../../js-tests/utilities/test-helpers.js';
 import {
   mcpLLMName,
   buildToolDefinition,
   mcpRuleValues,
   mcpApprovalSuggestions,
-  mcpIsPermitted
+  mcpIsPermitted,
+  storeMcpImages
 } from '../context-items/mcp-tool-context-item.js';
+import McpToolContextItem from '../context-items/mcp-tool-context-item.js';
 
 /**
  * @typedef {object} TestResult
@@ -130,6 +132,46 @@ export async function runTests(_ctx) {
     assert(!mcpIsPermitted(new Set(), { server: 'github', tool: 'create_issue', readOnly: true }), 'empty set should not approve');
     // A grant for a different server must not approve.
     assert(!mcpIsPermitted(new Set(['other/*']), { server: 'github', tool: 'create_issue', readOnly: false }), 'cross-server leak');
+  });
+
+  // An MCP server's image (a screenshot tool's) reaches the model as an image
+  // part, as a read image does, and its bytes never sit in the document.
+  await run('image blocks are stored as attachments; no block keeps its bytes', async () => {
+    /** @type {any[]} */
+    const uploads = [];
+    const upload = async (/** @type {string} */ conv, /** @type {string} */ data, /** @type {string} */ mime) => {
+      uploads.push([conv, data, mime]);
+      if (data === 'ZmFpbA==') throw new Error('disk full');
+      return { id: 'a'.repeat(64), mime, bytes: 4, width: 2, height: 2 };
+    };
+    const { blocks, images } = await storeMcpImages([
+      { type: 'text', text: 'here' },
+      { type: 'image', mimeType: 'image/png', data: 'cG5n' },
+      { type: 'image', mimeType: 'image/svg+xml', data: 'c3Zn' },
+      { type: 'image', mimeType: 'image/png', data: 'ZmFpbA==' },
+      { type: 'audio', mimeType: 'audio/wav', data: 'd2F2' },
+    ], { upload, conversationId: 'conv-1' });
+    assert(images.length === 1 && images[0].id === 'a'.repeat(64), `one image stored: ${JSON.stringify(images)}`);
+    assert(uploads.length === 2 && uploads[0][0] === 'conv-1' && uploads[0][2] === 'image/png', `only supported images are uploaded: ${JSON.stringify(uploads)}`);
+    assert(blocks.every((b) => !('data' in b)), `no block keeps its bytes: ${JSON.stringify(blocks)}`);
+    assert(blocks[0].text === 'here' && blocks[1].attached === 'a'.repeat(64), `blocks: ${JSON.stringify(blocks)}`);
+    assert(/not a type/.test(blocks[2].note) && /disk full/.test(blocks[3].note), `why one was not attached: ${JSON.stringify(blocks)}`);
+    const none = await storeMcpImages([{ type: 'image', mimeType: 'image/png', data: 'cG5n' }], { upload, conversationId: undefined });
+    assert(none.images.length === 0 && !('data' in none.blocks[0]), 'with no conversation, nothing is stored and the bytes still go');
+  });
+
+  await run('an attached image rides the summary and is named in its text', async () => {
+    const session = await createTestSession();
+    const conversation = await createTestConversation(session);
+    const item = new McpToolContextItem({ id: 'mcp-tool', session, conversation, messageThread: conversation.rootMessageThread });
+    const ref = { id: 'b'.repeat(64), mime: 'image/png', bytes: 4, width: 3, height: 4 };
+    const summary = /** @type {any} */ (item.getSummary({
+      success: true,
+      result: { text: 'took a screenshot', isError: false, images: [ref],
+        content: [{ type: 'text', text: 'took a screenshot' }, { type: 'image', mimeType: 'image/png', attached: ref.id }] }
+    }));
+    assert(summary.attachments?.length === 1 && summary.attachments[0].id === ref.id, `attachments: ${JSON.stringify(summary.attachments)}`);
+    assert(String(summary.summary) === 'took a screenshot\n[image: image/png, 3×4, attached below]', `text: ${summary.summary}`);
   });
 
   return { passed, failed, errors };

@@ -1124,6 +1124,13 @@ type ConversationItem struct {
 	// AssetStore; only this reference (sha id, mime, dims) is stored in the doc.
 	Attachments []AssetRef `json:"attachments,omitempty"`
 
+	// HeldAssets names assets (by sha id) that an item still at work has stored
+	// and may attach once it finishes, so the asset sweep keeps them alive
+	// meanwhile (collectAssetIDsFromItems) — until the item settles, however it
+	// settles, after which the field is inert. Written by the engine; never sent
+	// to a model.
+	HeldAssets []string `json:"heldAssets,omitempty"`
+
 	// TaskSource marks a user item that was injected by a background-task output
 	// delivery pump (the generic deliverTaskOutput mechanism; Monitor is the
 	// first consumer). It carries the originating task id so the UI can join the

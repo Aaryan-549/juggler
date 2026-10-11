@@ -360,6 +360,13 @@ func yMapToConversationItem(m *ycrdt.YMap) ConversationItem {
 		}
 	}
 
+	if raw := yMapRawJSON(m, "heldAssets"); raw != nil {
+		var held []string
+		if json.Unmarshal(raw, &held) == nil {
+			item.HeldAssets = held
+		}
+	}
+
 	if raw := yMapRawJSON(m, "foldedRuns"); raw != nil {
 		var runs []FoldedRun
 		if json.Unmarshal(raw, &runs) == nil {

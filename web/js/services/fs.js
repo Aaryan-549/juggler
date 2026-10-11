@@ -124,6 +124,11 @@ export class FileSystem {
     if (!result.exists) {
       throw new FileSystemError('ENOENT', `no such file or directory: ${filePath}`);
     }
+    // An image comes back as its bytes for the asset store, not as text, so
+    // there is no content to return; say what it is rather than answer nothing.
+    if (/** @type {any} */ (result).isImage) {
+      throw new FileSystemError('EINVAL', `${filePath} is an image, not text`);
+    }
     if (this.filesRead.size < FileSystem.MAX_FILES_READ || this.filesRead.has(filePath)) {
       this.filesRead.set(filePath, typeof result.contentHash === 'string' ? result.contentHash : null);
     }

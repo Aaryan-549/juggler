@@ -465,14 +465,17 @@ class ContextItem {
    * other is decided as usual. Aborting
    * `signal` (by default this item's own) cancels every call. `offered()`
    * resolves to the tools a call is admitted to, by name, with their
-   * definitions.
+   * definitions. `invoke(name, args, {withAttachments: true})` resolves to
+   * `{content, attachments}` instead of the text alone: the asset refs of any
+   * images the call produced (an image read), which this item may attach to
+   * its own result through its summary's `attachments`.
    *
    * Provided by the host engine; throws where no host provides one.
    * @param {object} [opts]
    * @param {AbortSignal} [opts.signal] - Cancels every call when aborted
    * @param {(err: Error) => void} [opts.onRefused] - Told once when a refusal ends the program
    * @param {(err: Error & {suspension: Record<string, unknown>}) => void} [opts.onSuspended] - Told once when a call waits on the user
-   * @returns {{invoke: (name: string, args: Record<string, unknown>) => Promise<string>, record: {calls: Array<Record<string, unknown>>, omitted: number, omittedEffects: number}, offered: () => Promise<Map<string, Record<string, any>>>, approveNext: (name: string, args: Record<string, unknown>, response: string) => void}} The invoker
+   * @returns {{invoke: (name: string, args: Record<string, unknown>, how?: {withAttachments?: boolean}) => Promise<any>, record: {calls: Array<Record<string, unknown>>, omitted: number, omittedEffects: number}, offered: () => Promise<Map<string, Record<string, any>>>, approveNext: (name: string, args: Record<string, unknown>, response: string) => void}} The invoker
    */
   createToolInvoker(opts = {}) {
     const host = /** @type {any} */ (globalThis).__hostToolInvoker;

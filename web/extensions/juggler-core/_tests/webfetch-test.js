@@ -422,6 +422,44 @@ function testErrorFormatting(session, conversation) {
 }
 
 /**
+ * An image URL comes back as an image: stored in the conversation's assets and
+ * attached to the result, its bytes never kept on it. With a prompt there is no
+ * page text to hand a sub-agent, so the call runs as a plain fetch and the
+ * model sees the image itself.
+ * @param {any} session
+ * @param {any} conversation
+ * @returns {Promise<{passed: boolean, error?: string}>} Test result
+ */
+async function testImageFetch(session, conversation) {
+  const action = /** @type {any} */ (new WebFetchContextItem({ id: 'web-fetch', session, conversation, messageThread: conversation.rootMessageThread }));
+  const page = { url: 'https://example.com/chart.png', prompt: '', isImage: true, mime: 'image/png', size: 4, imageBase64: 'ZmFrZQ==' };
+  /** @type {any[]} */
+  const stored = [];
+  action.fetchPage = async () => ({ ...page });
+  action.fetchRaw = async () => ({ ...page });
+  action.storeImage = async (/** @type {string} */ base64, /** @type {string} */ mime) => {
+    stored.push([base64, mime]);
+    return { id: 'c'.repeat(64), mime, bytes: 4, width: 6, height: 7 };
+  };
+  try {
+    const spec = await action.buildSubthreadSpec({ url: page.url, prompt: 'what does it show?' });
+    if (spec !== null) throw new Error('an image has no page text to delegate on');
+    const result = await action.execute({ url: page.url, prompt: 'what does it show?' });
+    if (stored.length !== 1 || stored[0][0] !== 'ZmFrZQ==' || stored[0][1] !== 'image/png') {
+      throw new Error(`the image must be stored once: ${JSON.stringify(stored)}`);
+    }
+    if ('imageBase64' in result) throw new Error('the bytes must not stay on the result');
+    const summary = action.getSummary({ success: true, result, prepared: { params: { url: page.url } } });
+    if (summary.attachments?.[0]?.id !== 'c'.repeat(64)) throw new Error(`attachments: ${JSON.stringify(summary.attachments)}`);
+    const want = 'Fetched image https://example.com/chart.png (6×7, 4 B). The image is attached below.';
+    if (summary.summary !== want) throw new Error(`summary: ${summary.summary}`);
+    return { passed: true };
+  } catch (e) {
+    return { passed: false, error: /** @type {Error} */ (e).message };
+  }
+}
+
+/**
  * @typedef {object} TestContext
  * @property {string} fixtureDir - Path to fixture directory
  */
@@ -456,7 +494,8 @@ export async function runTests(_ctx) {
     { name: 'Truncated content indicator', fn: () => testTruncatedFormatting(session, conversation) },
     { name: 'Cached content indicator', fn: () => testCachedFormatting(session, conversation) },
     { name: 'Redirect case formatting', fn: () => testRedirectFormatting(session, conversation) },
-    { name: 'Error case formatting', fn: () => testErrorFormatting(session, conversation) }
+    { name: 'Error case formatting', fn: () => testErrorFormatting(session, conversation) },
+    { name: 'An image URL is attached as an image', fn: () => testImageFetch(session, conversation) }
   ];
 
   let passed = 0;

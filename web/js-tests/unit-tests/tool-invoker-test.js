@@ -260,6 +260,26 @@ export async function runTests(_ctx) {
     assert(!('result' in rec) && !('content' in rec), 'the record never holds a result');
   });
 
+  await test('a call\'s attachments are handed over only when asked for', async () => {
+    const h = harness();
+    const ref = { id: 'abc123', mime: 'image/png', bytes: 10, width: 2, height: 3 };
+    const plain = h.invoker.invoke('read', { file_path: 'a.png' });
+    const detailed = h.invoker.invoke('read', { file_path: 'a.png' }, { withAttachments: true });
+    const none = h.invoker.invoke('read', { file_path: 'b.txt' }, { withAttachments: true });
+    await tick();
+    h.finish('read', { success: true, content: 'Read image a.png', attachments: [ref] });
+    h.finish('read', { success: true, content: 'Read image a.png', attachments: [ref] });
+    h.finish('read', { success: true, content: 'text' });
+    assert(await plain === 'Read image a.png', 'without asking, a call still resolves to its content');
+    const got = await detailed;
+    assert(got?.content === 'Read image a.png' && got.attachments?.length === 1 && got.attachments[0].id === 'abc123',
+      `asked for, the attachments come with the content: ${JSON.stringify(got)}`);
+    const bare = await none;
+    assert(bare?.content === 'text' && Array.isArray(bare.attachments) && bare.attachments.length === 0,
+      `a call with none resolves an empty list: ${JSON.stringify(bare)}`);
+    assert(h.invoker.record.calls.every((/** @type {any} */ c) => !('attachments' in c)), 'the record never holds attachments');
+  });
+
   await test('at most `limit` calls run at once', async () => {
     const h = harness({ limit: 4 });
     const ps = [1, 2, 3, 4, 5].map((n) => h.invoker.invoke('read', { file_path: `f${n}` }));

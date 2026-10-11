@@ -12,6 +12,9 @@ of changes; this project follows semantic versioning.
 - Fixed Claude Code cutting long tool descriptions short; the model now sees them whole
 - query_code says what is already in scope when a script reaches for Node's modules
 - Fixed query_code rewriting the text "import(" inside a script's strings
+- query_code scripts can show the model images with `image()`
+- MCP tools' images now reach the model instead of an `[image]` placeholder
+- WebFetch on an image URL returns the image itself, not garbled text
 
 ## [0.7.6] - 2026-10-09
 
