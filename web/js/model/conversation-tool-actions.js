@@ -158,6 +158,193 @@ export async function executeToolAction(messageThread, toolUseId, conversation) 
 }
 
 /**
+ * @typedef {object} ToolCallDecision
+ * @property {'invalid'|'deny'|'park'|'approve'} verdict - What the gate rules:
+ *   `invalid` (unknown tool, failed preparation or validation), `deny` (a hook
+ *   refused it), `park` (a person must decide), `approve` (it may run now).
+ * @property {string} reason - Why, in words fit for a result: the error for
+ *   `invalid`, the refusal for `deny`, what it is waiting on for `park`.
+ * @property {string} [content] - For `invalid`, the result text the evaluate
+ *   path stores (it prefixes a preparation failure).
+ * @property {any} [action] - The prepared action instance.
+ * @property {any} [prepared] - What `action.prepare` returned.
+ * @property {any} [toolDef] - The tool's definition.
+ * @property {boolean} [autoApprovable] - Whether the call may be silently approved.
+ * @property {boolean} [permitted] - Whether a saved rule covers it.
+ * @property {any} [hookOutcome] - The beforeTool hooks' outcome.
+ * @property {boolean} [hookAsks] - Whether a hook asked for the user.
+ * @property {boolean} [approvedByHook] - Whether a hook's allow is what approved it.
+ */
+
+/**
+ * Decide one tool call without a tool-action item: prepare and validate it,
+ * consult saved rules, run the beforeTool hooks, and ask the thread's strategy.
+ *
+ * This is the decision the engine's evaluate path writes into the doc, and that
+ * path calls it too, so a caller running a tool outside the transcript is gated
+ * exactly as the call would be if the model had made it. It writes nothing,
+ * though the hooks it runs may have effects of their own.
+ * @param {{messageThread: any, conversation: any, toolName: string, toolInput: Record<string, unknown>, toolUseId: string}} call - The call
+ * @returns {Promise<ToolCallDecision>} The ruling
+ */
+export async function decideToolCall(call) {
+  const ActionClass = contextItemRegistry.getByToolName(call.toolName);
+  if (!ActionClass) {
+    const reason = `Unknown tool: ${call.toolName}`;
+    return { verdict: 'invalid', reason, content: reason };
+  }
+  const toolDefs = ActionClass.getToolDefinitions?.() || [];
+  const toolDef = toolDefs.find((/** @type {{name: string}} */ t) => t.name === call.toolName);
+  return decideForAction(ActionClass, toolDef, call, { bindToolUseId: true });
+}
+
+/**
+ * The body of {@link decideToolCall} once the tool's class is known.
+ * @param {any} ActionClass - The tool's class
+ * @param {any} toolDef - The tool's definition, if it has one
+ * @param {{messageThread: any, conversation: any, toolName: string, toolInput: Record<string, unknown>, toolUseId: string}} call - The call
+ * @param {{bindToolUseId?: boolean}} [opts] - `bindToolUseId` hands the call's
+ *   id to the action, as the executor does. A call outside the transcript (a
+ *   program tool's sub-call) needs it: its id is how validation finds the reads its
+ *   program has made. The evaluate path leaves it unbound, as it always has.
+ * @returns {Promise<ToolCallDecision>} The ruling
+ */
+async function decideForAction(ActionClass, toolDef, call, opts = {}) {
+  const { messageThread, conversation, toolName, toolInput: toolInputPlain, toolUseId } = call;
+
+  const action = new ActionClass({
+    id: ActionClass.MANIFEST?.id || 'unknown',
+    session: conversation._session,
+    conversation,
+    messageThread,
+    // Lets a multi-tool class (e.g. the MCP bridge) route validate/approval to
+    // the invoked tool. Omitting it makes such a class validate with an empty
+    // name and reject its own call — the "Unknown MCP tool """ failure.
+    toolName: resolveToolName(toolName),
+    ...(opts.bindToolUseId ? { toolUseId } : {})
+  });
+
+  let prepared;
+  try {
+    prepared = await action.prepare(toolInputPlain);
+  } catch (err) {
+    const errorMessage = extractErrorMessage(err);
+    return { verdict: 'invalid', reason: errorMessage, content: `Action preparation failed: ${errorMessage}`, action, toolDef };
+  }
+
+  if (!prepared.valid) {
+    const errorMessage = prepared.error || 'Validation failed';
+    return { verdict: 'invalid', reason: errorMessage, content: errorMessage, action, prepared, toolDef };
+  }
+
+  // Whether this specific call may be SILENTLY auto-approved by an unattended
+  // path. Defaults to true; an action returns false for a call that must always
+  // reach a human even in auto-approve mode (a plan submit; a recursive delete
+  // of the project root or home). It gates the silent/default paths (the blanket
+  // auto-approve toggle and its out-of-band reviewer) and is passed to the
+  // strategy's getApprovalPolicy so a blanket auto-approve (YOLO) declines it
+  // too. A saved rule and an explicit human approval are unaffected.
+  const autoApprovable = action.autoApprovable?.(toolInputPlain) ?? true;
+
+  // Is this call already covered by a saved permission rule? Computed once and
+  // reused for both the approval decision and the provenance stamp.
+  const permitted = action.isPermitted(toolInputPlain);
+
+  // Tool hooks rule before the strategy does (services/hook-runtime.js). A deny
+  // ends the call here; an ask and an allow feed the decision below. They are
+  // awaited — the one wait on this path besides prepare() — and bounded well
+  // under the worker's re-drive interval, so the evaluate is answered in time.
+  const hookOutcome = await runBeforeToolHooks({
+    messageThread,
+    conversationId: conversation.id,
+    threadId: messageThread.threadItemId || conversation.id,
+    toolUseId,
+    toolName,
+    toolInput: toolInputPlain || {},
+  });
+  const common = { action, prepared, toolDef, autoApprovable, permitted, hookOutcome };
+  if (hookOutcome.verdict === 'deny') {
+    const denier = /** @type {import('../services/hook-runtime.js').HookRecord} */ (hookOutcome.decidedBy);
+    const reason = `Blocked by hook "${denier.name}"` + (denier.reason ? `: ${denier.reason}` : '.');
+    return { verdict: 'deny', reason, ...common, hookAsks: false, approvedByHook: false };
+  }
+
+  // The action's own default decision: needs approval unless it never requires
+  // it, or is already permitted by a rule, or the conversation is in the blanket
+  // auto-approve toggle AND this call is auto-approvable. A non-auto-approvable
+  // call ignores the blanket toggle and still parks for a human.
+  const defaultApproval = action.requiresApproval() &&
+                          !permitted &&
+                          (!conversation._autoApprove || !autoApprovable);
+
+  // The strategy has master control over approval (YOLO approves everything,
+  // read-only auto-approves read/meta tools).
+  // Consult it exactly as response-handler._determineApprovalNeeded does, so a
+  // live strategy switch takes effect for every tool evaluated afterwards — the
+  // metadata observer rebuilds messageThread.strategy on the switch, so this
+  // reads the current policy with no extra plumbing.
+  const strategyPolicy = messageThread.strategy?.getApprovalPolicy?.({
+    toolName,
+    toolInput: toolInputPlain,
+    category: toolDef?.category,
+    defaultApproval,
+    // The parked-state kind (gate vs elicitation). Lets a policy decline to
+    // stand in for the user on an elicitation (e.g. AskUserQuestion), whose
+    // resolution IS the user's typed answer — so a blanket auto-approve (YOLO)
+    // never silently answers a question. Same discriminant the gate-only
+    // onToolPending dispatch keys off.
+    interactionKind: action.interactionKind(),
+    // Whether this specific call may be silently auto-approved. False for a
+    // deliberate human checkpoint (a plan submit; a catastrophic delete), which
+    // must reach a human even under a blanket auto-approve — so YOLO returns
+    // DEFAULT for it and it parks, the same floor the auto-approve reviewer honours.
+    autoApprovable
+  });
+
+  // A hook's allow stands where a saved permission rule would: it waives the
+  // action's own default, never a strategy that requires approval, and never a
+  // call that must reach a human (an elicitation, a non-auto-approvable checkpoint).
+  const hookAllows = hookOutcome.verdict === 'allow'
+    && autoApprovable
+    && action.interactionKind() === INTERACTION_KIND.GATE;
+  const hookAsks = hookOutcome.verdict === 'ask';
+
+  let needsApproval;
+  if (hookAsks) {
+    // A hook that asks wins over everything but a deny: the user decides this
+    // call, whatever the strategy or the saved rules would have done.
+    needsApproval = true;
+  } else if (strategyPolicy === APPROVAL_POLICY.APPROVE) {
+    // A force-approve strategy (YOLO) has returned APPROVE for this call. Its
+    // own getApprovalPolicy already excludes the calls that must still reach a
+    // human — elicitations and non-auto-approvable checkpoints both come back as
+    // DEFAULT, not APPROVE — so an APPROVE here is a genuine grant to skip the gate.
+    needsApproval = false;
+  } else if (strategyPolicy === APPROVAL_POLICY.REQUIRE_APPROVAL) {
+    needsApproval = true;
+  } else {
+    needsApproval = defaultApproval && !hookAllows;
+  }
+  const approvedByHook = hookAllows && !needsApproval && defaultApproval
+    && strategyPolicy !== APPROVAL_POLICY.APPROVE;
+
+  if (!needsApproval) {
+    return { verdict: 'approve', reason: '', ...common, hookAsks, approvedByHook };
+  }
+  let reason;
+  if (hookAsks) {
+    reason = hookHoldNote(/** @type {any} */ (hookOutcome.decidedBy));
+  } else if (action.interactionKind() === INTERACTION_KIND.ELICITATION) {
+    reason = 'it asks you a question';
+  } else if (!autoApprovable) {
+    reason = 'it always needs your approval';
+  } else {
+    reason = 'it needs your approval';
+  }
+  return { verdict: 'park', reason, ...common, hookAsks, approvedByHook };
+}
+
+/**
  * Evaluations running now, by conversation and toolUseId. The worker re-sends an
  * `evaluate-tool` that has gone unanswered for its re-drive interval, and a
  * second evaluation started beside a first that is still waiting on a hook
@@ -243,24 +430,14 @@ async function evaluateNewToolAction(messageThread, toolUseId, conversation, exi
     return;
   }
 
-  const action = new ActionClass({
-    id: ActionClass.MANIFEST?.id || 'unknown',
-    session: conversation._session,
-    conversation,
-    messageThread,
-    // Lets a multi-tool class (e.g. the MCP bridge) route validate/approval to
-    // the invoked tool. Omitting it makes such a class validate with an empty
-    // name and reject its own call — the "Unknown MCP tool """ failure.
-    toolName: resolveToolName(toolName)
+  const decision = await decideForAction(ActionClass, toolDef, {
+    messageThread, conversation, toolName, toolInput: toolInputPlain, toolUseId
   });
 
-  let prepared;
-  try {
-    prepared = await action.prepare(toolInputPlain);
-  } catch (err) {
-    const errorMessage = extractErrorMessage(err);
+  if (decision.verdict === 'invalid') {
+    const errorMessage = decision.reason;
     messageThread.completeToolAction(toolUseId, {
-      content: `Action preparation failed: ${errorMessage}`,
+      content: decision.content,
       isError: true,
       resultType: 'action',
       fullResult: { state: 'error', success: false, error: errorMessage }
@@ -268,116 +445,24 @@ async function evaluateNewToolAction(messageThread, toolUseId, conversation, exi
     return;
   }
 
-  if (!prepared.valid) {
-    const errorMessage = prepared.error || 'Validation failed';
-    messageThread.completeToolAction(toolUseId, {
-      content: errorMessage,
-      isError: true,
-      resultType: 'action',
-      fullResult: { state: 'error', success: false, error: errorMessage }
-    });
-    return;
-  }
+  // Past 'invalid', every field of the decision is set.
+  const { action, prepared, autoApprovable, permitted, hookOutcome, hookAsks, approvedByHook } =
+    /** @type {Required<ToolCallDecision>} */ (decision);
 
-  // Whether this specific call may be SILENTLY auto-approved by an unattended
-  // path. Defaults to true; an action returns false for a call that must always
-  // reach a human even in auto-approve mode (a plan submit; a recursive delete
-  // of the project root or home). It gates the silent/default paths (the blanket
-  // auto-approve toggle and its out-of-band reviewer) and is passed to the
-  // strategy's getApprovalPolicy so a blanket auto-approve (YOLO) declines it
-  // too. A saved rule and an explicit human approval are unaffected.
-  const autoApprovable = action.autoApprovable?.(toolInputPlain) ?? true;
-
-  // Is this call already covered by a saved permission rule? Computed once and
-  // reused for both the approval decision and the provenance stamp below.
-  const permitted = action.isPermitted(toolInputPlain);
-
-  // Tool hooks rule before the strategy does (services/hook-runtime.js). A deny
-  // ends the call here; an ask and an allow feed the decision below. They are
-  // awaited — the one wait on this path besides prepare() — and bounded well
-  // under the worker's re-drive interval, so the evaluate is answered in time.
-  const hookOutcome = await runBeforeToolHooks({
-    messageThread,
-    conversationId: conversation.id,
-    threadId: messageThread.threadItemId || conversation.id,
-    toolUseId,
-    toolName,
-    toolInput: toolInputPlain || {},
-  });
   // Another evaluation may have settled the call while the hooks ran (a reset
   // and re-evaluation, a cancel). Only a call still unevaluated is ours to rule on.
   if (hookOutcome.records.length && (toolAction.get('state') || '') !== '') return;
-  if (hookOutcome.verdict === 'deny') {
-    const denier = /** @type {import('../services/hook-runtime.js').HookRecord} */ (hookOutcome.decidedBy);
-    const errorMessage = `Blocked by hook "${denier.name}"` + (denier.reason ? `: ${denier.reason}` : '.');
+  if (decision.verdict === 'deny') {
     messageThread.completeToolAction(toolUseId, {
-      content: errorMessage,
+      content: decision.reason,
       isError: true,
       resultType: 'action',
-      fullResult: { state: 'error', success: false, error: errorMessage },
+      fullResult: { state: 'error', success: false, error: decision.reason },
       hooks: hookOutcome.records
     });
     return;
   }
-
-  // The action's own default decision: needs approval unless it never requires
-  // it, or is already permitted by a rule, or the conversation is in the blanket
-  // auto-approve toggle AND this call is auto-approvable. A non-auto-approvable
-  // call ignores the blanket toggle and still parks for a human.
-  const defaultApproval = action.requiresApproval() &&
-                          !permitted &&
-                          (!conversation._autoApprove || !autoApprovable);
-
-  // The strategy has master control over approval (YOLO approves everything,
-  // read-only auto-approves read/meta tools).
-  // Consult it exactly as response-handler._determineApprovalNeeded does, so a
-  // live strategy switch takes effect for every tool evaluated afterwards — the
-  // metadata observer rebuilds messageThread.strategy on the switch, so this
-  // reads the current policy with no extra plumbing.
-  const strategyPolicy = messageThread.strategy?.getApprovalPolicy?.({
-    toolName,
-    toolInput: toolInputPlain,
-    category: toolDef?.category,
-    defaultApproval,
-    // The parked-state kind (gate vs elicitation). Lets a policy decline to
-    // stand in for the user on an elicitation (e.g. AskUserQuestion), whose
-    // resolution IS the user's typed answer — so a blanket auto-approve (YOLO)
-    // never silently answers a question. Same discriminant the gate-only
-    // onToolPending dispatch keys off below.
-    interactionKind: action.interactionKind(),
-    // Whether this specific call may be silently auto-approved. False for a
-    // deliberate human checkpoint (a plan submit; a catastrophic delete), which
-    // must reach a human even under a blanket auto-approve — so YOLO returns
-    // DEFAULT for it and it parks, the same floor the auto-approve reviewer honours.
-    autoApprovable
-  });
-
-  // A hook's allow stands where a saved permission rule would: it waives the
-  // action's own default, never a strategy that requires approval, and never a
-  // call that must reach a human (an elicitation, a non-auto-approvable checkpoint).
-  const hookAllows = hookOutcome.verdict === 'allow'
-    && autoApprovable
-    && action.interactionKind() === INTERACTION_KIND.GATE;
-  const hookAsks = hookOutcome.verdict === 'ask';
-
-  let needsApproval;
-  if (hookAsks) {
-    // A hook that asks wins over everything but a deny: the user decides this
-    // call, whatever the strategy or the saved rules would have done.
-    needsApproval = true;
-  } else if (strategyPolicy === APPROVAL_POLICY.APPROVE) {
-    // A force-approve strategy (YOLO) has returned APPROVE for this call. Its
-    // own getApprovalPolicy already excludes the calls that must still reach a
-    // human — elicitations and non-auto-approvable checkpoints both come back as
-    // DEFAULT, not APPROVE — so an APPROVE here is a genuine grant to skip the gate.
-    needsApproval = false;
-  } else if (strategyPolicy === APPROVAL_POLICY.REQUIRE_APPROVAL) {
-    needsApproval = true;
-  } else {
-    needsApproval = defaultApproval && !hookAllows;
-  }
-  const approvedByHook = hookAllows && !needsApproval && defaultApproval
-    && strategyPolicy !== APPROVAL_POLICY.APPROVE;
+  const needsApproval = decision.verdict === 'park';
 
   // Is a strategy reviewer about to be handed this call (see the onToolPending
   // dispatch below)? Decided here, before the park is written, because the park
@@ -391,8 +476,7 @@ async function evaluateNewToolAction(messageThread, toolUseId, conversation, exi
   const strategyReviews = needsApproval
     && !hookAsks
     && action.interactionKind() === INTERACTION_KIND.GATE
-    && typeof messageThread.strategy?.onToolPending === 'function'
-    && messageThread.strategy.onToolPending !== StrategyType.prototype.onToolPending;
+    && strategyHasReviewer(messageThread);
 
   // All writes below are pure derivations of the just-observed tool-action
   // (toolName + toolInput + plugin manifest), so they go through
@@ -487,54 +571,87 @@ async function evaluateNewToolAction(messageThread, toolUseId, conversation, exi
   // Never for a call a hook asked the user about: that hook wants the human,
   // and a reviewer approving it would be exactly the stand-in it ruled out.
   if (needsApproval && !hookAsks && action.interactionKind() === INTERACTION_KIND.GATE) {
-    try {
-      const pendingResult = messageThread.strategy?.onToolPending?.({
-        toolUseId,
-        toolName,
-        toolInput: toolInputPlain,
-        category: toolDef?.category,
-        // The action's permission key (e.g. 'write-file' for every edit-family
-        // tool). Lets a strategy tell apart classes of parked call that share a
-        // category — edits and shell commands are both category 'write', but
-        // only edits report the 'write-file' key — so e.g. auto-approve can
-        // defer all file edits to the deterministic file-editing toggle.
-        permissionKey: action.getPermissionKey(toolInputPlain),
-        // Whether this call may be silently auto-approved. A reviewer must not
-        // resolve a call that is false here (a plan submit, a project-root
-        // deletion) — it stays parked for a human.
-        autoApprovable
-      });
-      if (pendingResult && typeof pendingResult.then === 'function') {
-        // The hook returned a still-pending promise: the strategy is reviewing
-        // this parked call out-of-band, which is what the call parked marked as
-        // (the "reviewing…" indicator is already showing, and the approval
-        // buttons are fully live beside it — the indicator is purely additive).
-        //
-        // When it settles, a resolved `{note}` replaces the spinner with that
-        // message and leaves it in the card, so a call still sitting there says
-        // why (e.g. the reviewer declined, and its reason); anything else clears
-        // the indicator as if it had never run. A note is display only — it
-        // cannot resolve the tool, which still waits for the human. Either way
-        // the settling write is what lets the call read as awaiting the user,
-        // and the alert it was holding back fires from it.
-        pendingResult
-          .then((/** @type {unknown} */ result) => {
-            writeReviewStatus(messageThread, toolUseId, closingReviewStatus(result));
-          })
-          .catch((/** @type {unknown} */ err) => {
-            console.error('[handleNewToolAction] onToolPending rejected:', err);
-            writeReviewStatus(messageThread, toolUseId, null);
-          });
-      } else if (strategyReviews) {
-        // The hook returned without a promise, so no review is in flight after
-        // all: drop the mark the park applied. The call is now plainly waiting
-        // for the user, and this write is the edge that says so.
-        writeReviewStatus(messageThread, toolUseId, null);
-      }
-    } catch (err) {
-      console.error('[handleNewToolAction] onToolPending threw:', err);
-      if (strategyReviews) writeReviewStatus(messageThread, toolUseId, null);
+    offerToReviewer(messageThread, toolUseId, {
+      toolName,
+      toolInput: toolInputPlain,
+      category: toolDef?.category,
+      permissionKey: action.getPermissionKey(toolInputPlain),
+      autoApprovable
+    }, strategyReviews);
+  }
+}
+
+/**
+ * Whether the thread's strategy reviews parked calls: `onToolPending` always
+ * exists — StrategyType defines the no-op — so the question is whether this
+ * strategy overrides it.
+ * @param {any} messageThread - The thread
+ * @returns {boolean} True when a reviewer would be handed a parked gate call
+ */
+function strategyHasReviewer(messageThread) {
+  return typeof messageThread.strategy?.onToolPending === 'function'
+    && messageThread.strategy.onToolPending !== StrategyType.prototype.onToolPending;
+}
+
+/**
+ * A parked gate call, as a strategy's reviewer is handed it.
+ * @typedef {object} ReviewableCall
+ * @property {string} toolName - The tool
+ * @property {Record<string, unknown>} toolInput - Its arguments
+ * @property {string} [category] - The tool's category
+ * @property {string} [permissionKey] - The action's permission key (e.g.
+ *   'write-file' for every edit-family tool). Lets a strategy tell apart
+ *   classes of parked call that share a category — edits and shell commands
+ *   are both category 'write', but only edits report the 'write-file' key — so
+ *   e.g. auto-approve can defer all file edits to the deterministic
+ *   file-editing toggle.
+ * @property {boolean} autoApprovable - Whether this call may be silently
+ *   auto-approved. A reviewer must not resolve a call that is false here (a
+ *   plan submit, a project-root deletion) — it stays parked for a human.
+ */
+
+/**
+ * Hand a parked gate call to the strategy's `onToolPending`, fire-and-forget,
+ * and write the review's closing status when it settles.
+ * @param {any} messageThread - The thread
+ * @param {string} toolUseId - The parked tool-action: what a reviewer resolves
+ * @param {ReviewableCall} call - The call, as the reviewer is asked about it
+ * @param {boolean} markedUnderReview - Whether the park was written already
+ *   marked as under review, a mark that must come off if no review follows
+ */
+function offerToReviewer(messageThread, toolUseId, call, markedUnderReview) {
+  try {
+    const pendingResult = messageThread.strategy?.onToolPending?.({ toolUseId, ...call });
+    if (pendingResult && typeof pendingResult.then === 'function') {
+      // The hook returned a still-pending promise: the strategy is reviewing
+      // this parked call out-of-band, which is what the call parked marked as
+      // (the "reviewing…" indicator is already showing, and the approval
+      // buttons are fully live beside it — the indicator is purely additive).
+      //
+      // When it settles, a resolved `{note}` replaces the spinner with that
+      // message and leaves it in the card, so a call still sitting there says
+      // why (e.g. the reviewer declined, and its reason); anything else clears
+      // the indicator as if it had never run. A note is display only — it
+      // cannot resolve the tool, which still waits for the human. Either way
+      // the settling write is what lets the call read as awaiting the user,
+      // and the alert it was holding back fires from it.
+      pendingResult
+        .then((/** @type {unknown} */ result) => {
+          writeReviewStatus(messageThread, toolUseId, closingReviewStatus(result));
+        })
+        .catch((/** @type {unknown} */ err) => {
+          console.error('[handleNewToolAction] onToolPending rejected:', err);
+          writeReviewStatus(messageThread, toolUseId, null);
+        });
+    } else if (markedUnderReview) {
+      // The hook returned without a promise, so no review is in flight after
+      // all: drop the mark the park applied. The call is now plainly waiting
+      // for the user, and this write is the edge that says so.
+      writeReviewStatus(messageThread, toolUseId, null);
     }
+  } catch (err) {
+    console.error('[handleNewToolAction] onToolPending threw:', err);
+    if (markedUnderReview) writeReviewStatus(messageThread, toolUseId, null);
   }
 }
 
