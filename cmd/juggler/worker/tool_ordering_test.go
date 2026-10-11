@@ -93,7 +93,9 @@ func TestToolOrdering_ReadsRunTogetherBetweenWrites(t *testing.T) {
 	h.flush(t)
 	wantExecuted(t, h, "wave 1 half done", map[string]int{"tu-w": 0, "tu-r3": 0})
 
-	setToolState(w, "tu-r2", StateCancelled)
+	// Completed, not cancelled: a cancelled call refuses the calls still held
+	// behind it (cascadeBatchDenialsExcept), which is not what this test is about.
+	setToolState(w, "tu-r2", StateCompleted)
 	w.driveToolActions()
 	h.flush(t)
 	wantExecuted(t, h, "wave 2", map[string]int{"tu-w": 1, "tu-r3": 0})

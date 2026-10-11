@@ -6,6 +6,11 @@ of changes; this project follows semantic versioning.
 ## [Unreleased]
 
 - Git pin reviews any scope: staged, unstaged, branch, last commit, or a git diff range
+- Fixed a turn started while a conversation loaded getting the wrong strategy's tools
+- Fixed tools briefly "unavailable" after toggling a plugin or reloading an extension
+- Denying a tool call also stops approved calls still waiting their turn
+- Fixed Claude Code cutting long tool descriptions short; the model now sees them whole
+- query_code says what is already in scope when a script reaches for Node's modules
 
 ## [0.7.6] - 2026-10-09
 

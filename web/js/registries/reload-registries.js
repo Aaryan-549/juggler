@@ -14,7 +14,7 @@ import { resetExtensionsCache } from '../services/extensions.js';
 import { resetUserCommandsCache } from '../services/user-commands.js';
 import { resetUserHooksCache } from '../services/user-hooks.js';
 import { resetSkillsCache } from '../services/skills.js';
-import { markRegistriesReady } from './registry-ready.js';
+import { beginRegistryRebuild, markRegistriesReady } from './registry-ready.js';
 import { getAppSession } from '../utils/app-session.js';
 import { statusHoldsTurn } from '../model/processing-status.js';
 
@@ -31,6 +31,20 @@ export const REGISTRIES_RELOADED = 'registries-reloaded';
 /** @type {Promise<void>|null} */
 let reloadInFlight = null;
 let reloadRequested = false;
+
+/** @type {Promise<void>|null} */
+let rebuildHoldForTests = null;
+
+/**
+ * Test hook: make the next rebuild stop between resetting the registries and
+ * re-initialising them until `hold` settles, so a test can act inside that
+ * window instead of racing it. Consumed by the one rebuild it holds. Not used in
+ * production.
+ * @param {Promise<void>} hold - Settles when the rebuild may go on
+ */
+export function __holdNextRegistryRebuildForTests(hold) {
+  rebuildHoldForTests = hold;
+}
 
 /**
  * @returns {import('../model/session.js').default[]} Locally reachable app/engine sessions
@@ -206,9 +220,10 @@ export function registerItemOwnedStrategies() {
  * Mutating callers (the command editor, the skills tab) start a rebuild without
  * awaiting it on purpose: it defers to local quiescence, so blocking on it would
  * hold a dialog open across a whole turn. That leaves a window in which the
- * registries have been reset and not yet rebuilt. Nothing in the app needs to
- * hold there — every reader is either awaiting the registries-ready gate or
- * repaints on {@link REGISTRIES_RELOADED}. A test harness running suite after
+ * registries have been reset and not yet rebuilt. The app's readers wait out
+ * only that window, never the whole reload: a turn's tool list and system
+ * prompt await `whenRegistriesRebuilt` (registry-ready.js), and UI repaints on
+ * {@link REGISTRIES_RELOADED}. A test harness running suite after
  * suite in one realm does need to: the window would otherwise stretch into the
  * next suite, which would find capabilities that were registered a moment ago
  * simply absent.
@@ -267,6 +282,24 @@ export function newlyFailedModules(previous, current) {
 
 /** @returns {Promise<void>} */
 async function rebuildRegistriesNow() {
+  // Opened before the first reset and closed only once re-init has finished,
+  // so a turn whose tools or context are requested in between waits for the
+  // rebuilt set rather than reading a half-empty one (whenRegistriesRebuilt).
+  const endRebuild = beginRegistryRebuild();
+  try {
+    await resetAndReinitRegistries();
+  } finally {
+    endRebuild();
+  }
+  // UI listens for this DOM event to refresh; the engine worker has no document
+  // and reloads its registries directly, so the dispatch is viewer-only.
+  if (typeof document !== 'undefined') {
+    document.dispatchEvent(new CustomEvent(REGISTRIES_RELOADED));
+  }
+}
+
+/** @returns {Promise<void>} */
+async function resetAndReinitRegistries() {
   resetExtensionsCache();
   resetUserCommandsCache();
   resetSkillsCache();
@@ -283,14 +316,10 @@ async function rebuildRegistriesNow() {
     pinboardItemRegistry.reset();
     workspaceProviderRegistry.reset();
   }
-  // reset/re-init is deferred to local quiescence, so no turn assembles a
-  // prompt against a half-reset registry set.
+  const hold = rebuildHoldForTests;
+  rebuildHoldForTests = null;
+  if (hold) await hold.catch(() => {});
   await initAllRegistries();
-  // UI listens for this DOM event to refresh; the engine worker has no document
-  // and reloads its registries directly, so the dispatch is viewer-only.
-  if (typeof document !== 'undefined') {
-    document.dispatchEvent(new CustomEvent(REGISTRIES_RELOADED));
-  }
 }
 
 /**

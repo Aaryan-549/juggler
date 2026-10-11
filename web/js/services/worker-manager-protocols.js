@@ -18,6 +18,7 @@ import { extractErrorMessage } from '../../sdk/lib/error-utils.js';
 import { TOOL_STATES } from '../../sdk/lib/message.js';
 import strategyRegistry from '../registries/strategy-registry.js';
 import contextItemRegistry from '../registries/context-item-registry.js';
+import { whenRegistriesRebuilt } from '../registries/registry-ready.js';
 import actionExecutor from './action-executor.js';
 import wsService from './websocket.js';
 import {
@@ -234,6 +235,9 @@ export async function handleRenderContextItemsRequest(wm, conversationId, data) 
   // view" guard bails without responding — and, context being engine-only, that
   // wedges the turn.
   await loadAndFlush(wm, conversationId, 'render-context-items');
+  // The prompt is assembled from the registries (strategies, context items,
+  // extension contributions); see handleRequestTools for why this waits.
+  await whenRegistriesRebuilt();
   wm._onContextRequest(data, conversationId);
 }
 
@@ -262,16 +266,31 @@ export function sendRenderContextItemsResponse(wm, conversationId, requestId, co
  * callback (set via setOnToolsRequest). Broadcast like the context request and
  * answered by the engine alone, for the same reason: the tool list a turn is
  * offered must come from one realm, not from whichever replica replied first.
+ *
+ * Like the context request, it first ensures the engine has loaded the
+ * conversation. The list is filtered through the strategy of the thread the
+ * turn belongs to, and mid-load the engine holds only the stub the loader
+ * adopted first: an empty document, whose root resolves to the default strategy
+ * and which has no sub-threads to find. Answered from that, a turn is offered
+ * the default strategy's tools whatever its own strategy says.
+ *
+ * It then waits out any registry rebuild caught between its reset and its
+ * re-init (a plugin toggle or extension reload): built inside that window, the
+ * list is partial or empty, and the worker refuses the model's calls to the
+ * missing tools as unavailable. It waits for that window only, not the whole
+ * reload, which first waits for running turns, this one included.
  * @param {any} wm
  * @param {string} conversationId
  * @param {any} data
+ * @returns {Promise<void>}
  */
-export function handleRequestTools(wm, conversationId, data) {
+export async function handleRequestTools(wm, conversationId, data) {
   if (!isEngine()) return;
-  if (wm._onToolsRequest) {
-    beginRoundTrip(wm, data);
-    wm._onToolsRequest(data, conversationId);
-  }
+  if (!wm._onToolsRequest) return;
+  beginRoundTrip(wm, data);
+  await loadAndFlush(wm, conversationId, 'request-tools');
+  await whenRegistriesRebuilt();
+  wm._onToolsRequest(data, conversationId);
 }
 
 /**
@@ -580,7 +599,7 @@ const PREAMBLE_SLOW_MS = 250;
  * Ensure the engine's copy of a conversation is loaded, then flush its batched-
  * but-unapplied syncs so any state the worker pushed ahead of this command is
  * visible. The shared preamble for every worker-driven engine command
- * (render-context-items, build-subthread-spec, evaluate-tool,
+ * (render-context-items, request-tools, build-subthread-spec, evaluate-tool,
  * execute-tool, cancel-tool). Returns the loaded conversation, or null if it
  * could not be loaded.
  *

@@ -342,6 +342,11 @@ func (c *Client) streamMessage(ctx context.Context, req provider.MessageRequest,
 		c.flushBufferedTurns()
 	}
 
+	// Fold overlong tool descriptions into the system prompt here, once, so the
+	// spawn arguments, tools/list and the session's resume hashes all see the
+	// same request.
+	req = foldLongToolDescriptions(req)
+
 	res, err := c.dispatchTurnWithRetry(turnCtx, req, callback)
 
 	// The CLI now idles on stdin and may emit autonomous turns (scheduled

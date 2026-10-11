@@ -1049,9 +1049,12 @@ export default class MessageThread {
    * and the turn rests on those prompts because the worker rests while any
    * tool-action is non-terminal.
    *
-   * Calls that are executing (approved/running) are deliberately left alone.
-   * They have a process behind them, and stopping those is the cancel path's
-   * job — it aborts the execution as well as writing the state.
+   * Approved and running calls are deliberately left alone. A running one has a
+   * process behind it, and stopping it is the cancel path's job — it aborts the
+   * execution as well as writing the state. An approved one may be about to
+   * start, or may be held back by turn order and never started; only the worker
+   * knows which, so the worker's cascade (`cascadeBatchDenialsExcept`) refuses
+   * the held ones.
    */
   cancelPendingApprovals() {
     for (const toolUse of this.getRefusableApprovalMessages()) {

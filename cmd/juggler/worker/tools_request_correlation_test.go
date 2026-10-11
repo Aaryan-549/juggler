@@ -108,11 +108,14 @@ func TestContextAndToolsUseTurnThreadNotProcessingState(t *testing.T) {
 // TestLateToolsReplyIsNotServedToTheNextTurn pins the correlation that keeps one
 // turn's tool list out of the next turn's request.
 //
-// request-tools is broadcast (w.send → callbacks.broadcast), so every connected
-// client answers it: one reply is consumed by the turn that asked and the rest
-// arrive late. The slot holds one, so a late reply left sitting in it is
-// taken instantly by the next turn's wait — and with the slot then full, that
-// turn's OWN reply is dropped.
+// request-tools is broadcast (w.send → callbacks.broadcast), but only the engine
+// answers it (handleRequestTools in web/js/services/worker-manager-protocols.js
+// returns early in every other realm). A reply can still reach a turn that is
+// not waiting for it: the answer to a turn that already ended — it missed
+// ContextTimeout, or was cancelled — or a second answer to the same request
+// from an engine that reconnected while it was in flight. The slot holds one,
+// so a late reply left sitting in it is taken instantly by the next turn's
+// wait — and with the slot then full, that turn's OWN reply is dropped.
 //
 // The cost is not academic. Each turn's list is filtered through the strategy of
 // the thread it belongs to, so consecutive turns on different threads are
@@ -129,8 +132,8 @@ func TestLateToolsReplyIsNotServedToTheNextTurn(t *testing.T) {
 		t.Fatalf("turn 1 was offered %q, want turn-1", got)
 	}
 
-	// A second client's reply to turn 1's request, landing after that turn was
-	// already answered — the ordinary case, since every client answers.
+	// A second reply to turn 1's request, landing after that turn was already
+	// answered.
 	sendToolsReply(w, <-requestIDs, "turn-1")
 
 	if got := offeredToolName(t, w); got != "turn-2" {
@@ -140,7 +143,7 @@ func TestLateToolsReplyIsNotServedToTheNextTurn(t *testing.T) {
 
 // TestOnlyOneToolsReplyPerRequestIsAccepted pins the invariant behind the two
 // tests above, in the one case their timing cannot reach deterministically: a
-// second client's answer to the request still in flight, arriving after this
+// second answer to the request still in flight, arriving after this
 // turn has taken its answer. Both replies are valid answers to the current
 // request, so no requestId check can tell them apart — what makes the second one
 // wrong is only that the first was already accepted. Left unrefused it sits in
@@ -186,7 +189,7 @@ func TestOnlyOneToolsReplyPerRequestIsAccepted(t *testing.T) {
 func TestToolsReplyForAnotherRequestIsIgnored(t *testing.T) {
 	w, _ := newToolsRequestHarness(t, func(w *ConversationWorker, turn int, requestID string) {
 		if turn == 2 {
-			// A peer answering turn 1, a moment too late.
+			// An answer to turn 1, a moment too late.
 			sendToolsReply(w, "request-from-an-earlier-turn", "turn-1")
 		}
 		sendToolsReply(w, requestID, fmt.Sprintf("turn-%d", turn))

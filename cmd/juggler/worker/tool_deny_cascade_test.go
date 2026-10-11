@@ -187,3 +187,71 @@ func TestDenyCascade_LoadingADeniedConversationCancelsNothing(t *testing.T) {
 		t.Fatalf("a first load must record, not cascade, got %q", got)
 	}
 }
+
+// TestDenyCascade_RefusesACallHeldBehindARunningWrite: a call the user approved
+// but turn order is still holding back (tool_ordering.go) has not started, so a
+// denial of its batch refuses it like any other unstarted call. Left alone it
+// would run once the write ahead of it finished, after the user had said stop.
+func TestDenyCascade_RefusesACallHeldBehindARunningWrite(t *testing.T) {
+	h := newReattachHarness(t, "conv-deny-cascade-held")
+	w := h.w
+	insertToolBatch(t, w, "txn-1", []string{"tu-w", "tu-h", "tu-d"}, []string{"write", "write", "write"})
+	setToolState(w, "tu-w", StateRunning)
+	setToolState(w, "tu-d", StatePending)
+
+	w.driveToolActions() // baseline
+	h.flush(t)
+	wantExecuted(t, h, "held behind the running write", map[string]int{"tu-h": 0})
+
+	w.doc.UpdateToolActionFieldsRecursive("tu-d", map[string]any{
+		"state":  StateCancelled,
+		"result": map[string]any{"content": "Action was cancelled.", "cancelled": true},
+	})
+	w.driveToolActions()
+	h.flush(t)
+
+	if got := stateOf(t, w, "tu-h"); got != StateCancelled {
+		t.Fatalf("a call held by turn order must be refused with its batch, got %q", got)
+	}
+	if got := resultContentOf(t, w, "tu-h"); got != "Action was cancelled." {
+		t.Fatalf("the held call must carry the same result the browser writes, got %q", got)
+	}
+	if got := stateOf(t, w, "tu-w"); got != StateRunning {
+		t.Fatalf("the running write belongs to the cancel path, got %q", got)
+	}
+
+	setToolState(w, "tu-w", StateCompleted)
+	w.driveToolActions()
+	h.flush(t)
+	wantExecuted(t, h, "after the write finished", map[string]int{"tu-h": 0})
+}
+
+// TestDenyCascade_SparesAHeldCallAlreadyCommanded bounds the rule above to calls
+// never sent. Held is recomputed every tick, so a call commanded while nothing
+// was ahead of it can look held a tick later — here because an earlier parked
+// call was approved before the engine claimed this one. execute-tool has gone
+// out for it, so it belongs to the cancel path, not to a doc write that could
+// race the engine's claim.
+func TestDenyCascade_SparesAHeldCallAlreadyCommanded(t *testing.T) {
+	h := newReattachHarness(t, "conv-deny-cascade-commanded")
+	w := h.w
+	insertToolBatch(t, w, "txn-1", []string{"tu-a", "tu-b", "tu-c"}, []string{"write", "write", "write"})
+	setToolState(w, "tu-a", StatePending)
+	setToolState(w, "tu-c", StatePending)
+
+	w.driveToolActions() // baseline; a parked call holds nothing, so tu-b is commanded
+	h.flush(t)
+	wantExecuted(t, h, "commanded past a parked call", map[string]int{"tu-b": 1})
+
+	setToolState(w, "tu-a", StateApproved) // tu-b now looks held, but was sent
+	w.doc.UpdateToolActionFieldsRecursive("tu-c", map[string]any{
+		"state":  StateCancelled,
+		"result": map[string]any{"content": "Action was cancelled.", "cancelled": true},
+	})
+	w.driveToolActions()
+	h.flush(t)
+
+	if got := stateOf(t, w, "tu-b"); got != StateApproved {
+		t.Fatalf("a call already commanded belongs to the cancel path, got %q", got)
+	}
+}

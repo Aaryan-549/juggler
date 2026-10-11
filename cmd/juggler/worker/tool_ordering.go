@@ -22,7 +22,8 @@ package worker
 //
 // A held call stays approved and is simply not commanded: driveToolActions picks
 // it up on the tick after the call it waits for settles. Holding is not a failed
-// delivery, so it is decided before the command tracker sees the call.
+// delivery, so it is decided before the command tracker sees the call. Because
+// it has not started, a denial of its batch refuses it (cascadeBatchDenialsExcept).
 
 // turnCall is one tool-action as the ordering rule needs it.
 type turnCall struct {

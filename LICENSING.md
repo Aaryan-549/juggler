@@ -36,8 +36,9 @@ Juggler's AGPL code.
 The SDK/app dependency boundary was audited (2026-07) and is enforced as
 follows:
 
-- **Self-contained**: `web/sdk/lib/**` imports nothing outside `web/sdk`.
-  The SDK entry modules `context-item.js`, `command-type.js`, `item-utils.js`,
+- **Self-contained**: `web/sdk/lib/**` imports nothing outside `web/sdk`,
+  except `sdk/lib/sandbox-runner.js` → `js/utils/api-url.js` (a declared
+  binding, below). The SDK entry modules `context-item.js`, `command-type.js`, `item-utils.js`,
   `item-utils-worker.js`, `ui-worker.js`, `sandbox.js`, `coerce-schema-types.js`
   and `version.js` are likewise fully self-contained.
 - **Declared host bindings**: the SDK is the *interface* to a running Juggler
@@ -50,6 +51,10 @@ follows:
   - `sdk/strategy-type.js` → `js/services/thread-orchestrator.js`,
     `js/services/tool-generator.js`
   - `sdk/model.js` → `js/utils/compaction-utils.js`
+  - `sdk/lib/sandbox-runner.js` → `js/utils/api-url.js`
+  - Runtime, not import: `sdk/lib/sandbox-runner.js` calls the host-installed
+    `globalThis.__hostSandboxDelegate` (`js/engine-worker-sandbox.js`,
+    `js/engine-sandbox-node.mjs`), and does not import host code.
   - `extensions/juggler-core/context-items/system-prompt-context-item.js` →
     `js/services/system-prompt-presets.js`, `js/services/extensions.js`
 

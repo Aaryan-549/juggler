@@ -83,7 +83,7 @@ function rpc(name, method, args) {
 function sandboxImport(spec) {
   if (typeof spec !== 'string') return Promise.reject(new Error('import specifier must be a string'));
   if (/^node:/.test(spec) || isBuiltinName(spec)) {
-    return Promise.reject(new Error(`import of "${spec}" is not allowed in the query_code sandbox`));
+    return Promise.reject(new Error(notNodeMsg('import', spec)));
   }
   let url;
   if (/^[a-zA-Z]:[\\/]/.test(spec)) {
@@ -108,9 +108,43 @@ function isBuiltinName(spec) {
   return /^(assert|buffer|child_process|cluster|console|constants|crypto|dgram|diagnostics_channel|dns|domain|events|fs|http|http2|https|inspector|module|net|os|path|perf_hooks|process|punycode|querystring|readline|repl|stream|string_decoder|sys|timers|tls|trace_events|tty|url|util|v8|vm|wasi|worker_threads|zlib)(\/|$)/.test(spec);
 }
 
+/**
+ * `require` in user code. There is none in a module worker; the binding exists
+ * so the error says what to use instead of "require is not defined".
+ * @param {unknown} spec @returns {never}
+ */
+function sandboxRequire(spec) {
+  throw new Error(notNodeMsg('require', String(spec)));
+}
+
+/**
+ * Whether a binding is one a script is told about. The import and require
+ * shims are plumbing, not things to use.
+ * @param {string} name @returns {boolean}
+ */
+function isOfferedBinding(name) {
+  return name !== 'sandboxImport' && name !== 'require';
+}
+
+/** @returns {string} The bindings a script has, for errors that point at them. */
+function inScopeList() {
+  return names.filter(isOfferedBinding).join(', ');
+}
+
+/**
+ * The error for reaching for Node: an import of a built-in, or require. The
+ * wording matches sandbox.html's.
+ * @param {string} verb - 'import' or 'require'
+ * @param {string} spec - What the script asked for
+ * @returns {string}
+ */
+function notNodeMsg(verb, spec) {
+  return `Couldn't ${verb} "${spec}": this sandbox is not Node. Use what is already in scope instead: ${inScopeList()}.`;
+}
+
 // ── Bindings injected into user code ─────────────────────────────────────────
 /** @type {Record<string, any>} */
-const bindings = { path, projectRoot, sandboxImport };
+const bindings = { path, projectRoot, sandboxImport, require: sandboxRequire };
 for (const d of descriptors || []) {
   bindings[d.name] = d.callable
     ? (/** @type {unknown[]} */ ...args) => rpc(d.name, '', args)
@@ -325,14 +359,21 @@ function errMsg(e) {
 
 /**
  * Normalise the engine-specific "already declared" SyntaxError text so the
- * sandbox surfaces one stable message. V8 (Node) says "Identifier 'x' has
- * already been declared"; rewrite it to the wording the browser sandbox emits.
+ * sandbox surfaces one stable message, matching sandbox.html's. V8 (Node) says
+ * "Identifier 'x' has already been declared"; JavaScriptCore says "Cannot
+ * declare a const variable twice: 'x'" (or "let"). When the name is one the
+ * sandbox injected, the script almost always meant to import or require it:
+ * say that it is already there.
  * @param {unknown} e @returns {string}
  */
 function compileErrMsg(e) {
   const m = errMsg(e);
-  const v8 = m.match(/Identifier '([^']+)' has already been declared/);
-  return v8 ? `Cannot declare a const variable twice: '${v8[1]}'.` : m;
+  const declared = m.match(/Identifier '([^']+)' has already been declared/)
+    || m.match(/Cannot declare a (?:const|let) variable twice: '([^']+)'/);
+  if (!declared) return m;
+  const base = `Cannot declare a const variable twice: '${declared[1]}'.`;
+  if (!names.includes(declared[1]) || !isOfferedBinding(declared[1])) return base;
+  return `${base} It is already in scope: use it directly rather than importing or requiring it. In scope: ${inScopeList()}.`;
 }
 
 /**

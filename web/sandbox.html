@@ -120,11 +120,18 @@ function errMsg(e) {
 // (WebView2/Windows) says "Identifier 'x' has already been declared", while
 // JavaScriptCore (WebKit/macOS+Linux) says "Cannot declare a const variable
 // twice: 'x'.". Rewrite V8's wording to WebKit's so the sandbox surfaces one
-// stable message everywhere; WebKit's own text passes through untouched.
-function compileErrMsg(e) {
+// stable message everywhere. When the name is one the sandbox injected, the
+// script almost always meant to import or require it: say that it is already
+// there, listing what is (offered: the run's names minus the import and
+// require shims). Matches engine-sandbox-worker.mjs word for word.
+function compileErrMsg(e, offered) {
   const m = errMsg(e);
-  const v8 = m.match(/Identifier '([^']+)' has already been declared/);
-  return v8 ? ("Cannot declare a const variable twice: '" + v8[1] + "'.") : m;
+  const declared = m.match(/Identifier '([^']+)' has already been declared/)
+    || m.match(/Cannot declare a (?:const|let) variable twice: '([^']+)'/);
+  if (!declared) return m;
+  const base = "Cannot declare a const variable twice: '" + declared[1] + "'.";
+  if (offered.indexOf(declared[1]) < 0) return base;
+  return base + ' It is already in scope: use it directly rather than importing or requiring it. In scope: ' + offered.join(', ') + '.';
 }
 
 // Walk the script's return value for the first thenable (a Promise, or a
@@ -214,6 +221,9 @@ self.addEventListener('message', (event) => {
   // URLs (http:, blob:, data:) pass through unchanged.
   function sandboxImport(spec) {
     let url = spec;
+    if (typeof spec === 'string' && (/^node:/.test(spec) || isNodeBuiltin(spec))) {
+      return Promise.reject(new Error(notNodeMsg('import', spec)));
+    }
     if (typeof spec === 'string') {
       // A Windows absolute path (C:/... or C:\\...) also matches the URL-scheme
       // test below (its drive letter looks like a "c:" scheme), so detect it
@@ -227,17 +237,36 @@ self.addEventListener('message', (event) => {
     return import(url);
   }
 
+  // A bare Node built-in name ("fs", "path/posix"). Same list as
+  // engine-sandbox-worker.mjs's isBuiltinName.
+  function isNodeBuiltin(spec) {
+    return /^(assert|buffer|child_process|cluster|console|constants|crypto|dgram|diagnostics_channel|dns|domain|events|fs|http|http2|https|inspector|module|net|os|path|perf_hooks|process|punycode|querystring|readline|repl|stream|string_decoder|sys|timers|tls|trace_events|tty|url|util|v8|vm|wasi|worker_threads|zlib)(\\/|$)/.test(spec);
+  }
+
+  // require in user code. There is none in a worker; the binding exists so the
+  // error says what to use instead of "Can't find variable: require".
+  function sandboxRequire(spec) {
+    throw new Error(notNodeMsg('require', String(spec)));
+  }
+
+  // The error for reaching for Node, worded as engine-sandbox-worker.mjs's.
+  function notNodeMsg(verb, spec) {
+    return "Couldn't " + verb + ' "' + spec + '": this sandbox is not Node. Use what is already in scope instead: ' + offered.join(', ') + '.';
+  }
+
   // Bindings injected into user code: caller-supplied capabilities (RPC'd back
   // to the host) plus built-ins path (pure), projectRoot, and the sandboxImport
-  // resolver. A callable capability is invoked directly (grep(...)); otherwise
-  // its method calls are forwarded (fs.readFile(...)).
-  const bindings = { path, projectRoot, sandboxImport };
+  // and require shims. A callable capability is invoked directly (grep(...));
+  // otherwise its method calls are forwarded (fs.readFile(...)).
+  const bindings = { path, projectRoot, sandboxImport, require: sandboxRequire };
   for (const d of (capabilities || [])) {
     bindings[d.name] = d.callable
       ? (...args) => rpc(d.name, '', args)
       : new Proxy({}, { get: (_t, method) => (...args) => rpc(d.name, method, args) });
   }
   const names = Object.keys(bindings);
+  // What a script is told it has: everything but the shims.
+  const offered = names.filter((n) => n !== 'sandboxImport' && n !== 'require');
   const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
 
   // Send the script's console output to the host, a line per call as it is
@@ -291,7 +320,7 @@ self.addEventListener('message', (event) => {
   try {
     fn = new AsyncFunction(...names, code);
   } catch (err) {
-    port.postMessage({ kind: 'result', ok: false, error: compileErrMsg(err) });
+    port.postMessage({ kind: 'result', ok: false, error: compileErrMsg(err, offered) });
     return;
   }
 

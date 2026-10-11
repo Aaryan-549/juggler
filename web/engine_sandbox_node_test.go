@@ -111,6 +111,37 @@ console.log(JSON.stringify({ ticksBeforeAbort, outcome, ticksAfterAbort, ticksLa
 	}
 }
 
+// TestNodeSandboxPointsNodeHabitsAtWhatIsInScope pins, on the Node engine
+// host, the same guidance sandbox.html gives (unit:run-code-program): a script
+// that imports, requires or redeclares what it already has is told to use it.
+func TestNodeSandboxPointsNodeHabitsAtWhatIsInScope(t *testing.T) {
+	var got map[string]string
+	runNodeSandboxHarness(t, `
+const capabilities = { fs: { readFile: async () => 'x' }, grep: async () => [] };
+async function errorOf(code) {
+  try { await runInSandbox(code, { capabilities, timeoutMs: 10000 }); return 'no error'; }
+  catch (e) { return e.message; }
+}
+console.log(JSON.stringify({
+  redeclare: await errorOf('const fs = await import("fs");\nreturn 1;'),
+  require: await errorOf('return require("path");'),
+  builtin: await errorOf('const m = await import("node:fs");\nreturn 1;'),
+}));
+`, &got)
+
+	const inScope = "path, projectRoot, fs, grep"
+	want := map[string]string{
+		"redeclare": "Cannot declare a const variable twice: 'fs'. It is already in scope: use it directly rather than importing or requiring it. In scope: " + inScope + ".",
+		"require":   `Couldn't require "path": this sandbox is not Node. Use what is already in scope instead: ` + inScope + ".",
+		"builtin":   `Couldn't import "node:fs": this sandbox is not Node. Use what is already in scope instead: ` + inScope + ".",
+	}
+	for k, w := range want {
+		if got[k] != w {
+			t.Errorf("%s:\n got %q\nwant %q", k, got[k], w)
+		}
+	}
+}
+
 // TestNodeSandboxConsole pins that a script's console output reaches the
 // caller on the Node engine host — on success, on a throw, and when the
 // script is killed mid-run — and that it is capped where it is produced.

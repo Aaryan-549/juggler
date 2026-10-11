@@ -29,6 +29,15 @@ import {
   sendToolsResult,
 } from '../../js/services/worker-manager-protocols.js';
 import { WorkerManager } from '../../js/services/worker-manager.js';
+import { buildToolInventory } from '../../js/services/thread-tool-inventory.js';
+import contextItemRegistry from '../../js/registries/context-item-registry.js';
+import strategyRegistry from '../../js/registries/strategy-registry.js';
+import {
+  __holdNextRegistryRebuildForTests,
+  reloadRegistries,
+  whenRegistriesSettled,
+} from '../../js/registries/reload-registries.js';
+import { budgetFor } from '../utilities/test-deadline.js';
 import { assert } from '../utilities/test-helpers.js';
 
 /**
@@ -136,8 +145,8 @@ export async function runTests(_ctx) {
 
   await test('a viewer ignores a broadcast request-tools', async () => {
     const wm = fakeWorkerManager();
-    await asRealm(false, () => {
-      handleRequestTools(wm, 'conv-1', { requestId: 'req-3', sentAt: Date.now() });
+    await asRealm(false, async () => {
+      await handleRequestTools(wm, 'conv-1', { requestId: 'req-3', sentAt: Date.now() });
     });
     assert(wm.asked.length === 0, `a viewer must not build a tool list, ran: ${wm.asked.join(',')}`);
     assert(wm.sent.length === 0, `a viewer must not answer, sent: ${JSON.stringify(wm.sent)}`);
@@ -145,14 +154,162 @@ export async function runTests(_ctx) {
 
   await test('the engine answers a request-tools', async () => {
     const wm = fakeWorkerManager();
-    await asRealm(true, () => {
-      handleRequestTools(wm, 'conv-1', { requestId: 'req-4', sentAt: Date.now() });
+    await asRealm(true, async () => {
+      await handleRequestTools(wm, 'conv-1', { requestId: 'req-4', sentAt: Date.now() });
     });
     assert(wm.sent.length === 1, `expected one reply, got ${wm.sent.length}`);
     assert(
       wm.sent[0].type === 'tools-result' && wm.sent[0].requestId === 'req-4',
       `expected the engine's answer to req-4, got ${JSON.stringify(wm.sent[0])}`
     );
+  });
+
+  // The tool list is worked out from the conversation's own threads and
+  // strategy. Asked mid-load, the engine holds only the stub the loader adopted
+  // first — an empty document whose root resolves to the default strategy — so
+  // a turn whose request beat the load was offered the default strategy's
+  // tools, whatever the conversation's strategy was: a read-only thread was
+  // offered writes, and a YOLO thread was refused run_code.
+  await test('the engine builds a tool list only once the conversation has loaded', async () => {
+    const wm = fakeWorkerManager();
+    /** @type {() => void} */
+    let finishLoad = () => {};
+    const loading = new Promise((resolve) => { finishLoad = () => resolve(undefined); });
+    const conversation = { loadState: 'loading', flushPendingSyncs: () => {} };
+    wm._session = { conversations: new Map([['conv-1', conversation]]) };
+    wm.loader = { pendingAutoLoad: (/** @type {string} */ id) => (id === 'conv-1' ? loading : null) };
+    /** @type {string[]} */
+    const seenLoadStates = [];
+    wm._onToolsRequest = (/** @type {any} */ req) => {
+      seenLoadStates.push(conversation.loadState);
+      sendToolsResult(wm, 'conv-1', req.requestId, []);
+    };
+    await asRealm(true, async () => {
+      const handled = handleRequestTools(wm, 'conv-1', { requestId: 'req-7', sentAt: Date.now() });
+      await Promise.resolve();
+      assert(seenLoadStates.length === 0, 'the tool list was built while the conversation was still loading');
+      conversation.loadState = 'loaded';
+      finishLoad();
+      await handled;
+    });
+    assert(
+      seenLoadStates.length === 1 && seenLoadStates[0] === 'loaded',
+      `expected one tool list, built after the load, got ${JSON.stringify(seenLoadStates)}`
+    );
+    assert(wm.sent.length === 1 && wm.sent[0].requestId === 'req-7', `expected one reply to req-7, got ${JSON.stringify(wm.sent)}`);
+  });
+
+  /**
+   * Hold a registry rebuild open between its reset and its re-init, run
+   * `during` inside that window, then let the rebuild finish.
+   * @param {(release: () => void) => Promise<void>} during - Body; calls `release` to let the rebuild go on
+   * @returns {Promise<void>} Resolves once the rebuild has finished
+   */
+  async function insideRegistryRebuild(during) {
+    await whenRegistriesSettled();
+    /** @type {() => void} */
+    let release = () => {};
+    __holdNextRegistryRebuildForTests(new Promise((resolve) => { release = () => resolve(undefined); }));
+    const reloading = reloadRegistries();
+    try {
+      const deadline = Date.now() + budgetFor(5000);
+      while (contextItemRegistry.isInitialized()) {
+        if (Date.now() >= deadline) throw new Error('the rebuild never reset the registries');
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+      await during(release);
+    } finally {
+      release();
+      await reloading;
+    }
+  }
+
+  /** @returns {boolean} Whether the registries a turn's tools and prompt come from are populated */
+  const registriesPopulated = () => strategyRegistry.isInitialized() && contextItemRegistry.isInitialized();
+
+  await test('a tool list requested mid-rebuild is built from the rebuilt registries', async () => {
+    await whenRegistriesSettled();
+    const names = (/** @type {Array<Record<string, any>>} */ tools) => tools.map((t) => t.name).sort().join(',');
+    const expected = names((await buildToolInventory(null)).offered);
+    const wm = fakeWorkerManager();
+    /** @type {Array<{populated: boolean, tools: string}>} */
+    const built = [];
+    /** @type {() => void} */
+    let replied = () => {};
+    const reply = new Promise((resolve) => { replied = () => resolve(undefined); });
+    // Like the real callback, this is async and the handler does not await it.
+    wm._onToolsRequest = async (/** @type {any} */ req) => {
+      const populated = registriesPopulated();
+      const { offered } = await buildToolInventory(null);
+      built.push({ populated, tools: names(offered) });
+      sendToolsResult(wm, 'conv-1', req.requestId, offered);
+      replied();
+    };
+    await insideRegistryRebuild(async (release) => {
+      await asRealm(true, async () => {
+        const handled = handleRequestTools(wm, 'conv-1', { requestId: 'req-8', sentAt: Date.now() });
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        release();
+        await handled;
+      });
+    });
+    await Promise.race([reply, new Promise((resolve) => setTimeout(resolve, budgetFor(5000)))]);
+    assert(built.length === 1, `expected one tool list, got ${built.length}`);
+    assert(built[0].populated, 'the tool list was built from registries the rebuild had reset');
+    assert(built[0].tools === expected, `expected the full tool list\n  ${expected}\ngot\n  ${built[0].tools}`);
+  });
+
+  await test('a context render requested mid-rebuild runs against the rebuilt registries', async () => {
+    const wm = fakeWorkerManager();
+    /** @type {boolean[]} */
+    const populatedAtRender = [];
+    wm._onContextRequest = (/** @type {any} */ req) => {
+      populatedAtRender.push(registriesPopulated());
+      sendRenderContextItemsResponse(wm, 'conv-1', req.requestId, [], 'prompt');
+    };
+    await insideRegistryRebuild(async (release) => {
+      await asRealm(true, async () => {
+        const handled = handleRenderContextItemsRequest(wm, 'conv-1', { requestId: 'req-9', sentAt: Date.now() });
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        release();
+        await handled;
+      });
+    });
+    assert(
+      populatedAtRender.length === 1 && populatedAtRender[0],
+      `expected one render, against populated registries, got ${JSON.stringify(populatedAtRender)}`
+    );
+  });
+
+  // The requesting turn is itself what a reload waits on before it resets
+  // anything, so a request that waited for the whole reload would wait on itself.
+  await test('a tool list is served at once while a reload waits for the running turn', async () => {
+    await whenRegistriesSettled();
+    const g = /** @type {any} */ (globalThis);
+    const hadEngineApp = Object.prototype.hasOwnProperty.call(g, 'engineApp');
+    const previousEngineApp = g.engineApp;
+    const turn = { processingState: { status: 'streaming' }, isAwaitingApproval: () => false };
+    g.engineApp = { getSession: () => ({ conversations: new Map([['conv-1', turn]]) }) };
+    /** @type {Promise<void>} */
+    let reloading = Promise.resolve();
+    try {
+      reloading = reloadRegistries();
+      const wm = fakeWorkerManager();
+      await asRealm(true, async () => {
+        const handled = handleRequestTools(wm, 'conv-1', { requestId: 'req-10', sentAt: Date.now() });
+        await Promise.race([handled, new Promise((resolve) => setTimeout(resolve, budgetFor(2000)))]);
+      });
+      assert(
+        wm.sent.length === 1 && wm.sent[0].requestId === 'req-10',
+        `the tool list must not wait for a reload that is waiting for this turn, sent ${JSON.stringify(wm.sent)}`
+      );
+      assert(registriesPopulated(), 'a reload waiting for quiescence must leave the registries intact');
+    } finally {
+      turn.processingState.status = 'idle';
+      await reloading;
+      if (hadEngineApp) g.engineApp = previousEngineApp;
+      else delete g.engineApp;
+    }
   });
 
   await test('a viewer leaves no round-trip stamp behind for a request it ignored', async () => {
@@ -163,7 +320,7 @@ export async function runTests(_ctx) {
     wm._onToolsRequest = () => wm.asked.push('tools');
     await asRealm(false, async () => {
       await handleRenderContextItemsRequest(wm, 'conv-1', { requestId: 'req-5', sentAt: Date.now() });
-      handleRequestTools(wm, 'conv-1', { requestId: 'req-6', sentAt: Date.now() });
+      await handleRequestTools(wm, 'conv-1', { requestId: 'req-6', sentAt: Date.now() });
     });
     assert(
       wm._roundTripStamps.size === 0,

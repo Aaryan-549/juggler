@@ -298,8 +298,8 @@ func (w *ConversationWorker) reevaluatePendingToolsOnStrategyChangeExcept(liveTh
 }
 
 // cascadeBatchDenialsExcept refuses the calls a denial left behind: the members
-// of a batch that are still parked or still unevaluated when one of their
-// siblings comes back cancelled.
+// of a batch that have not started (parked, unevaluated, or held by turn order)
+// when one of their siblings comes back cancelled.
 //
 // "Denying any call denies the batch" is a UI policy, and the browser applies it
 // the moment a person clicks. It can only apply it to the calls it can see,
@@ -322,8 +322,14 @@ func (w *ConversationWorker) reevaluatePendingToolsOnStrategyChangeExcept(liveTh
 // rest" rule would re-cancel a call that handleRetryToolApproval had just reset
 // to StateUnevaluated for a fresh ask, which is a live flow for AskUserQuestion.
 //
-// Executing calls (approved/running) are left alone, exactly as the browser
-// cascade leaves them: they have a process behind them, and stopping those is
+// A call approved but held back by turn order (tool_ordering.go) is refused too.
+// It has not started, and without this it would run once the call ahead of it
+// finished, after the person had said stop. The browser cannot do this half: it
+// sees neither the hold nor whether execute-tool has gone out, so only the
+// worker can tell a held call from one about to be claimed.
+//
+// Calls already commanded (approved and sent, or running) are left alone: they
+// have, or are about to have, a process behind them, and stopping those is
 // CancelInFlightToolActions' job, which aborts the execution as well as writing
 // the state.
 func (w *ConversationWorker) cascadeBatchDenialsExcept(liveThreads map[string]bool) {
@@ -347,10 +353,13 @@ func (w *ConversationWorker) cascadeBatchDenialsExcept(liveThreads map[string]bo
 	// Rebuilt every tick rather than accumulated, so the set stays the size of
 	// the doc's cancelled tools and a call reset back out of cancelled is
 	// forgotten — a later denial of the same call cascades again.
+	// The cascade runs before this tick's dispatch, and only the worker sends
+	// execute-tool, so a held call not yet commanded cannot start under it.
+	commanded := func(id string) bool { return w.tools.commandedAt(id, StateApproved) }
 	current := make(map[string]bool)
 	var cascades []threadArray
 	for _, ta := range arrays {
-		cancelled, refusable := scanTrailingBatch(ta.arr)
+		cancelled, refusable := scanTrailingBatch(ta.arr, commanded)
 		fresh := false
 		for _, id := range cancelled {
 			current[id] = true
@@ -380,7 +389,7 @@ func (w *ConversationWorker) cascadeBatchDenialsExcept(liveThreads map[string]bo
 		"fullResult": map[string]any{"state": StateCancelled},
 	})
 	for _, ta := range cascades {
-		_, refusable := scanTrailingBatch(ta.arr)
+		_, refusable := scanTrailingBatch(ta.arr, commanded)
 		var ids []string
 		for _, m := range refusable {
 			id, _ := m.Get("toolUseId").(string)
@@ -398,12 +407,15 @@ func (w *ConversationWorker) cascadeBatchDenialsExcept(liveThreads map[string]bo
 // scanTrailingBatch reads the batch a turn is currently resting on — the
 // contiguous run of dispatched work at the end of an items array — and reports
 // the toolUseIds cancelled within it and the Y.Maps of the calls a denial would
-// still have to refuse (parked, or not yet evaluated).
+// still have to refuse: parked, not yet evaluated, or approved but held back by
+// turn order (tool_ordering.go) and never commanded. commanded reports whether
+// execute-tool has gone out for a call; one that has may be claimed by the
+// engine at any moment, so it is left to the cancel path.
 //
 // Trailing, because a batch further back has already been answered and resumed
 // past; retroactively cancelling anything in one would rewrite settled history.
 // Must be called with ycrdtMu held.
-func scanTrailingBatch(arr *ycrdt.YArray) (cancelled []string, refusable []*ycrdt.YMap) {
+func scanTrailingBatch(arr *ycrdt.YArray, commanded func(id string) bool) (cancelled []string, refusable []*ycrdt.YMap) {
 	if arr == nil {
 		return nil, nil
 	}
@@ -420,6 +432,10 @@ func scanTrailingBatch(arr *ycrdt.YArray) (cancelled []string, refusable []*ycrd
 		}
 		start--
 	}
+	// Each turn's calls in emission order, for the turn-order rule, and the
+	// approved calls that rule might be holding.
+	turns := map[string][]turnCall{}
+	approved := map[string]*ycrdt.YMap{}
 	for i := start; i < length; i++ {
 		m, ok := arr.Get(ycrdt.Number(i)).(*ycrdt.YMap)
 		if !ok {
@@ -429,13 +445,26 @@ func scanTrailingBatch(arr *ycrdt.YArray) (cancelled []string, refusable []*ycrd
 			continue
 		}
 		id, _ := m.Get("toolUseId").(string)
-		switch state, _ := m.Get("state").(string); state {
+		if id == "" {
+			continue
+		}
+		state, _ := m.Get("state").(string)
+		if txnID, _ := m.Get("transactionId").(string); txnID != "" {
+			category, _ := m.Get("category").(string)
+			turns[txnID] = append(turns[txnID], turnCall{id: id, state: state, category: category})
+		}
+		switch state {
 		case StateCancelled:
-			if id != "" {
-				cancelled = append(cancelled, id)
-			}
+			cancelled = append(cancelled, id)
 		case StatePending, StateUnevaluated:
-			if id != "" {
+			refusable = append(refusable, m)
+		case StateApproved:
+			approved[id] = m
+		}
+	}
+	for _, calls := range turns {
+		for id := range heldByTurnOrder(calls) {
+			if m := approved[id]; m != nil && !commanded(id) {
 				refusable = append(refusable, m)
 			}
 		}

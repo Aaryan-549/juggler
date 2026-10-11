@@ -90,7 +90,7 @@ export async function runTests(_ctx) {
     const previous = g.JUGGLER_ENGINE;
     g.JUGGLER_ENGINE = true;
     try {
-      handleRequestTools(wm, 'conv-1', { requestId: 'req-1', sentAt });
+      await handleRequestTools(wm, 'conv-1', { requestId: 'req-1', sentAt });
     } finally {
       if (had) g.JUGGLER_ENGINE = previous;
       else delete g.JUGGLER_ENGINE;

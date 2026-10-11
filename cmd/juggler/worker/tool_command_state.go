@@ -119,6 +119,14 @@ func (t *toolCommandTracker) resetAll() {
 // never-dispatched.
 func (t *toolCommandTracker) clear(id string) { delete(t.byID, id) }
 
+// commandedAt reports whether the last command sent for id was sent at state.
+// For StateApproved that means execute-tool has gone out: the engine may be
+// about to claim the call, so only the cancel path may stop it.
+func (t *toolCommandTracker) commandedAt(id, state string) bool {
+	s := t.byID[id]
+	return s != nil && s.dispatchedStateSet && s.dispatchedState == state
+}
+
 // noteHeld reports whether this is the first time in the current delivery phase
 // that id has been found held past the attempts cap, so the hold is announced
 // once rather than on every re-drive.
