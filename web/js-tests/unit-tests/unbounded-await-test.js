@@ -32,6 +32,7 @@ import { __setOpCallTimeoutForTest } from '../../js/services/ops-api.js';
 import { readFileLoad } from '../../js/services/ops-api.js';
 import { runInSandbox } from '../../sdk/lib/sandbox-runner.js';
 import { createSandboxBridge } from '../../js/engine-worker-sandbox.js';
+import { serverPath } from '../../js/utils/api-url.js';
 
 /** The op boundary every read tool's execute() ends up at (see services/ops-api.js). */
 const OP_ENDPOINT = '/api/ops/call';
@@ -307,6 +308,88 @@ export async function runTests(_ctx) {
     } catch (e) {
       failed++;
       errors.push(`sandbox delegate forwards an abort: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  // Test 7: a script busy in its own code — a loop that never awaits, with no
+  // capability call in flight — can notice neither a cancel nor its own
+  // in-worker timer. Only the frame that holds its Worker can end it, so this
+  // speaks the frame's protocol directly: the frame answers an abort, and a
+  // timeout the script cannot reach, only from the branch that terminates the
+  // Worker. (The caller of runInSandbox is answered before the frame is, so it
+  // cannot see this.)
+  {
+    const frame = document.createElement('iframe');
+    try {
+      frame.setAttribute('sandbox', 'allow-scripts');
+      frame.style.display = 'none';
+      frame.src = serverPath('/sandbox');
+      const ready = new Promise((resolve) => {
+        const onReady = (/** @type {MessageEvent} */ e) => {
+          if (e.source !== frame.contentWindow || e.data?.type !== 'sandbox-ready') return;
+          window.removeEventListener('message', onReady);
+          resolve(undefined);
+        };
+        window.addEventListener('message', onReady);
+      });
+      document.body.appendChild(frame);
+      await within(ready, 15000, 'the sandbox frame never signalled ready');
+
+      /**
+       * Start a script that reports in once, then spins.
+       * @param {number} timeoutMs - The script's budget
+       * @returns {{port: MessagePort, started: Promise<void>, result: Promise<any>}} The run
+       */
+      const startSpinner = (timeoutMs) => {
+        const channel = new MessageChannel();
+        const port = channel.port1;
+        /** @type {() => void} */
+        let markStarted = () => {};
+        const started = new Promise((resolve) => { markStarted = () => resolve(undefined); });
+        const result = new Promise((resolve) => {
+          port.onmessage = (e) => {
+            const m = e.data || {};
+            if (m.kind === 'result') { resolve(m); return; }
+            if (m.kind === 'started') {
+              port.postMessage({ kind: 'reply', id: m.id, ok: true, value: null });
+              markStarted();
+            }
+          };
+        });
+        /** @type {Window} */ (frame.contentWindow).postMessage({
+          type: 'sandbox-execute',
+          code: 'await started();\nfor (;;) {}',
+          timeoutMs,
+          capabilities: [{ name: 'started', callable: true }]
+        }, '*', [channel.port2]);
+        return { port, started, result };
+      };
+
+      const escape = startSpinner(60000);
+      await within(escape.started, 15000, 'the spinning script never got going');
+      // Long enough for the reply to land and the loop to begin.
+      await new Promise((r) => { setTimeout(r, 100); });
+      escape.port.postMessage({ kind: 'abort' });
+      const cancelled = await within(escape.result, 4000,
+        'the frame never ended a spinning script on abort — it would run to its timeout');
+      assert(cancelled.ok === false && cancelled.error === 'Script was cancelled',
+        `an abort must end the spinning script, got ${JSON.stringify(cancelled)}`);
+
+      const timeout = startSpinner(1000);
+      await within(timeout.started, 15000, 'the spinning script never got going');
+      const timedOut = await within(timeout.result, 6000,
+        'the frame never ended a spinning script at its timeout');
+      assert(timedOut.ok === false && /timed out after 1000ms/.test(timedOut.error),
+        `a spinning script must end at its timeout, got ${JSON.stringify(timedOut)}`);
+      escape.port.close();
+      timeout.port.close();
+
+      passed++;
+    } catch (e) {
+      failed++;
+      errors.push(`the sandbox frame ends a script spinning in its own code: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      frame.remove();
     }
   }
 

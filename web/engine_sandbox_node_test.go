@@ -43,7 +43,7 @@ func runNodeSandboxHarness(t *testing.T, body string, out any) {
 	script := fmt.Sprintf(`
 import { installNodeSandboxDelegate } from %s;
 import { runInSandbox } from %s;
-installNodeSandboxDelegate({ origin: 'http://127.0.0.1:1', token: '', projectRoot: '/' });
+installNodeSandboxDelegate({ origin: 'http://127.0.0.1:1', projectRoot: '/' });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 %s
 process.exit(0);
@@ -111,8 +111,67 @@ console.log(JSON.stringify({ ticksBeforeAbort, outcome, ticksAfterAbort, ticksLa
 	}
 }
 
+// TestNodeSandboxEndsASpinningScript pins that a script busy in its own code —
+// a loop that never awaits, so no capability call is in flight and its own
+// in-worker timer can never fire — is ended both by an abort (Escape) and by
+// its timeout, and that ending it stops the thread rather than abandoning it.
+// The witness is a SharedArrayBuffer the script counts into: the count is
+// visible here without the script ever yielding, so a Worker left spinning
+// shows as a count that keeps climbing.
+func TestNodeSandboxEndsASpinningScript(t *testing.T) {
+	type run struct {
+		Spinning      bool   `json:"spinning"`
+		Outcome       string `json:"outcome"`
+		StillCounting bool   `json:"stillCounting"`
+	}
+	var got map[string]run
+	runNodeSandboxHarness(t, `
+const shared = new SharedArrayBuffer(4);
+const count = new Int32Array(shared);
+const capabilities = { counter: () => shared };
+const code = 'const c = new Int32Array(await counter());\nfor (;;) Atomics.add(c, 0, 1);';
+async function spin(timeoutMs, abort) {
+  Atomics.store(count, 0, 0);
+  const controller = new AbortController();
+  const run = runInSandbox(code, { capabilities, timeoutMs, signal: controller.signal });
+  const started = Date.now();
+  while (Atomics.load(count, 0) === 0 && Date.now() - started < 10000) await sleep(10);
+  const spinning = Atomics.load(count, 0) > 0;
+  if (abort) controller.abort();
+  const outcome = await Promise.race([
+    run.then(() => 'resolved', (e) => (e && e.name === 'AbortError') ? 'AbortError' : String(e && e.message)),
+    sleep(timeoutMs + 5000).then(() => 'pending'),
+  ]);
+  // Let the teardown land, then watch for more counting.
+  await sleep(200);
+  const after = Atomics.load(count, 0);
+  await sleep(500);
+  return { spinning, outcome, stillCounting: Atomics.load(count, 0) !== after };
+}
+console.log(JSON.stringify({
+  escape: await spin(60000, true),
+  timeout: await spin(1000, false),
+}));
+`, &got)
+
+	for name, r := range got {
+		if !r.Spinning {
+			t.Fatalf("%s: the script never started spinning", name)
+		}
+		if r.StillCounting {
+			t.Errorf("%s: the script kept running after it was ended (%q)", name, r.Outcome)
+		}
+	}
+	if got["escape"].Outcome != "AbortError" {
+		t.Errorf("an abort must settle a spinning run with an AbortError, got %q", got["escape"].Outcome)
+	}
+	if !strings.Contains(got["timeout"].Outcome, "timed out") {
+		t.Errorf("a spinning run must end at its timeout, got %q", got["timeout"].Outcome)
+	}
+}
+
 // TestNodeSandboxPointsNodeHabitsAtWhatIsInScope pins, on the Node engine
-// host, the same guidance sandbox.html gives (unit:run-code-program): a script
+// host, the same guidance sandbox.html gives: a script
 // that imports, requires or redeclares what it already has is told to use it.
 func TestNodeSandboxPointsNodeHabitsAtWhatIsInScope(t *testing.T) {
 	var got map[string]string
@@ -138,6 +197,60 @@ console.log(JSON.stringify({
 	for k, w := range want {
 		if got[k] != w {
 			t.Errorf("%s:\n got %q\nwant %q", k, got[k], w)
+		}
+	}
+}
+
+// TestNodeSandboxCannotReachTheAPI pins that a program on the Node engine host
+// cannot use its module loader to reach the server's /api. The loader fetches
+// same-origin module URLs over HTTP; the browser sandbox's imports go out from
+// an opaque origin with no token, so /api refuses them, and the Node host must
+// be no stronger: an /api URL is refused before any request is made, and a
+// module that may be imported is fetched without the API token.
+func TestNodeSandboxCannotReachTheAPI(t *testing.T) {
+	var got struct {
+		Relative string     `json:"relative"`
+		Absolute string     `json:"absolute"`
+		Allowed  string     `json:"allowed"`
+		Requests [][]string `json:"requests"`
+	}
+	runNodeSandboxHarness(t, `
+const http = await import('node:http');
+const requests = [];
+const server = http.createServer((req, res) => {
+  requests.push([req.url, req.headers['x-juggler-token'] || '']);
+  if (req.url === '/mod.mjs') { res.setHeader('content-type', 'text/javascript'); res.end('export default 42;'); return; }
+  res.setHeader('content-type', 'text/javascript');
+  res.end('export default "reached";');
+});
+await new Promise((r) => server.listen(0, '127.0.0.1', r));
+const origin = 'http://127.0.0.1:' + server.address().port;
+installNodeSandboxDelegate({ origin, token: 'secret-token', projectRoot: '/' }); // a token is ignored
+async function outcome(code) {
+  try { return String(await runInSandbox(code, { timeoutMs: 10000 })); }
+  catch (e) { return 'refused: ' + e.message; }
+}
+const relative = await outcome('const m = await import("/api/session"); return m.default;');
+const absolute = await outcome('const m = await import("' + origin + '/api/session"); return m.default;');
+const allowed = await outcome('const m = await import("/mod.mjs"); return m.default;');
+server.close();
+console.log(JSON.stringify({ relative, absolute, allowed, requests }));
+`, &got)
+
+	for name, o := range map[string]string{"relative": got.Relative, "absolute": got.Absolute} {
+		if !strings.HasPrefix(o, "refused: ") {
+			t.Errorf("an %s /api import must be refused, got %q", name, o)
+		}
+	}
+	if got.Allowed != "42" {
+		t.Errorf("an ordinary module import must still load, got %q", got.Allowed)
+	}
+	for _, r := range got.Requests {
+		if strings.HasPrefix(r[0], "/api") {
+			t.Errorf("the sandbox reached %s", r[0])
+		}
+		if r[1] != "" {
+			t.Errorf("the sandbox sent the API token with %s", r[0])
 		}
 	}
 }

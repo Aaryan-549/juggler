@@ -19,9 +19,11 @@
 /**
  * Install the Node query_code sandbox delegate on globalThis, replacing the
  * boot-time "not supported" rejection.
- * @param {{ origin: string, token: string, projectRoot: string }} opts
+ * The sandbox is given no API token: it loads modules only from routes that
+ * need none (engine-sandbox-loader-hooks.mjs).
+ * @param {{ origin: string, projectRoot: string }} opts
  */
-export function installNodeSandboxDelegate({ origin, token, projectRoot }) {
+export function installNodeSandboxDelegate({ origin, projectRoot }) {
   /**
    * @param {string} code - Untrusted JavaScript to run
    * @param {Record<string, any>} capabilities - Named fs/grep/glob closures
@@ -31,7 +33,7 @@ export function installNodeSandboxDelegate({ origin, token, projectRoot }) {
    * @returns {Promise<unknown>} The script's return value
    */
   /** @type {any} */ (globalThis).__hostSandboxDelegate = (code, capabilities, timeoutMs, callerRoot, hooks) =>
-    runInWorkerSandbox(code, capabilities, timeoutMs, { origin, token, projectRoot }, callerRoot, hooks);
+    runInWorkerSandbox(code, capabilities, timeoutMs, { origin, projectRoot }, callerRoot, hooks);
 }
 
 /**
@@ -46,7 +48,7 @@ export function installNodeSandboxDelegate({ origin, token, projectRoot }) {
  * @param {string} code
  * @param {Record<string, any>} capabilities
  * @param {number} timeoutMs
- * @param {{ origin: string, token: string, projectRoot: string }} env
+ * @param {{ origin: string, projectRoot: string }} env
  * @param {string} [callerRoot]
  * @param {RunHooks} [hooks]
  * @returns {Promise<unknown>}
@@ -73,7 +75,6 @@ async function runInWorkerSandbox(code, capabilities, timeoutMs, env, callerRoot
   const worker = new Worker(new URL('./engine-sandbox-worker.mjs', import.meta.url), {
     workerData: {
       origin: env.origin,
-      token: env.token,
       projectRoot: liveProjectRoot,
       code,
       timeoutMs,

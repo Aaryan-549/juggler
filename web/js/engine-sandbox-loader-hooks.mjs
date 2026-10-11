@@ -11,27 +11,47 @@
  * untrusted code runs in an opaque-origin worker with no filesystem access. The
  * Node sandbox mirrors that: engine-sandbox-worker.mjs rewrites every user
  * `import()` to a fully-qualified same-origin http(s) URL, and these hooks fetch
- * that URL over HTTP (with the API token) and hand Node the source. Node has no
- * built-in http(s) ESM loader, so without this hook such an import throws
+ * that URL over HTTP and hand Node the source. Node has no built-in http(s) ESM
+ * loader, so without this hook such an import throws
  * ERR_UNSUPPORTED_ESM_URL_SCHEME.
  *
  * The resolve hook is the enforcement boundary: after registration it permits
- * only fully-qualified same-origin HTTP module URLs. The worker rewrites normal
- * user imports for useful diagnostics, but a source-transform miss (for example
- * inside a template interpolation) cannot resolve a Node builtin, a file URL, or
- * another origin.
+ * only fully-qualified same-origin HTTP module URLs, and never one on the
+ * server's /api. The worker rewrites normal user imports for useful
+ * diagnostics, but a source-transform miss (for example inside a template
+ * interpolation) cannot resolve a Node builtin, a file URL, another origin, or
+ * the API.
+ *
+ * The fetch carries no API token, as the browser sandbox's carries none: the
+ * module routes need none, and a program has no business with what does.
  */
 
 /** @type {string} */ let origin = '';
-/** @type {string} */ let token = '';
 
 /**
- * Receive the server origin + API token from `module.register(..., { data })`.
- * @param {{ origin?: string, token?: string }} [data]
+ * Receive the server origin from `module.register(..., { data })`.
+ * @param {{ origin?: string }} [data]
  */
 export async function initialize(data) {
   origin = (data && data.origin) || '';
-  token = (data && data.token) || '';
+}
+
+/**
+ * Whether a URL addresses the server's /api, however its path is spelled:
+ * percent-encoding and dot segments are undone as the server's router would
+ * undo them, and case is ignored.
+ * @param {string} url - A same-origin URL
+ * @returns {boolean} True for /api and anything under it, or an unreadable path
+ */
+function reachesApi(url) {
+  let path;
+  try {
+    path = new URL(decodeURIComponent(new URL(url).pathname), 'http://h').pathname;
+  } catch {
+    return true;
+  }
+  path = path.replace(/\/{2,}/g, '/').toLowerCase();
+  return path === '/api' || path.startsWith('/api/');
 }
 
 export async function resolve(specifier, context, nextResolve) {
@@ -39,7 +59,7 @@ export async function resolve(specifier, context, nextResolve) {
   if (context.parentURL && context.parentURL.startsWith(origin + '/')) {
     try { url = new URL(specifier, context.parentURL).href; } catch { /* reject below */ }
   }
-  if (origin && url.startsWith(origin + '/')) {
+  if (origin && url.startsWith(origin + '/') && !reachesApi(url)) {
     return { url, shortCircuit: true };
   }
   throw new Error(`import of "${specifier}" is not allowed in the query_code sandbox`);
@@ -53,8 +73,8 @@ export async function resolve(specifier, context, nextResolve) {
  * @returns {Promise<{format: string, source: string, shortCircuit?: boolean}>}
  */
 export async function load(url, context, nextLoad) {
-  if (origin && url.startsWith(origin + '/')) {
-    const res = await fetch(url, token ? { headers: { 'X-Juggler-Token': token } } : undefined);
+  if (origin && url.startsWith(origin + '/') && !reachesApi(url)) {
+    const res = await fetch(url);
     if (!res.ok) {
       throw new Error(`query_code import failed (${res.status}) for ${url}`);
     }
@@ -62,5 +82,5 @@ export async function load(url, context, nextLoad) {
     const format = url.split('?')[0].endsWith('.json') ? 'json' : 'module';
     return { format, source, shortCircuit: true };
   }
-  throw new Error(`sandbox loader refused non-origin URL: ${url}`);
+  throw new Error(`sandbox loader refused URL: ${url}`);
 }

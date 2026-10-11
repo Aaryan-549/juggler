@@ -33,11 +33,11 @@
 import { parentPort, workerData } from 'node:worker_threads';
 import { register } from 'node:module';
 
-const { origin, token, projectRoot, code: rawCode, timeoutMs, descriptors } = workerData;
+const { origin, projectRoot, code: rawCode, timeoutMs, descriptors } = workerData;
 
 // Register the http(s) import loader BEFORE any user import runs, so
 // sandboxImport's origin URLs resolve. Runs on a dedicated loader thread.
-register('./engine-sandbox-loader-hooks.mjs', import.meta.url, { data: { origin, token } });
+register('./engine-sandbox-loader-hooks.mjs', import.meta.url, { data: { origin } });
 
 /** post one message to the main thread. @param {any} msg */
 const post = (msg) => parentPort.postMessage(msg);

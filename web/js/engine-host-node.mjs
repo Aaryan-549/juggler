@@ -149,18 +149,17 @@ function installAPITokenFetchShim(token) {
 // isolated worker with every Node built-in locked out, capability calls RPC back
 // here, and the worker is terminated on timeout. Installed synchronously below
 // so the delegate exists before the engine registers the query_code tool.
-await installSandboxDelegate(origin, apiToken, projectRoot);
+await installSandboxDelegate(origin, projectRoot);
 
 /**
  * Install the worker_threads query_code sandbox delegate on globalThis. Kept
  * as a dynamic import so this entry has no static engine imports.
  * @param {string} serverOrigin
- * @param {string} token
  * @param {string} root - Project root exposed to sandboxed code as projectRoot
  */
-async function installSandboxDelegate(serverOrigin, token, root) {
+async function installSandboxDelegate(serverOrigin, root) {
   const { installNodeSandboxDelegate } = await import('./engine-sandbox-node.mjs');
-  installNodeSandboxDelegate({ origin: serverOrigin, token, projectRoot: root });
+  installNodeSandboxDelegate({ origin: serverOrigin, projectRoot: root });
 }
 
 // The engine fires this optional hook once it has booted and begun connecting
