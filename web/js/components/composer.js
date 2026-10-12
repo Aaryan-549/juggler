@@ -96,7 +96,31 @@ const MAX_TEXTAREA_HEIGHT_PX = 400;
  */
 const MAX_MESSAGE_CHARS = 100_000;
 
-
+/**
+ * Give one of the composer's button-opened menus its ARIA: the surface is a
+ * named `menu`, each `.menu-item` row a `menuitem` (the empty-state hint a
+ * disabled one, since choosing it does nothing), each divider a `separator`,
+ * and each collapsible sheet section a group named by its header.
+ *
+ * The roles are applied here rather than by the row builders because the `/`
+ * and `$` autocomplete renders the same rows, and that is a list attached to
+ * the textarea, not a menu.
+ * @param {HTMLElement} menu - The fully built menu surface
+ * @param {string} label - Its accessible name
+ */
+function applyMenuRoles(menu, label) {
+  menu.setAttribute('role', 'menu');
+  menu.setAttribute('aria-label', label);
+  menu.querySelectorAll('.menu-item').forEach((row) => {
+    row.setAttribute('role', 'menuitem');
+    if (row.classList.contains('menu-item-hint')) row.setAttribute('aria-disabled', 'true');
+  });
+  menu.querySelectorAll('.menu-divider').forEach((divider) => divider.setAttribute('role', 'separator'));
+  menu.querySelectorAll('details').forEach((section) => {
+    section.setAttribute('role', 'group');
+    section.setAttribute('aria-label', section.querySelector('summary')?.textContent || '');
+  });
+}
 
 class Composer extends HTMLElement {
   constructor() {
@@ -2193,6 +2217,7 @@ class Composer extends HTMLElement {
       menu.appendChild(item);
     }
 
+    applyMenuRoles(menu, 'Commands');
     // presentPopup (in _openCommandsMenu) owns body-append and teardown.
     this._commandsMenu = menu;
   }
@@ -2258,6 +2283,7 @@ class Composer extends HTMLElement {
       gap: 4,
       insideSelectors: ['#skill-button', '.skill-menu'],
     });
+    button.setAttribute('aria-expanded', 'true');
   }
 
   /**
@@ -2273,6 +2299,7 @@ class Composer extends HTMLElement {
       this._skillPopupCleanup = null;
     }
     this._skillMenu = null;
+    this.querySelector('#skill-button')?.setAttribute('aria-expanded', 'false');
   }
 
   /**
@@ -2340,6 +2367,7 @@ class Composer extends HTMLElement {
     });
     menu.appendChild(manage);
 
+    applyMenuRoles(menu, 'Skills');
     this._skillMenu = menu;
   }
 
@@ -2399,6 +2427,7 @@ class Composer extends HTMLElement {
       gap: 4,
       insideSelectors: ['#commands-button', '.commands-menu'],
     });
+    button.setAttribute('aria-expanded', 'true');
   }
 
   /**
@@ -2415,6 +2444,7 @@ class Composer extends HTMLElement {
       this._popupCleanup = null;
     }
     this._commandsMenu = null;
+    this.querySelector('#commands-button')?.setAttribute('aria-expanded', 'false');
   }
 
   /**
@@ -2590,6 +2620,7 @@ class Composer extends HTMLElement {
     addRow('New Thread', THREAD_ARROW_SVG, () => this._createThread(), 'new-thread');
     this._updateNewThreadControls();
 
+    applyMenuRoles(menu, 'More actions');
     this._actionsSheet = menu;
     this._actionsSheetOpen = true;
     this._actionsSheetCleanup = presentPopup({
@@ -2601,6 +2632,7 @@ class Composer extends HTMLElement {
       gap: 4,
       insideSelectors: ['#more-actions-button', '.actions-sheet'],
     });
+    button.setAttribute('aria-expanded', 'true');
   }
 
   /**
@@ -2615,6 +2647,7 @@ class Composer extends HTMLElement {
       this._actionsSheetCleanup = null;
     }
     this._actionsSheet = null;
+    this.querySelector('#more-actions-button')?.setAttribute('aria-expanded', 'false');
   }
 
   render() {
@@ -2639,17 +2672,20 @@ class Composer extends HTMLElement {
                     <input-controls-actions>
                         <button class="commands-button input-ctrl-btn" id="commands-button"
                                 title="Commands"
-                                aria-label="Commands menu">
+                                aria-label="Commands menu"
+                                aria-haspopup="menu" aria-expanded="false">
                             <span class="icon-slash"></span>
                         </button>
                         <button class="skill-button input-ctrl-btn" id="skill-button"
                                 title="Load a skill ($)"
-                                aria-label="Load a skill">
+                                aria-label="Load a skill"
+                                aria-haspopup="menu" aria-expanded="false">
                             <span class="skill-glyph" aria-hidden="true">$</span>
                         </button>
                         <button class="more-actions-btn input-ctrl-btn" id="more-actions-button"
                                 title="More actions"
-                                aria-label="More actions">
+                                aria-label="More actions"
+                                aria-haspopup="menu" aria-expanded="false">
                             <span class="more-actions-icon">${KEBAB_SVG}</span>
                         </button>
                         <button class="schedule-send-btn input-ctrl-btn"

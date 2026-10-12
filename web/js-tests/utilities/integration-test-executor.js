@@ -234,6 +234,7 @@ import { runTests as runTabDragGhostTests } from '../unit-tests/tab-drag-ghost-t
 import { runTests as runReorderDragTests } from '../unit-tests/reorder-drag-test.js';
 import { runTests as runSlashCompletionTests } from '../unit-tests/slash-completion-test.js';
 import { runTests as runSkillCompletionTests } from '../unit-tests/skill-completion-test.js';
+import { runTests as runComposerMenuAriaTests } from '../unit-tests/composer-menu-aria-test.js';
 import { runTests as runUnclaimedConversationsTests } from '../unit-tests/unclaimed-conversations-test.js';
 import { runTests as runThreadColumnSelectionTests } from '../unit-tests/thread-column-selection-test.js';
 import { runTests as runThreadSelectionPinTests } from '../unit-tests/thread-selection-pin-test.js';
@@ -567,6 +568,7 @@ const UNIT_TEST_SUITES = [
   { name: 'unit:reorder-drag', run: runReorderDragTests },
   { name: 'unit:slash-completion', run: runSlashCompletionTests },
   { name: 'unit:skill-completion', run: runSkillCompletionTests },
+  { name: 'unit:composer-menu-aria', run: runComposerMenuAriaTests },
   { name: 'unit:search-action', run: runSearchActionTests },
   { name: 'unit:tool-cancellation', run: runToolCancellationTests },
   { name: 'unit:unbounded-await', run: runUnboundedAwaitTests },
