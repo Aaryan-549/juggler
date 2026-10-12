@@ -236,10 +236,10 @@ func (s *Server) setupSessionRoutes(sessionAPI *handlers.SessionAPI) {
 	api.Handle("/session/ui-prefs", localViewerOnly(sessionAPI.HandleSetUIPrefs)).Methods("PUT")
 	// Atomic conversation creation: server picks id, creates folder with
 	// the collision-resolved canonical name, returns {id, name, created}.
-	api.HandleFunc("/conversations", sessionAPI.HandleCreateConversation).Methods("POST")
+	api.HandleFunc("/conversations", sessionAPI.HandleCreateConversation).Methods("POST").Name(routeConversationCreate)
 	api.HandleFunc("/session/conversations/{convId}", sessionAPI.HandleGetConversation).Methods("GET")
 	api.HandleFunc("/session/conversations/{convId}", sessionAPI.HandleUpdateConversation).Methods("PUT")
-	api.HandleFunc("/session/conversations/{convId}", sessionAPI.HandleDeleteConversation).Methods("DELETE")
+	api.HandleFunc("/session/conversations/{convId}", sessionAPI.HandleDeleteConversation).Methods("DELETE").Name(routeConversationDelete)
 	api.HandleFunc("/session/conversations/{convId}/name", sessionAPI.HandleRenameConversation).Methods("PATCH")
 	// Content-addressed binary assets (attached images, etc.) streamed from
 	// <convDir>/assets/<sha>.<ext>. {sha} is validated as 64-char lowercase hex.
@@ -252,7 +252,7 @@ func (s *Server) setupSessionRoutes(sessionAPI *handlers.SessionAPI) {
 	api.HandleFunc("/session/conversations/{convId}/programs/{toolUseId}", sessionAPI.HandlePutProgram).Methods("PUT")
 	api.HandleFunc("/session/conversations/{convId}/programs/{toolUseId}", sessionAPI.HandleGetProgram).Methods("GET")
 	api.HandleFunc("/session/conversations/{convId}/programs/{toolUseId}", sessionAPI.HandleDeleteProgram).Methods("DELETE")
-	api.HandleFunc("/session/conversations/{convId}/bin", sessionAPI.HandleBinConversation).Methods("POST")
+	api.HandleFunc("/session/conversations/{convId}/bin", sessionAPI.HandleBinConversation).Methods("POST").Name(routeConversationBin)
 	api.HandleFunc("/session/binned-conversations", sessionAPI.HandleListBinnedConversations).Methods("GET")
 	api.HandleFunc("/session/binned-conversations", sessionAPI.HandleEmptyBin).Methods("DELETE")
 	api.HandleFunc("/session/binned-conversations/{convId}/restore", sessionAPI.HandleRestoreConversation).Methods("POST")
@@ -402,21 +402,16 @@ func (s *Server) RegisterTestRoutes(testAPI any) {
 	// Conversation-ownership guard: in the multi-lane pool, a conversation may
 	// only be deleted/binned by the lane that created it (cross-lane deletes
 	// tear down a live test's worker mid-test). The ledger lives on the test
-	// API; the session handlers consult it through these hooks, and the
-	// owners endpoint lets the Go harness fail the run on leaked conversations.
+	// API; convOwnershipMiddleware applies it around the named create, delete
+	// and bin routes, and the owners endpoint lets the Go harness fail the run
+	// on leaked conversations.
 	type convOwnershipAPI interface {
-		RecordConvOwner(convID, lane, reason string)
-		CheckConvDelete(convID, lane string) error
-		ReleaseConvOwner(convID string)
+		convOwnershipLedger
 		HandleConversationOwners(w http.ResponseWriter, r *http.Request)
 	}
 	coa, ok := testAPI.(convOwnershipAPI)
 	mustMatch(ok, "conversation-ownership")
-	if s.sessionAPI == nil {
-		panic("RegisterTestRoutes: sessionAPI is nil — the ownership guard cannot be wired " +
-			"(a Server field assigned before the field-initialization block in New was lost?)")
-	}
-	s.sessionAPI.SetConvOwnershipHooks(coa.RecordConvOwner, coa.CheckConvDelete, coa.ReleaseConvOwner)
+	s.router.Use(convOwnershipMiddleware(coa))
 	api.HandleFunc("/conversation-owners", coa.HandleConversationOwners).Methods("GET")
 
 	type runAPI interface {

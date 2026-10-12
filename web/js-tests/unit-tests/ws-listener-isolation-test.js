@@ -117,5 +117,38 @@ export async function runTests() {
       `the fault must carry what was thrown, got ${faults[0].message}`);
   });
 
+  // The session is a subscriber too, and it must hand back everything it took:
+  // a socket listener left behind outlives the session it closes over and runs
+  // against it on every broadcast. Services can be set more than once, so the
+  // second set replaces the first's subscriptions rather than adding to them.
+  await run('the session gives back every socket subscription it took', () => {
+    /** @type {Map<string, Set<Function>>} */
+    const live = new Map();
+    const ws = {
+      on(/** @type {string} */ type, /** @type {Function} */ cb) {
+        let set = live.get(type);
+        if (!set) live.set(type, set = new Set());
+        set.add(cb);
+        return () => { live.get(type)?.delete(cb); };
+      },
+      off(/** @type {string} */ type, /** @type {Function} */ cb) { live.get(type)?.delete(cb); }
+    };
+    const held = () => [...live].filter(([, set]) => set.size > 0)
+      .map(([type, set]) => `${type}×${set.size}`);
+    const session = /** @type {any} */ (trackTestSession(new Session(/** @type {any} */ ({}))));
+
+    session.setServices({ wsService: ws });
+    const once = held();
+    assert(once.length > 0, 'setServices subscribed to nothing, so this case proves nothing');
+    assert(once.every((entry) => entry.endsWith('×1')), `one subscription per feed, got ${once.join(', ')}`);
+
+    session.setServices({ wsService: ws });
+    assert(held().join() === once.join(),
+      `setting services again must replace the subscriptions, not add to them: ${once.join(', ')} then ${held().join(', ')}`);
+
+    session.destroy();
+    assert(held().length === 0, `destroy left socket subscriptions behind: ${held().join(', ')}`);
+  });
+
   return { passed, failed, errors };
 }

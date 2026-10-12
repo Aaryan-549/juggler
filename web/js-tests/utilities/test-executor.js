@@ -274,7 +274,7 @@ class TestExecutor {
       },
       wsService: {
         sendCancel: () => {},
-        on: () => {},
+        on: () => () => {},
         off: () => {}
       }
     });

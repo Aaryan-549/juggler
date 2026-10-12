@@ -1351,45 +1351,6 @@ func (w *ConversationWorker) handleRetryToolApproval(payload json.RawMessage) {
 	})
 }
 
-// handleUpdateAndRepositionToolActions updates tool actions with new hash and repositions changed ones
-func (w *ConversationWorker) handleUpdateAndRepositionToolActions(payload json.RawMessage) {
-	var msg struct {
-		ItemID  string `json:"itemId"`
-		NewHash int    `json:"newHash"`
-	}
-	if !w.decodePayload("update-and-reposition-tool-actions", payload, &msg) {
-		return
-	}
-
-	// Find all tool-actions for this context item, update hash on data, reposition if changed
-	items := w.doc.GetItems()
-	for i := len(items) - 1; i >= 0; i-- {
-		item := items[i]
-		if item.ItemID == msg.ItemID && item.Type == ItemTypeToolAction {
-			// Update the hash in data
-			var data map[string]any
-			if item.Data != nil {
-				_ = json.Unmarshal(item.Data, &data)
-			}
-			if data == nil {
-				data = make(map[string]any)
-			}
-
-			oldHash, _ := data["hash"].(float64)
-			if int(oldHash) != msg.NewHash {
-				data["hash"] = msg.NewHash
-				newData, _ := json.Marshal(data)
-				item.Data = newData
-				// Remove and re-add at end
-				w.doc.DeleteMessages([]int{i})
-				w.tracker.AppendMessage(item)
-				// Refresh items since we modified the array
-				items = w.doc.GetItems()
-			}
-		}
-	}
-}
-
 // handleRetryToolAction resets a tool action for re-run. It writes the
 // doc change (state=approved, result=nil) and sets activity="awaiting_llm"
 // so the thread reducer dispatches the LLM call when the tool completes.
@@ -1462,23 +1423,4 @@ func (w *ConversationWorker) handleBackgroundTaskSnapshot(payload json.RawMessag
 		return
 	}
 	w.doc.UpdateToolActionDisplayDataRecursive(snapshot.ToolUseID, "backgroundTask", displayData)
-}
-
-// handleRepositionContextItemPlaceholder detaches the tool action that produced
-// a context item from it (clearing its itemId) and writes the viewer's
-// placeholder text over its content. The worker owns items[], so the write
-// happens here; the wording is the viewer's.
-func (w *ConversationWorker) handleRepositionContextItemPlaceholder(payload json.RawMessage) {
-	var msg struct {
-		ItemID  string `json:"itemId"`
-		Content string `json:"content"`
-	}
-	if !w.decodePayload("reposition-context-item-placeholder", payload, &msg) {
-		return
-	}
-
-	w.doc.UpdateToolActionByItemIDRecursive(msg.ItemID, map[string]any{
-		"itemId":  "",
-		"content": msg.Content,
-	})
 }

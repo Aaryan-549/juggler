@@ -194,7 +194,7 @@ export async function runTests() {
       let routedWith = null;
       session._applyEngineProjectRoot = (/** @type {string} */ p) => { routedWith = p; };
       try {
-        session._projectChangedHandler({ projectPath: newPath });
+        session._onProjectChanged({ projectPath: newPath });
       } finally {
         session._applyEngineProjectRoot = savedApply;
       }

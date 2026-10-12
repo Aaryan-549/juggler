@@ -64,8 +64,8 @@ func (api *TestAPI) SetTapeDumper(fn func(string) any) {
 }
 
 // RecordConvOwner / CheckConvDelete / ReleaseConvOwner expose the ownership
-// ledger to the session handlers (wired via SessionAPI.SetConvOwnershipHooks
-// in RegisterTestRoutes). See ConvOwnership for the invariant they enforce.
+// ledger to the server's conversation-ownership middleware (installed by
+// RegisterTestRoutes). See ConvOwnership for the invariant they enforce.
 
 // RecordConvOwner registers lane as the creator of convID, tagged with reason
 // (the creating test's name) so a leak dump can name the culprit test.

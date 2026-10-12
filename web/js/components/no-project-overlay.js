@@ -42,8 +42,8 @@ class NoProjectOverlay extends HTMLElement {
     this._rendered = false;
     /** @type {string[]} @private */
     this._recents = [];
-    /** @type {((data: unknown) => void)|null} @private */
-    this._providersUpdateHandler = null;
+    /** @type {(() => void)|null} @private - Unsubscribes the providers-update listener. */
+    this._providersUpdateOff = null;
     /** @type {((event: Event) => void)|null} @private */
     this._folderDropHandler = null;
     /** @type {Record<string, Function>|null} @private */
@@ -53,8 +53,7 @@ class NoProjectOverlay extends HTMLElement {
   connectedCallback() {
     // The cache has no change event of its own, so the live feed it is built
     // from is what a status line subscribes to (same idiom as model-selector).
-    this._providersUpdateHandler = () => this._renderProviderStatus();
-    wsService.on('providers-update', this._providersUpdateHandler);
+    this._providersUpdateOff = wsService.on('providers-update', () => this._renderProviderStatus());
 
     // A folder dropped on an empty window. The native host reads the path off
     // the drag pasteboard and announces it here, because the page is never told
@@ -73,9 +72,9 @@ class NoProjectOverlay extends HTMLElement {
       this._unsubscribe();
       this._unsubscribe = null;
     }
-    if (this._providersUpdateHandler) {
-      wsService.off('providers-update', this._providersUpdateHandler);
-      this._providersUpdateHandler = null;
+    if (this._providersUpdateOff) {
+      this._providersUpdateOff();
+      this._providersUpdateOff = null;
     }
     if (this._folderDropHandler) {
       window.removeEventListener('juggler:folder-dropped', this._folderDropHandler);

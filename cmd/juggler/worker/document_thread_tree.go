@@ -367,32 +367,6 @@ func (cd *ConversationDocument) UpdateThreadItemFieldsRecursive(itemID string, f
 	})
 }
 
-// UpdateToolActionByItemIDRecursive searches all arrays (root + nested threads)
-// for the first tool-action whose itemId matches and updates its fields.
-// Returns true if the item was found and updated.
-func (cd *ConversationDocument) UpdateToolActionByItemIDRecursive(itemID string, fields map[string]any) bool {
-	ycrdtMu.Lock()
-	defer ycrdtMu.Unlock()
-	return updateToolActionByItemIDInArray(cd.doc, docInternalOrigin, cd.getItems(), itemID, fields)
-}
-
-func updateToolActionByItemIDInArray(doc *ycrdt.Doc, origin string, arr *ycrdt.YArray, itemID string, fields map[string]any) bool {
-	return walkAllItems(arr, "", func(m *ycrdt.YMap, _ string) bool {
-		if id, _ := m.Get("itemId").(string); id != itemID {
-			return false
-		}
-		if t, _ := m.Get("type").(string); t != ItemTypeToolAction {
-			return false
-		}
-		doc.Transact(func(_ *ycrdt.Transaction) {
-			for field, value := range fields {
-				m.Set(field, convertToYcrdt(value))
-			}
-		}, origin)
-		return true
-	})
-}
-
 // extractModelConfigFromMap extracts a concrete {provider, model} ModelConfig
 // from a map or Y.Map value. A missing or incomplete pair returns nil so the
 // caller's "please select a model" guard still trips, exactly as if no config

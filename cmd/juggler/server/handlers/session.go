@@ -45,28 +45,6 @@ type SessionAPI struct {
 	// resolveWorkspace answers what the project's own workspace can host, for
 	// the session load (SetWorkspaceResolver). Nil leaves that answer out.
 	resolveWorkspace workspace.ResolveFunc
-
-	// Test-mode conversation-ownership hooks (all nil in production). In the
-	// multi-lane test pool every lane shares one session, so creates tagged
-	// with ?lane= record ownership and deletes are checked against it — a
-	// cross-lane delete tears down a live test's worker mid-test and is
-	// rejected with 403 instead of trusted to never happen. Wired by
-	// RegisterTestRoutes from the testing package's ConvOwnership ledger.
-	recordConvOwner  func(convID, lane, reason string)
-	checkConvDelete  func(convID, lane string) error
-	releaseConvOwner func(convID string)
-}
-
-// SetConvOwnershipHooks wires the test-mode ownership ledger. Production
-// never calls this, leaving the hooks nil (no recording, no enforcement).
-func (api *SessionAPI) SetConvOwnershipHooks(
-	record func(convID, lane, reason string),
-	check func(convID, lane string) error,
-	release func(convID string),
-) {
-	api.recordConvOwner = record
-	api.checkConvDelete = check
-	api.releaseConvOwner = release
 }
 
 // WorkerManager is the slice of worker.Manager the session routes need —
@@ -689,14 +667,6 @@ func (api *SessionAPI) HandleCreateConversation(w http.ResponseWriter, r *http.R
 		}
 	}
 
-	// Test mode: record which lane created this conversation so the delete
-	// guard can reject cross-lane deletes, tagged with ?reason= (the creating
-	// test's name) so a suite-end leak dump names the culprit. Production sends
-	// no lane and has nil hooks — both make this a no-op.
-	if api.recordConvOwner != nil {
-		api.recordConvOwner(id, r.URL.Query().Get("lane"), r.URL.Query().Get("reason"))
-	}
-
 	WriteJSON(w, r, http.StatusCreated, map[string]any{
 		"id":      id,
 		"name":    finalName,
@@ -1051,21 +1021,10 @@ func (api *SessionAPI) HandleDeleteConversation(w http.ResponseWriter, r *http.R
 	// Attribute every delete to its requester. In the multi-lane test pool a
 	// delete tears the worker down for every lane, so when one lane's
 	// conversation dies mid-test the ?lane=/?reason= tags are what identify
-	// the actor.
-	lane := r.URL.Query().Get("lane")
+	// the actor. (A test-mode server refuses a cross-lane delete before it
+	// gets here: convOwnershipMiddleware in package server.)
 	jlog.Info("[session.Delete] conv=%s permanent=%v lane=%q reason=%q t=%s",
-		convID, permanent, lane, r.URL.Query().Get("reason"), nowRFC3339())
-
-	// Test mode: a conversation may only be deleted by the lane that created
-	// it. Anything else is the cross-lane bulldoze bug — it would tear down
-	// a live test's worker mid-turn — so reject it before any teardown.
-	if api.checkConvDelete != nil {
-		if err := api.checkConvDelete(convID, lane); err != nil {
-			jlog.Error("[session.Delete] REJECTED: %v", err)
-			WriteError(w, r, http.StatusForbidden, err.Error())
-			return
-		}
-	}
+		convID, permanent, r.URL.Query().Get("lane"), r.URL.Query().Get("reason"), nowRFC3339())
 
 	// Stop the Go worker BEFORE deleting files to prevent orphaned workers, and
 	// have it delete this conversation's per-conversation log(s) on the way down
@@ -1084,12 +1043,6 @@ func (api *SessionAPI) HandleDeleteConversation(w http.ResponseWriter, r *http.R
 	if err := api.manager().DeleteConversation(convID, permanent); err != nil {
 		WriteError(w, r, http.StatusInternalServerError, err.Error())
 		return
-	}
-
-	// The conversation is gone; release its ownership so the suite-end leak
-	// dump only reports conversations that genuinely outlived their test.
-	if api.releaseConvOwner != nil {
-		api.releaseConvOwner(convID)
 	}
 
 	w.WriteHeader(http.StatusNoContent)
@@ -1112,18 +1065,7 @@ func (api *SessionAPI) HandleBinConversation(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	lane := r.URL.Query().Get("lane")
-	jlog.Info("[session.Bin] conv=%s lane=%q t=%s", convID, lane, nowRFC3339())
-
-	// Binning tears the worker down exactly like delete, so the same
-	// test-mode cross-lane guard applies (nil hook in production).
-	if api.checkConvDelete != nil {
-		if err := api.checkConvDelete(convID, lane); err != nil {
-			jlog.Error("[session.Bin] REJECTED: %v", err)
-			WriteError(w, r, http.StatusForbidden, err.Error())
-			return
-		}
-	}
+	jlog.Info("[session.Bin] conv=%s lane=%q t=%s", convID, r.URL.Query().Get("lane"), nowRFC3339())
 
 	if api.workerManager != nil {
 		api.workerManager.Remove(convID)

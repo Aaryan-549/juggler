@@ -88,8 +88,8 @@ class ModelSelector extends HTMLElement {
     this._picker = null;
     /** @type {(() => void)|null} @private - presentPopup release for the open picker. */
     this._pickerRelease = null;
-    /** @type {import('../services/websocket.js').WSEventCallback|null} @private */
-    this._providersUpdateHandler = null;
+    /** @type {(() => void)|null} @private - Unsubscribes the providers-update listener. */
+    this._providersUpdateOff = null;
     /** @type {import('../model/message-thread.js').default|null} @private */
     this._messageThread = null;
     /**
@@ -138,7 +138,8 @@ class ModelSelector extends HTMLElement {
     this.fetchProviders();
 
     // Listen for incremental provider updates from WebSocket
-    this._providersUpdateHandler = (/** @type {unknown} */ data) => {
+    this._providersUpdateOff?.();
+    this._providersUpdateOff = wsService.on('providers-update', (/** @type {unknown} */ data) => {
       this.providers = /** @type {Provider[]} */ (data);
       this._syncModelDisplay();
       // The button's label is resolved from the providers list (to map the model
@@ -149,16 +150,16 @@ class ModelSelector extends HTMLElement {
       this._pushToChip();
       this._picker?.refresh();
       if (this._picker) this._picker.providers = this.providers;
-    };
-    wsService.on('providers-update', this._providersUpdateHandler);
+    });
   }
 
   disconnectedCallback() {
     // Tear down the picker (and, through the chip, the mini popover), both of
     // which live on document.body.
     this.closeDropdown();
-    if (this._providersUpdateHandler) {
-      wsService.off('providers-update', this._providersUpdateHandler);
+    if (this._providersUpdateOff) {
+      this._providersUpdateOff();
+      this._providersUpdateOff = null;
     }
     if (this._connectionStatusOff) {
       this._connectionStatusOff();

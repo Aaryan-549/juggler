@@ -340,6 +340,14 @@ class Session {
     this._nextListenerId = 1;
 
     /**
+     * Unsubscribe functions for the server-push listeners setServices put on
+     * the socket, released by setServices itself and by destroy().
+     * @type {Array<() => void>}
+     * @private
+     */
+    this._socketSubscriptions = [];
+
+    /**
      * Debounce timer for auto-save
      * @type {number|null}
      * @private
@@ -399,7 +407,7 @@ class Session {
       order: () => this.registry.ids(),
       setName: (id, name) => this.setConversationName(id, name),
       notify: (type, data) => this._notify(type, data),
-      notifyChange: (type, data) => this.notifyConversationChange(type, data),
+      notifyChange: (type, data) => this._notify(type, data),
       loadAtHead: (id) => this._loadIntoHead(id),
       drop: (id, opts) => this._dropActiveConversation(id, opts),
       reorder: (ids) => this.registry.arrange(ids),
@@ -745,78 +753,110 @@ class Session {
    * @param {ConversationServices} services - Services object
    */
   setServices(services) {
+    // Services may be set again; the new socket's subscriptions replace the
+    // old ones rather than joining them.
+    this._releaseSocketSubscriptions();
     this._services = services;
 
-    // Register session-wide file change listener
-    if (services.wsService) {
-      /** @type {import('../services/websocket.js').WSEventCallback} */
-      this._fileChangeHandler = (changes) => {
-        const conv = this.getVisibleConversation();
-        if (!conv) return;
-        const fileChanges = /** @type {Array<{path: string, event: string}>} */ (changes);
-        for (const contextItem of conv.rootMessageThread.contextItems) {
-          const manifest = /** @type {any} */ (contextItem.constructor).MANIFEST;
-          if (manifest?.watchesFileChanges && /** @type {any} */ (contextItem).onFileChange) {
-            for (const change of fileChanges) {
-              /** @type {any} */ (contextItem).onFileChange(change.path, change.event);
-            }
-          }
-        }
-      };
-      services.wsService.on('file-change', this._fileChangeHandler);
-
-      // When the server changes its loaded project, every connected client
-      // must reload to repopulate session state from the new project.
-      this._projectChangedHandler = (/** @type {unknown} */ data) => {
-        // The engine is persistent across a runtime project switch and, unlike
-        // viewers, never reloads (it has no page to reload). It must still
-        // repoint its project root: otherwise the query_code sandbox keeps
-        // exposing the PREVIOUS project's root to the model, which then reads /
-        // globs the old tree while the header bar shows the new project.
-        if (isEngine()) {
-          // Fire-and-forget: the reseed it kicks off guards its own failures,
-          // and the websocket callback must not block on a session refetch.
-          void this._applyEngineProjectRoot(/** @type {{projectPath?: string}} */ (data)?.projectPath);
-          return;
-        }
-        // Viewers: hard reload — the worker manager, conversation tabs, context
-        // items, and Yjs documents are all keyed off the old project's state and
-        // need the teardown/rebuild a fresh page load performs anyway.
-        if (typeof window !== 'undefined') window.location.reload();
-      };
-      services.wsService.on('project-changed', this._projectChangedHandler);
-
-      // The server learns some models' true context window only after the
-      // first turn — claudecode reads it from the CLI result event — and then
-      // rebroadcasts the provider list. Re-resolve each loaded conversation's
-      // cached context window from the fresh list so footers stop showing the
-      // cold-start fallback (e.g. 200k for a 1M-window opus) once the real
-      // number is known.
-      /** @type {import('../services/websocket.js').WSEventCallback} */
-      this._providersUpdateHandler = (providers) => {
-        const list = /** @type {Array<any>} */ (Array.isArray(providers) ? providers : []);
-        for (const conv of this.conversations.values()) {
-          if (conv.applyProvidersContextWindow(list)) {
-            this._notify('conversation:context-window-updated', conv);
-          }
-        }
-      };
-      services.wsService.on('providers-update', this._providersUpdateHandler);
-
-      // The workspace table is session state like the pinboard, not a per-device
-      // preference: the server owns it and republishes the whole table after
-      // every edit, so a window that is only watching still sees a workspace
-      // appear, become usable, and be finished with. Replaced whole rather than
-      // merged — an empty list is an edit like any other (the last workspace
-      // being unregistered), so it cannot be read as "nothing to say".
-      /** @type {import('../services/websocket.js').WSEventCallback} */
-      this._workspacesChangedHandler = (data) => {
-        const list = /** @type {{workspaces?: Workspace[]}} */ (data)?.workspaces;
-        this.workspaces = Array.isArray(list) ? list : [];
-        this._notify('session:workspaces-changed', this.workspaces);
-      };
-      services.wsService.on('workspaces-changed', this._workspacesChangedHandler);
+    const ws = services.wsService;
+    if (ws) {
+      this._socketSubscriptions = [
+        ws.on('file-change', (changes) => this._onFileChange(changes)),
+        ws.on('project-changed', (data) => this._onProjectChanged(data)),
+        ws.on('providers-update', (providers) => this._onProvidersUpdate(providers)),
+        ws.on('workspaces-changed', (data) => this._onWorkspacesChanged(data))
+      ];
     }
+  }
+
+  /**
+   * Drop every server-push subscription setServices took.
+   * @private
+   */
+  _releaseSocketSubscriptions() {
+    const subscriptions = this._socketSubscriptions;
+    this._socketSubscriptions = [];
+    for (const unsubscribe of subscriptions) unsubscribe();
+  }
+
+  /**
+   * `file-change`: hand each change to the visible conversation's context
+   * items that watch files.
+   * @param {unknown} changes - Array of {path, event}
+   * @private
+   */
+  _onFileChange(changes) {
+    const conv = this.getVisibleConversation();
+    if (!conv) return;
+    const fileChanges = /** @type {Array<{path: string, event: string}>} */ (changes);
+    for (const contextItem of conv.rootMessageThread.contextItems) {
+      const manifest = /** @type {any} */ (contextItem.constructor).MANIFEST;
+      if (manifest?.watchesFileChanges && /** @type {any} */ (contextItem).onFileChange) {
+        for (const change of fileChanges) {
+          /** @type {any} */ (contextItem).onFileChange(change.path, change.event);
+        }
+      }
+    }
+  }
+
+  /**
+   * `project-changed`: the server changed its loaded project, so every
+   * connected client must repopulate session state from the new one.
+   * @param {unknown} data - {projectPath}
+   * @private
+   */
+  _onProjectChanged(data) {
+    // The engine is persistent across a runtime project switch and, unlike
+    // viewers, never reloads (it has no page to reload). It must still
+    // repoint its project root: otherwise the query_code sandbox keeps
+    // exposing the PREVIOUS project's root to the model, which then reads /
+    // globs the old tree while the header bar shows the new project.
+    if (isEngine()) {
+      // Fire-and-forget: the reseed it kicks off guards its own failures,
+      // and the websocket callback must not block on a session refetch.
+      void this._applyEngineProjectRoot(/** @type {{projectPath?: string}} */ (data)?.projectPath);
+      return;
+    }
+    // Viewers: hard reload — the worker manager, conversation tabs, context
+    // items, and Yjs documents are all keyed off the old project's state and
+    // need the teardown/rebuild a fresh page load performs anyway.
+    if (typeof window !== 'undefined') window.location.reload();
+  }
+
+  /**
+   * `providers-update`. The server learns some models' true context window
+   * only after the first turn — claudecode reads it from the CLI result event —
+   * and then rebroadcasts the provider list. Re-resolve each loaded
+   * conversation's cached context window from the fresh list so footers stop
+   * showing the cold-start fallback (e.g. 200k for a 1M-window opus) once the
+   * real number is known.
+   * @param {unknown} providers - The provider list
+   * @private
+   */
+  _onProvidersUpdate(providers) {
+    const list = /** @type {Array<any>} */ (Array.isArray(providers) ? providers : []);
+    for (const conv of this.conversations.values()) {
+      if (conv.applyProvidersContextWindow(list)) {
+        this._notify('conversation:context-window-updated', conv);
+      }
+    }
+  }
+
+  /**
+   * `workspaces-changed`. The workspace table is session state like the
+   * pinboard, not a per-device preference: the server owns it and republishes
+   * the whole table after every edit, so a window that is only watching still
+   * sees a workspace appear, become usable, and be finished with. Replaced
+   * whole rather than merged — an empty list is an edit like any other (the
+   * last workspace being unregistered), so it cannot be read as "nothing to
+   * say".
+   * @param {unknown} data - {workspaces}
+   * @private
+   */
+  _onWorkspacesChanged(data) {
+    const list = /** @type {{workspaces?: Workspace[]}} */ (data)?.workspaces;
+    this.workspaces = Array.isArray(list) ? list : [];
+    this._notify('session:workspaces-changed', this.workspaces);
   }
 
   /**
@@ -1310,7 +1350,9 @@ class Session {
   /**
    * Notify listeners about a conversation state change. The public door for
    * Conversation instances to announce on the session feed, which is the only
-   * place it goes: a component that wants it calls {@link subscribe}.
+   * place it goes: a component that wants it calls {@link subscribe}. It is
+   * {@link _notify} for callers outside the Session; the Session itself calls
+   * `_notify`.
    * @param {string} type - Event type (e.g., 'conversation:strategy-changed')
    * @param {any} data - Event data
    */
@@ -1893,7 +1935,7 @@ class Session {
     // correctly. Bar-less contexts (the engine worker, the startup initial-
     // conversation created before the bar subscribes) simply have no listener.
     if (wantsRename) {
-      this.notifyConversationChange('conversation:rename-requested', { conversationId: conversation.id });
+      this._notify('conversation:rename-requested', { conversationId: conversation.id });
     }
 
     return conversation.id;
@@ -2542,7 +2584,7 @@ class Session {
     // on-disk folder name, so `conv.name` (a getter) reflects the rename
     // immediately.
     this.setConversationName(conversationId, canonical);
-    this.notifyConversationChange('conversation:renamed', { conversationId });
+    this._notify('conversation:renamed', { conversationId });
     return canonical;
   }
 
@@ -2802,28 +2844,9 @@ class Session {
       this._loadQueue = null;
     }
 
-    // Remove WebSocket listeners registered in setServices (all four, not just
-    // file-change — the others would otherwise leak and fire against a
-    // destroyed session).
-    if (this._services?.wsService) {
-      const ws = this._services.wsService;
-      if (this._fileChangeHandler) {
-        ws.off('file-change', /** @type {import('../services/websocket.js').WSEventCallback} */ (this._fileChangeHandler));
-        this._fileChangeHandler = undefined;
-      }
-      if (this._projectChangedHandler) {
-        ws.off('project-changed', /** @type {import('../services/websocket.js').WSEventCallback} */ (this._projectChangedHandler));
-        this._projectChangedHandler = undefined;
-      }
-      if (this._providersUpdateHandler) {
-        ws.off('providers-update', this._providersUpdateHandler);
-        this._providersUpdateHandler = undefined;
-      }
-      if (this._workspacesChangedHandler) {
-        ws.off('workspaces-changed', this._workspacesChangedHandler);
-        this._workspacesChangedHandler = undefined;
-      }
-    }
+    // Remove the socket listeners registered in setServices: left behind, they
+    // fire against a destroyed session on every broadcast.
+    this._releaseSocketSubscriptions();
 
     // Terminate all workers
     workerManager.terminateAll();

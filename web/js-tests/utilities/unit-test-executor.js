@@ -232,7 +232,7 @@ class UnitTestExecutor {
       },
       wsService: {
         sendCancel: () => {},
-        on: () => {},
+        on: () => () => {},
         off: () => {}
       }
     });

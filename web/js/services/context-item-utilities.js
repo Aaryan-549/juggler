@@ -17,7 +17,6 @@ import contextItemRegistry from '../registries/context-item-registry.js';
 import workerManager from './worker-manager.js';
 import { createContextItemMessage } from '../../sdk/lib/message.js';
 import { convertToYType, yGet } from '../model/item-accessor.js';
-import { hashString } from '../utils/hash.js';
 import { paintsNoRow } from '../utils/item-grouping.js';
 import { extractErrorMessage } from '../../sdk/lib/error-utils.js';
 import { animateContextItemRefresh } from './animation-service.js';
@@ -82,7 +81,6 @@ export async function executeContextItem(mt, conv, itemTypeId, params, options =
             return { id: existingItem.id, type: existingItem.type, created: false, error: toolResult.error };
           }
           mt.addContextItem(existingItem);
-          repositionPlaceholder(conv, existingItem.id);
           return { id: existingItem.id, type: existingItem.type, created: true };
         }
       }
@@ -284,8 +282,8 @@ export async function refreshAllContextItems(mt, conv) {
 }
 
 /**
- * Handle context item content change — detects data diffs,
- * batches yjs updates, and notifies the worker.
+ * Handle context item content change — detects data diffs and batches
+ * the yjs updates.
  * @param {MessageThread} mt
  * @param {Conversation} conv
  * @param {string} itemId
@@ -310,10 +308,6 @@ export async function handleContextItemContentChanged(mt, conv, itemId, changedI
     if (!pendingUpdates.has(mt)) pendingUpdates.set(mt, new Map());
     /** @type {Map<string, any>} */ (pendingUpdates.get(mt)).set(itemId, { ...existingItemData, data: newData });
     flushUpdates(mt, conv);
-
-    // Notify worker
-    const dataHash = hashString(JSON.stringify(newData));
-    workerManager.updateAndRepositionToolActions(conv.id, itemId, dataHash);
   }
 }
 
@@ -389,20 +383,6 @@ export function findNeighborItemId(items, deletedIndex, messageThread) {
 }
 
 // ── Internal helpers ──────────────────────────────────────────────────
-
-/**
- * Text a reused context item's original tool-action shows once the item has
- * moved on to its new position.
- */
-const REPOSITIONED_PLACEHOLDER = '(context item was repositioned)';
-
-/**
- * @param {Conversation} conv
- * @param {string} itemId
- */
-function repositionPlaceholder(conv, itemId) {
-  workerManager.repositionContextItemPlaceholder(conv.id, itemId, REPOSITIONED_PLACEHOLDER);
-}
 
 /**
  * Allocate a new, unique, never-reused item ID for the given conversation + prefix.

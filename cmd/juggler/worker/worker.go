@@ -947,9 +947,6 @@ func (r *run) dispatchMessage(msg workerMessage) {
 	case "retry-tool-approval":
 		r.handleRetryToolApproval(msg.Payload)
 
-	case "update-and-reposition-tool-actions":
-		r.handleUpdateAndRepositionToolActions(msg.Payload)
-
 	case "retry-tool-action":
 		r.handleRetryToolAction(msg.Payload)
 
@@ -958,9 +955,6 @@ func (r *run) dispatchMessage(msg workerMessage) {
 
 	case "background-task-snapshot":
 		r.handleBackgroundTaskSnapshot(msg.Payload)
-
-	case "reposition-context-item-placeholder":
-		r.handleRepositionContextItemPlaceholder(msg.Payload)
 
 	case "create-thread":
 		r.handleCreateThread(msg.Payload)

@@ -1223,9 +1223,12 @@ class WebSocketService {
   }
 
   /**
-   * Register an event listener
+   * Register an event listener. The returned function unregisters it, so a
+   * subscriber can keep that instead of keeping the callback for {@link off}
+   * (the same shape as `session.subscribe`).
    * @param {WSEventType} event - Event type to listen for
    * @param {WSEventCallback} callback - Callback function
+   * @returns {() => void} Unsubscribe function
    */
   on(event, callback) {
     if (this._listeners[event]) {
@@ -1233,6 +1236,7 @@ class WebSocketService {
     } else {
       console.error(`[ESSENTIAL] [WebSocket] Cannot register listener for unknown event '${event}'`);
     }
+    return () => this.off(event, callback);
   }
 
   /**

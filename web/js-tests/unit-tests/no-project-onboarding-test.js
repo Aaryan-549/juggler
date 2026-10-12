@@ -280,7 +280,7 @@ export async function runTests() {
     // A detached element still holding a subscription re-renders markup nobody
     // can see, for as long as the page lives.
     returning.remove();
-    assert(returning._providersUpdateHandler === null,
+    assert(returning._providersUpdateOff === null,
       'the overlay kept its providers-update subscription after being removed');
     passed++;
 

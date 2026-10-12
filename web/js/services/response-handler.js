@@ -191,8 +191,9 @@ class ResponseHandler {
           contentHash = hashString(toolResultContent);
         }
 
-        // Update existing tool-action with result
-        // Note: itemId is already set on the message by the worker, not on the result
+        // Update existing tool-action with result. The tool-action keeps the
+        // itemId the worker minted for it; the context item it produced is
+        // linked only through result.metadata.itemId, read above.
         messageThread.completeToolAction(toolCall.id, {
           content: toolResultContent,
           isError: !result.success,

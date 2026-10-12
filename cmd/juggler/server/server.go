@@ -98,7 +98,6 @@ type serverAPIs struct {
 	skillsRegistryAPI *handlers.SkillsRegistryAPI
 	configAPI         *handlers.ConfigAPI
 	modelPrefsAPI     *handlers.ModelPreferencesAPI
-	sessionAPI        *handlers.SessionAPI // Kept so RegisterTestRoutes can wire test-mode hooks
 	// systemPromptPresetsAPI serves user-saved system-prompt presets and the
 	// chosen session-default preset id (~/.juggler/system-prompt-presets.json).
 	systemPromptPresetsAPI *handlers.SystemPromptPresetsAPI
@@ -406,9 +405,9 @@ func New(cfg Config) (*Server, error) {
 	// this with a wholesale `*s = Server{...}` literal: the skeleton pointer
 	// has already been captured by closures and constructors above, and a
 	// struct-literal reassignment silently zeroes every field assigned to `s`
-	// before it (this exact bug shipped once: sessionAPI was set on the
-	// skeleton, wiped by the literal, and the test-mode ownership guard ran
-	// unwired through a full green suite).
+	// before it (this exact bug shipped once: a handler API set on the
+	// skeleton was wiped by the literal, and the test-mode guard wired from it
+	// ran unwired through a full green suite).
 	//
 	// The same hazard applies to the embedded groups, which is why only the two
 	// lock-free ones are assigned as literals below, each exactly once and
@@ -428,7 +427,6 @@ func New(cfg Config) (*Server, error) {
 		skillsRegistryAPI: handlers.NewSkillsRegistryAPI(s.ProjectPath, skillsAPI),
 		configAPI:         configAPI,
 		modelPrefsAPI:     handlers.NewModelPreferencesAPI(defaultModelStore, cheapModelStore, recentModels, s.resolveDefaultModel),
-		sessionAPI:        sessionAPI,
 
 		systemPromptPresetsAPI: handlers.NewSystemPromptPresetsAPI(systemPromptPresetStore),
 	}

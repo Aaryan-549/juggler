@@ -752,18 +752,6 @@ export class WorkerManager {
   }
 
   /**
-   * Update tool-actions with new hash and reposition changed ones to end.
-   * Worker finds all tool-actions for the itemId, compares hashes,
-   * updates mismatched ones and moves them to the end.
-   * @param {string} conversationId - Conversation ID
-   * @param {string} itemId - Context item ID to match
-   * @param {number} newHash - New content hash
-   */
-  updateAndRepositionToolActions(conversationId, itemId, newHash) {
-    protocols.updateAndRepositionToolActions(this, conversationId, itemId, newHash);
-  }
-
-  /**
    * Settle the pending {@link WorkerManager#createThread} a
    * `create-thread-response` answers. A response for a request this client
    * did not make (the worker broadcasts them) or already settled is ignored.
@@ -872,18 +860,6 @@ export class WorkerManager {
    */
   updateToolActionForRetry(conversationId, toolUseId, approvalOptions, displayData) {
     protocols.updateToolActionForRetry(this, conversationId, toolUseId, approvalOptions, displayData);
-  }
-
-  /**
-   * Update tool-actions to clear itemId and set placeholder content.
-   * Used when repositioning context items - old tool-action becomes placeholder.
-   * Worker owns items[], so mutation must happen there.
-   * @param {string} conversationId - Conversation ID
-   * @param {string} itemId - Context item ID to find and update
-   * @param {string} content - Text the detached tool-action shows in place of the item
-   */
-  repositionContextItemPlaceholder(conversationId, itemId, content) {
-    protocols.repositionContextItemPlaceholder(this, conversationId, itemId, content);
   }
 
   /**

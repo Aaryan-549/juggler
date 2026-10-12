@@ -113,7 +113,7 @@ async function createMockServices() {
  * No socket is involved: `emit` is the test playing the server's part. Nothing
  * else emits, so a suite that never calls it sees exactly the silence the old
  * no-op stub gave it.
- * @returns {{sendCancel: () => void, on: (type: string, cb: Function) => void, off: (type: string, cb: Function) => void, emit: (type: string, data?: any) => void}} The stub
+ * @returns {{sendCancel: () => void, on: (type: string, cb: Function) => () => void, off: (type: string, cb: Function) => void, emit: (type: string, data?: any) => void}} The stub
  */
 function createMockWebSocketService() {
   /** @type {Map<string, Set<Function>>} */
@@ -124,6 +124,7 @@ function createMockWebSocketService() {
       let set = handlers.get(type);
       if (!set) handlers.set(type, set = new Set());
       set.add(cb);
+      return () => { handlers.get(type)?.delete(cb); };
     },
     off: (type, cb) => { handlers.get(type)?.delete(cb); },
     emit: (type, data) => {
