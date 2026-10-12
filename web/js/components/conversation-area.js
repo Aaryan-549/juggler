@@ -838,7 +838,7 @@ class ConversationArea extends HTMLElement {
         </properties-panel-section>
       </header>
       <conversation-message-list-wrapper>
-        <section class="conversation-message-list" id="message-list">
+        <section class="conversation-message-list u-scrollbar-thin" id="message-list">
           <div class="conversation-message-list-inner" id="message-list-inner">
             <thread-column-actions class="hidden">
               <button class="properties-panel-btn thread-expand-btn" title="Expand this thread back into the parent">

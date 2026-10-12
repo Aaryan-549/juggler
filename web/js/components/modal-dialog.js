@@ -97,6 +97,7 @@ class ModalDialog extends HTMLElement {
   }
 
   connectedCallback() {
+    this.classList.add('modal-shell');
     this.render();
   }
 

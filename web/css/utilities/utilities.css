@@ -34,3 +34,28 @@
 [hidden] {
     display: none !important;
 }
+
+/* ==========================================================================
+   Thin scrollbar (.u-scrollbar-thin)
+   A narrow, unobtrusive vertical scrollbar on a transparent track, for the
+   long scrollers that sit beside other chrome: the message list and the
+   sidebar's tab list.
+   ========================================================================== */
+
+.u-scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: var(--overlay-light-10) transparent;
+}
+
+.u-scrollbar-thin::-webkit-scrollbar {
+    width: var(--scrollbar-size-thin);
+}
+
+.u-scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.u-scrollbar-thin::-webkit-scrollbar-thumb {
+    background: var(--overlay-light-10);
+    border-radius: var(--radius-sm);
+}

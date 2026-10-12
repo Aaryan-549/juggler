@@ -62,6 +62,10 @@ class BinModal extends JugglerElement {
     this._emptyMenuRelease = null;
   }
 
+  connectedCallback() {
+    this.classList.add('modal-shell');
+  }
+
   /**
    * Open the modal for the given session.
    * @param {import('../model/session.js').default} session

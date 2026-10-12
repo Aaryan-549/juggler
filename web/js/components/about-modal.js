@@ -41,6 +41,7 @@ class AboutModal extends JugglerElement {
   }
 
   connectedCallback() {
+    this.classList.add('modal-shell');
     this.render();
     this._setupLogoClick();
     this.addCleanup(() => this._cancelClubThrows());

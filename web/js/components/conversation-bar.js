@@ -960,7 +960,7 @@ class ConversationBar extends JugglerElement {
     let tabsMenu = /** @type {HTMLElement|null} */ (this._cachedElements.get('tabs-menu'));
     if (!tabsMenu) {
       tabsMenu = document.createElement('menu');
-      tabsMenu.className = 'conversation-tabs';
+      tabsMenu.className = 'conversation-tabs u-scrollbar-thin';
       this._cachedElements.set('tabs-menu', tabsMenu);
       tabsViewport.appendChild(tabsMenu);
       tabsMenu.addEventListener('scroll', () => this._updateTabListOverflow(), { passive: true });

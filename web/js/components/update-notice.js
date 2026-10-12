@@ -190,6 +190,10 @@ class UpdateNotice extends HTMLElement {
     this._pendingInstall = false;
   }
 
+  connectedCallback() {
+    this.classList.add('modal-shell');
+  }
+
   disconnectedCallback() {
     this._teardownDismissal();
   }

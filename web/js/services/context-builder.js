@@ -14,7 +14,6 @@
  * Go providers handle all API-specific transformation (message merging, SDK conversion).
  */
 
-import { TextSectionRenderer } from './renderers/text-section-renderer.js';
 import { FormattingHelpers } from '../../sdk/lib/formatting-helpers.js';
 import { assembleSystemPrompt } from './system-prompt-builder.js';
 import { buildExtensionSystemPromptContributions } from './extensions.js';
@@ -67,7 +66,7 @@ function runContextEntry(goal, sessionName, record) {
  *
  * Mirrors appendThreadMessages / buildRunToolResultMap in
  * `cmd/juggler/worker/llm_request.go`, which is what actually reaches the model
- * — this list is read by the context preview, so it has to agree. An item
+ * — so the two have to agree. An item
  * carrying a run selector contributes ONE entry, the run it stands for: a thread
  * called more than once has one parent item per call (model/thread-alias.js), so
  * the calls are read down the parent transcript rather than piled onto the item
@@ -237,18 +236,9 @@ export class ContextBuilder {
   }
 
   /**
-   * Get system prompt
-   * @returns {Promise<string>} The system prompt
-   */
-  async getSystemPrompt() {
-    return await this._assembleSystemPrompt();
-  }
-
-  /**
    * Assemble the system prompt exactly as it is sent to the LLM, via the shared
    * builder (the single source of truth shared with the worker context-request
-   * callback). Both prepare() and the UI preview (getSystemPrompt) route through
-   * here so the preview can't drift from what is actually sent — it includes the
+   * callback), so it can't drift from what is actually sent — it includes the
    * other system-position items (rules etc.) and enabled-extension contributions,
    * not just the system-prompt item's buildPrompt().
    *
@@ -278,15 +268,6 @@ export class ContextBuilder {
       contextParams,
       extensionContributions
     });
-  }
-
-  /**
-   * Render context as text with section metadata for UI preview
-   * @returns {Promise<{text: string, sections: Array<unknown>}>} Text and section metadata
-   */
-  async renderTextWithSections() {
-    const textRenderer = new TextSectionRenderer(this);
-    return await textRenderer.renderTextWithSections(this);
   }
 
 }

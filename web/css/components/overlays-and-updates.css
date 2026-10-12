@@ -468,18 +468,6 @@ path-input .path-input-field:focus {
    modal-panel). The host is display:none until a notice mounts a backdrop, at
    which point :has() promotes it to the centered modal layer. A top banner was
    tried first but sat under the macOS window controls. */
-update-notice {
-    display: none;
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    z-index: var(--z-modal);
-    align-items: center;
-    justify-content: center;
-}
-
 update-notice:has(.update-notice__backdrop) {
     display: flex;
 }

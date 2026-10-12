@@ -20,7 +20,7 @@
  * is a live flow — so they take an id-less `markPopupOpen` token instead, which
  * is also what keeps `isForeignPopupOpen` meaningful. See popup-manager.js.
  *
- * The app's PERSISTENT modals (about, bin, context-preview, modal-dialog,
+ * The app's PERSISTENT modals (about, bin, modal-dialog,
  * settings-panel, update-notice) are custom elements that toggle their own
  * visibility rather than creating and destroying a root, and several carry
  * behaviour this has no place for — modal-dialog's focus restore, update-notice

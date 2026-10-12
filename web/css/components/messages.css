@@ -41,10 +41,6 @@
        correct and jank-free.) Per-call behavior:'instant' overrides this where a
        scroll must not lag (initial scroll-restore). */
     scroll-behavior: smooth;
-
-    /* Thin, unobtrusive scrollbar */
-    scrollbar-width: thin;
-    scrollbar-color: var(--overlay-light-10) transparent;
 }
 
 /* Normal-order content column inside the reversed scroller. margin-bottom:auto
@@ -252,19 +248,6 @@ conversation-empty-hint.no-room-for-tips .empty-hint-tips {
     width: 2rem;
     height: 2rem;
     padding: 0;
-}
-
-.conversation-message-list::-webkit-scrollbar {
-    width: 0.375rem;
-}
-
-.conversation-message-list::-webkit-scrollbar-track {
-    background: transparent;
-}
-
-.conversation-message-list::-webkit-scrollbar-thumb {
-    background: var(--overlay-light-10);
-    border-radius: var(--radius-sm);
 }
 
 /* Subtle jump-to-top / jump-to-bottom controls, overlaid top-right of the

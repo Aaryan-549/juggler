@@ -5,7 +5,7 @@
  */
 
 /* Chrome shared by the overlays and blocks several components host:
-     - Shared modal styles   modal-backdrop, modal-panel
+     - Shared modal styles   .modal-shell, modal-backdrop, modal-panel
      - Image lightbox        .image-lightbox
      - Token display         token-display
      - Code block            code-block
@@ -15,6 +15,20 @@
    Shared Modal Styles
    Common backdrop and panel styling for all modals and overlays.
    ================================================================== */
+
+/* The host of a persistent modal (modal-dialog, about-modal, update-notice,
+   bin-modal), which adds this class when it connects: a fixed, full-viewport
+   box at the modal layer that centres its panel. Hidden here; each host's own
+   sheet says what shows it (`display: flex`). */
+.modal-shell {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: var(--z-modal);
+    align-items: center;
+    justify-content: center;
+}
+
 modal-backdrop {
     position: fixed;
     top: 0;

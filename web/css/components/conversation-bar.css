@@ -125,10 +125,6 @@ conversation-bar .conversation-tabs {
     flex: 1 1 auto;
     min-height: 0;
 
-    /* Thin, unobtrusive scrollbar — matches .conversation-message-list */
-    scrollbar-width: thin;
-    scrollbar-color: var(--overlay-light-10) transparent;
-
     /* A finger lifts a row by holding it (utils/reorder-drag.js), and iOS
        answers a hold with a callout of its own unless told not to. */
     -webkit-touch-callout: none;
@@ -1318,15 +1314,6 @@ conversation-bar .info-card__git-review {
 }
 
 /* Bin modal — list of binned conversations with row actions. */
-bin-modal {
-    display: none;
-    position: fixed;
-    inset: 0;
-    z-index: var(--z-modal);
-    align-items: center;
-    justify-content: center;
-}
-
 bin-modal.is-open {
     display: flex;
 }
@@ -1503,20 +1490,6 @@ conversation-bar .conversation-bar-empty {
     padding: 0.75rem 1rem;
     color: var(--text-secondary);
     font-style: italic;
-}
-
-/* Custom scrollbar for conversation bar — matches .conversation-message-list */
-conversation-bar .conversation-tabs::-webkit-scrollbar {
-    width: 0.375rem;
-}
-
-conversation-bar .conversation-tabs::-webkit-scrollbar-track {
-    background: transparent;
-}
-
-conversation-bar .conversation-tabs::-webkit-scrollbar-thumb {
-    background: var(--overlay-light-10);
-    border-radius: var(--radius-sm);
 }
 
 

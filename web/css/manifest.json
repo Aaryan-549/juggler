@@ -163,6 +163,7 @@
 				"image-lightbox-toolbar",
 				"modal-backdrop",
 				"modal-panel",
+				"modal-shell",
 				"token-display"
 			]
 		},
@@ -420,7 +421,6 @@
 				"action-*",
 				"approval-*",
 				"ask-user-question-details",
-				"context-preview-modal",
 				"llm-description",
 				"multi-*",
 				"option-*",
@@ -625,7 +625,8 @@
 			"file": "utilities/utilities.css",
 			"layer": "utilities",
 			"owns": [
-				"hidden"
+				"hidden",
+				"u-scrollbar-thin"
 			]
 		}
 	],

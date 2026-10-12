@@ -36,7 +36,7 @@ import { fetchSkillBody } from '../../services/skills.js';
 
 /**
  * Wrap preview content in the standard centered-modal chrome (backdrop +
- * modal-panel), matching bin-modal / about-modal / context-preview. Shared by
+ * modal-panel), matching bin-modal / about-modal. Shared by
  * the Discover drawer and the installed-skill popup so the two never drift.
  * @param {string} title - Pre-escaped dialog title.
  * @param {string} bodyHtml - Scrollable body markup.

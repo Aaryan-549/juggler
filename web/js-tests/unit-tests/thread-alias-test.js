@@ -9,7 +9,7 @@
  * itself, then an alias per later call. Each item answers for the ONE run it
  * stands for, so what a tile says is frozen when that run settles and no later
  * call can rewrite it. These are the reads every surface depends on — the tile,
- * the properties panel, the context preview — and each has a Go twin
+ * the properties panel — and each has a Go twin
  * (worker/run_records.go) that must agree with it.
  * @module unit-tests/thread-alias-test
  */
