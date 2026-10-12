@@ -29,6 +29,7 @@ import { fetchProjectSize, projectSizeLines } from './project-size.js';
 import { fetchMachineLoad, measureTimerGrid, machineLoadLines } from './machine-load.js';
 import { lastConfirmGiveUp } from './ui-operation-executor.js';
 import { apiUrl } from '../../js/utils/api-url.js';
+import { restorePluginConfig } from './plugin-config.js';
 
 /**
  * Race a promise against a timeout so a wedged/slow server can never hang the
@@ -201,7 +202,7 @@ __tapeChan.onmessage = (/** @type {MessageEvent} */ ev) => {
 
 /**
  * @typedef {object} TestOperation
- * @property {'send-message'|'send-message-no-wait'|'send-thread-message'|'send-thread-message-no-wait'|'assert-input-warning'|'approve'|'approve-no-wait'|'deny'|'wait-for-approval'|'wait-for-thread-approval'|'approve-thread-tool'|'approve-thread-tool-no-wait'|'deny-thread-tool'|'run-command'|'compact-up-to'|'simulate-disconnect'|'wait-for-state'|'wait-for-idle'|'create-conversation'|'duplicate-conversation'|'switch-conversation'|'delete-conversation'|'undo'|'redo'|'set-model'|'assert-document'|'assert-transaction-markers'|'validate-context-snapshot'|'validate-thread-context'|'start-capture-progress'|'wait-for-progress'|'assert-streaming-chunks'|'assert-no-result'|'assert-tool-field'|'cancel'|'cancel-from-root'|'cancel-thread'|'delete-last-item'|'delete-last-item-in-thread'|'delete-first-item-in-thread'|'delete-item-in-thread'|'assert-thread-item-count'|'wait-for-execution'|'rerun-tool'|'rerun-tool-no-wait'|'cancel-via-ui-flow'|'continue'|'continue-sub-thread'|'continue-in-new-thread'|'assert-dom'|'click-dom'|'set-dom-value'|'move-items'|'copy-items'|'copy-items-new-tab'|'move-items-new-tab'|'expand-thread'|'promote-thread'|'start-tool-exec-counter'|'assert-tool-exec-count'|'start-spinner-capture'|'assert-spinner-was-visible'|'capture-tool-result'|'assert-tool-result-changed'|'add-context-item-to-sub-thread'|'add-context-item-to-root'|'add-ai-files-to-sub-thread'|'remove-context-item-from-sub-thread'|'wait-ms'|'at-mention-file'|'wait-for-mock-paused'|'release-mock'|'add-execute-pattern'|'set-strategy'|'run-command-no-wait'|'expect-confirm'|'assert-confirm-shown'} type - Operation type
+ * @property {'send-message'|'send-message-no-wait'|'send-thread-message'|'send-thread-message-no-wait'|'assert-input-warning'|'approve'|'approve-no-wait'|'deny'|'wait-for-approval'|'wait-for-thread-approval'|'approve-thread-tool'|'approve-thread-tool-no-wait'|'deny-thread-tool'|'run-command'|'compact-up-to'|'simulate-disconnect'|'wait-for-state'|'wait-for-idle'|'create-conversation'|'duplicate-conversation'|'switch-conversation'|'delete-conversation'|'undo'|'redo'|'set-model'|'assert-document'|'assert-transaction-markers'|'validate-context-snapshot'|'validate-thread-context'|'set-plugin-enabled'|'start-capture-progress'|'wait-for-progress'|'assert-streaming-chunks'|'assert-no-result'|'assert-tool-field'|'cancel'|'cancel-from-root'|'cancel-thread'|'delete-last-item'|'delete-last-item-in-thread'|'delete-first-item-in-thread'|'delete-item-in-thread'|'assert-thread-item-count'|'wait-for-execution'|'rerun-tool'|'rerun-tool-no-wait'|'cancel-via-ui-flow'|'continue'|'continue-sub-thread'|'continue-in-new-thread'|'assert-dom'|'click-dom'|'set-dom-value'|'move-items'|'copy-items'|'copy-items-new-tab'|'move-items-new-tab'|'expand-thread'|'promote-thread'|'start-tool-exec-counter'|'assert-tool-exec-count'|'start-spinner-capture'|'assert-spinner-was-visible'|'capture-tool-result'|'assert-tool-result-changed'|'add-context-item-to-sub-thread'|'add-context-item-to-root'|'add-ai-files-to-sub-thread'|'remove-context-item-from-sub-thread'|'wait-ms'|'at-mention-file'|'wait-for-mock-paused'|'release-mock'|'add-execute-pattern'|'set-strategy'|'run-command-no-wait'|'expect-confirm'|'assert-confirm-shown'|'wait-for-nested-call'|'wait-for-suspended-call'|'clear-rules'} type - Operation type
  * @property {string} [message] - Message text (for send-message)
  * @property {string} [toolUseId] - Tool use ID (for approve/deny/wait-for-approval/streaming operations)
  * @property {string} [response] - Custom response value (for approve - used by AskUserQuestion answers)
@@ -222,6 +223,9 @@ __tapeChan.onmessage = (/** @type {MessageEvent} */ ev) => {
  * @property {number} [minChunks] - Minimum chunks expected (for assert-streaming-chunks)
  * @property {number} [minEvents] - Minimum events to wait for (for wait-for-progress)
  * @property {string} [contains] - Text the accumulated output must contain (for wait-for-action-output)
+ * @property {string} [callName] - Tool a program's call is to (for wait-for-nested-call, wait-for-suspended-call)
+ * @property {string} [itemType] - Permission key whose rules to drop (for clear-rules)
+ * @property {string} [callStatus] - Status that call must reach in the program's record (for wait-for-nested-call)
  * @property {number} [index] - Item index (for compact-up-to)
  * @property {number} [threadIndex] - Which thread item (0-based) in root items (for validate-thread-context, continue-sub-thread)
  * @property {number} [ms] - Milliseconds to wait (for wait-ms)
@@ -231,6 +235,9 @@ __tapeChan.onmessage = (/** @type {MessageEvent} */ ev) => {
  * @property {Array<{role: string, contentIncludes: string}>} [expectedMessages] - Partial message matches (for validate-thread-context, validate-context-snapshot)
  * @property {string[]} [expectedContent] - Content strings that MUST appear in messages (for validate-thread-context, validate-context-snapshot)
  * @property {string[]} [unexpectedContent] - Content strings that must NOT appear (for validate-thread-context, validate-context-snapshot)
+ * @property {Array<{name: string, descriptionIncludes?: string}>} [expectedTools] - Tools the round trip must have offered, optionally with a description substring (for validate-thread-context, validate-context-snapshot)
+ * @property {string} [pluginId] - Plugin to switch (for set-plugin-enabled)
+ * @property {boolean} [enabled] - Whether the plugin ends up on (for set-plugin-enabled)
  * @property {string} [selector] - CSS selector (for assert-dom / click-dom / set-dom-value)
  * @property {boolean} [global] - Search the whole tab (all columns) not just the root area (for assert-dom / click-dom / set-dom-value)
  * @property {string} [value] - Value to set on an input/textarea (for set-dom-value); expected field value (for assert-tool-field)
@@ -974,6 +981,20 @@ export async function runIntegrationTest(testDef, ctx) {
       }
       harness._secondViewers.clear();
     }
+
+    // Put back a plugin config the test changed (set-plugin-enabled), and wait
+    // for the engine to load it, so the next test is offered the tools it
+    // expects. The config is the project's: the fixture reset keeps `.juggler/`,
+    // so nothing else would restore it. Bounded like the cleanups below; a
+    // timeout here is logged and the config is already written by then.
+    await _withDeadline(
+      restorePluginConfig(/** @type {any} */ (harness)).catch((err) => {
+        logger.error(`[runner] plugin config restore for ${testDef.name}: ${err instanceof Error ? err.message : String(err)}`);
+      }),
+      12000,
+      undefined,
+      `plugin config restore for ${testDef.name}`
+    );
 
     // Delete server-side conversations BEFORE tearing down the harness.
     // teardown() destroys the session and detaches services; doing the

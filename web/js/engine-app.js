@@ -65,10 +65,17 @@ class EngineApp {
     // Listen for extension file/config changes. The reload path defers any
     // registry reset until local turns are idle, so tools are never removed
     // from under an in-flight execution.
+    //
+    // Once the rebuild lands, say so on the engine bridge: the engine's
+    // registries decide what tools a turn is offered, and nothing else tells a
+    // viewer when a config write has taken effect there. reloadRegistries
+    // coalesces requests, and resolves only after a rebuild that began after
+    // this one, so the acknowledgement never predates the change it follows.
     wsService.on('plugin-changed', async () => {
       console.info('[Engine] Plugin changed — reloading registries');
       await reloadRegistries();
       console.info('[Engine] Plugin registries reloaded');
+      wsService.sendEngineBridge('juggler-registries', { phase: 'reloaded' });
     });
 
     // The enabled/disabled capability set is per-project — the server resolves

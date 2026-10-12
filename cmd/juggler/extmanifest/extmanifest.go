@@ -79,6 +79,12 @@ type Provides struct {
 	// underscore makes `//go:embed extensions/*` skip them so test code never
 	// ships in a production binary (mirroring the js-tests/ build-tag exclusion).
 	Tests []string `json:"tests,omitempty"`
+	// IntegrationTests declares the extension's integration test modules (globs
+	// relative to the extension root), each exporting `tests`: definitions run
+	// by the browser harness's integration runner against a live worker and a
+	// mock model, named `integration:<name>` like the shared pool's. Test-only,
+	// like Tests, and conventionally under "_tests/integration/".
+	IntegrationTests []string `json:"integrationTests,omitempty"`
 }
 
 // Setting describes one user-configurable extension value. Settings are global

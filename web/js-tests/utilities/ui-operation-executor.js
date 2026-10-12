@@ -23,6 +23,8 @@ import { budgetFor } from './test-deadline.js';
 import { askForMoreTime, whyGivingUp } from './test-patience.js';
 import { apiUrl } from '../../js/utils/api-url.js';
 import { pingWorker } from './worker-test-hooks.js';
+import { setPluginEnabled } from './plugin-config.js';
+import { waitFor } from './test-helpers.js';
 
 /**
  * @typedef {import('./integration-test-runner.js').TestOperation} TestOperation
@@ -206,7 +208,7 @@ function waitForElementGone(selector, timeoutMs = 3000) {
  */
 const OBSERVE_ONLY_OPS = new Set([
   'wait-for-idle', 'wait-for-state', 'wait-for-approval', 'wait-for-thread-approval',
-  'wait-for-progress', 'wait-for-action-output', 'wait-for-execution',
+  'wait-for-progress', 'wait-for-action-output', 'wait-for-execution', 'wait-for-nested-call', 'wait-for-suspended-call',
   'wait-for-mock-paused', 'wait-ms',
   'assert-document', 'assert-dom', 'assert-no-result', 'assert-tool-field', 'assert-input-warning',
   'assert-streaming-chunks', 'assert-transaction-markers', 'assert-thread-item-count',
@@ -681,6 +683,16 @@ export async function executeUIOperation(harness, op) {
       break;
     }
 
+    case 'clear-rules': {
+      if (!op.itemType) {
+        throw new Error('clear-rules operation requires itemType');
+      }
+      // Drop a grant the approval-flow conversation starts with (it permits
+      // file writes), so the calls it covered ask again.
+      harness.conversation.rootMessageThread.clearRules(op.itemType);
+      break;
+    }
+
     case 'set-strategy': {
       if (!op.strategy) {
         throw new Error('set-strategy operation requires strategy');
@@ -737,6 +749,17 @@ export async function executeUIOperation(harness, op) {
       break;
     }
 
+    // Changes the project's plugin config, which every lane of the server
+    // shares: only a needsExclusiveRun test may use it. The runner restores the
+    // config when the test ends (restorePluginConfig).
+    case 'set-plugin-enabled': {
+      if (!op.pluginId || typeof op.enabled !== 'boolean') {
+        throw new Error('set-plugin-enabled operation requires pluginId and enabled');
+      }
+      await setPluginEnabled(/** @type {any} */ (harness), op.pluginId, op.enabled);
+      break;
+    }
+
     case 'start-capture-progress': {
       if (!op.toolUseId) {
         throw new Error('start-capture-progress operation requires toolUseId');
@@ -766,6 +789,28 @@ export async function executeUIOperation(harness, op) {
         throw new Error('wait-for-action-output operation requires contains');
       }
       await harness.waitForActionOutput(op.toolUseId, op.contains, op.timeoutMs);
+      break;
+    }
+
+    // A program tool's calls are not tool-actions: they exist only as rows
+    // in the program's displayData.nestedCalls, written by the engine as the
+    // program runs. This waits for the first call to `callName` to reach
+    // `callStatus` there.
+    case 'wait-for-nested-call': {
+      if (!op.toolUseId || !op.callName || !op.callStatus) {
+        throw new Error('wait-for-nested-call operation requires toolUseId, callName and callStatus');
+      }
+      await waitForNestedCall(harness, op.toolUseId, op.callName, op.callStatus, op.timeoutMs);
+      break;
+    }
+
+    // A program tool suspended on one of its calls is pending with that
+    // call in `suspendedCall`. This waits for it to be suspended on `callName`.
+    case 'wait-for-suspended-call': {
+      if (!op.toolUseId || !op.callName) {
+        throw new Error('wait-for-suspended-call operation requires toolUseId and callName');
+      }
+      await waitForSuspendedCall(harness, op.toolUseId, op.callName, op.timeoutMs);
       break;
     }
 
@@ -1549,5 +1594,58 @@ export async function executeUIOperation(harness, op) {
 
     default:
       throw new Error(`Unknown operation type: ${op.type}`);
+  }
+}
+
+/**
+ * Wait until a program tool is pending, suspended on a call to `callName`.
+ * Rides the per-test deadline, and on giving up names the state and the held
+ * call it last saw.
+ * @param {any} harness - UI test harness (only `rootThread` is read)
+ * @param {string} toolUseId - The program's tool-action
+ * @param {string} callName - Tool the held call is to
+ * @param {number} [timeoutMs=10000] - Nominal timeout, stretched to the deadline
+ * @returns {Promise<void>}
+ */
+export async function waitForSuspendedCall(harness, toolUseId, callName, timeoutMs = 10000) {
+  const held = () => {
+    const action = harness?.rootThread?.getToolAction?.(toolUseId);
+    if (action?.get('state') !== 'pending') return null;
+    const call = action.get('suspendedCall');
+    return call?.toJSON ? call.toJSON() : call;
+  };
+  try {
+    await waitFor(() => held()?.name === callName, { timeoutMs: budgetFor(timeoutMs), intervalMs: 25, description: `the program to wait on ${callName}` });
+  } catch (e) {
+    const action = harness?.rootThread?.getToolAction?.(toolUseId);
+    throw new Error(`wait-for-suspended-call(${toolUseId}): ${e instanceof Error ? e.message : String(e)}; `
+      + `state ${action?.get('state')}, held ${JSON.stringify(held())}`);
+  }
+}
+
+/**
+ * Wait until a program tool's record shows a call to `callName` at
+ * `callStatus`. Rides the per-test deadline, and on giving up names the call it
+ * wanted and the rows it last saw.
+ * @param {any} harness - UI test harness (only `rootThread` is read)
+ * @param {string} toolUseId - The program's tool-action
+ * @param {string} callName - Tool the call is to
+ * @param {string} callStatus - Status it must reach
+ * @param {number} [timeoutMs=10000] - Nominal timeout, stretched to the deadline
+ * @returns {Promise<void>}
+ */
+export async function waitForNestedCall(harness, toolUseId, callName, callStatus, timeoutMs = 10000) {
+  const rows = () => {
+    const action = harness?.rootThread?.getToolAction?.(toolUseId);
+    const display = action?.get('displayData');
+    const data = display?.toJSON ? display.toJSON() : display;
+    return Array.isArray(data?.nestedCalls) ? data.nestedCalls : [];
+  };
+  const seen = () => rows().some((/** @type {any} */ r) => r.name === callName && r.status === callStatus);
+  try {
+    await waitFor(seen, { timeoutMs: budgetFor(timeoutMs), intervalMs: 25, description: `a ${callName} call to be ${callStatus}` });
+  } catch (e) {
+    const brief = rows().map((/** @type {any} */ r) => `${r.name}:${r.status}`).join(',') || 'none';
+    throw new Error(`wait-for-nested-call(${toolUseId}): ${e instanceof Error ? e.message : String(e)}; rows were ${brief}`);
   }
 }

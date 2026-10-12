@@ -105,7 +105,9 @@ type extensionTest struct {
 
 // HandleExtensionTests discovers extension-owned test suites by scanning the
 // on-disk web/extensions/* tree, reading each juggler.extension.json, and
-// expanding its `provides.tests` globs. GET /api/test/extension-tests.
+// expanding its `provides.tests` globs (unit suites, served by name and path)
+// and its `provides.integrationTests` globs (integration modules, served by
+// path: each names its own tests). GET /api/test/extension-tests.
 //
 // Test suites are discovered from disk (not the embedded FS) because the test
 // files live under a "_tests/" directory that `//go:embed extensions/*` skips
@@ -115,13 +117,14 @@ type extensionTest struct {
 // integration-test-executor.js: an extension owns its tests via its manifest.
 func (api *TestAPI) HandleExtensionTests(w http.ResponseWriter, r *http.Request) {
 	tests := []extensionTest{}
+	integrationModules := []string{}
 
 	entries, err := os.ReadDir(api.webExtDir)
 	if err != nil {
 		// No extensions dir (e.g. running outside a source checkout) — return an
 		// empty list rather than an error; the harness treats it as "no extension
 		// tests" and runs the internal suites normally.
-		handlers.WriteJSON(w, r, 0, map[string]any{"tests": tests})
+		handlers.WriteJSON(w, r, 0, map[string]any{"tests": tests, "integrationModules": integrationModules})
 		return
 	}
 
@@ -135,27 +138,35 @@ func (api *TestAPI) HandleExtensionTests(w http.ResponseWriter, r *http.Request)
 			continue // not an extension dir
 		}
 		manifest, err := extmanifest.Parse(data)
-		if err != nil || len(manifest.Provides.Tests) == 0 {
-			continue
-		}
-		// Expand the tests globs against the extension root, applying the same
-		// traversal guard the server uses for capability globs.
-		matches, err := extmanifest.ExpandGlobs(os.DirFS(extDir), manifest.Provides.Tests)
 		if err != nil {
 			continue
 		}
-		for _, rel := range matches {
-			tests = append(tests, extensionTest{
-				Name: extensionTestName(rel),
-				Path: "/extensions/" + entry.Name() + "/" + rel,
-			})
+		// Expand the globs against the extension root, applying the same
+		// traversal guard the server uses for capability globs.
+		if len(manifest.Provides.Tests) > 0 {
+			if matches, err := extmanifest.ExpandGlobs(os.DirFS(extDir), manifest.Provides.Tests); err == nil {
+				for _, rel := range matches {
+					tests = append(tests, extensionTest{
+						Name: extensionTestName(rel),
+						Path: "/extensions/" + entry.Name() + "/" + rel,
+					})
+				}
+			}
+		}
+		if len(manifest.Provides.IntegrationTests) > 0 {
+			if matches, err := extmanifest.ExpandGlobs(os.DirFS(extDir), manifest.Provides.IntegrationTests); err == nil {
+				for _, rel := range matches {
+					integrationModules = append(integrationModules, "/extensions/"+entry.Name()+"/"+rel)
+				}
+			}
 		}
 	}
 
 	// Stable order so the discovered list (and thus test scheduling) is
 	// deterministic across runs regardless of filesystem enumeration order.
 	sort.Slice(tests, func(i, j int) bool { return tests[i].Name < tests[j].Name })
-	handlers.WriteJSON(w, r, 0, map[string]any{"tests": tests})
+	sort.Strings(integrationModules)
+	handlers.WriteJSON(w, r, 0, map[string]any{"tests": tests, "integrationModules": integrationModules})
 }
 
 // extensionTestName derives the harness-addressable suite name from a test

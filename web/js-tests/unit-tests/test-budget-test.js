@@ -21,7 +21,8 @@
 import { assert, waitFor } from '../utilities/test-helpers.js';
 import { budgetFor, testDeadlineMs, setTestDeadline } from '../utilities/test-deadline.js';
 import UIDriver from '../utilities/ui-driver.js';
-import { executeUIOperation, lastConfirmGiveUp, disarmConfirm } from '../utilities/ui-operation-executor.js';
+import { executeUIOperation, lastConfirmGiveUp, disarmConfirm, waitForNestedCall } from '../utilities/ui-operation-executor.js';
+import { afterEngineReload, REGISTRIES_CHANNEL } from '../utilities/plugin-config.js';
 
 /**
  * @typedef {object} TestContext
@@ -203,6 +204,72 @@ export async function runTests(_ctx) {
   } catch (e) {
     failed++;
     errors.push(`the armed confirmation watcher rides the deadline and records giving up: ${e instanceof Error ? e.message : String(e)}`);
+  }
+
+  // A plugin-config write waits for the engine to report its registries
+  // reloaded. That wait must ride the deadline like every other, and when it
+  // runs out it must say what it was waiting for: a silent one becomes a test
+  // that times out on a turn offered the wrong tools.
+  try {
+    const armedDeadline = testDeadlineMs();
+    try {
+      // A deadline all but spent: a wait riding it gives up within a second,
+      // one pinned to its nominal 10s does not.
+      setTestDeadline(Date.now() - 900);
+      const started = Date.now();
+      let threw = null;
+      try {
+        await afterEngineReload(async () => {}, 'a write that never happened');
+      } catch (e) {
+        threw = e;
+      }
+      const elapsed = Date.now() - started;
+      assert(threw !== null, 'the reload wait resolved with no acknowledgement from the engine');
+      const message = threw instanceof Error ? threw.message : String(threw);
+      assert(
+        message.includes('a write that never happened') && message.includes(REGISTRIES_CHANNEL),
+        `the reload wait must name its trigger and the channel it listened on, got: ${message}`
+      );
+      assert(elapsed < 5000, `the reload wait took ${elapsed}ms against a spent deadline; it is not riding it`);
+    } finally {
+      setTestDeadline(armedDeadline, { shared: true });
+    }
+    passed++;
+  } catch (e) {
+    failed++;
+    errors.push(`the engine-reload wait rides the deadline and names what it waited for: ${e instanceof Error ? e.message : String(e)}`);
+  }
+
+  // The wait on a program tool's call rows must ride the deadline too, and
+  // when it gives up say which call it wanted and what rows it saw: the rows
+  // are written by the engine, so a silent timeout here would hide whether the
+  // program never started or the call never got there.
+  try {
+    const armedDeadline = testDeadlineMs();
+    try {
+      setTestDeadline(Date.now() - 900);
+      const started = Date.now();
+      let threw = null;
+      try {
+        await waitForNestedCall({}, 'prog_x', 'bash', 'running');
+      } catch (e) {
+        threw = e;
+      }
+      const elapsed = Date.now() - started;
+      assert(threw !== null, 'the nested-call wait resolved with no program to watch');
+      const message = threw instanceof Error ? threw.message : String(threw);
+      assert(
+        message.includes('prog_x') && message.includes('bash call to be running') && message.includes('rows were none'),
+        `the nested-call wait must name the program, the call and the rows it saw, got: ${message}`
+      );
+      assert(elapsed < 5000, `the nested-call wait took ${elapsed}ms against a spent deadline; it is not riding it`);
+    } finally {
+      setTestDeadline(armedDeadline, { shared: true });
+    }
+    passed++;
+  } catch (e) {
+    failed++;
+    errors.push(`the nested-call wait rides the deadline and names what it waited for: ${e instanceof Error ? e.message : String(e)}`);
   }
 
   // Underneath every budget is a timer, and a hidden window's timers are not

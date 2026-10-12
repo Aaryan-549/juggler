@@ -39,6 +39,7 @@ export async function runTests(_ctx) {
   const {
     exclusiveNamesIn,
     extensionSuiteEntry,
+    extensionIntegrationEntries,
     listExclusiveTests,
     ensureExtensionSuitesLoaded
   } = await import('../utilities/integration-test-executor.js');
@@ -80,6 +81,19 @@ export async function runTests(_ctx) {
     if (plain.needsExclusiveRun !== false) {
       throw new Error('an extension exporting nothing was made exclusive anyway');
     }
+  });
+
+  await run('an extension integration module\'s tests become integration: definitions', () => {
+    const mod = { tests: [{ name: 'flagged', needsExclusiveRun: true, operations: [] }, { name: 'plain', operations: [] }] };
+    const entries = extensionIntegrationEntries('/extensions/x/_tests/integration/x-tests.js', mod);
+    const names = entries.map((e) => e.name).join(',');
+    if (names !== 'integration:flagged,integration:plain') throw new Error(`named ${names}`);
+    if (mod.tests[0].name !== 'flagged') throw new Error('the module\'s own definitions were renamed in place');
+    const got = exclusiveNamesIn(entries).join(',');
+    if (got !== 'integration:flagged') throw new Error(`exclusive: ${got}`);
+    let threw = false;
+    try { extensionIntegrationEntries('/extensions/x/_tests/integration/bad.js', {}); } catch { threw = true; }
+    if (!threw) throw new Error('a module with no tests export was accepted');
   });
 
   await run('every kind of real declaration is in the list', async () => {

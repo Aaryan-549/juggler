@@ -181,6 +181,7 @@ export async function assertContextSnapshot(rootThread, conversationId, op) {
   const diag = _blobDiag(txnId, items, blob, conversationId);
   recordTape('txn-blob', conversationId, { op: 'snapshot', selectedTxnId: txnId, msgCount: blob.input?.messages?.length ?? 0 });
   try {
+    _assertBlobTools(`validate-context-snapshot[${txnId}]`, blob, op);
     _assertBlobMessages(`validate-context-snapshot[${txnId}]`, blob, op);
   } catch (e) {
     throw new Error(`${e instanceof Error ? e.message : String(e)}${diag}`);
@@ -207,6 +208,7 @@ export async function assertThreadContext(rootThread, conversationId, op) {
   const diag = _blobDiag(txnId, items, blob, conversationId);
   recordTape('txn-blob', conversationId, { op: 'thread', selectedTxnId: txnId, msgCount: blob.input?.messages?.length ?? 0 });
   try {
+    _assertBlobTools('validate-thread-context', blob, op);
     _assertBlobMessages('validate-thread-context', blob, op);
   } catch (e) {
     throw new Error(`${e instanceof Error ? e.message : String(e)}${diag}`);
@@ -256,6 +258,28 @@ function _assertBlobMessages(label, blob, op) {
       if (allContent.includes(unexpected)) {
         throw new Error(`${label}: unexpected content '${unexpected}' found in messages`);
       }
+    }
+  }
+}
+
+/**
+ * The tools the round trip offered, as sent: what the worker received from the
+ * engine for this turn, after every filter. Checked before the messages,
+ * because a tool that was never offered explains whatever the messages show.
+ * @param {string} label - Test label used in error messages.
+ * @param {{input: {tools: any[]}}} blob - Loaded transaction blob.
+ * @param {TestOperation} op - Operation with assertion fields.
+ */
+function _assertBlobTools(label, blob, op) {
+  if (!op.expectedTools) return;
+  const tools = /** @type {Array<{name?: string, description?: string}>} */ (blob.input?.tools || []);
+  for (const expected of op.expectedTools) {
+    const tool = tools.find(t => t.name === expected.name);
+    if (!tool) {
+      throw new Error(`${label}: tool '${expected.name}' was not offered; offered: ${JSON.stringify(tools.map(t => t.name))}`);
+    }
+    if (expected.descriptionIncludes && !String(tool.description || '').includes(expected.descriptionIncludes)) {
+      throw new Error(`${label}: tool '${expected.name}' description lacks '${expected.descriptionIncludes}': ${JSON.stringify(String(tool.description || '').slice(0, 600))}`);
     }
   }
 }

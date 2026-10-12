@@ -58,7 +58,7 @@ import { tests as binGuardTests } from '../integration-tests/bin-guard-tests.js'
 import { tests as modelAvailabilityTests } from '../integration-tests/model-availability-tests.js';
 import { runTests as runContextCacheImpactTests } from '../unit-tests/context-cache-impact-test.js';
 import { runTests as runCacheBaselineAnchorTests } from '../unit-tests/cache-baseline-anchor-test.js';
-import { runTests as runCodeLinesTests } from '../unit-tests/code-lines-test.js';
+import { runTests as codeLinesTests } from '../unit-tests/code-lines-test.js';
 import { runTests as runCacheMissWarningTests } from '../unit-tests/cache-miss-warning-test.js';
 import { runTests as runFileContentFreezeTests } from '../unit-tests/file-content-freeze-test.js';
 import { runTests as runErrorRetryGateTests } from '../unit-tests/error-retry-gate-test.js';
@@ -465,7 +465,7 @@ const ALL_TESTS = [
 const UNIT_TEST_SUITES = [
   { name: 'unit:context-cache-impact', run: runContextCacheImpactTests },
   { name: 'unit:cache-baseline-anchor', run: runCacheBaselineAnchorTests },
-  { name: 'unit:code-lines', run: runCodeLinesTests },
+  { name: 'unit:code-lines', run: codeLinesTests },
   { name: 'unit:cache-miss-warning', run: runCacheMissWarningTests },
   { name: 'unit:file-content-freeze', run: runFileContentFreezeTests },
   { name: 'unit:error-retry-gate', run: runErrorRetryGateTests },
@@ -796,6 +796,15 @@ const UNIT_TEST_SUITES = [
  */
 let EXTENSION_SUITES = [];
 
+/**
+ * Extension-owned integration tests, discovered the same way from each
+ * manifest's provides.integrationTests: every definition in each module's
+ * `tests` export, named `integration:<name>` like ALL_TESTS. Populated by
+ * ensureExtensionSuitesLoaded().
+ * @type {typeof ALL_TESTS}
+ */
+let EXTENSION_INTEGRATION_TESTS = [];
+
 /** @type {Promise<void>|null} Memoized loader promise; see ensureExtensionSuitesLoaded. */
 let _extensionSuitesPromise = null;
 
@@ -813,6 +822,36 @@ export function extensionSuiteEntry(name, mod) {
 }
 
 /**
+ * The EXTENSION_INTEGRATION_TESTS entries for one extension-owned integration
+ * module: its `tests` export, each copied under the `integration:` prefix ALL_TESTS
+ * uses, flags and all.
+ * @param {string} path - The module's served path, for the error
+ * @param {{tests?: unknown}} mod - The imported module
+ * @returns {typeof ALL_TESTS} Its definitions, renamed
+ * @throws {Error} When the module exports no `tests` array
+ */
+export function extensionIntegrationEntries(path, mod) {
+  if (!Array.isArray(mod.tests)) throw new Error(`${path} has no tests export`);
+  return mod.tests.map((/** @type {any} */ t) => ({ ...t, name: `integration:${t.name}` }));
+}
+
+/**
+ * Names of the extension-owned integration tests, once loaded.
+ * @returns {string[]} Test names
+ */
+export function listExtensionIntegrationTests() {
+  return EXTENSION_INTEGRATION_TESTS.map(t => t.name);
+}
+
+/**
+ * Every integration test: the shared pool's and the extensions'.
+ * @returns {typeof ALL_TESTS} Test definitions
+ */
+function allIntegrationTests() {
+  return [...ALL_TESTS, ...EXTENSION_INTEGRATION_TESTS];
+}
+
+/**
  * Discover and register extension-owned test suites, once. Fetches the
  * manifest-driven list from the test harness, dynamic-imports each module
  * (whose runTests export becomes a unit suite named e.g. "unit:exa-search"),
@@ -826,11 +865,14 @@ export function ensureExtensionSuitesLoaded() {
       const prefix = /** @type {any} */ (window).__assetPrefix || '';
       /** @type {{name: string, path: string}[]} */
       let list = [];
+      /** @type {string[]} */
+      let integrationModules = [];
       try {
         const resp = await fetch(apiUrl('/test/extension-tests'));
         if (resp.ok) {
           const data = await resp.json();
           list = Array.isArray(data.tests) ? data.tests : [];
+          integrationModules = Array.isArray(data.integrationModules) ? data.integrationModules : [];
         }
       } catch (_) { /* endpoint absent (e.g. no source checkout) — run internal suites only */ }
       /** @type {typeof EXTENSION_SUITES} */
@@ -853,7 +895,24 @@ export function ensureExtensionSuitesLoaded() {
           });
         }
       }
+      /** @type {typeof ALL_TESTS} */
+      const integration = [];
+      for (const path of integrationModules) {
+        if (typeof path !== 'string' || !path) continue;
+        try {
+          integration.push(...extensionIntegrationEntries(path, await import(prefix + path)));
+        } catch (err) {
+          // Its tests cannot be named without the module, so the failure is
+          // reported under the module's own name instead.
+          const name = `integration:${path.split('/').pop()?.replace(/\.js$/, '')}`;
+          suites.push({
+            name,
+            run: async () => ({ passed: 0, failed: 1, errors: [`${name}: failed to load ${path}: ${err}`] }),
+          });
+        }
+      }
       EXTENSION_SUITES = suites;
+      EXTENSION_INTEGRATION_TESTS = integration;
     })();
   }
   return _extensionSuitesPromise;
@@ -869,13 +928,14 @@ export async function runTests(ctx) {
   await waitForEngineConnected();
   await ensureExtensionSuitesLoaded();
   logger.essential(`Starting integration tests...`);
-  logger.info(`Running ${ALL_TESTS.length} mock-LLM tests + ${UNIT_TEST_SUITES.length + EXTENSION_SUITES.length} unit suites`);
+  const integrationTests = allIntegrationTests();
+  logger.info(`Running ${integrationTests.length} mock-LLM tests + ${UNIT_TEST_SUITES.length + EXTENSION_SUITES.length} unit suites`);
   logger.info(`Fixture: ${ctx.fixtureDir}`);
 
   /** @type {string[]} */
   const errors = [];
 
-  const { passed, failed, results } = await runIntegrationTests(ALL_TESTS, ctx);
+  const { passed, failed, results } = await runIntegrationTests(integrationTests, ctx);
 
   for (const [name, result] of results) {
     if (!result.passed && result.error) {
@@ -1116,7 +1176,7 @@ export async function runTestByName(testName, ctx) {
   /** @type {typeof ALL_TESTS} */
   const selected = [];
   for (const name of names) {
-    const test = ALL_TESTS.find(t => t.name === name);
+    const test = allIntegrationTests().find(t => t.name === name);
     if (!test) {
       return {
         passed: 0,
@@ -1146,7 +1206,7 @@ export async function runTestByName(testName, ctx) {
  */
 export function listTests() {
   return [
-    ...ALL_TESTS.map(t => t.name),
+    ...allIntegrationTests().map(t => t.name),
     ...UNIT_TEST_SUITES.map(s => s.name),
     ...EXTENSION_SUITES.map(s => s.name),
   ];
@@ -1178,7 +1238,9 @@ export function exclusiveNamesIn(...tables) {
  *     by calling focus() — all lanes are iframes in one window, and only one
  *     frame holds focus at a time;
  *   - it writes a document-wide or origin-wide setting (`data-theme`, a
- *     localStorage preference key) for the length of a case.
+ *     localStorage preference key) for the length of a case;
+ *   - it switches a plugin on or off in the project config, which changes the
+ *     tools and system prompt every lane of that server is offered.
  *
  * The Go runner runs these after the parallel phase, with a fixture reset around
  * each. An extension suite declares the flag by exporting `needsExclusiveRun`;
@@ -1186,5 +1248,5 @@ export function exclusiveNamesIn(...tables) {
  * @returns {string[]} Names of tests that must run in isolation
  */
 export function listExclusiveTests() {
-  return exclusiveNamesIn(ALL_TESTS, UNIT_TEST_SUITES, EXTENSION_SUITES);
+  return exclusiveNamesIn(allIntegrationTests(), UNIT_TEST_SUITES, EXTENSION_SUITES);
 }

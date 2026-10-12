@@ -107,9 +107,11 @@ class UIDriver {
   /**
    * Click the approve button on an action-confirmation dialog for a tool.
    * @param {string} toolUseId - The tool use ID to approve
-   * @param {string} [_response] - Custom response value (for AskUserQuestion answers)
+   * @param {string} [response] - The option to click, by its value (e.g.
+   *   `yes-always:0` for the first "don't ask again"); without a button of that
+   *   value, the plain approve button
    */
-  async clickApprove(toolUseId, _response) {
+  async clickApprove(toolUseId, response) {
     const confirmation = await this._findActionConfirmation(toolUseId);
     if (!confirmation) {
       throw new Error(`UIDriver: action-confirmation not found for toolUseId=${toolUseId}`);
@@ -117,9 +119,11 @@ class UIDriver {
 
     // Find the approve button (primary style, first button typically)
     const buttons = Array.from(confirmation.querySelectorAll('.action-confirmation-button'));
-    let approveButton = null;
+    let approveButton = response
+      ? buttons.find((btn) => btn.getAttribute('data-value') === response) || null
+      : null;
 
-    for (const btn of buttons) {
+    for (const btn of approveButton ? [] : buttons) {
       const value = btn.getAttribute('data-value');
       // 'yes' or 'yes-always' are approve actions
       if (value === 'yes' || value === 'yes-always' || value === 'approved') {

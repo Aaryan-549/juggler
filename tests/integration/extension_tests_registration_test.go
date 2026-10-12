@@ -18,8 +18,10 @@ import (
 
 // TestExtensionTestsDeclared enforces the co-location contract: any test file an
 // extension keeps under its _tests/ directory MUST be matched by that
-// extension's manifest `provides.tests` glob. Otherwise the harness's
-// /api/test/extension-tests discovery would silently skip it — a dropped test.
+// extension's manifest `provides.tests` glob, and any integration module under
+// _tests/integration/ by its `provides.integrationTests` glob. Otherwise the
+// harness's /api/test/extension-tests discovery would silently skip it — a
+// dropped test.
 // This is the extension-owned analogue of TestAllTestFilesRegistered, which
 // guards the shared js-tests/ pool.
 func TestExtensionTestsDeclared(t *testing.T) {
@@ -43,18 +45,12 @@ func TestExtensionTestsDeclared(t *testing.T) {
 			continue
 		}
 		extDir := filepath.Join(extRoot, entry.Name())
-		testsDir := filepath.Join(extDir, "_tests")
 
-		// Collect the *-test.js files physically present under _tests/.
-		var present []string
-		if dirEntries, err := os.ReadDir(testsDir); err == nil {
-			for _, de := range dirEntries {
-				if !de.IsDir() && strings.HasSuffix(de.Name(), "-test.js") {
-					present = append(present, "_tests/"+de.Name())
-				}
-			}
-		}
-		if len(present) == 0 {
+		// Collect the test files physically present: unit suites (*-test.js)
+		// under _tests/, integration modules (*-tests.js) under _tests/integration/.
+		units := presentFiles(filepath.Join(extDir, "_tests"), "_tests/", "-test.js")
+		integrations := presentFiles(filepath.Join(extDir, "_tests", "integration"), "_tests/integration/", "-tests.js")
+		if len(units) == 0 && len(integrations) == 0 {
 			continue // no co-located tests in this extension
 		}
 
@@ -69,25 +65,48 @@ func TestExtensionTestsDeclared(t *testing.T) {
 			t.Errorf("extension %q manifest failed to parse: %v", entry.Name(), err)
 			continue
 		}
-		if len(manifest.Provides.Tests) == 0 {
-			t.Errorf("extension %q has _tests/ files but declares no provides.tests glob", entry.Name())
-			continue
-		}
+		checkDeclared(t, entry.Name(), extDir, "provides.tests", manifest.Provides.Tests, units)
+		checkDeclared(t, entry.Name(), extDir, "provides.integrationTests", manifest.Provides.IntegrationTests, integrations)
+	}
+}
 
-		matched, err := extmanifest.ExpandGlobs(os.DirFS(extDir), manifest.Provides.Tests)
-		if err != nil {
-			t.Errorf("extension %q provides.tests glob is invalid: %v", entry.Name(), err)
-			continue
-		}
-		matchedSet := make(map[string]bool, len(matched))
-		for _, m := range matched {
-			matchedSet[m] = true
-		}
-		for _, p := range present {
-			if !matchedSet[p] {
-				t.Errorf("extension %q test file %q is not matched by any provides.tests glob %v",
-					entry.Name(), p, manifest.Provides.Tests)
+// presentFiles lists the files directly in dir whose names end in suffix, as
+// extension-root-relative paths under relPrefix.
+func presentFiles(dir, relPrefix, suffix string) []string {
+	var present []string
+	if dirEntries, err := os.ReadDir(dir); err == nil {
+		for _, de := range dirEntries {
+			if !de.IsDir() && strings.HasSuffix(de.Name(), suffix) {
+				present = append(present, relPrefix+de.Name())
 			}
+		}
+	}
+	return present
+}
+
+// checkDeclared fails for each present file that the manifest field's globs do
+// not match.
+func checkDeclared(t *testing.T, ext, extDir, field string, globs, present []string) {
+	t.Helper()
+	if len(present) == 0 {
+		return
+	}
+	if len(globs) == 0 {
+		t.Errorf("extension %q has %v but declares no %s glob", ext, present, field)
+		return
+	}
+	matched, err := extmanifest.ExpandGlobs(os.DirFS(extDir), globs)
+	if err != nil {
+		t.Errorf("extension %q %s glob is invalid: %v", ext, field, err)
+		return
+	}
+	matchedSet := make(map[string]bool, len(matched))
+	for _, m := range matched {
+		matchedSet[m] = true
+	}
+	for _, p := range present {
+		if !matchedSet[p] {
+			t.Errorf("extension %q test file %q is not matched by any %s glob %v", ext, p, field, globs)
 		}
 	}
 }

@@ -137,7 +137,8 @@ core extension does (`context-items/edit/`, `context-items/execute/`).
     "workspaceProviders": ["workspaces/*-workspace-provider.js"],
     "hooks":        ["hooks/*-hook.js"],
     "systemPrompt": "system-prompt-contribution.js",  // optional; single module path
-    "tests":        ["_tests/*-test.js"]              // optional; test-only, never served
+    "tests":        ["_tests/*-test.js"],             // optional; test-only, never served
+    "integrationTests": ["_tests/integration/*-tests.js"]  // optional; test-only, never served
   }
 }
 ```
@@ -146,7 +147,7 @@ core extension does (`context-items/edit/`, `context-items/execute/`).
 |-------|----------|-------|
 | `id` | Yes | Scoped, e.g. `@you/name`. The unit of enable/disable. |
 | `name`, `version` | Yes | Display name and semver. |
-| `provides` | Yes | At least one capability. `contextItems`/`strategies`/`commands`/`infoCards`/`pinboardItems`/`fileViewers`/`workspaceProviders`/`hooks` are root-relative globs; `systemPrompt` is a single module path (see [System-prompt contribution](#system-prompt-contribution)); `tests` is test-only (see [Testing your extension](#testing-your-extension)) and does not count as a capability. None may escape the extension root. |
+| `provides` | Yes | At least one capability. `contextItems`/`strategies`/`commands`/`infoCards`/`pinboardItems`/`fileViewers`/`workspaceProviders`/`hooks` are root-relative globs; `systemPrompt` is a single module path (see [System-prompt contribution](#system-prompt-contribution)); `tests` and `integrationTests` are test-only (see [Testing your extension](#testing-your-extension)) and do not count as capabilities. None may escape the extension root. |
 | `engineApi` | Recommended | Semver range (`^1.0.0`, `1.2.3`, or `*`). Omitting it disables the compat check and earns a validation warning. The host SDK version lives in `web/sdk/version.js`. |
 | `permissions` | As needed | **Declares** the host access this extension's code uses. Surfaced to the user in the catalog and the install prompt — a disclosure, not a sandbox (see [Trust model](#trust-model)). See the vocabulary below. |
 | `settings` | As needed | User-configurable values, rendered in the extensions catalog. See [Settings and secrets](#settings-and-secrets). |
@@ -1362,13 +1363,21 @@ Declare them in the manifest and Juggler's test harness picks them up:
 
 ```jsonc
 "provides": {
-  "contextItems": ["context-items/*-context-item.js"],
-  "tests":        ["_tests/*-test.js"]
+  "contextItems":     ["context-items/*-context-item.js"],
+  "tests":            ["_tests/*-test.js"],
+  "integrationTests": ["_tests/integration/*-tests.js"]
 }
 ```
 
-`tests` is **test-only**: it does not count as a capability (an extension that
-provides *only* tests fails validation), and it is never served through the
+A `tests` module exports `runTests(ctx)` and runs as one suite, named
+`unit:<file>` after its file (`_tests/word-count-test.js` is
+`unit:word-count`). An `integrationTests` module exports `tests`, an array of
+the same step-based definitions as the host's own integration tests: each runs
+a real conversation against the worker and a mock model, and is named
+`integration:<name>` after its definition.
+
+Both are **test-only**: they do not count as capabilities (an extension that
+provides *only* tests fails validation), and they are never served through the
 extensions API at runtime.
 
 **Keep them in a directory whose name starts with an underscore** — `_tests/` by
