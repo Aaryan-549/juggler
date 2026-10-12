@@ -627,13 +627,50 @@ func onResultSuccess(msg *StreamMessage, result *turnResult) error {
 // authentication failure is the one thing here the user can fix, and the CLI's
 // own wording is addressed to someone sitting at its command line, so it is
 // typed (and the login marked expired) for the worker to lead with what to do
-// while still showing this text underneath. Anything else is the text itself.
+// while still showing this text underneath. A 400 over the transcript's tool
+// sequence is typed too, so the turn can rebuild the session. Anything else is
+// the text itself.
 func cliAPIError(status int, text string) error {
 	if authErr := classifyClaudeAuthFailure(status, text); authErr != nil {
 		markClaudeLoginExpired()
 		return authErr
 	}
+	if isRejectedTranscriptText(status, text) {
+		return &rejectedTranscriptError{text: text}
+	}
 	return errors.New(text)
+}
+
+// rejectedTranscriptError is a 400 the API returned over the conversation's
+// tool_use/tool_result sequence: a call without its result, a result without
+// its call, or a result placed after other content in its turn. The CLI sends
+// its session file as that history, so while the session lives every resume of
+// it is refused the same way — the conversation is stuck until the session is
+// abandoned. Juggler's own history is a separate record, and a session rebuilt
+// from it (synthetic_resume.go) does not inherit a malformation the CLI's
+// file acquired, so finalizeTurn drops the session and dispatchTurnWithRetry
+// rebuilds it once.
+type rejectedTranscriptError struct{ text string }
+
+func (e *rejectedTranscriptError) Error() string { return e.text }
+
+// isRejectedTranscriptText recognises that 400. The CLI replaces the API's
+// message with its own ("API Error: 400 due to tool use concurrency issues.
+// Run /rewind…"); the API's own wording names `tool_use` or `tool_result`.
+func isRejectedTranscriptText(status int, text string) bool {
+	if strings.Contains(text, "tool use concurrency") {
+		return true
+	}
+	if status != 400 && !strings.Contains(text, "400") {
+		return false
+	}
+	return strings.Contains(text, "tool_use") || strings.Contains(text, "tool_result")
+}
+
+// isRejectedTranscriptError reports whether err is a rejectedTranscriptError.
+func isRejectedTranscriptError(err error) bool {
+	var r *rejectedTranscriptError
+	return errors.As(err, &r)
 }
 
 // onControlLine routes the CLI's control traffic to the stdio control

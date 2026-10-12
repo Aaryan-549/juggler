@@ -496,9 +496,11 @@ func (c *Client) finalizeTurn(req provider.MessageRequest, turn *turnResult, err
 		// Output abandoned as unusable is the exception, for sub-threads too: the
 		// CLI's transcript holds the calls it rejected, which juggler's history
 		// never saw, and resuming it would hand them straight back to the model
-		// the worker is about to re-ask. The retry starts clean instead.
+		// the worker is about to re-ask. The retry starts clean instead. A
+		// transcript the API refuses is dropped for the same reason: resuming it
+		// can only be refused again (see rejectedTranscriptError).
 		var unusable *provider.UnusableOutputError
-		if errors.As(err, &unusable) {
+		if errors.As(err, &unusable) || isRejectedTranscriptError(err) {
 			c.dropSession(req.ConversationID)
 		} else if c.threadID == "" {
 			c.activeSession = nil

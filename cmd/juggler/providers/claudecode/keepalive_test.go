@@ -77,6 +77,19 @@ const (
 	// "this provider is down, say so" — the two must not be treated alike.
 	fakeModeLadderOnResume = "ladder_on_resume"
 
+	// fakeModeRejectOnResume models a CLI session file holding a transcript the
+	// API refuses: a --resume of the original uuid takes the turn and reports
+	// the CLI's in-band 400 for a malformed tool_use/tool_result sequence, while
+	// a cold start (bare, or a synthetic --resume under a NEW uuid) works.
+	fakeModeRejectOnResume = "reject_on_resume"
+
+	// fakeModeRejectAlways reports that same 400 on every spawn — the request
+	// itself is malformed, so rebuilding the session cannot help.
+	fakeModeRejectAlways = "reject_always"
+
+	// fakeRejectedTranscriptText is the CLI's own wording for that 400.
+	fakeRejectedTranscriptText = "API Error: 400 due to tool use concurrency issues. Run /rewind to recover the conversation."
+
 	// fakeModeScript is the fully scriptable, tape-recording mode used by the
 	// permutation harness. Unlike the fixed modes above, its per-turn tool
 	// behaviour is described by a JSON script and it logs the full tools/call ↔
@@ -369,6 +382,33 @@ func runFakeClaude() {
 		}
 		// Fresh / synthetic-resume cold start: behave like a normal persistent
 		// session (one text turn per user-message stdin line).
+		turn := 0
+		scanner := bufio.NewScanner(os.Stdin)
+		scanner.Buffer(make([]byte, 64*1024), 1024*1024)
+		for scanner.Scan() {
+			if !fakeStdinIsUserTurn(scanner.Bytes()) {
+				continue
+			}
+			turn++
+			emitTextTurn(out, fmt.Sprintf("turn %d", turn), 1000*(turn+1))
+		}
+	case fakeModeRejectOnResume, fakeModeRejectAlways:
+		// The rejected session id is the one this fake mints at init
+		// (envFakeSession); the CLI reports a resumed id as its session id.
+		sid := resumeID
+		if sid == "" {
+			sid = sessionID
+		}
+		emit(out, map[string]any{"type": "system", "subtype": "init", "session_id": sid})
+		if mode == fakeModeRejectAlways || resumeID == sessionID {
+			awaitUserTurn()
+			emit(out, map[string]any{
+				"type": "result", "subtype": "success",
+				"is_error": true, "api_error_status": 400,
+				"result": fakeRejectedTranscriptText,
+			})
+			return
+		}
 		turn := 0
 		scanner := bufio.NewScanner(os.Stdin)
 		scanner.Buffer(make([]byte, 64*1024), 1024*1024)

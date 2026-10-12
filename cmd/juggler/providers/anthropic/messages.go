@@ -32,6 +32,10 @@ type APIContentBlock struct {
 	ToolUseID string `json:"tool_use_id,omitempty"`
 	Content   string `json:"content,omitempty"`
 	IsError   bool   `json:"is_error,omitempty"`
+	// ContentBlocks is a tool_result's rich content — its text followed by the
+	// images the tool returned. When set it is the block's `content` on the
+	// wire, as an array, in place of the Content string (see MarshalJSON).
+	ContentBlocks []APIContentBlock `json:"-"`
 
 	// For image blocks
 	Source *APIImageSource `json:"source,omitempty"`
@@ -52,7 +56,8 @@ type APIImageSource struct {
 // `omitempty`, which strips both nil AND empty maps — producing a
 // request the API rejects with
 // "messages.N.content.M.tool_use.input: Field required". The common
-// trigger is a no-arg tool call.
+// trigger is a no-arg tool call. It also writes a tool_result's
+// ContentBlocks, when present, as the block's `content` array.
 //
 // Implementation: marshal via an alias type to get default behaviour for
 // every other field, then unconditionally inject `"input": {}` when the
@@ -62,6 +67,18 @@ func (b APIContentBlock) MarshalJSON() ([]byte, error) {
 	data, err := json.Marshal(alias(b))
 	if err != nil {
 		return nil, err
+	}
+	if b.Type == "tool_result" && len(b.ContentBlocks) > 0 {
+		var m map[string]json.RawMessage
+		if err := json.Unmarshal(data, &m); err != nil {
+			return nil, err
+		}
+		inner, err := json.Marshal(b.ContentBlocks)
+		if err != nil {
+			return nil, err
+		}
+		m["content"] = inner
+		return json.Marshal(m)
 	}
 	if b.Type != "tool_use" {
 		return data, nil
@@ -188,18 +205,25 @@ func transformToAPIMessagesInternal(messages []provider.Message) []APIMessage {
 			})
 
 		case "tool-result":
-			currentBlocks = append(currentBlocks, APIContentBlock{
+			// A tool that returned images (e.g. read on a PNG) carries them as
+			// image parts. They nest inside this tool_result, never beside it:
+			// parallel results share one user turn, and the API rejects a turn
+			// in which a tool_result follows any other content, so a sibling
+			// image would invalidate the next result.
+			block := APIContentBlock{
 				Type:      "tool_result",
 				ToolUseID: msg.ToolUseID,
 				Content:   msg.Content,
 				IsError:   msg.IsError,
-			})
-			// A tool that returned images (e.g. read on a PNG) carries them as
-			// image parts. Emit them as image content blocks in this same user
-			// turn, right after the tool_result block — Anthropic accepts extra
-			// content after tool_result blocks, and both the SDK and CLI paths map
-			// these image blocks natively (transformContentBlock's image case).
-			currentBlocks = AppendImageBlocks(currentBlocks, msg.Parts)
+			}
+			var inner []APIContentBlock
+			if msg.Content != "" {
+				inner = append(inner, APIContentBlock{Type: "text", Text: msg.Content})
+			}
+			if withImages := AppendImageBlocks(inner, msg.Parts); len(withImages) > len(inner) {
+				block.ContentBlocks = withImages
+			}
+			currentBlocks = append(currentBlocks, block)
 
 		case "context-item", "context-item-updated", "guidance", "system-reminder":
 			// These are user-role messages with text content, all cacheable in
@@ -227,10 +251,11 @@ func transformToAPIMessagesInternal(messages []provider.Message) []APIMessage {
 // with resolved bytes. Parts whose Data is empty are skipped defensively — the
 // server resolves bytes from the asset store before Submit, so an unresolved
 // part means the asset was missing and is better dropped than sent malformed.
-// Images attach to user-role messages only (the caller cases — user, the
-// user-role context-item family, and tool-result — all map to the user role).
-// The claudecode provider also uses it to nest a tool's images inside the
-// tool_result it journals into a warm session file.
+// Images attach to user-role messages only (the caller cases — user and the
+// user-role context-item family — both map to the user role). A tool-result's
+// images are built with it too, but nest inside that tool_result's
+// ContentBlocks; the claudecode provider likewise nests a tool's images inside
+// the tool_result it journals into a warm session file.
 func AppendImageBlocks(blocks []APIContentBlock, parts []provider.MediaPart) []APIContentBlock {
 	for _, part := range parts {
 		if part.Type != "image" || len(part.Data) == 0 {

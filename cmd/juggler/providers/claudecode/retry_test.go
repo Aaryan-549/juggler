@@ -238,6 +238,85 @@ func TestRetry_WedgedResumeColdStartsInsteadOfLockingUp(t *testing.T) {
 	c.dropSession(convID)
 }
 
+// startRejectedTranscriptConv runs one good turn on a persisted conversation,
+// so its sidecar names the fake's original uuid, then tears the CLI down so the
+// next turn must --resume that uuid from disk.
+func startRejectedTranscriptConv(t *testing.T, mode, uuid, convID string) (*Client, string) {
+	t.Helper()
+	fastRetryBackoff(t)
+	tracePath := installFakeClaude(t, mode, uuid)
+	c := mkClient(t, "claude-sonnet-4-6")
+	if err := os.MkdirAll(filepath.Join(c.workingDir, ".juggler", "reject--"+convID), 0o755); err != nil {
+		t.Fatalf("mkdir conv folder: %v", err)
+	}
+	if mode == fakeModeRejectOnResume {
+		if _, err := c.streamMessage(context.Background(), provider.MessageRequest{
+			ConversationID: convID, SystemPrompt: "sys",
+			Messages: []provider.Message{userMsg("hello")},
+		}, nopCallback()); err != nil {
+			t.Fatalf("turn 1 should succeed, got: %v", err)
+		}
+		c.activeSession.tearDownLiveCLI()
+	}
+	return c, tracePath
+}
+
+// TestRetry_RejectedTranscriptRebuildsSession: the CLI's session file holds a
+// transcript the API refuses (a 400 over its tool_use/tool_result sequence), so
+// every --resume of it fails identically and retrying it can never succeed.
+// Juggler's own history is intact, so the turn must abandon that session and
+// rebuild it from that history (a synthetic --resume under a new uuid), and the
+// turn succeeds instead of the conversation staying stuck.
+func TestRetry_RejectedTranscriptRebuildsSession(t *testing.T) {
+	const convID = "conv_rejected"
+	c, tracePath := startRejectedTranscriptConv(t, fakeModeRejectOnResume, "uuid-rejected", convID)
+
+	res, err := c.streamMessage(context.Background(), provider.MessageRequest{
+		ConversationID: convID, SystemPrompt: "sys",
+		Messages: []provider.Message{userMsg("hello"), assistantMsg("turn 1"), userMsg("again")},
+	}, nopCallback())
+	if err != nil {
+		t.Fatalf("turn 2 should recover by rebuilding the session, got error: %v", err)
+	}
+	if res.StopReason != "end_turn" {
+		t.Fatalf("turn 2 StopReason = %q, want end_turn", res.StopReason)
+	}
+
+	trace := readTrace(t, tracePath)
+	last := trace[len(trace)-1]
+	if last.ResumeID == "uuid-rejected" {
+		t.Fatalf("recovery spawn still resumed the rejected session %q", last.ResumeID)
+	}
+	if last.ResumeID == "" {
+		t.Fatalf("recovery spawn cold-started without synthetic resume (lost history)")
+	}
+	if c.activeSession == nil || c.activeSession.sessionUUID == "uuid-rejected" {
+		t.Fatalf("session after recovery = %+v, want the rebuilt uuid", c.activeSession)
+	}
+	c.dropSession(convID)
+}
+
+// TestRetry_RejectedTranscriptRebuildsOnlyOnce: when the rebuilt session is
+// refused too, the request itself is malformed and no session will fix it. The
+// turn surfaces the API's error after a single rebuild rather than spending the
+// whole retry budget re-sending the same rejected request.
+func TestRetry_RejectedTranscriptRebuildsOnlyOnce(t *testing.T) {
+	const convID = "conv_rejected_always"
+	c, tracePath := startRejectedTranscriptConv(t, fakeModeRejectAlways, "uuid-rejected-always", convID)
+
+	_, err := c.streamMessage(context.Background(), provider.MessageRequest{
+		ConversationID: convID, SystemPrompt: "sys",
+		Messages: []provider.Message{userMsg("hello"), assistantMsg("turn 1"), userMsg("again")},
+	}, nopCallback())
+	if err == nil || !strings.Contains(err.Error(), "tool use concurrency") {
+		t.Fatalf("err = %v, want the API's rejection surfaced", err)
+	}
+	if n := len(readTrace(t, tracePath)); n != 2 {
+		t.Fatalf("spawns = %d, want 2 (the failed attempt and one rebuild)", n)
+	}
+	c.dropSession(convID)
+}
+
 // TestRetry_NoRetryAfterStreamedContent: the CLI streams a complete text
 // block (the callback fires) and THEN dies without end_turn. Replaying the
 // turn would re-stream that text, so the retry must be suppressed: exactly one

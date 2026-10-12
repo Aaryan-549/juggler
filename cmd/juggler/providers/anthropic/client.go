@@ -117,30 +117,51 @@ func convertBlockToSDK(block APIContentBlock) *anthropicsdk.BetaContentBlockPara
 
 	case "tool_result":
 		b := anthropicsdk.NewBetaToolResultBlock(block.ToolUseID, block.Content, block.IsError)
+		if len(block.ContentBlocks) > 0 {
+			// Rich content (text + the tool's images) replaces the text-only
+			// content the constructor filled in.
+			var content []anthropicsdk.BetaToolResultBlockParamContentUnion
+			for _, inner := range block.ContentBlocks {
+				switch {
+				case inner.Type == "text":
+					content = append(content, anthropicsdk.BetaToolResultBlockParamContentUnion{
+						OfText: &anthropicsdk.BetaTextBlockParam{Text: inner.Text},
+					})
+				case inner.Type == "image" && inner.Source != nil:
+					content = append(content, anthropicsdk.BetaToolResultBlockParamContentUnion{
+						OfImage: betaImageBlock(inner.Source),
+					})
+				}
+			}
+			b.OfToolResult.Content = content
+		}
 		return &b
 
 	case "image":
 		// The shared transform only emits base64 image sources. The CLI path
 		// serializes APIContentBlock to JSON directly; the SDK path needs the
-		// block mapped into the SDK's image-block union. Built out rather than
-		// taken from a constructor because the beta surface ships no image-block
-		// helper — the shape is the non-beta one with the Beta types.
+		// block mapped into the SDK's image-block union.
 		if block.Source == nil {
 			return nil
 		}
-		return &anthropicsdk.BetaContentBlockParamUnion{
-			OfImage: &anthropicsdk.BetaImageBlockParam{
-				Source: anthropicsdk.BetaImageBlockParamSourceUnion{
-					OfBase64: &anthropicsdk.BetaBase64ImageSourceParam{
-						Data:      block.Source.Data,
-						MediaType: anthropicsdk.BetaBase64ImageSourceMediaType(block.Source.MediaType),
-					},
-				},
-			},
-		}
+		return &anthropicsdk.BetaContentBlockParamUnion{OfImage: betaImageBlock(block.Source)}
 
 	default:
 		return nil
+	}
+}
+
+// betaImageBlock maps a base64 image source into the SDK's image block. Built
+// out rather than taken from a constructor because the beta surface ships no
+// image-block helper — the shape is the non-beta one with the Beta types.
+func betaImageBlock(src *APIImageSource) *anthropicsdk.BetaImageBlockParam {
+	return &anthropicsdk.BetaImageBlockParam{
+		Source: anthropicsdk.BetaImageBlockParamSourceUnion{
+			OfBase64: &anthropicsdk.BetaBase64ImageSourceParam{
+				Data:      src.Data,
+				MediaType: anthropicsdk.BetaBase64ImageSourceMediaType(src.MediaType),
+			},
+		},
 	}
 }
 

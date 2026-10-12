@@ -389,7 +389,13 @@ var cliRetryBackoff = 750 * time.Millisecond
 // not a transientCLIError and is never retried. The failed attempt's
 // finalizeTurn keeps the on-disk sidecar, so each retry --resumes warm rather
 // than cold-starting the whole history.
+//
+// The one definitive error that is re-attempted is a rejectedTranscriptError:
+// finalizeTurn has dropped the refused session, so the next attempt rebuilds it
+// from juggler's history. That happens once per turn — a rebuilt session that
+// is refused too means the request itself is malformed, and the error surfaces.
 func (c *Client) dispatchTurnWithRetry(ctx context.Context, req provider.MessageRequest, callback provider.StructuredStreamCallback) (*provider.StreamResult, error) {
+	rebuilt := false
 	for attempt := 0; ; attempt++ {
 		// Whether this attempt streamed any real content. Status chunks (retry
 		// notices) and replaceable activity snapshots are not content and don't
@@ -434,6 +440,12 @@ func (c *Client) dispatchTurnWithRetry(ctx context.Context, req provider.Message
 
 		if err == nil || attempt >= cliMaxRetries {
 			return res, err
+		}
+		if isRejectedTranscriptError(err) && !rebuilt && !streamed && ctx.Err() == nil {
+			rebuilt = true
+			jlog.Info("[claudecode] API refused the session transcript conv=%s — rebuilding the session from juggler's history",
+				shortID(req.ConversationID))
+			continue
 		}
 		if ctx.Err() != nil || !isRetryableCLIError(err) || streamed {
 			// Cancelled, a definitive (non-transient) error, or content has
