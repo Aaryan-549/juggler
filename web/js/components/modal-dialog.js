@@ -58,7 +58,6 @@ import { createButton as makeButton } from '../../sdk/lib/html.js';
 import { focusWhenShown } from '../utils/focus.js';
 import { fadeOutScrims } from '../utils/modal-scrim.js';
 
-
 class ModalDialog extends HTMLElement {
   constructor() {
     super();
@@ -417,12 +416,17 @@ class ModalDialog extends HTMLElement {
 
   /**
    * @param {string} text
-   * @param {string} variant
+   * @param {'primary'|'secondary'|'danger'} variant - The button's role, worn as its `btn-*` fill.
    * @param {() => void} onClick
    * @returns {HTMLButtonElement} Created button element
    */
   createButton(text, variant, onClick) {
-    return makeButton(text, `modal-button ${variant}`, onClick);
+    // Spelled out whole rather than assembled, so the stylesheet checks can
+    // see which classes a dialog button carries.
+    const className = variant === 'danger' ? 'modal-button btn-danger'
+      : variant === 'secondary' ? 'modal-button btn-secondary'
+        : 'modal-button btn-primary';
+    return makeButton(text, className, onClick);
   }
 
   /**

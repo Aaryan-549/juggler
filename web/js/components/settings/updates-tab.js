@@ -138,7 +138,7 @@ export class UpdatesTab {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.id = 'updates-check-btn';
-    btn.className = 'settings-btn primary small';
+    btn.className = 'settings-btn btn-primary small';
     btn.textContent = 'Check for updates';
     btn.addEventListener('click', () => void this._checkNow());
     actionCtrl.appendChild(btn);

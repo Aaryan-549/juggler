@@ -256,7 +256,7 @@ export class NotificationsTab {
 
     const previewBtn = document.createElement('button');
     previewBtn.type = 'button';
-    previewBtn.className = 'settings-btn primary small chime-preview-btn';
+    previewBtn.className = 'settings-btn btn-primary small chime-preview-btn';
     previewBtn.textContent = 'Preview';
     previewBtn.addEventListener('click', () => previewChime());
     actions.appendChild(previewBtn);

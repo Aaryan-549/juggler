@@ -471,7 +471,7 @@ export class ProvidersTab {
       if (provider.available) {
         const signOutBtn = document.createElement('button');
         signOutBtn.type = 'button';
-        signOutBtn.className = 'settings-btn danger small';
+        signOutBtn.className = 'settings-btn btn-danger small';
         signOutBtn.textContent = 'Sign out';
         signOutBtn.title = 'Sign out of the GitHub login stored by Juggler';
         signOutBtn.addEventListener('click', () => this._copilotSignOut(provider, signOutBtn));
@@ -479,7 +479,7 @@ export class ProvidersTab {
       } else {
         const signInBtn = document.createElement('button');
         signInBtn.type = 'button';
-        signInBtn.className = 'settings-btn primary small';
+        signInBtn.className = 'settings-btn btn-primary small';
         signInBtn.textContent = 'Sign in with GitHub';
         signInBtn.addEventListener('click', () => this._copilotSignIn(provider, signInBtn));
         buttonGroup.appendChild(signInBtn);
@@ -967,7 +967,7 @@ export class ProvidersTab {
 
     const button = document.createElement('button');
     button.type = 'button';
-    button.className = 'settings-btn primary small';
+    button.className = 'settings-btn btn-primary small';
     button.textContent = `Switch to ${target.displayName}`;
     notice.appendChild(button);
 
@@ -1068,14 +1068,14 @@ export class ProvidersTab {
     const saveButton = document.createElement('button');
     saveButton.type = 'button';
     saveButton.id = saveButtonId;
-    saveButton.className = 'settings-btn primary small';
+    saveButton.className = 'settings-btn btn-primary small';
     saveButton.textContent = 'Save';
     saveButton.style.display = 'none';
 
     const deleteButton = document.createElement('button');
     deleteButton.type = 'button';
     deleteButton.id = deleteButtonId;
-    deleteButton.className = 'settings-btn danger small';
+    deleteButton.className = 'settings-btn btn-danger small';
     deleteButton.textContent = 'Delete';
     deleteButton.style.display = 'none';
 
@@ -1209,7 +1209,7 @@ export class ProvidersTab {
     filter.spellcheck = false;
 
     const list = document.createElement('div');
-    list.className = 'model-visibility-list';
+    list.className = 'model-visibility-list surface-well';
 
     // Column headings, inside the scroller and pinned to its top, so they stay
     // over the numbers they name however far the list is scrolled.

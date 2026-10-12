@@ -981,8 +981,8 @@ export async function executeUIOperation(harness, op) {
       // the waiter runs in the background, clicks when the dialog mounts, and
       // `assert-confirm-shown` collects what it saw.
       const wanted = op.answer === false
-        ? '.modal-button.secondary'
-        : '.modal-button.danger, .modal-button.primary';
+        ? '.modal-button.btn-secondary'
+        : '.modal-button.btn-danger, .modal-button.btn-primary';
       // A previous test in this lane's realm may have died holding an arm; its
       // watcher must not answer this test's dialog.
       disarmConfirm();

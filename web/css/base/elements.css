@@ -42,7 +42,8 @@ b {
     background: transparent;
 }
 
-/* Button Styles - Base is neutral, use .btn-primary for green action buttons */
+/* Button Styles - Base is neutral; a role's fill is .btn-primary,
+   .btn-secondary or .btn-danger (patterns/buttons.css) */
 button {
     background: transparent;
     color: inherit;
@@ -60,27 +61,6 @@ button {
 button:disabled {
     opacity: 0.5;
     cursor: not-allowed;
-}
-
-/* Primary action button (green) */
-button.btn-primary {
-    background: var(--accent-green);
-    color: var(--bg-primary);
-}
-
-button.btn-primary:hover:not(:disabled) {
-    background: #00cc7f;
-}
-
-/* Secondary button (outlined) */
-button.btn-secondary {
-    background: transparent;
-    color: var(--text-primary);
-    border: 0.0625rem solid var(--border-color);
-}
-
-button.btn-secondary:hover:not(:disabled) {
-    background: var(--bg-secondary);
 }
 
 /* Form controls don't inherit font-family from their ancestors — browsers give

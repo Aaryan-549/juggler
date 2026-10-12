@@ -554,12 +554,12 @@ class SkillContextItem extends ContextItem {
       head.appendChild(createElement('span', 'skills-scope-badge', `${skill.scope}-${skill.source}`));
     }
     if (skill.hasScripts) {
-      const b = createElement('span', 'skills-badge scripts', 'scripts');
+      const b = createElement('span', 'skills-badge tint-blue', 'scripts');
       b.title = 'Bundles scripts that can be run through the normal tools';
       head.appendChild(b);
     }
     if (loaded) {
-      const b = createElement('span', 'skills-badge loaded', 'loaded');
+      const b = createElement('span', 'skills-badge tint-green', 'loaded');
       b.title = 'Already loaded into this conversation';
       head.appendChild(b);
     }
@@ -694,7 +694,7 @@ class SkillContextItem extends ContextItem {
     } else if (!alreadyLoaded && content) {
       // Couldn't re-fetch the body — show the raw injected text as-is.
       host.appendChild(SkillContextItem._sectionTitle('Instructions'));
-      host.appendChild(createElement('pre', 'skill-load-raw', content));
+      host.appendChild(createElement('pre', 'skill-load-raw surface-well', content));
     }
 
     const actions = createElement('div', 'skill-panel-actions');

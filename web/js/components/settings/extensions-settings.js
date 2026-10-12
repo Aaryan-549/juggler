@@ -136,7 +136,7 @@ export class ExtensionSettingsEditor {
     actions.className = 'extension-settings-actions';
     const save = document.createElement('button');
     save.type = 'submit';
-    save.className = 'settings-btn primary small extension-settings-save';
+    save.className = 'settings-btn btn-primary small extension-settings-save';
     save.textContent = 'Save settings';
     actions.appendChild(save);
     form.appendChild(actions);
@@ -157,7 +157,7 @@ export class ExtensionSettingsEditor {
    */
   _renderField(setting) {
     const row = document.createElement('div');
-    row.className = `extension-setting-field extension-setting-${setting.type}`;
+    row.className = `extension-setting-field surface-card extension-setting-${setting.type}`;
     // A multi-line value needs the row's full width.
     if (setting.type === 'text') row.classList.add('extension-setting-wide');
     row.dataset.settingKey = setting.key;
@@ -281,12 +281,12 @@ export class ExtensionSettingsEditor {
     buttons.className = 'extension-secret-actions';
     const save = document.createElement('button');
     save.type = 'button';
-    save.className = 'settings-btn primary small';
+    save.className = 'settings-btn btn-primary small';
     save.textContent = 'Save';
     save.addEventListener('click', () => this._saveSecret(setting, String(control.value)));
     const clear = document.createElement('button');
     clear.type = 'button';
-    clear.className = 'settings-btn danger small extension-secret-clear';
+    clear.className = 'settings-btn btn-danger small extension-secret-clear';
     clear.textContent = 'Clear';
     clear.disabled = !!setting.required;
     if (setting.required) clear.title = 'Required settings cannot be cleared';

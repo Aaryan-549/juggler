@@ -259,7 +259,7 @@ class WorkspacePanel extends HTMLElement {
     head.className = 'workspace-panel-head';
 
     const kind = this._kind();
-    const what = document.createElement('p');
+    const what = document.createElement('div');
     what.className = 'workspace-panel-eyebrow';
     what.textContent = kind ? `Workspace · ${kind}` : 'Workspace';
     head.appendChild(what);

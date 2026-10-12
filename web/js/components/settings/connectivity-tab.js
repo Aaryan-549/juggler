@@ -430,7 +430,7 @@ export class ConnectivityTab {
 
       const stopBtn = document.createElement('button');
       stopBtn.type = 'button';
-      stopBtn.className = 'settings-btn danger small';
+      stopBtn.className = 'settings-btn btn-danger small';
       stopBtn.textContent = 'Stop';
       stopBtn.addEventListener('click', () => {
         stopBtn.disabled = true;
@@ -441,7 +441,7 @@ export class ConnectivityTab {
     } else {
       const startBtn = document.createElement('button');
       startBtn.type = 'button';
-      startBtn.className = 'settings-btn primary small';
+      startBtn.className = 'settings-btn btn-primary small';
       startBtn.textContent = 'Start LAN access';
       startBtn.addEventListener('click', () => {
         startBtn.disabled = true;
@@ -661,7 +661,7 @@ export class ConnectivityTab {
 
       const stopBtn = document.createElement('button');
       stopBtn.type = 'button';
-      stopBtn.className = 'settings-btn danger small';
+      stopBtn.className = 'settings-btn btn-danger small';
       stopBtn.textContent = 'Stop';
       stopBtn.addEventListener('click', () => {
         stopBtn.disabled = true;
@@ -672,7 +672,7 @@ export class ConnectivityTab {
     } else if (opts.available) {
       const startBtn = document.createElement('button');
       startBtn.type = 'button';
-      startBtn.className = 'settings-btn primary small';
+      startBtn.className = 'settings-btn btn-primary small';
       startBtn.textContent = opts.startLabel;
       startBtn.addEventListener('click', () => {
         startBtn.disabled = true;

@@ -308,7 +308,7 @@ class SettingsPanel extends HTMLElement {
                                 <select class="logs-picker" id="logs-picker"></select>
                             </div>
                             <div class="logs-filepath" id="logs-filepath"></div>
-                            <pre class="logs-viewer" id="logs-viewer" tabindex="0" hidden></pre>
+                            <pre class="logs-viewer surface-well" id="logs-viewer" tabindex="0" hidden></pre>
                         </div>
                     </section>
 

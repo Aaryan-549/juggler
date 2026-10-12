@@ -222,7 +222,7 @@ class NoProjectOverlay extends HTMLElement {
         </p>
 
         <div class="np-actions">
-          <button type="button" class="np-action np-action--primary np-open">Open an existing folder…</button>
+          <button type="button" class="np-action btn-primary np-open">Open an existing folder…</button>
           <button type="button" class="np-action np-new">Create a new folder to work in…</button>
         </div>
 

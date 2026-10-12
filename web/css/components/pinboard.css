@@ -139,9 +139,6 @@ pinboard-shell.open .pinboard-panel {
 
 .pinboard-toolbar__identity {
     color: var(--text-secondary);
-    font-size: var(--font-size-xs);
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
 }
 
 .pinboard-toolbar__controls {
@@ -762,10 +759,6 @@ button.app-header__board-conversation:focus-visible {
     flex-shrink: 0;
     margin-left: auto;
     color: var(--text-secondary);
-    font-size: var(--font-size-xs);
-    font-weight: 500;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
 }
 
 [data-view="pinboard"] pinboard-shell {

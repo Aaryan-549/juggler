@@ -18,6 +18,47 @@
  */
 
 /* ==========================================================================
+   Button roles (.btn-primary, .btn-secondary, .btn-danger)
+   The fill a button wears for its role, over whatever size and shape its
+   component gives it: primary is blue, secondary is outlined, danger is red.
+   A component that paints its own buttons a neutral fill scopes that rule to
+   the buttons without a role (`:not(.btn-primary)`), so the two never compete.
+   ========================================================================== */
+
+.btn-primary {
+    background: var(--accent-blue);
+    border-color: var(--accent-blue);
+    color: #fff;
+}
+
+/* Hover states are held to one class (state in :where), so they never outrank
+   a component's own button rule from down here. */
+.btn-primary:where(:hover:not(:disabled)) {
+    background: var(--accent-blue-light);
+}
+
+.btn-secondary {
+    background: transparent;
+    border: 0.0625rem solid var(--border-color);
+    color: var(--text-secondary);
+}
+
+.btn-secondary:where(:hover:not(:disabled)) {
+    background: var(--bg-raised);
+    color: var(--text-primary);
+}
+
+.btn-danger {
+    background: var(--accent-red);
+    border-color: var(--accent-red);
+    color: #fff;
+}
+
+.btn-danger:where(:hover:not(:disabled)) {
+    background: var(--accent-red-soft);
+}
+
+/* ==========================================================================
    Icon Header Buttons (.btn-icon-header)
    Used for: theme-button, network-button, settings-button
    ========================================================================== */

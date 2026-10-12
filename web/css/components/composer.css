@@ -1066,10 +1066,6 @@ composer-box.touch-composer .permission-btn .permission-detail {
     padding: 0.5rem 0.75rem;
     border-radius: var(--radius-popup-item);
     color: var(--text-secondary);
-    font-size: 0.6875rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
     cursor: pointer;
 }
 

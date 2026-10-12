@@ -274,9 +274,6 @@
    under the template rather than a second editor. */
 
 .command-editor-preview {
-    background: var(--bg-secondary);
-    border: 1px solid var(--border-subtle);
-    border-radius: 0.35rem;
     padding: 0.5rem 0.6rem;
 }
 
@@ -422,9 +419,6 @@
 
 .command-manager-group h3 {
     margin: 0 0 0.4rem;
-    font-size: 0.78rem;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
     color: var(--text-secondary);
 }
 

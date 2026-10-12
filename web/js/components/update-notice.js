@@ -491,7 +491,7 @@ class UpdateNotice extends HTMLElement {
     footer.className = 'update-notice__footer';
 
     if (vm.upToDate) {
-      footer.appendChild(this._button('OK', 'primary', () => this._dismiss()));
+      footer.appendChild(this._button('OK', 'btn-primary', () => this._dismiss()));
       return footer;
     }
 
@@ -505,7 +505,7 @@ class UpdateNotice extends HTMLElement {
       /** @type {UpdateAction[]} */ (vm.notice && vm.notice.actions || []).forEach((action) => {
         if (!action || !action.url) return;
         footer.appendChild(
-          this._button(action.label || 'Open', action.primary ? 'primary' : '', () => openExternalURL(action.url)),
+          this._button(action.label || 'Open', action.primary ? 'btn-primary' : '', () => openExternalURL(action.url)),
         );
       });
       return footer;
@@ -513,13 +513,13 @@ class UpdateNotice extends HTMLElement {
 
     switch (vm.updaterState) {
       case 'ready':
-        footer.appendChild(this._button('Update & restart', 'primary', () => this._doRestart()));
+        footer.appendChild(this._button('Update & restart', 'btn-primary', () => this._doRestart()));
         break;
       case 'downloading':
       case 'verifying':
       case 'installing': {
         // In-flight — show a disabled primary so the shape is stable.
-        const b = this._button('Updating…', 'primary', () => {});
+        const b = this._button('Updating…', 'btn-primary', () => {});
         b.disabled = true;
         footer.appendChild(b);
         break;
@@ -530,11 +530,11 @@ class UpdateNotice extends HTMLElement {
           if (!action || !action.url) return;
           footer.appendChild(this._button(action.label || 'Open', '', () => openExternalURL(action.url)));
         });
-        footer.appendChild(this._button('Retry', 'primary', () => this._doInstall()));
+        footer.appendChild(this._button('Retry', 'btn-primary', () => this._doInstall()));
         break;
       default:
         // available / idle / checking / up-to-date-with-server-notice.
-        footer.appendChild(this._button('Update now', 'primary', () => this._doInstall()));
+        footer.appendChild(this._button('Update now', 'btn-primary', () => this._doInstall()));
     }
     return footer;
   }

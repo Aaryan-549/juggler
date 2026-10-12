@@ -364,7 +364,7 @@ export class ConfigTabController {
     toolbar.className = 'mcp-toolbar';
     const addBtn = document.createElement('button');
     addBtn.type = 'button';
-    addBtn.className = 'settings-btn primary small';
+    addBtn.className = 'settings-btn btn-primary small';
     addBtn.textContent = this.spec.addLabel;
     addBtn.addEventListener('click', () => this.openForm('add'));
     toolbar.appendChild(addBtn);
@@ -501,7 +501,7 @@ export class ConfigTabController {
 
     const delBtn = document.createElement('button');
     delBtn.type = 'button';
-    delBtn.className = 'settings-btn danger small';
+    delBtn.className = 'settings-btn btn-danger small';
     delBtn.textContent = 'Delete';
     delBtn.addEventListener('click', () => this._confirmDelete(scope, name));
     btnRow.appendChild(delBtn);
@@ -782,7 +782,7 @@ export class ConfigTabController {
     actions.className = 'mcp-form-actions';
     const saveBtn = document.createElement('button');
     saveBtn.type = 'button';
-    saveBtn.className = 'settings-btn primary small';
+    saveBtn.className = 'settings-btn btn-primary small';
     saveBtn.textContent = 'Save';
     saveBtn.addEventListener('click', () => this._save());
     const cancelBtn = document.createElement('button');

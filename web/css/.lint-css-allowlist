@@ -52,7 +52,7 @@ layer-inversion patterns/icons.css > components/messages.css 168
 layer-inversion layout/app-shell.css > patterns/icons.css 156
 layer-inversion patterns/icons.css > components/properties-panel.css 120
 layer-inversion patterns/icons.css > components/diff-viewer.css 96
-layer-inversion patterns/markdown.css > components/plugin-catalog.css 73
+layer-inversion patterns/markdown.css > components/plugin-catalog.css 66
 layer-inversion patterns/icons.css > components/conversation-bar.css 50
 layer-inversion patterns/icons.css > components/model-picker.css 36
 layer-inversion patterns/icons.css > components/overlays-and-updates.css 24
@@ -63,7 +63,7 @@ layer-inversion components/plugin-catalog.css > vendor/prism-theme.css 31
 layer-inversion patterns/icons.css > components/approvals.css 12
 layer-inversion patterns/icons.css > components/onboarding.css 24
 layer-inversion patterns/icons.css > components/pinboard.css 24
-layer-inversion patterns/menus.css > components/plugin-catalog.css 26
+layer-inversion patterns/menus.css > components/plugin-catalog.css 11
 layer-inversion patterns/markdown.css > components/properties-panel.css 27
 layer-inversion patterns/buttons.css > components/diff-viewer.css 26
 layer-inversion patterns/markdown.css > components/conversation-bar.css 26
@@ -74,14 +74,14 @@ layer-inversion patterns/markdown.css > components/overlays-and-updates.css 19
 layer-inversion patterns/markdown.css > components/approvals.css 11
 layer-inversion patterns/markdown.css > components/messages.css 18
 layer-inversion patterns/markdown.css > components/workspace-dialogs.css 19
-layer-inversion patterns/modal-dialog.css > components/model-picker.css 19
+layer-inversion patterns/modal-dialog.css > components/model-picker.css 17
 layer-inversion patterns/markdown.css > components/workspace-panel.css 18
 layer-inversion layout/app-shell.css > components/pinboard.css 17
 layer-inversion patterns/markdown.css > components/slash-commands.css 17
 layer-inversion patterns/markdown.css > components/model-picker.css 16
-layer-inversion patterns/modal-dialog.css > components/diff-viewer.css 16
+layer-inversion patterns/modal-dialog.css > components/diff-viewer.css 4
 layer-inversion layout/app-header.css > patterns/buttons.css 10
-layer-inversion patterns/code.css > components/plugin-catalog.css 14
+layer-inversion patterns/code.css > components/plugin-catalog.css 7
 layer-inversion patterns/menus.css > components/composer.css 15
 layer-inversion patterns/icons.css > components/plugin-catalog.css 12
 layer-inversion patterns/icons.css > components/settings.css 12
@@ -100,9 +100,9 @@ layer-inversion layout/app-header.css > components/composer.css 5
 layer-inversion layout/app-header.css > components/settings.css 4
 layer-inversion layout/app-header.css > components/skills-marketplace.css 9
 layer-inversion patterns/markdown.css > components/project-setup.css 10
-layer-inversion base/elements.css > components/diff-viewer.css 9
+layer-inversion base/elements.css > components/diff-viewer.css 5
 layer-inversion patterns/markdown.css > components/skills-marketplace.css 9
-layer-inversion base/elements.css > components/plugin-catalog.css 8
+layer-inversion base/elements.css > components/plugin-catalog.css 6
 layer-inversion base/elements.css > components/slash-commands.css 8
 layer-inversion layout/app-header.css > components/model-picker.css 6
 layer-inversion layout/window-chrome.css > components/diff-viewer.css 8
@@ -118,7 +118,7 @@ layer-inversion layout/app-header.css > components/pinboard.css 1
 layer-inversion layout/app-shell.css > components/context-items.css 6
 layer-inversion patterns/menus.css > components/diff-viewer.css 6
 layer-inversion tokens/theme-dark.css > base/elements.css 6
-layer-inversion base/elements.css > components/model-picker.css 5
+layer-inversion base/elements.css > components/model-picker.css 4
 layer-inversion layout/app-header.css > components/approvals.css 5
 layer-inversion layout/app-header.css > patterns/spinner.css 5
 layer-inversion layout/app-shell.css > components/conversation-bar.css 4

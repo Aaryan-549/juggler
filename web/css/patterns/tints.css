@@ -1,0 +1,43 @@
+/*
+ *     ▄▄ ▄▄ ▄▄  ▄▄▄▄  ▄▄▄▄ ▄▄    ▄▄▄▄▄ ▄▄▄▄
+ *     ██ ██ ██ ██ ▄▄ ██ ▄▄ ██    ██▄▄  ██▄█▄   Copyright (c) 2026 Julian Storer
+ *   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
+ */
+
+/* Tinted badges: a pale wash of a colour behind text in that colour, for a
+   small label that says which kind or state something is. Shared by the
+   plugin catalog and the skills marketplace badges. Each is a color-mix() of a
+   theme token, so it follows the theme.
+
+   Only the colour lives here. The badge's size and shape belong to the
+   component that draws it. */
+
+.tint-blue {
+    background: color-mix(in srgb, var(--accent-blue) 15%, transparent);
+    color: var(--accent-blue);
+}
+
+.tint-green {
+    background: color-mix(in srgb, var(--accent-green) 15%, transparent);
+    color: var(--accent-green);
+}
+
+.tint-red {
+    background: color-mix(in srgb, var(--accent-red) 15%, transparent);
+    color: var(--accent-red);
+}
+
+.tint-orange {
+    background: color-mix(in srgb, var(--accent-orange) 15%, transparent);
+    color: var(--accent-orange);
+}
+
+.tint-purple {
+    background: color-mix(in srgb, var(--accent-purple) 15%, transparent);
+    color: var(--accent-purple);
+}
+
+.tint-neutral {
+    background: color-mix(in srgb, var(--text-tertiary) 15%, transparent);
+    color: var(--text-tertiary);
+}

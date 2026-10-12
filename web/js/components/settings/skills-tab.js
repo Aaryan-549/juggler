@@ -353,8 +353,8 @@ export class SkillsTab {
   _cardHtml(e) {
     const cat = e.category?.length ? escapeHtml(e.category.join(' / ')) : '';
     const sourceLabel = this._sourceLabel(e.source);
-    const scripts = e.hasScripts ? `<span class="skills-badge scripts" title="Contains scripts that can run">scripts</span>` : '';
-    const err = e.error ? `<span class="skills-badge error" title="${escapeHtml(e.error)}">⚠ error</span>` : '';
+    const scripts = e.hasScripts ? `<span class="skills-badge tint-blue" title="Contains scripts that can run">scripts</span>` : '';
+    const err = e.error ? `<span class="skills-badge error tint-red" title="${escapeHtml(e.error)}">⚠ error</span>` : '';
     const meta = [sourceLabel, cat].filter(Boolean).join(' · ');
 
     let installBtn;
@@ -367,7 +367,7 @@ export class SkillsTab {
     }
 
     return `
-      <div class="skills-card ${e.installed ? 'is-installed' : ''}" data-id="${escapeHtml(e.id)}">
+      <div class="skills-card surface-card ${e.installed ? 'is-installed' : ''}" data-id="${escapeHtml(e.id)}">
         <div class="skills-card-head">
           <span class="skills-card-name">${escapeHtml(e.name || '(unnamed)')}</span>
           ${scripts}${err}
@@ -395,18 +395,18 @@ export class SkillsTab {
     const rows = skills
       .map((s) => {
         const badge = `<span class="skills-scope-badge">${escapeHtml(s.scope)}-${escapeHtml(s.source)}</span>`;
-        const scripts = s.hasScripts ? `<span class="skills-badge scripts">scripts</span>` : '';
+        const scripts = s.hasScripts ? `<span class="skills-badge tint-blue">scripts</span>` : '';
         const flag = s.error
-          ? `<span class="skills-badge error" title="${escapeHtml(s.error)}">⚠ ${escapeHtml(s.error)}</span>`
+          ? `<span class="skills-badge error tint-red" title="${escapeHtml(s.error)}">⚠ ${escapeHtml(s.error)}</span>`
           : s.shadowedBy
-            ? `<span class="skills-badge shadow" title="Shadowed by ${escapeHtml(s.shadowedBy)}">shadowed by ${escapeHtml(s.shadowedBy)}</span>`
+            ? `<span class="skills-badge tint-neutral" title="Shadowed by ${escapeHtml(s.shadowedBy)}">shadowed by ${escapeHtml(s.shadowedBy)}</span>`
             : '';
         const pathRow = s.path
           ? `<div class="skills-filepath-mount" data-path="${escapeHtml(s.path)}"></div>`
           : '';
         const ref = `${escapeHtml(s.scope)}:${escapeHtml(s.source)}:${escapeHtml(s.name)}`;
         return `
-          <div class="skills-manage-row">
+          <div class="skills-manage-row surface-card">
             <div class="skills-manage-main">
               <div class="skills-card-head">
                 <span class="skills-card-name">${escapeHtml(s.name)}</span>
@@ -798,7 +798,7 @@ export class SkillsTab {
       : '';
 
     const fileList = detail.files.length
-      ? `<div class="skills-section skills-files">
+      ? `<div class="skills-section surface-card skills-files">
            <div class="skills-section-title">Files (${detail.files.length})</div>
            <div class="skills-files-list">
              ${detail.files
@@ -822,7 +822,7 @@ export class SkillsTab {
       .filter(Boolean)
       .join(' · ');
     const installed = entry.installed
-      ? `<div class="skills-section skills-installed-section">
+      ? `<div class="skills-section surface-card skills-installed-section">
            <div class="skills-drawer-installed">${CHECK_SVG} Installed${entry.installed.upToDate ? '' : ' — update available'}</div>
            <div class="skills-filepath-mount" data-path="${escapeHtml(entry.installed.path)}"></div>
          </div>`
@@ -840,7 +840,7 @@ export class SkillsTab {
     `;
     const footer = `
       <a class="skills-btn" href="${escapeHtml(entry.sourceUrl)}" target="_blank" rel="noopener noreferrer">${GITHUB_ICON_SVG} View on GitHub</a>
-      <button class="skills-btn install primary" data-drawer-install>${entry.installed ? 'Reinstall' : 'Install'}</button>
+      <button class="skills-btn install btn-primary" data-drawer-install>${entry.installed ? 'Reinstall' : 'Install'}</button>
     `;
     return this._previewShell(escapeHtml(entry.name || '(unnamed)'), body, footer);
   }

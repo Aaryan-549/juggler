@@ -1200,10 +1200,6 @@ conversation-bar .info-card__header {
 }
 
 conversation-bar .info-card__eyebrow {
-    font-size: 0.625rem;
-    font-weight: 600;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
     color: var(--accent-green);
 }
 

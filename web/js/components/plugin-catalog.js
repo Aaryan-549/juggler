@@ -135,6 +135,40 @@ const TYPE_LABELS = /** @type {Record<string, string>} */ ({
   hook: 'Hook',
 });
 
+// Badge tints (patterns/tints.css). Returned as whole literals so the
+// stylesheet checks can see every class a badge may carry.
+
+/**
+ * @param {string} itemType - A capability's itemType.
+ * @returns {string} Its badge tint, or '' for the types drawn untinted.
+ */
+function typeTint(itemType) {
+  if (itemType === 'context-item') return 'tint-green';
+  if (itemType === 'strategy') return 'tint-purple';
+  if (itemType === 'command') return 'tint-blue';
+  return '';
+}
+
+/**
+ * @param {string} source - Where an extension came from.
+ * @returns {string} Its badge tint, or ''.
+ */
+function sourceTint(source) {
+  if (source === 'builtin') return 'tint-blue';
+  if (source === 'user') return 'tint-green';
+  return '';
+}
+
+/**
+ * @param {string} category - A tool's category.
+ * @returns {string} Its badge tint, or ''.
+ */
+function categoryTint(category) {
+  if (category === 'read') return 'tint-green';
+  if (category === 'write') return 'tint-orange';
+  return '';
+}
+
 /**
  * Compute the next disabled-id list after toggling one id on or off. Adding is
  * idempotent (Set semantics); removing clears the id. The id may be a capability
@@ -1114,7 +1148,7 @@ class PluginCatalog extends JugglerElement {
     const titleRow = this._createElement('div', 'plugin-title-row');
     titleRow.appendChild(this._createElement('h3', 'plugin-detail-name', was?.name || id));
     const badges = this._createElement('div', 'plugin-badges');
-    badges.appendChild(this._createElement('span', 'plugin-badge ext-cap-status-disabled', 'disabled'));
+    badges.appendChild(this._createElement('span', 'plugin-badge ext-cap-status-disabled tint-neutral', 'disabled'));
     titleRow.appendChild(badges);
     header.appendChild(titleRow);
 
@@ -1177,12 +1211,12 @@ class PluginCatalog extends JugglerElement {
       badges.appendChild(this._createElement('span', 'plugin-badge plugin-version', `v${card.manifest.version}`));
     }
     if (card.manifest?.author) {
-      badges.appendChild(this._createElement('span', 'plugin-badge plugin-author', card.manifest.author));
+      badges.appendChild(this._createElement('span', 'plugin-badge plugin-author tint-blue', card.manifest.author));
     }
-    badges.appendChild(this._createElement('span', `plugin-badge ext-source ext-source-${card.source}`,
+    badges.appendChild(this._createElement('span', `plugin-badge ext-source ${sourceTint(card.source)}`,
       SOURCE_LABELS[card.source] || card.source));
     if (card.extDisabled) {
-      badges.appendChild(this._createElement('span', 'plugin-badge ext-cap-status-disabled', 'disabled'));
+      badges.appendChild(this._createElement('span', 'plugin-badge ext-cap-status-disabled tint-neutral', 'disabled'));
     }
     titleRow.appendChild(badges);
     header.appendChild(titleRow);
@@ -1268,18 +1302,18 @@ class PluginCatalog extends JugglerElement {
    * @private
    */
   _renderBundledCapRow(cap) {
-    const row = this._createElement('div', 'ext-cap ext-cap-link');
+    const row = this._createElement('div', 'ext-cap ext-cap-link surface-card');
     if (cap.failed) row.classList.add('ext-cap-failed');
     else if (cap.disabled) row.classList.add('ext-cap-disabled');
 
     const main = this._createElement('div', 'ext-cap-main');
     main.appendChild(this._createElement('span', 'ext-cap-name', cap.name));
     main.appendChild(this._createElement('span',
-      `ext-cap-type ext-cap-type-${cap.itemType}`, TYPE_LABELS[cap.itemType] || cap.itemType));
+      `ext-cap-type ${typeTint(cap.itemType)}`, TYPE_LABELS[cap.itemType] || cap.itemType));
     if (cap.failed) {
-      main.appendChild(this._createElement('span', 'ext-cap-status ext-cap-status-failed', 'failed to load'));
+      main.appendChild(this._createElement('span', 'ext-cap-status ext-cap-status-failed tint-red', 'failed to load'));
     } else if (cap.disabled) {
-      main.appendChild(this._createElement('span', 'ext-cap-status ext-cap-status-disabled',
+      main.appendChild(this._createElement('span', 'ext-cap-status ext-cap-status-disabled tint-neutral',
         cap.inherited ? 'disabled (extension off)' : 'disabled'));
     }
     row.appendChild(main);
@@ -1310,14 +1344,14 @@ class PluginCatalog extends JugglerElement {
 
     const badges = this._createElement('div', 'plugin-badges');
     badges.appendChild(this._createElement('span',
-      `plugin-badge ext-cap-type ext-cap-type-${cap.itemType}`, TYPE_LABELS[cap.itemType] || cap.itemType));
+      `plugin-badge ext-cap-type ${typeTint(cap.itemType)}`, TYPE_LABELS[cap.itemType] || cap.itemType));
     if (cap.version) {
       badges.appendChild(this._createElement('span', 'plugin-badge plugin-version', `v${cap.version}`));
     }
     if (cap.failed) {
-      badges.appendChild(this._createElement('span', 'plugin-badge ext-cap-status-failed', 'failed to load'));
+      badges.appendChild(this._createElement('span', 'plugin-badge ext-cap-status-failed tint-red', 'failed to load'));
     } else if (cap.disabled) {
-      badges.appendChild(this._createElement('span', 'plugin-badge ext-cap-status-disabled',
+      badges.appendChild(this._createElement('span', 'plugin-badge ext-cap-status-disabled tint-neutral',
         cap.inherited ? 'disabled (extension off)' : 'disabled'));
     }
     titleRow.appendChild(badges);
@@ -1405,7 +1439,7 @@ class PluginCatalog extends JugglerElement {
     const list = this._createElement('div', 'permissions-explained');
     for (const p of permissions) {
       const item = this._createElement('div', 'permission-explained-item');
-      item.appendChild(this._createElement('code', 'permission-badge', p));
+      item.appendChild(this._createElement('code', 'permission-badge tint-red', p));
       item.appendChild(this._createElement('span', 'permission-explained-desc',
         PERMISSION_INFO[p] || 'Custom permission required by this extension'));
       list.appendChild(item);
@@ -1507,7 +1541,7 @@ class PluginCatalog extends JugglerElement {
     section.appendChild(header);
 
     section.appendChild(declared
-      ? this._createElement('pre', 'strategy-guidance-text', declared)
+      ? this._createElement('pre', 'strategy-guidance-text surface-well', declared)
       : this._createElement('div', 'strategy-guidance-none',
         'Nothing. This strategy says nothing to the model — it only decides which tools the model is '
         + 'offered and which of its calls need your approval.'));
@@ -1571,12 +1605,12 @@ class PluginCatalog extends JugglerElement {
 
     const list = this._createElement('div', 'tools-list');
     for (const tool of tools) {
-      const toolEl = this._createElement('div', 'tool-item');
+      const toolEl = this._createElement('div', 'tool-item surface-card');
 
       const toolHeader = this._createElement('div', 'tool-header');
       toolHeader.appendChild(this._createElement('code', 'tool-name', tool.name));
       if (tool.category) {
-        toolHeader.appendChild(this._createElement('span', `tool-category tool-category-${tool.category}`, tool.category));
+        toolHeader.appendChild(this._createElement('span', `tool-category ${categoryTint(tool.category)}`, tool.category));
       }
       toolEl.appendChild(toolHeader);
 
@@ -1595,7 +1629,7 @@ class PluginCatalog extends JugglerElement {
           if (prop.type) {
             paramHeader.appendChild(this._createElement('span', 'tool-param-type', prop.type));
           }
-          const reqClass = required.includes(propName) ? 'tool-param-required' : 'tool-param-optional';
+          const reqClass = required.includes(propName) ? 'tool-param-required' : 'tool-param-optional tint-neutral';
           paramHeader.appendChild(this._createElement('span', reqClass,
             required.includes(propName) ? 'required' : 'optional'));
           param.appendChild(paramHeader);

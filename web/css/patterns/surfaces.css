@@ -1,0 +1,29 @@
+/*
+ *     ▄▄ ▄▄ ▄▄  ▄▄▄▄  ▄▄▄▄ ▄▄    ▄▄▄▄▄ ▄▄▄▄
+ *     ██ ██ ██ ██ ▄▄ ██ ▄▄ ██    ██▄▄  ██▄█▄   Copyright (c) 2026 Julian Storer
+ *   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
+ */
+
+/* The two boxed surfaces a panel holds, shared by settings, the plugin
+   catalog, the skills marketplace, the workspace dialogs and the command
+   editor.
+
+   - A card is an item raised off its panel: a row in a list of extensions,
+     tools or skills, or a section of a detail view.
+   - A well is sunk into it: a box holding a scrolling list, a log or raw text.
+
+   Only the fill, border and corner live here. Padding, layout and any hover
+   belong to the component. A clickable row is a control, not a card, and keeps
+   its own look. */
+
+.surface-card {
+    background: var(--bg-tertiary);
+    border: 0.0625rem solid var(--border-color);
+    border-radius: var(--radius-xl);
+}
+
+.surface-well {
+    background: var(--bg-primary);
+    border: 0.0625rem solid var(--border-color);
+    border-radius: var(--radius-lg);
+}

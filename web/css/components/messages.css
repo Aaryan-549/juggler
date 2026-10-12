@@ -886,10 +886,6 @@ thinking-message article.thinking .message-content-box {
 }
 
 .pending-messages-label {
-    font-size: 0.6875rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
     color: var(--text-secondary);
     margin-bottom: 0.25rem;
 }
@@ -943,10 +939,6 @@ thinking-message article.thinking .message-content-box {
    transcript (from the thread's `result` field). Distinct from the parent
    tile and from any message bubble. */
 .thread-result-final .thread-result-label {
-    font-size: 0.6875rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
     color: var(--text-secondary);
     margin-bottom: 0.25rem;
 }

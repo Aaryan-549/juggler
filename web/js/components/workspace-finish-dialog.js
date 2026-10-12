@@ -95,7 +95,7 @@ function workList(status) {
   box.appendChild(count);
 
   const list = document.createElement('div');
-  list.className = 'workspace-finish-work-list';
+  list.className = 'workspace-finish-work-list surface-well';
   for (const file of files.slice(0, FILES_SHOWN)) {
     const row = document.createElement('div');
     row.className = 'workspace-finish-work-row';

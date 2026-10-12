@@ -378,7 +378,7 @@ export function openCommandManager() {
         <footer class="command-editor-footer">
           <div class="command-editor-path"></div>
           <div class="command-editor-actions">
-            <button id="cmd-manager-new" class="modal-button primary">New command…</button>
+            <button id="cmd-manager-new" class="modal-button btn-primary">New command…</button>
           </div>
         </footer>
       </div>`;
@@ -456,7 +456,7 @@ function userGroup(title, defs, refresh) {
     const actions = document.createElement('div');
     actions.className = 'command-manager-actions';
     const edit = document.createElement('button');
-    edit.className = 'modal-button secondary';
+    edit.className = 'modal-button btn-secondary';
     edit.textContent = 'Edit';
     edit.addEventListener('click', async () => { await openCommandEditor({ def }); refresh(); });
     // Delete is the app's standard trashcan: an icon-only button, muted until
@@ -608,7 +608,7 @@ function buildMarkup(v) {
           <div class="command-editor-hint">Placeholders: <code>$1</code>…<code>$9</code>, <code>$ARGUMENTS</code>, <code>$$</code> for a literal $.</div>
         </label>
 
-        <div class="command-editor-preview">
+        <div class="command-editor-preview surface-well">
           <div class="command-editor-preview-head">
             <span class="command-editor-preview-title">Preview</span>
             <input id="cmd-preview-args" type="text" class="command-editor-input command-editor-preview-args"
@@ -645,8 +645,8 @@ function buildMarkup(v) {
           <div id="cmd-path-hint" class="command-editor-path"></div>
         </div>
         <div class="command-editor-actions">
-          <button id="cmd-delete" class="modal-button danger hidden">Delete</button>
-          <button id="cmd-save" class="modal-button primary">Save</button>
+          <button id="cmd-delete" class="modal-button btn-danger hidden">Delete</button>
+          <button id="cmd-save" class="modal-button btn-primary">Save</button>
         </div>
       </footer>
     </div>

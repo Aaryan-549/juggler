@@ -96,9 +96,6 @@
 }
 
 .workspace-move-now-lead {
-    font-size: 0.75rem;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
     color: var(--text-tertiary);
 }
 
@@ -436,9 +433,6 @@
     max-height: 9rem;
     padding: 0.4rem 0.5rem;
     overflow-y: auto;
-    background: var(--bg-primary);
-    border: 1px solid var(--border-color);
-    border-radius: 0.4rem;
     font-family: var(--font-mono);
     font-size: 0.75rem;
 }

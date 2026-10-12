@@ -217,7 +217,7 @@ function shell(view, actions, dismissLabel, canGoBack) {
     .map(
       (action, index) =>
         `<button type="button" class="wiz-action${
-          action.kind === 'primary' ? ' wiz-action--primary' : ''
+          action.kind === 'primary' ? ' btn-primary' : ''
         }" data-wiz-action="${index}">${escapeHtml(action.label)}</button>`
     )
     .join('');
@@ -242,6 +242,6 @@ function shell(view, actions, dismissLabel, canGoBack) {
  * @param {HTMLElement} root
  */
 function focusPrimary(root) {
-  const target = root.querySelector('.wiz-action--primary') ?? root.querySelector('.wiz-action');
+  const target = root.querySelector('.wiz-action.btn-primary') ?? root.querySelector('.wiz-action');
   if (target instanceof HTMLElement) target.focus();
 }

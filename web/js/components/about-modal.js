@@ -165,7 +165,7 @@ class AboutModal extends JugglerElement {
                 </main>
 
                 <footer class="about-footer">
-                    <button class="about-button primary" id="about-close">
+                    <button class="about-button btn-primary" id="about-close">
                         Close
                     </button>
                 </footer>

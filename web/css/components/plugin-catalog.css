@@ -355,11 +355,6 @@ plugin-catalog {
   color: var(--text-secondary);
 }
 
-.plugin-author {
-  background: color-mix(in srgb, var(--accent-blue) 15%, transparent);
-  color: var(--accent-blue);
-}
-
 .plugin-description {
   margin: 0.75rem 0;
   color: var(--text-secondary);
@@ -443,8 +438,6 @@ plugin-catalog {
   font-size: 0.75rem;
   font-weight: 600;
   font-family: var(--font-mono);
-  background: rgb(248 81 73 / 15%);
-  color: var(--accent-red);
 }
 
 /* ==========================================================================
@@ -464,9 +457,6 @@ plugin-catalog {
 
 .tool-item {
   padding: 1rem;
-  background: var(--bg-tertiary);
-  border-radius: var(--radius-xl);
-  border: 0.0625rem solid var(--border-color);
 }
 
 .tool-header {
@@ -493,16 +483,6 @@ plugin-catalog {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.0313rem;
-}
-
-.tool-category-read {
-  background: rgb(63 185 80 / 15%);
-  color: var(--accent-green);
-}
-
-.tool-category-write {
-  background: rgb(240 136 62 / 15%);
-  color: #f0883e;
 }
 
 .tool-description {
@@ -564,8 +544,6 @@ plugin-catalog {
   font-weight: 600;
   padding: 0.125rem 0.5rem;
   border-radius: var(--radius-md);
-  background: rgb(136 136 136 / 15%);
-  color: var(--text-tertiary);
 }
 
 .tool-param-description {
@@ -652,9 +630,6 @@ plugin-catalog {
 .strategy-guidance-text {
   margin: 1rem 0 0;
   padding: 0.75rem;
-  border-radius: var(--radius-lg);
-  background: var(--bg-tertiary);
-  border: 0.0625rem solid var(--border-color);
   font-family: var(--font-mono);
   font-size: 0.75rem;
   line-height: 1.6;
@@ -798,9 +773,6 @@ plugin-catalog {
   gap: 1rem;
   align-items: center;
   padding: 0.875rem 1rem;
-  border: 0.0625rem solid var(--border-color);
-  border-radius: var(--radius-xl);
-  background: var(--bg-tertiary);
 }
 
 .extension-setting-info,
@@ -929,16 +901,6 @@ plugin-catalog {
   font-size: 0.6875rem;
 }
 
-.ext-source-builtin {
-  background: color-mix(in srgb, var(--accent-blue) 15%, transparent);
-  color: var(--accent-blue);
-}
-
-.ext-source-user {
-  background: rgb(63 185 80 / 15%);
-  color: var(--accent-green);
-}
-
 .ext-card-error-msg {
   padding: 0.5rem 0.75rem;
   background: rgb(248 81 73 / 12%);
@@ -959,9 +921,6 @@ plugin-catalog {
 
 .ext-cap {
   padding: 0.625rem 0.75rem;
-  background: var(--bg-tertiary);
-  border: 0.0625rem solid var(--border-color);
-  border-radius: var(--radius-xl);
 }
 
 .ext-cap-disabled {
@@ -990,36 +949,11 @@ plugin-catalog {
   font-size: 0.625rem;
 }
 
-.ext-cap-type-context-item {
-  background: rgb(63 185 80 / 15%);
-  color: var(--accent-green);
-}
-
-.ext-cap-type-strategy {
-  background: rgb(167 139 250 / 15%);
-  color: #a78bfa;
-}
-
-.ext-cap-type-command {
-  background: color-mix(in srgb, var(--accent-blue) 15%, transparent);
-  color: var(--accent-blue);
-}
-
 .ext-cap-status {
   font-size: 0.6875rem;
   font-weight: 600;
   padding: 0.125rem 0.5rem;
   border-radius: var(--radius-md);
-}
-
-.ext-cap-status-disabled {
-  background: rgb(136 136 136 / 18%);
-  color: var(--text-tertiary);
-}
-
-.ext-cap-status-failed {
-  background: rgb(248 81 73 / 15%);
-  color: var(--accent-red);
 }
 
 .ext-cap-desc {

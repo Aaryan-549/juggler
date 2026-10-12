@@ -67,36 +67,6 @@ modal-dialog .modal-button {
     font-size: 0.875rem;
     cursor: pointer;
     transition: background var(--transition-base);
-    border: none;
-}
-
-modal-dialog .modal-button.primary {
-    background: var(--accent-blue);
-    color: #fff;
-}
-
-modal-dialog .modal-button.primary:hover {
-    background: var(--accent-blue-light);
-}
-
-modal-dialog .modal-button.danger {
-    background: var(--accent-red);
-    color: #fff;
-}
-
-modal-dialog .modal-button.danger:hover {
-    background: var(--accent-red-soft);
-}
-
-modal-dialog .modal-button.secondary {
-    background: transparent;
-    color: var(--text-secondary);
-    border: 0.0625rem solid var(--border-color);
-}
-
-modal-dialog .modal-button.secondary:hover {
-    background: var(--bg-raised);
-    color: var(--text-primary);
 }
 
 /* ── Notice mode (showNotice) ──────────────────────────────────────────────

@@ -89,12 +89,12 @@ function installedPreviewBody(skill, detail) {
     skill.scope && skill.source
       ? `<span class="skills-scope-badge">${escapeHtml(skill.scope)}-${escapeHtml(skill.source)}</span>`
       : '';
-  const scripts = skill.hasScripts ? `<span class="skills-badge scripts">scripts</span>` : '';
+  const scripts = skill.hasScripts ? `<span class="skills-badge tint-blue">scripts</span>` : '';
   const head = badge || scripts ? `<div class="skills-card-head">${badge}${scripts}</div>` : '';
   const desc = skill.description ? `<div class="skills-preview-desc">${escapeHtml(skill.description)}</div>` : '';
 
   const location = detail.path
-    ? `<div class="skills-section">
+    ? `<div class="skills-section surface-card">
          <div class="skills-section-title">Location</div>
          <div class="skills-filepath-mount" data-path="${escapeHtml(detail.path)}"></div>
        </div>`
@@ -102,7 +102,7 @@ function installedPreviewBody(skill, detail) {
 
   const files = detail.files || [];
   const fileList = files.length
-    ? `<div class="skills-section skills-files">
+    ? `<div class="skills-section surface-card skills-files">
          <div class="skills-section-title">Files (${files.length})</div>
          <div class="skills-files-list">
            ${files

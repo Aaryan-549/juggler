@@ -94,8 +94,6 @@ no-project-overlay .np-actions {
 no-project-overlay .np-action {
     border: none;
     border-radius: var(--radius-lg);
-    background: var(--bg-raised);
-    color: var(--text-primary);
     cursor: pointer;
     font-family: inherit;
     font-size: 0.875rem;
@@ -103,17 +101,14 @@ no-project-overlay .np-action {
     transition: background var(--transition-base), opacity var(--transition-base);
 }
 
-no-project-overlay .np-action:hover {
+/* The neutral fill, for the actions with no role (patterns/buttons.css). */
+no-project-overlay .np-action:not(.btn-primary) {
+    background: var(--bg-raised);
+    color: var(--text-primary);
+}
+
+no-project-overlay .np-action:not(.btn-primary):hover {
     background: var(--bg-tertiary);
-}
-
-no-project-overlay .np-action--primary {
-    background: var(--accent-blue);
-    color: #fff;
-}
-
-no-project-overlay .np-action--primary:hover {
-    background: var(--accent-blue-light);
 }
 
 /* Shown only while a folder is actually over the window, which the native side
@@ -143,9 +138,6 @@ no-project-overlay .np-recents {
 }
 
 no-project-overlay .np-recents-label {
-    font-size: 0.6875rem;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
     color: var(--text-secondary);
     padding: 0.25rem 0.125rem;
 }
@@ -314,8 +306,6 @@ no-project-overlay .np-footnote {
 .onboarding-wizard .wiz-action {
     border: none;
     border-radius: var(--radius-lg);
-    background: var(--bg-raised);
-    color: var(--text-primary);
     cursor: pointer;
     font-family: inherit;
     font-size: 0.875rem;
@@ -323,7 +313,13 @@ no-project-overlay .np-footnote {
     transition: background var(--transition-base), opacity var(--transition-base);
 }
 
-.onboarding-wizard .wiz-action:hover:not(:disabled) {
+/* The neutral fill, for the actions with no role (patterns/buttons.css). */
+.onboarding-wizard .wiz-action:not(.btn-primary) {
+    background: var(--bg-raised);
+    color: var(--text-primary);
+}
+
+.onboarding-wizard .wiz-action:not(.btn-primary):hover:not(:disabled) {
     background: var(--bg-tertiary);
 }
 
@@ -332,15 +328,6 @@ no-project-overlay .np-footnote {
 .onboarding-wizard .wiz-action:disabled {
     cursor: default;
     opacity: 0.55;
-}
-
-.onboarding-wizard .wiz-action--primary {
-    background: var(--accent-blue);
-    color: #fff;
-}
-
-.onboarding-wizard .wiz-action--primary:hover:not(:disabled) {
-    background: var(--accent-blue-light);
 }
 
 .onboarding-wizard .wiz-note {

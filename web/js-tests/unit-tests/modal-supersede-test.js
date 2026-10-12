@@ -83,7 +83,7 @@ function openNotices() {
 function clickDialogButton(dialog, variant) {
   assert(!!dialog, `no dialog on screen to click its ${variant} button`);
   const button = /** @type {HTMLButtonElement|null} */ (
-    dialog?.querySelector(`.modal-footer .modal-button.${variant}`));
+    dialog?.querySelector(`.modal-footer .modal-button.btn-${variant}`));
   assert(!!button, `the dialog has no ${variant} button`);
   button?.click();
 }

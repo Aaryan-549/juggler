@@ -185,11 +185,7 @@ properties-panel-subsection {
 }
 
 .properties-panel-subtitle {
-    font-size: 0.75rem;
-    font-weight: 600;
     color: var(--text-secondary);
-    text-transform: uppercase;
-    letter-spacing: 0.0625rem;
     margin: 0;
 }
 

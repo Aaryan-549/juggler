@@ -132,7 +132,7 @@ function actionsIn(panel, selector) {
 async function pressAndAgree(panel, actionId) {
   /** @type {HTMLElement} */ (panel.querySelector(`[data-action="${actionId}"]`)).click();
 
-  const confirmed = 'modal-dialog.show:not(.is-notice) .modal-button.primary, modal-dialog.show:not(.is-notice) .modal-button.danger';
+  const confirmed = 'modal-dialog.show:not(.is-notice) .modal-button.btn-primary, modal-dialog.show:not(.is-notice) .modal-button.btn-danger';
   await waitFor(() => !!document.querySelector(confirmed), { description: 'the confirmation to appear' });
   /** @type {HTMLElement} */ (document.querySelector(confirmed)).click();
 

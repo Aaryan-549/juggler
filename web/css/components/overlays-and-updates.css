@@ -364,9 +364,6 @@ path-input .path-input-field:focus {
 }
 
 .pp-recents-label {
-    font-size: 0.6875rem;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
     color: var(--text-secondary);
     padding: 0.25rem 0.125rem;
 }
@@ -524,25 +521,21 @@ update-notice .update-notice__button {
     font-size: 0.875rem;
     font-weight: 500;
     cursor: pointer;
-    border: 1px solid var(--border-color);
-    background: var(--bg-raised);
-    color: var(--text-primary);
+    border-width: 1px;
+    border-style: solid;
     transition: background var(--transition-base);
     white-space: nowrap;
 }
 
-update-notice .update-notice__button:hover {
+/* The neutral fill, for the buttons with no role (patterns/buttons.css). */
+update-notice .update-notice__button:not(.btn-primary) {
+    border-color: var(--border-color);
+    background: var(--bg-raised);
+    color: var(--text-primary);
+}
+
+update-notice .update-notice__button:not(.btn-primary):hover {
     background: var(--bg-tertiary);
-}
-
-update-notice .update-notice__button.primary {
-    background: var(--accent-blue);
-    border-color: var(--accent-blue);
-    color: #fff;
-}
-
-update-notice .update-notice__button.primary:hover {
-    background: var(--accent-blue-light);
 }
 
 update-notice .update-notice__button:disabled {
