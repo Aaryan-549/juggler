@@ -144,6 +144,11 @@ export async function generateToolDefinitions() {
         // symptom at all.
         console.error(`[tools] ${itemClass.MANIFEST.id} declares readOnlySubthread without delegatesToSubthread; it delegates to no subthread, so the flag does nothing.`);
       }
+      // An item whose tools a program may not call (services/composable-tools.js)
+      // says so once, in its manifest; the invoker sees only definitions.
+      if (itemClass.MANIFEST?.composable === false) {
+        for (const t of itemTools) t.composable = false;
+      }
       tools.push(...itemTools);
     }
   }
@@ -153,6 +158,8 @@ export async function generateToolDefinitions() {
     {
       name: 'drop_context_items',
       category: 'meta',
+      // Answered by the worker, never run as an item, so never from a program.
+      composable: false,
       description: 'Removes context items from context when no longer needed. Use this to free up context space.',
       input_schema: {
         type: 'object',

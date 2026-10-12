@@ -209,6 +209,46 @@ func TestToolCommandHeldSaysSo(t *testing.T) {
 	}
 }
 
+// TestToolCommandRedrive_SuspensionStartsAFreshPhase: a tool-action that stops
+// to wait on the user part-way through (a program tool suspended on one of
+// its calls) goes running → pending, and the user's approval brings it back to
+// approved. Each approval is a new delivery, not a re-drive of the last one: it
+// is commanded at once, however recently the last execute-tool went out, and
+// it never counts towards the attempts cap — or a program approved a few times
+// would be escalated to an error while the user was answering it.
+func TestToolCommandRedrive_SuspensionStartsAFreshPhase(t *testing.T) {
+	h := newReattachHarness(t, "conv-redrive-suspend")
+	w := h.w
+	w.tools.redriveAfter = time.Hour // an age-based re-drive cannot explain a dispatch
+
+	w.doc.InsertMessage(0, ConversationItem{
+		Type: ItemTypeToolAction, ItemID: "ta-1", ToolUseID: "tu-1",
+		ToolName: "program_tool", State: StateApproved,
+	})
+
+	cycles := maxToolCommandAttempts + 3
+	for i := 1; i <= cycles; i++ {
+		w.driveToolActions()
+		h.flush(t)
+		if got := h.executeCount("tu-1"); got != i {
+			t.Fatalf("approval %d: execute-tool count = %d, want %d — an approval after a suspension must be commanded at once", i, got, i)
+		}
+		if s := w.tools.byID["tu-1"]; s == nil || s.attempts != 1 {
+			t.Fatalf("approval %d: attempts = %+v, want 1 — a suspension starts a fresh delivery phase", i, s)
+		}
+		setToolState(w, "tu-1", StateRunning)
+		w.driveToolActions()
+		h.flush(t)
+		setToolState(w, "tu-1", StatePending) // suspended
+		w.driveToolActions()
+		h.flush(t)
+		setToolState(w, "tu-1", StateApproved) // the user approves the held call
+	}
+	if it, ok := findToolItem(w.currentRun().getTargetItems(), "tu-1"); !ok || it.State != StateApproved {
+		t.Fatalf("the program must still be awaiting its run, not escalated: %+v (ok=%v)", it, ok)
+	}
+}
+
 func findToolItem(items []ConversationItem, toolUseID string) (ConversationItem, bool) {
 	for _, it := range items {
 		if it.Type == ItemTypeToolAction && it.ToolUseID == toolUseID {

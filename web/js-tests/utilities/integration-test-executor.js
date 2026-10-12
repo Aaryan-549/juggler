@@ -108,6 +108,8 @@ import { runTests as runObserverDecouplingTests } from '../unit-tests/observer-d
 import { runTests as runToolPendingHookTests } from '../unit-tests/tool-pending-hook-test.js';
 import { runTests as runToolHooksTests } from '../unit-tests/tool-hooks-test.js';
 import { runTests as runToolCallDecisionTests } from '../unit-tests/tool-call-decision-test.js';
+import { runTests as runToolInvokerTests } from '../unit-tests/tool-invoker-test.js';
+import { runTests as runProgramChangeReportTests } from '../unit-tests/program-change-report-test.js';
 import { runTests as runDenyCascadeTests } from '../unit-tests/deny-cascade-test.js';
 import { runTests as runTokenMeterRecoveryTests } from '../unit-tests/token-meter-recovery-test.js';
 import { runTests as runContextTurnHookTests } from '../unit-tests/context-turn-hook-test.js';
@@ -540,6 +542,8 @@ const UNIT_TEST_SUITES = [
   { name: 'unit:tool-pending-hook', run: runToolPendingHookTests },
   { name: 'unit:tool-hooks', run: runToolHooksTests },
   { name: 'unit:tool-call-decision', run: runToolCallDecisionTests },
+  { name: 'unit:tool-invoker', run: runToolInvokerTests },
+  { name: 'unit:program-change-report', run: runProgramChangeReportTests },
   { name: 'unit:deny-cascade', run: runDenyCascadeTests },
   { name: 'unit:token-meter-recovery', run: runTokenMeterRecoveryTests },
   { name: 'unit:context-turn-hook', run: runContextTurnHookTests },

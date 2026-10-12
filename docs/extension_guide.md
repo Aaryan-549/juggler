@@ -1163,6 +1163,44 @@ transaction use **`mutate(fn)`** (it also runs `assertInvariants()` in dev mode)
 > `@plugin-api` methods. Bypassing them breaks undo, redo, and peer sync. This is
 > a hard rule, not a style preference.
 
+### Calling other tools from a tool
+
+A tool whose work is itself a program of tool calls can call the conversation's
+tools through **`this.createToolInvoker()`** (on `ContextItem`). Its
+`invoke(name, args)` runs one tool and resolves to the tool's result text. Every
+call is checked against the tools this item's thread was offered, put to the
+same approval decision the model's own call would get (saved rules, hooks, the
+strategy), and run through the ordinary execute path. Nothing is written to the
+transcript: the invoker's `record` lists the calls, never their results.
+`offered()` resolves to the tools a call would be admitted to, by name, with
+their definitions — what to describe to a program, so it is never told about a
+tool it cannot call.
+
+Set `programSdk: true` on such a tool's definition, and give its class a static
+`renderProgramSdk(callable)`: the tool's description is then extended with that
+text, rendered over the tools the thread offers that a program may call. A
+program may call any offered tool except another program tool, one that
+delegates to a sub-thread, or one whose item declares `composable: false` in its
+MANIFEST — set that on tools the model should use in the open.
+
+A call a hook denies is refused: the invoke rejects, and `onRefused` is told
+once; treat it as the end of your work, not an error to route around. A call
+that must wait for the user — a gate the strategy does not approve, an
+elicitation, a hook that asks — is refused the same way unless you pass
+`onSuspended`. Then the invoke rejects with a `ToolSuspended` error whose
+`suspension` carries the call's own approval form, and `onSuspended` is told.
+Return `{ suspended: suspension }` from `execute` and your item goes back to
+the user with that form; once they answer, it is executed again. When it makes
+the held call again, `approveNext(name, args, response)` hands that call over
+as approved, with the user's response (an elicitation's answer) — the very
+next call, and only if it is that tool with those arguments (pass the
+`input` from the suspension); any other call is decided as usual. Making the
+calls before it again without repeating their effects is up to you: for
+example, journal each call's result and answer from the journal on the next
+pass. Aborting the `signal` you pass (by default your
+item's own) cancels every call. Calls run in the order you make them, reads
+side by side and anything else one at a time, at most four at once.
+
 ## Pinned file content vs. reads
 
 Juggler distinguishes two ways a file's contents reach the model:

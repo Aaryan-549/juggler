@@ -81,6 +81,8 @@ class PlanContextItem extends ContextItem {
     description: 'Implementation plan with step tracking and sub-thread orchestration',
     author: 'Juggler Team',
     requiresApproval: true,
+    // Planning is done in the open, never from inside a program.
+    composable: false,
     // 'none': the plan is not re-injected into the trailing tail every turn.
     // Its full state is already durable in the model's own tool_use history — the
     // `submit` call carries the whole plan, and each step action's tool_result

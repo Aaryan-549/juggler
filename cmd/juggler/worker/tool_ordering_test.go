@@ -161,6 +161,27 @@ func TestToolOrdering_ParkedCallHoldsNothing(t *testing.T) {
 	wantExecuted(t, h, "running write finished", map[string]int{"tu-c": 1})
 }
 
+// TestToolOrdering_SuspendedCallHoldsLaterCalls: a call that has run and gone
+// back to pending (a program tool waiting on the user part-way through) is
+// not a call that may never run — it is half-way through running. It holds
+// back what follows it as a running call does, until it settles.
+func TestToolOrdering_SuspendedCallHoldsLaterCalls(t *testing.T) {
+	h := newReattachHarness(t, "conv-order-suspended")
+	w := h.w
+	insertToolBatch(t, w, "txn-1", []string{"tu-a", "tu-b"}, []string{"write", "write"})
+	setToolState(w, "tu-a", StatePending)
+	w.doc.UpdateToolActionFieldsRecursive("tu-a", map[string]any{"runningEpoch": float64(1)})
+
+	w.driveToolActions()
+	h.flush(t)
+	wantExecuted(t, h, "behind a suspended call", map[string]int{"tu-b": 0})
+
+	setToolState(w, "tu-a", StateCompleted)
+	w.driveToolActions()
+	h.flush(t)
+	wantExecuted(t, h, "suspended call finished", map[string]int{"tu-b": 1})
+}
+
 // TestToolOrdering_UnclassifiedCallIsABarrier: a call with no category could be
 // a write. Calls after it wait — and waiting is not a failed delivery: however
 // long the hold, it is neither counted against the attempts cap nor escalated,

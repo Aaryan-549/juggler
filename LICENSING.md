@@ -52,9 +52,11 @@ follows:
     `js/services/tool-generator.js`
   - `sdk/model.js` → `js/utils/compaction-utils.js`
   - `sdk/lib/sandbox-runner.js` → `js/utils/api-url.js`
-  - Runtime, not import: `sdk/lib/sandbox-runner.js` calls the host-installed
+  - Runtime, not import: `sdk/context-item.js` calls the host-installed
+    `globalThis.__hostToolInvoker` (`js/services/tool-invoker.js`) from
+    `createToolInvoker`, and `sdk/lib/sandbox-runner.js` calls
     `globalThis.__hostSandboxDelegate` (`js/engine-worker-sandbox.js`,
-    `js/engine-sandbox-node.mjs`), and does not import host code.
+    `js/engine-sandbox-node.mjs`). Neither imports host code.
   - `extensions/juggler-core/context-items/system-prompt-context-item.js` →
     `js/services/system-prompt-presets.js`, `js/services/extensions.js`
 

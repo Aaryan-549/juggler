@@ -17,6 +17,7 @@
  */
 
 import { yGet, plain } from '../model/item-accessor.js';
+import { programChangeReport } from './program-changes.js';
 
 /** Characters per token in the shared approximation. */
 export const CHARS_PER_TOKEN = 4;
@@ -76,7 +77,9 @@ export function llmTextForItem(item) {
     const output = typeof result.content === 'string'
       ? result.content
       : (typeof result.output === 'string' ? result.output : '');
-    return args + output;
+    // A program tool's tool_result also carries the changes it made,
+    // appended by the worker's projection from the call record.
+    return args + output + programChangeReport(item.get('displayData'));
   }
 
   if (type === 'thread') {

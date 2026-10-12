@@ -57,6 +57,8 @@ class TodoContextItem extends ContextItem {
     author: 'Juggler Team',
     idPrefix: 'TODO',
     requiresApproval: false,
+    // Bookkeeping the user watches, kept out of programs.
+    composable: false,
     contextPosition: 'none',
     syntheticToolName: 'todo',
     exampleData: {

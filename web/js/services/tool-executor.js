@@ -21,6 +21,9 @@ import { resolveToolName } from './tool-generator.js';
 import { extractErrorMessage } from '../../sdk/lib/error-utils.js';
 import wsService from './websocket.js';
 import { recordTape } from '../utils/event-tape.js';
+// Installs the host binding ContextItem#createToolInvoker reaches (a program
+// tool's sub-calls), so it exists wherever tools execute.
+import './tool-invoker.js';
 
 /**
  * @typedef {import('./response-handler.js').ResultStatus} ResultStatus

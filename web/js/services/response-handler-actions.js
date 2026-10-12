@@ -513,6 +513,28 @@ async function runActionAndComplete(rh, toolCall, actionId, toolInput, messageTh
     // await-free region guarantees any report showing this tool absent was sent
     // after its terminal write (see action-executor.js execute() finally).
 
+    // The action stopped to wait on the user: back to pending with the held
+    // call's approval, and no result. The executor's in-flight entry went in
+    // execute()'s finally, so the execute-tool that follows the approval is a
+    // fresh run rather than a re-entry, and — as with the terminal write
+    // below — no report can find the tool absent while the doc still says
+    // running.
+    if (result.suspended) {
+      const suspension = result.suspended;
+      if (messageThread.suspendToolAction(toolCall.id, suspension) && suspension.review) {
+        // Its reviewer, as a parked call's is: after the write, fire-and-forget.
+        const review = suspension.review;
+        void import('../model/conversation-tool-actions.js')
+          .then((m) => m.offerSuspensionToReviewer(messageThread, toolCall.id, review));
+      }
+      return {
+        toolName: toolCall.name,
+        success: false,
+        resultStatus: /** @type {ResultStatus} */ ('suspended'),
+        content: ''
+      };
+    }
+
     // Build content from result
     const content = toolResultContent(result.formatted);
 

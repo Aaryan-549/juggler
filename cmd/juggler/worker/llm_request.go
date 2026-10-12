@@ -386,8 +386,9 @@ func buildToolUseMap(item ConversationItem) map[string]any {
 	return m
 }
 
-// buildToolResultMap returns a tool-result message map from the item's Result JSON.
-// Returns nil if the result cannot be unmarshalled.
+// buildToolResultMap returns a tool-result message map from the item's Result JSON,
+// followed by the changes a program tool made (programChangeReport) and any
+// hook notes. Returns nil if the result cannot be unmarshalled.
 func buildToolResultMap(item ConversationItem) map[string]any {
 	var result map[string]any
 	if err := json.Unmarshal(item.Result, &result); err != nil {
@@ -395,6 +396,7 @@ func buildToolResultMap(item ConversationItem) map[string]any {
 	}
 	content, _ := result["content"].(string)
 	isError, _ := result["isError"].(bool)
+	content += programChangeReport(item.DisplayData)
 	content += toolResultHookNotes(item)
 	m := map[string]any{
 		"type":      "tool-result",
@@ -449,8 +451,9 @@ func toolResultHookNotes(item ConversationItem) string {
 
 // toolResultWire renders one tool-action's tool_result message. A tool that has
 // not completed yields the isError placeholder; a completed tool projects through
-// buildToolResultMap (content + isError only — UI-only fields such as displayData
-// never reach the wire). It performs no logging or doc mutation, so snapshot
+// buildToolResultMap (content + isError, plus the change report derived from a
+// program tool's call record — UI-only fields such as displayData never reach
+// the wire as such). It performs no logging or doc mutation, so snapshot
 // consumers (compaction) and the live turn share this one projection; the live
 // turn's WARNING/FATAL logging and resultFedTurn stamp wrap it in
 // appendToolActionResult.

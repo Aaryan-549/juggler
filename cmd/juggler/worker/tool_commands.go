@@ -118,6 +118,12 @@ func (w *ConversationWorker) driveToolActionsExcept(liveThreads map[string]bool)
 	// rule (tool_ordering.go). Keyed by thread and transaction: a turn's calls
 	// share both. A call with no transaction belongs to no turn and is never held.
 	turns := map[[2]string][]turnCall{}
+	// Calls parked after their execute-tool went out: they ran and stopped to
+	// wait on the user (a program tool suspended on one of its calls). The
+	// approval that follows is a fresh delivery, so their bookkeeping goes, as
+	// at every reset site — otherwise it would be suppressed as a re-drive and
+	// counted towards the attempts cap.
+	var suspended []string
 
 	ycrdtMu.Lock()
 	walkAllItems(w.doc.getItems(), "", func(m *ycrdt.YMap, threadID string) bool {
@@ -135,7 +141,7 @@ func (w *ConversationWorker) driveToolActionsExcept(liveThreads map[string]bool)
 		if txnID, _ := m.Get("transactionId").(string); txnID != "" {
 			category, _ := m.Get("category").(string)
 			key := [2]string{threadID, txnID}
-			turns[key] = append(turns[key], turnCall{id: id, state: state, category: category})
+			turns[key] = append(turns[key], turnCall{id: id, state: state, category: category, ran: hasRun(m)})
 		}
 		var action string
 		switch state {
@@ -143,6 +149,11 @@ func (w *ConversationWorker) driveToolActionsExcept(liveThreads map[string]bool)
 			action = "evaluate-tool"
 		case StateApproved:
 			action = "execute-tool"
+		case StatePending:
+			if w.tools.commandedAt(id, StateApproved) {
+				suspended = append(suspended, id)
+			}
+			return false
 		default:
 			// pending (awaiting user), running (already claimed), or terminal
 			// (completed/cancelled): nothing for the worker to command. The user's
@@ -154,6 +165,10 @@ func (w *ConversationWorker) driveToolActionsExcept(liveThreads map[string]bool)
 		return false
 	})
 	ycrdtMu.Unlock()
+
+	for _, id := range suspended {
+		w.tools.clear(id)
+	}
 
 	held := map[string]bool{}
 	for _, calls := range turns {
@@ -451,7 +466,7 @@ func scanTrailingBatch(arr *ycrdt.YArray, commanded func(id string) bool) (cance
 		state, _ := m.Get("state").(string)
 		if txnID, _ := m.Get("transactionId").(string); txnID != "" {
 			category, _ := m.Get("category").(string)
-			turns[txnID] = append(turns[txnID], turnCall{id: id, state: state, category: category})
+			turns[txnID] = append(turns[txnID], turnCall{id: id, state: state, category: category, ran: hasRun(m)})
 		}
 		switch state {
 		case StateCancelled:

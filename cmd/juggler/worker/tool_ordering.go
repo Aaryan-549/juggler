@@ -4,6 +4,8 @@
 
 package worker
 
+import ycrdt "github.com/skyterra/y-crdt"
+
 // The calls one model turn emits are executed in emission order, in waves:
 // consecutive calls that only read run together, and any other call is a
 // barrier — it waits for every call before it and holds back every call after
@@ -20,14 +22,28 @@ package worker
 // approves runs, whatever is still awaiting a decision above it. Once approved,
 // the parked call takes its place in the order like any other.
 //
+// A call that has already run and is pending again is the exception: it
+// stopped part-way to wait on the user (a program tool suspended on one of
+// its calls), and whatever it did so far has happened. It holds back what
+// follows it as a running call does.
+//
 // A held call stays approved and is simply not commanded: driveToolActions picks
 // it up on the tick after the call it waits for settles. Holding is not a failed
 // delivery, so it is decided before the command tracker sees the call. Because
 // it has not started, a denial of its batch refuses it (cascadeBatchDenialsExcept).
 
-// turnCall is one tool-action as the ordering rule needs it.
+// turnCall is one tool-action as the ordering rule needs it. ran is whether it
+// has ever been claimed to run (hasRun).
 type turnCall struct {
 	id, state, category string
+	ran                 bool
+}
+
+// hasRun reports whether a tool-action has been claimed to run at least once:
+// every claim stamps a runningEpoch above zero, and nothing removes it.
+func hasRun(m *ycrdt.YMap) bool {
+	epoch, _ := docNumberToInt64(m.Get("runningEpoch"))
+	return epoch > 0
 }
 
 // callRunsAlongside reports whether a call of this category may overlap the
@@ -50,7 +66,7 @@ func heldByTurnOrder(calls []turnCall) map[string]bool {
 			}
 			held[c.id] = true
 		}
-		if isTerminalToolState(c.state) || c.state == StatePending {
+		if isTerminalToolState(c.state) || (c.state == StatePending && !c.ran) {
 			continue
 		}
 		unsettled = true

@@ -280,6 +280,12 @@
  * @property {boolean} [watchesFileChanges] - React to file modifications (default: false)
  * @property {string} [idPrefix] - **@internal** (outside the engineApi compat promise; used by core, third-party support not guaranteed). Prefix for generated IDs (e.g., 'ITEM', 'RULE'). Defaults to 'ITEM'
  * @property {string} [author] - Author name (e.g., 'Juggler Team')
+ * @property {boolean} [composable] - Set `false` to keep this item's tools out
+ *   of programs: a program tool (one whose definition sets `programSdk`) can
+ *   call any offered tool through `createToolInvoker`, except one declared
+ *   here, a program tool, or a tool that delegates to a sub-thread. For tools
+ *   the model should use in the open (planning, bookkeeping) or that nest
+ *   another sandbox. Default: true
  * @property {boolean} [delegatesToSubthread] - If true, this item's tool MAY run
  *   as a subthread instead of executing client-side. The flag only advertises
  *   the capability to the worker; the per-call decision is

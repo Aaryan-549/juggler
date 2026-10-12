@@ -8,7 +8,8 @@
  *
  * The one registry capability a capability legitimately needs is to materialise
  * another registered context-item type by id — e.g. a plan strategy creating a
- * plan item. That is the narrow **`createItem`** named export below.
+ * plan item. That is the narrow **`createItem`** named export below;
+ * **`itemClassForTool`** answers which class provides a tool.
  */
 
 import contextItemRegistry from '../js/registries/context-item-registry.js';
@@ -27,6 +28,17 @@ import { toDescriptor } from './file-source.js';
  */
 export function createItem(json, session, conversation, messageThread) {
   return contextItemRegistry.createItem(json, session, conversation, messageThread);
+}
+
+/**
+ * The registered context-item class that provides a tool, by the tool's name
+ * (aliases resolved). For an item that presents another tool's call as that
+ * tool would — a program tool showing the call it is suspended on.
+ * @param {string} toolName - The tool's name, as the model calls it
+ * @returns {typeof import('juggler/context-item').default|undefined} The class, if one is registered
+ */
+export function itemClassForTool(toolName) {
+  return contextItemRegistry.getByToolName(toolName);
 }
 
 /**

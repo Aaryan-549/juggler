@@ -17,6 +17,7 @@
 
 import { assert } from '../utilities/test-helpers.js';
 import {
+  attachProgramSdk,
   diffToolNames,
   formatToolDrift,
   splitToolsByStrategy,
@@ -216,6 +217,26 @@ export async function runTests(_ctx) {
     assert(strategyDisplayName(new IdOnly()) === 'just-an-id', 'manifest id is the second choice');
     assert(strategyDisplayName(new Bare()) === 'Bare', 'class name is the last resort');
     assert(strategyDisplayName(null) === '', 'no strategy means no name');
+  });
+
+  await run('the program SDK is rendered over the callable offered tools', () => {
+    const offered = [
+      { name: 'read', category: 'read', description: 'Read' },
+      { name: 'keep_notes', category: 'meta', description: 'Keep notes', composable: false },
+      { name: 'other_program', category: 'write', description: 'Another program', programSdk: true },
+      { name: 'program_tool', category: 'write', description: 'Run a program', programSdk: true },
+    ];
+    /** @type {any[]} */
+    let seen = [];
+    const out = attachProgramSdk(offered, () => (/** @type {any[]} */ callable) => {
+      seen = callable;
+      return 'SDK:' + callable.map((t) => t.name).join(',');
+    });
+    const program = out.find((t) => t.name === 'program_tool');
+    assert(program?.description === 'Run a program\n\nSDK:read', `description: ${program?.description}`);
+    assert(seen.map((t) => t.name).join(',') === 'read',
+      `a tool declared not composable, and every program tool, stay out of the SDK: ${seen.map((t) => t.name)}`);
+    assert(offered[3].description === 'Run a program', 'the input definitions are not mutated');
   });
 
   return { passed, failed, errors };

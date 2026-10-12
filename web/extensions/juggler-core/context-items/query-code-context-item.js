@@ -35,7 +35,10 @@ class QueryCodeContextItem extends ContextItem {
     version: '1.0.0',
     description: 'Run JavaScript against a read-only filesystem SDK to compute an answer in one call',
     author: 'Juggler Team',
-    requiresApproval: false
+    requiresApproval: false,
+    // A program already does what a script does; one calling the other only
+    // nests sandboxes.
+    composable: false
   };
 
   /**

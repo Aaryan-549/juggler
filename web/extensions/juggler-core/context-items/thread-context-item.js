@@ -31,7 +31,10 @@ class ThreadContextItem extends ContextItem {
     description: 'Create a nested sub-conversation (thread)',
     author: 'Juggler',
     requiresApproval: false,
-    workerManaged: true // Execution handled by Go worker, not browser
+    workerManaged: true, // Execution handled by Go worker, not browser
+    // Delegation is decided by the worker as it reads the model's response,
+    // so a program's call could only run inline.
+    composable: false
   };
 
   /**

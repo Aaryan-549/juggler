@@ -446,6 +446,50 @@ class ContextItem {
   }
 
   /**
+   * An invoker that runs this conversation's tools on this item's behalf, for a
+   * tool whose work is itself a program of tool calls (`programSdk`).
+   *
+   * Each call is admitted against the tools this item's thread was offered, put
+   * to the same approval decision the model's own call would get, and run
+   * through the ordinary execute path. Nothing is written to the transcript;
+   * the invoker's `record` lists the calls (never their results). A call a
+   * hook refuses ends the program: `invoke` rejects with a `ToolRefused` error
+   * and `onRefused` is told. A call the gate would hold for a person does the
+   * same unless `onSuspended` is given: then `invoke` rejects with a
+   * `ToolSuspended` error carrying the call's approval form (`suspension`),
+   * and `onSuspended` is told. Returning `{suspended: suspension}` from
+   * `execute` puts this item in front of the user with that form; once they
+   * approve, it is executed again, and `approveNext(name, args, response)`
+   * hands the held call over as approved when the item makes it again — the
+   * very next call, and only if it is that tool with those arguments; any
+   * other is decided as usual. Aborting
+   * `signal` (by default this item's own) cancels every call. `offered()`
+   * resolves to the tools a call is admitted to, by name, with their
+   * definitions.
+   *
+   * Provided by the host engine; throws where no host provides one.
+   * @param {object} [opts]
+   * @param {AbortSignal} [opts.signal] - Cancels every call when aborted
+   * @param {(err: Error) => void} [opts.onRefused] - Told once when a refusal ends the program
+   * @param {(err: Error & {suspension: Record<string, unknown>}) => void} [opts.onSuspended] - Told once when a call waits on the user
+   * @returns {{invoke: (name: string, args: Record<string, unknown>) => Promise<string>, record: {calls: Array<Record<string, unknown>>, omitted: number, omittedEffects: number}, offered: () => Promise<Map<string, Record<string, any>>>, approveNext: (name: string, args: Record<string, unknown>, response: string) => void}} The invoker
+   */
+  createToolInvoker(opts = {}) {
+    const host = /** @type {any} */ (globalThis).__hostToolInvoker;
+    if (typeof host !== 'function') {
+      throw new Error('This host cannot run tools from a program.');
+    }
+    return host({
+      parentToolUseId: this.toolUseId || this.id,
+      signal: opts.signal ?? this.signal,
+      onRefused: opts.onRefused,
+      onSuspended: opts.onSuspended,
+      conversation: this.conversation,
+      messageThread: this.messageThread
+    });
+  }
+
+  /**
    * Called when this item's conversation moves to another workspace.
    *
    * Almost nothing needs it, which is why the default does nothing: an item that
