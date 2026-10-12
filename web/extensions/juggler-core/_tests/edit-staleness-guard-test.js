@@ -34,6 +34,7 @@ import { writeFileOp, readFileLoad } from '../../../js/services/ops-api.js';
 import {
   recordWrittenHash,
   pathMatchKey,
+  beginProgramReads,
   __resetWrittenHashesForTest
 } from '../context-items/read-history.js';
 
@@ -330,6 +331,72 @@ export async function runTests(_ctx) {
     const edit = mkItem(EditClass, conversation);
     const res = await edit.validate({ file_path: 'guard-explore-stale.txt', old_string: 'world', new_string: 'there' });
     assert(res.valid === true, `query_code-seen + matching edit must be allowed, got ${JSON.stringify(res)}`);
+  });
+
+  // =========================================================================
+  // run_code: a running program's fs.readFile reads count for that program's
+  // own tools.edit calls the moment they happen (its sub-calls run under
+  // `code_<program>_<n>`), not for anything else, and not after it ends. Once
+  // it completes, its stored filesRead credits the conversation like
+  // query_code's.
+  // =========================================================================
+  /**
+   * An edit item running as a sub-call of a program.
+   * @param {any} conversation - Conversation instance
+   * @param {string} toolUseId - The id the sub-call runs under
+   * @returns {any} Item instance
+   */
+  const mkSubCallEdit = (conversation, toolUseId) => new EditClass({
+    id: EditClass.MANIFEST.id,
+    session,
+    conversation,
+    messageThread: conversation.rootMessageThread,
+    toolUseId
+  });
+
+  await test('a running program\'s live read allows its own edit', async () => {
+    const conversation = await createTestConversation(session);
+    const writeRes = await writeFileOp({ path: 'guard-live.txt', content: 'hello world\n' });
+    const live = new Map([['guard-live.txt', writeRes.contentHash]]);
+    const end = beginProgramReads(conversation, 'prog1', live);
+    try {
+      const own = mkSubCallEdit(conversation, 'code_prog1_1');
+      const res = await own.validate({ file_path: 'guard-live.txt', old_string: 'world', new_string: 'there' });
+      assert(res.valid === true, `the program's own edit must be allowed, got ${JSON.stringify(res)}`);
+
+      const other = mkItem(EditClass, conversation);
+      const res2 = await other.validate({ file_path: 'guard-live.txt', old_string: 'world', new_string: 'there' });
+      assert(res2.valid === false, `an edit outside the program must not borrow its reads, got ${JSON.stringify(res2)}`);
+    } finally {
+      end();
+    }
+    const after = mkSubCallEdit(conversation, 'code_prog1_2');
+    const res3 = await after.validate({ file_path: 'guard-live.txt', old_string: 'world', new_string: 'there' });
+    assert(res3.valid === false, `a finished program's live reads must lapse, got ${JSON.stringify(res3)}`);
+  });
+
+  await test('a running program without the read is refused', async () => {
+    const conversation = await createTestConversation(session);
+    await writeFileOp({ path: 'guard-live-unread.txt', content: 'hello world\n' });
+    const end = beginProgramReads(conversation, 'prog2', new Map());
+    try {
+      const own = mkSubCallEdit(conversation, 'code_prog2_1');
+      const res = await own.validate({ file_path: 'guard-live-unread.txt', old_string: 'world', new_string: 'there' });
+      assert(res.valid === false, `an unread file must be refused, got ${JSON.stringify(res)}`);
+    } finally {
+      end();
+    }
+  });
+
+  await test('a completed run_code read allows edit', async () => {
+    const conversation = await createTestConversation(session);
+    const writeRes = await writeFileOp({ path: 'guard-runcode.txt', content: 'hello world\n' });
+    seedAction(conversation, 'run_code',
+      { code: 'return 1' },
+      { result: 1, filesRead: { 'guard-runcode.txt': writeRes.contentHash } });
+    const edit = mkItem(EditClass, conversation);
+    const res = await edit.validate({ file_path: 'guard-runcode.txt', old_string: 'world', new_string: 'there' });
+    assert(res.valid === true, `run_code-then-edit must be allowed, got ${JSON.stringify(res)}`);
   });
 
   // A tool-action persists the name it ran under, so a conversation recorded

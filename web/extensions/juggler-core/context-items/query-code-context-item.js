@@ -43,6 +43,9 @@ class QueryCodeContextItem extends ContextItem {
     composable: false
   };
 
+  /** The longest timeout a script may ask for, in milliseconds. */
+  static MAX_TIMEOUT_MS = 600000;
+
   /**
    * Get tool definitions for query_code
    * @returns {Array<{name: string, category: string, description: string, input_schema: import('juggler/strategy-type').JSONObjectSchema}>} Tool definitions
@@ -88,8 +91,9 @@ class QueryCodeContextItem extends ContextItem {
     }
     if (toolInput.timeout !== undefined) {
       const timeout = Number(toolInput.timeout);
-      if (isNaN(timeout) || timeout < 1000 || timeout > 600000) {
-        return { valid: false, error: 'timeout must be between 1000 and 600000 ms' };
+      const max = /** @type {typeof QueryCodeContextItem} */ (this.constructor).MAX_TIMEOUT_MS;
+      if (isNaN(timeout) || timeout < 1000 || timeout > max) {
+        return { valid: false, error: `timeout must be between 1000 and ${max} ms` };
       }
     }
     return { valid: true, params: toolInput };
@@ -243,7 +247,7 @@ class QueryCodeContextItem extends ContextItem {
   /**
    * Create grep and glob helper functions for the sandboxed script.
    * @returns {{grep: function(string, object=): Promise<Array<{file: string, line: number, content: string}>>, glob: function(string, object=): Promise<string[]>}} Search helpers
-   * @private
+   * @protected
    */
   _createSearchHelpers() {
     // Capture the action's abort signal in the closure: these helpers are

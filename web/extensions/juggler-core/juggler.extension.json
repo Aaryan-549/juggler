@@ -40,6 +40,7 @@
     "fileViewers": ["viewers/*-file-viewer.js"],
     "workspaceProviders": ["workspaces/*-workspace-provider.js"],
     "systemPrompt": "system-prompt-contribution.js",
-    "tests": ["_tests/*-test.js"]
+    "tests": ["_tests/*-test.js"],
+    "integrationTests": ["_tests/integration/*-tests.js"]
   }
 }

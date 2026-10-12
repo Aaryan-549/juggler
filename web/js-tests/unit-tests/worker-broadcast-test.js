@@ -169,7 +169,7 @@ export async function runTests(_ctx) {
   // first — an empty document whose root resolves to the default strategy — so
   // a turn whose request beat the load was offered the default strategy's
   // tools, whatever the conversation's strategy was: a read-only thread was
-  // offered writes, and a YOLO thread was refused run_code.
+  // offered writes.
   await test('the engine builds a tool list only once the conversation has loaded', async () => {
     const wm = fakeWorkerManager();
     /** @type {() => void} */

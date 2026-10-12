@@ -124,6 +124,96 @@ export function __resetWrittenHashesForTest() {
 }
 
 /**
+ * In-memory record of the reads a running program (run_code) has made through
+ * its sandbox `fs` or its read tools (creditProgramRead), by conversation and
+ * then by the program's own tool-use id. Each entry is the sandbox
+ * filesystem's live `filesRead` map (path → contentHash), so a read counts the
+ * moment it is made, not when the program completes and its result reaches
+ * the transcript.
+ *
+ * Only that program's own sub-calls may use it: they run under
+ * `code_<program>_<n>`, and a file the program read is not a file the model has
+ * seen. Once the program ends the entry is dropped, and its stored result's
+ * `filesRead` credits the conversation as query_code's does.
+ * @type {WeakMap<object, Map<string, Map<string, string|null>>>}
+ */
+const programReads = new WeakMap();
+
+/**
+ * Register a running program's live read record. Returns the function that
+ * ends it, to be called however the program finishes.
+ * @param {object|undefined} conversation - Conversation the program runs in
+ * @param {string} programId - The program's tool-use id
+ * @param {Map<string, string|null>} liveReads - The sandbox fs's filesRead map
+ * @returns {() => void} Ends the record
+ */
+export function beginProgramReads(conversation, programId, liveReads) {
+  if (!conversation || !programId) return () => {};
+  let programs = programReads.get(conversation);
+  if (!programs) {
+    programs = new Map();
+    programReads.set(conversation, programs);
+  }
+  programs.set(programId, liveReads);
+  return () => {
+    if (programs.get(programId) === liveReads) programs.delete(programId);
+  };
+}
+
+/**
+ * The live read record of the running program a sub-call belongs to.
+ * @param {object|undefined} conversation - Conversation the call runs in
+ * @param {string|undefined} toolUseId - The id it runs under (`code_<program>_<n>`)
+ * @returns {Map<string, string|null>|undefined} The program's reads, if it is a program's call
+ */
+function programReadsFor(conversation, toolUseId) {
+  if (!conversation || !toolUseId?.startsWith('code_')) return undefined;
+  const programs = programReads.get(conversation);
+  if (!programs) return undefined;
+  for (const [programId, reads] of programs) {
+    if (toolUseId.startsWith(`code_${programId}_`)) return reads;
+  }
+  return undefined;
+}
+
+/**
+ * Credit a read a program made through a tool (`tools.read`,
+ * `tools.batch_read`) to that program, as its `fs` reads are: the bytes came
+ * back to the program in the call's result. Nothing for a call that is not a
+ * running program's.
+ * @param {object|undefined} conversation - Conversation the call runs in
+ * @param {string|undefined} toolUseId - The id the read ran under
+ * @param {string|undefined} path - The file read
+ * @param {unknown} contentHash - The hash of what it read, when the read has one
+ * @returns {void}
+ */
+export function creditProgramRead(conversation, toolUseId, path, contentHash) {
+  const reads = programReadsFor(conversation, toolUseId);
+  if (!reads || !path) return;
+  reads.set(path, typeof contentHash === 'string' && contentHash ? contentHash : null);
+}
+
+/**
+ * Fold the live reads of the program a sub-call belongs to into `state`.
+ * @param {SeenState} state - Aggregate to update
+ * @param {object|undefined} conversation - Conversation instance
+ * @param {object|undefined} session - Session (for path resolution)
+ * @param {string} target - Canonical key of the path being checked
+ * @param {string|undefined} toolUseId - The id the mutation runs under
+ * @returns {void}
+ */
+function collectProgramReads(state, conversation, session, target, toolUseId) {
+  const reads = programReadsFor(conversation, toolUseId);
+  if (!reads) return;
+  for (const [file, hash] of reads) {
+    if (pathMatchKey(session, file) !== target) continue;
+    state.seen = true;
+    if (typeof hash === 'string' && hash) state.hashes.add(hash);
+    else state.unverified = true;
+  }
+}
+
+/**
  * The newest content hash this process recorded for `path`, or undefined if it
  * has written none. The written-hash Set preserves insertion order, so the last
  * entry is the most recent write.
@@ -213,12 +303,13 @@ export async function acquirePathLock(session, path) {
 }
 
 /**
- * Every tool name a stored sandbox-script action may carry. A tool-action
- * persists the tool name that was advertised when it ran, so a transcript scan
- * has to recognise each name the script tool has been offered under.
+ * Every tool name a stored sandbox-script action may carry: query_code under
+ * each name it has been offered under (a tool-action persists the name that
+ * was advertised when it ran), and run_code, whose result records its
+ * program's reads the same way.
  * @type {Set<string>}
  */
-const QUERY_CODE_TOOLS = new Set(['query_code', 'explore_code']);
+const QUERY_CODE_TOOLS = new Set(['query_code', 'explore_code', 'run_code']);
 
 /**
  * Tools whose successful completion means the model has seen the file's bytes.
@@ -429,13 +520,16 @@ function collectQueryCode(state, session, target, ymap) {
  * @param {object|undefined} session - Session (for path resolution)
  * @param {string|undefined} path - File path the mutation targets
  * @param {string|undefined} [currentHash] - Current on-disk content hash, when known
+ * @param {string} [toolUseId] - The id the mutation runs under; a run_code
+ *   sub-call's id lets it use its program's live reads
  * @returns {{ok: true}|{ok: false, error: string}} Freshness verdict
  */
-export function checkFileFreshness(conversation, session, path, currentHash) {
+export function checkFileFreshness(conversation, session, path, currentHash, toolUseId) {
   const state = seenState(conversation, session, path);
   // A hash this conversation wrote earlier this turn proves the file was seen
   // even if that write's tool-action has not surfaced in the durable transcript.
   const target = pathMatchKey(session, path);
+  if (target) collectProgramReads(state, conversation, session, target, toolUseId);
   const written = conversation && target ? writtenHashes.get(conversation)?.get(target) : undefined;
   if (!state.seen && !(written && written.size > 0)) {
     return {

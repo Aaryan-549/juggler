@@ -115,6 +115,21 @@ core provides:
   and return only the computed value, keeping intermediate output out of context.
   A script can also attach an image file to its result with image(path), so the
   model sees it.
+- **run_code** — run a JavaScript program that reads and searches like
+  query_code and also calls the conversation's tools (tools.edit, tools.bash and
+  so on), for work that loops, branches or aggregates over many calls. Only what
+  it returns enters context, followed by a list of the changes its calls made,
+  which is reported even when the program fails or is cancelled. Every call is
+  approved exactly as if the model had made it directly: one that needs your
+  approval pauses the program and shows that call's own approval prompt, and once
+  you answer the program reruns from the top, its earlier calls answered as
+  before rather than run again. Denying the call cancels the program. Some tools
+  cannot be called from a program, among them query_code, run_code,
+  create_thread, plan, todo and the tools that delegate to a sub-agent (Explore,
+  Research, WebFetch); run_code's own description names the ones that can't. A
+  call that produced images (read on a PNG) gives the program handles to them
+  rather than pixels; image(handle), or image(path) for a file, attaches one to
+  the result so the model sees it, up to eight per result.
 - **batch_read / batch_grep** — read or search several files in one call.
 - **WebFetch** — fetch a URL and convert it to markdown (with a short cache). An
   image URL (PNG, JPEG, GIF or WebP, up to 5 MB) comes back as the image itself.

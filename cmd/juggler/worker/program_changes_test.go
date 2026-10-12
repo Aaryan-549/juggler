@@ -82,6 +82,36 @@ func TestProgramChangeReportIsCapped(t *testing.T) {
 	}
 }
 
+// TestProgramChangeReportMergesRepeats pins one line per distinct change: a
+// program that edits one file twice changed it, and says so once, with a count.
+// Lines merge only when identical, so a failed edit stays apart from one that
+// succeeded. The cap counts lines; what it cuts is counted in changes.
+func TestProgramChangeReportMergesRepeats(t *testing.T) {
+	item := programItem(t, `{"content":"done","isError":false}`, []map[string]any{
+		{"name": "edit", "status": "ok", "effect": "edit: a.js"},
+		{"name": "edit", "status": "ok", "effect": "edit: b.js"},
+		{"name": "edit", "status": "ok", "effect": "edit: a.js"},
+		{"name": "edit", "status": "error", "effect": "edit: a.js"},
+		{"name": "bash", "status": "ok", "effect": "bash: make"},
+	}, 0)
+	want := "done\n\nChanges the program made:\n- edit: a.js (×2)\n- edit: b.js\n- edit: a.js (failed)\n- bash: make"
+	if got := buildToolResultMap(item)["content"]; got != want {
+		t.Errorf("content =\n%q\nwant\n%q", got, want)
+	}
+
+	var calls []map[string]any
+	for i := range 50 {
+		calls = append(calls, map[string]any{"name": "edit", "status": "ok", "effect": fmt.Sprintf("edit: f%d.js", i)})
+	}
+	for range 3 {
+		calls = append(calls, map[string]any{"name": "edit", "status": "ok", "effect": "edit: last.js"})
+	}
+	content, _ := buildToolResultMap(programItem(t, `{"content":"done","isError":false}`, calls, 0))["content"].(string)
+	if !strings.HasSuffix(content, "- edit: f49.js\n…and 3 more") {
+		t.Errorf("want fifty lines, then the cut line's three changes counted:\n%s", content)
+	}
+}
+
 // TestProgramChangeReportPrecedesHookNotes pins the order inside the
 // tool_result: the program's result, what it changed, then what hooks said.
 func TestProgramChangeReportPrecedesHookNotes(t *testing.T) {

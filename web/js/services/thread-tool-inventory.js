@@ -42,23 +42,27 @@ export async function buildToolInventory(messageThread) {
     ...inventory,
     offered: attachProgramSdk(inventory.offered, (def) => {
       const ItemClass = /** @type {any} */ (contextItemRegistry.getByToolName(def.name));
-      return typeof ItemClass?.renderProgramSdk === 'function' ? (callable) => ItemClass.renderProgramSdk(callable) : null;
+      return typeof ItemClass?.renderProgramSdk === 'function'
+        ? (callable, excluded) => ItemClass.renderProgramSdk(callable, excluded)
+        : null;
     }),
   };
 }
 
 /**
- * Describe each offered program tool (`programSdk: true`) with
- * the SDK of the tools a program may call in this thread: the offered tools
+ * Describe each offered program tool (`programSdk: true`) with the SDK of the
+ * tools a program may call in this thread: rendered over the offered tools
  * that are composable (services/tool-invoker.js), each with the class it comes
- * from consulted. Done here, on the offered set, so the SDK is exactly what the
- * thread may call, the System Prompt panel shows the text that was sent, and
- * the prompt cache keys on it with the rest of the tool schema.
+ * from consulted, and over the rest of the offered tools but the program tool
+ * itself — those a program may not call. Done here, on the offered set, so the
+ * SDK is exactly what the thread may call, the System Prompt panel shows the
+ * text that was sent, and the prompt cache keys on it with the rest of the tool
+ * schema.
  *
  * Pure but for `rendererFor`, and it copies rather than mutates the definitions
  * it changes. Exported for unit testing.
  * @param {Array<Record<string, any>>} offered - The offered tools
- * @param {(def: Record<string, any>) => ((callable: Array<Record<string, any>>) => string)|null} rendererFor - The SDK renderer for a program tool
+ * @param {(def: Record<string, any>) => ((callable: Array<Record<string, any>>, excluded: Array<Record<string, any>>) => string)|null} rendererFor - The SDK renderer for a program tool
  * @param {(def: Record<string, any>) => boolean} [composable] - Whether a program may call a tool
  * @returns {Array<Record<string, any>>} The offered tools, program tools described
  */
@@ -66,11 +70,12 @@ export function attachProgramSdk(offered, rendererFor, composable = (def) => isC
   /** @type {any} */ (def), contextItemRegistry.getByToolName(def.name) ?? undefined)) {
   if (!offered.some((def) => def?.programSdk)) return offered;
   const callable = offered.filter((def) => !def?.programSdk && composable(def));
+  const notCallable = offered.filter((def) => !callable.includes(def));
   return offered.map((def) => {
     if (!def?.programSdk) return def;
     const render = rendererFor(def);
     if (!render) return def;
-    return { ...def, description: `${def.description}\n\n${render(callable)}` };
+    return { ...def, description: `${def.description}\n\n${render(callable, notCallable.filter((d) => d !== def))}` };
   });
 }
 

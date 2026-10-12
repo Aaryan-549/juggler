@@ -172,7 +172,7 @@ class ReplaceTextContextItem extends EditBase {
     // read/write/edit/batch_read or a pinned file — so it survives relaunch,
     // extra clients, and both realms. Checked before the dryRun so a never-read
     // file gets the read-first message rather than a search-mismatch one.
-    const neverRead = checkFileFreshness(this.conversation, this.session, params.path, undefined);
+    const neverRead = checkFileFreshness(this.conversation, this.session, params.path, undefined, this.toolUseId);
     if (!neverRead.ok) {
       return { valid: false, error: neverRead.error };
     }
@@ -239,7 +239,7 @@ class ReplaceTextContextItem extends EditBase {
    * @private
    */
   _explainSearchNotFound(params, err) {
-    const staleOnFail = checkFileFreshness(this.conversation, this.session, params.path, err.detail?.contentHash);
+    const staleOnFail = checkFileFreshness(this.conversation, this.session, params.path, err.detail?.contentHash, this.toolUseId);
     if (!staleOnFail.ok) {
       return staleOnFail.error;
     }

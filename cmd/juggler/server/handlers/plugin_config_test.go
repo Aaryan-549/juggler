@@ -204,7 +204,9 @@ func TestPluginConfigDefaultOffPluginNeedsNoUserEntry(t *testing.T) {
 		t.Errorf("a default-off plugin is not reported off: %v", got)
 	}
 
-	// Switching something unrelated off must not drag the default into the file.
+	// Switching something unrelated off must not drag the defaults into the
+	// file. The PUT carries every default-off plugin still off (@juggler/exa)
+	// plus the user's own entry, as the catalog sends it.
 	putPluginConfig(t, api, []string{"@juggler/exa", "memory"})
 	disabled, enabled := rawPluginLists(t, api)
 	if slices.Contains(disabled, "@juggler/exa") {

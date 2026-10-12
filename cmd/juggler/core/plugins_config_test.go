@@ -62,7 +62,8 @@ func TestResolvedDisabledPluginsAppliesTheCountermand(t *testing.T) {
 		t.Fatalf("LoadConfig: %v", err)
 	}
 	got := cfg.ResolvedDisabledPlugins()
-	if !slices.Equal(got, []string{"memory"}) {
-		t.Errorf("resolved = %v, want exactly [memory]", got)
+	want := append(slices.DeleteFunc(slices.Clone(defaultDisabledPlugins), func(id string) bool { return id == "@juggler/exa" }), "memory")
+	if !slices.Equal(got, want) {
+		t.Errorf("resolved = %v, want exactly %v", got, want)
 	}
 }

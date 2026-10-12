@@ -50,19 +50,19 @@ func TestFoldLongToolDescriptions_LeavesAnOrdinaryRequestAlone(t *testing.T) {
 }
 
 func TestFoldLongToolDescriptions_MovesTheWholeTextIntoTheSystemPrompt(t *testing.T) {
-	runCode := longDescription("Run a JavaScript program that calls tools.", 14000)
+	programDesc := longDescription("Run a JavaScript program that calls tools.", 14000)
 	pin := longDescription("Attach something to the user's Pinboard.", maxCLIToolDescription+50)
 	req := provider.MessageRequest{
 		SystemPrompt: "sys",
 		Tools: []provider.ToolDefinition{
 			{Name: "read", Description: "Read a file.", InputSchema: objectSchema},
-			{Name: "run_code", Description: runCode, InputSchema: objectSchema},
+			{Name: "program_tool", Description: programDesc, InputSchema: objectSchema},
 			{Name: "pin_to_pinboard", Description: pin, InputSchema: objectSchema},
 		},
 	}
 	got := foldLongToolDescriptions(req)
 
-	if req.Tools[1].Description != runCode {
+	if req.Tools[1].Description != programDesc {
 		t.Fatal("the caller's tool list was mutated; it is shared with the worker")
 	}
 	if got.Tools[0].Description != "Read a file." {
@@ -83,7 +83,7 @@ func TestFoldLongToolDescriptions_MovesTheWholeTextIntoTheSystemPrompt(t *testin
 	if !strings.HasPrefix(got.SystemPrompt, "sys") {
 		t.Errorf("the original system prompt must come first:\n%.200s", got.SystemPrompt)
 	}
-	for _, want := range []struct{ name, text string }{{"run_code", runCode}, {"pin_to_pinboard", pin}} {
+	for _, want := range []struct{ name, text string }{{"program_tool", programDesc}, {"pin_to_pinboard", pin}} {
 		section := toolReferenceHeading(want.name) + "\n\n" + want.text
 		if !strings.Contains(got.SystemPrompt, section) {
 			t.Errorf("the system prompt lacks %s's whole description under its heading", want.name)
@@ -94,7 +94,7 @@ func TestFoldLongToolDescriptions_MovesTheWholeTextIntoTheSystemPrompt(t *testin
 	// in 3 of 4 runs, which the CLI refuses ("No such tool available"). So each
 	// tool is titled by the name it is called by, and the rule is stated.
 	for _, want := range []string{
-		"## Tool reference: mcp__juggler__run_code",
+		"## Tool reference: mcp__juggler__program_tool",
 		"## Tool reference: mcp__juggler__pin_to_pinboard",
 		"Call every tool by its full name from your tool list, which begins with mcp__juggler__",
 	} {
@@ -117,14 +117,14 @@ func TestFoldLongToolDescriptions_MovesTheWholeTextIntoTheSystemPrompt(t *testin
 // and reads back what the session actually served on tools/list and spawned
 // with as its system prompt.
 func TestLongToolDescriptionsReachTheCLIFolded(t *testing.T) {
-	runCode := longDescription("Run a JavaScript program that calls tools.", 14000)
+	programDesc := longDescription("Run a JavaScript program that calls tools.", 14000)
 	installScriptedFake(t, fakeScript{Turns: []scriptTurn{{}}})
 	c := mkClient(t, "claude-sonnet-4-6")
 
 	req := provider.MessageRequest{
 		ConversationID: "conv-long-desc", SystemPrompt: "sys",
 		Messages: []provider.Message{userMsg("hello")},
-		Tools:    []provider.ToolDefinition{{Name: "run_code", Description: runCode, InputSchema: objectSchema}},
+		Tools:    []provider.ToolDefinition{{Name: "program_tool", Description: programDesc, InputSchema: objectSchema}},
 	}
 	if _, err := c.streamMessage(context.Background(), req, func(provider.StreamChunk) (*provider.ToolResult, error) { return nil, nil }); err != nil {
 		t.Fatalf("streamMessage: %v", err)

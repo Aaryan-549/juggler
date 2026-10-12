@@ -211,6 +211,7 @@
  * @property {string} [toolName] - The (resolved) name of the tool being invoked. Set by the framework at every tool-execution construction site so a single class that exposes many tools (e.g. the MCP bridge, whose per-tool args are server-defined and indistinguishable by shape) can route validate/execute/approval to the right tool. Undefined for non-tool instantiations.
  * @property {AbortSignal} [signal] - Abort signal for cooperative cancellation of execute()
  * @property {(event: any) => void} [onProgress] - Progress callback for streaming output
+ * @property {number} [truncationBudget] - The character budget for this instance's output, in place of the conversation's. Set by the framework when the output goes to a program rather than the model.
  */
 
 /**

@@ -77,6 +77,15 @@ export default function systemPromptContribution({ enabledPluginIds }) {
       'returns comes back.'
     );
   }
+  if (has('run-code')) {
+    // A strategy that withholds writes withholds it, so the line says "where
+    // it is offered" rather than promising a tool a stricter thread lacks. The
+    // rest is in run_code's own description, which every request carries too.
+    economyLines.push(
+      '- **A program of tool calls → `run_code`.** Where it is offered, use it for work that loops, branches ' +
+      'or aggregates over many tool calls.'
+    );
+  }
   if (has('explore-agent')) {
     economyLines.push(
       '- **Judgement about this codebase → `Explore`.** An open question that needs reading and weighing ' +

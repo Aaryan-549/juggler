@@ -101,6 +101,7 @@ function warnOnEmptySuccessSummary(rawSummary, className) {
  * @property {AbortSignal} [signal] - Abort signal for cancellation
  * @property {(event: ActionProgressEvent) => void} [onProgress] - Progress callback
  * @property {boolean} [_approvalHandled] - INTERNAL: Set only by ResponseHandler/Conversation after approval was shown to user
+ * @property {number} [truncationBudget] - The character budget for the action's output, in place of the conversation's (a program's sub-call: services/tool-invoker.js)
  */
 
 /**
@@ -354,6 +355,7 @@ class ActionExecutor {
       messageThread: context.messageThread,
       toolUseId: context.toolUseId,  // For filtering self from items during validation
       toolName: context.toolName,    // Lets a multi-tool class route to the invoked tool
+      truncationBudget: context.truncationBudget,
       signal: controller.signal,
       onProgress: (/** @type {ActionProgressEvent} */ event) => this._emitProgress(executionId, event)
     }));

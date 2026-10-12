@@ -40,6 +40,8 @@ export async function runTests(_ctx) {
     exclusiveNamesIn,
     extensionSuiteEntry,
     extensionIntegrationEntries,
+    listExtensionIntegrationTests,
+    listTests,
     listExclusiveTests,
     ensureExtensionSuitesLoaded
   } = await import('../utilities/integration-test-executor.js');
@@ -94,6 +96,15 @@ export async function runTests(_ctx) {
     let threw = false;
     try { extensionIntegrationEntries('/extensions/x/_tests/integration/bad.js', {}); } catch { threw = true; }
     if (!threw) throw new Error('a module with no tests export was accepted');
+  });
+
+  await run('extension integration tests are discovered and listed', async () => {
+    await ensureExtensionSuitesLoaded();
+    const names = listExtensionIntegrationTests();
+    if (names.length === 0) throw new Error('no extension declares an integration test, so the path is not exercised');
+    const listed = new Set(listTests());
+    const missing = names.filter((n) => !listed.has(n) || !n.startsWith('integration:'));
+    if (missing.length) throw new Error(`not listed as integration tests: ${missing}`);
   });
 
   await run('every kind of real declaration is in the list', async () => {

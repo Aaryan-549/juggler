@@ -1180,11 +1180,14 @@ their definitions — what to describe to a program, so it is never told about a
 tool it cannot call.
 
 Set `programSdk: true` on such a tool's definition, and give its class a static
-`renderProgramSdk(callable)`: the tool's description is then extended with that
-text, rendered over the tools the thread offers that a program may call. A
-program may call any offered tool except another program tool, one that
-delegates to a sub-thread, or one whose item declares `composable: false` in its
-MANIFEST — set that on tools the model should use in the open.
+`renderProgramSdk(callable, excluded)`: the tool's description is then extended
+with that text, rendered over the tools the thread offers that a program may
+call and those it offers that a program may not (the program tool itself
+aside). The callable tools are already in the model's tool list, so the text
+need not describe them again. A program may call any offered tool except
+another program tool, one that delegates to a sub-thread, or one whose item
+declares `composable: false` in its MANIFEST — set that on tools the model
+should use in the open.
 
 A call a hook denies is refused: the invoke rejects, and `onRefused` is told
 once; treat it as the end of your work, not an error to route around. A call

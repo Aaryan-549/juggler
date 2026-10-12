@@ -9,6 +9,7 @@ import { addFilePath } from 'juggler/ui';
 import { fileSourceFromReadResult } from 'juggler/file-source';
 import { extractFileSource } from 'juggler/registry';
 import { toolInputPath, dirname, isPathAllowed, folderGrantSuggestions, stripInjectedApprovalFlags, absolutePathKey } from './path-approval.js';
+import { creditProgramRead } from './read-history.js';
 
 injectFileContentStyles();
 
@@ -31,6 +32,7 @@ injectFileContentStyles();
  * @property {number} size - File size in bytes
  * @property {number} totalLines - Total lines in file
  * @property {boolean} exists - Whether file exists
+ * @property {string} [contentHash] - Hash of the file's whole content, as read
  * @property {string} readMode - Read mode description
  * @property {number} lineOffset - Starting line number (1-indexed)
  * @property {number} lineCount - Number of lines in content
@@ -227,6 +229,8 @@ class ReadFileContextItem extends ContextItem {
     // and because the image asset upload happens here too, so both finish at the
     // same point relative to result persistence.
     if (result && result.exists !== false) {
+      // A program reading through this tool saw the bytes, as through its `fs`.
+      creditProgramRead(this.conversation, this.toolUseId, readParams.path, result.contentHash);
       const conversationId = this.conversation?.id;
       const source = fileSourceFromReadResult(
         result,

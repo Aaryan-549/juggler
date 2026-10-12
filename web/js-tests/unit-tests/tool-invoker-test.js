@@ -167,6 +167,23 @@ export async function runTests(_ctx) {
     assert(h.started.length === 0, 'nothing may run');
   });
 
+  // A program is told to call the tools in the model's tool list, and some
+  // providers list them under a prefix (Claude Code's `mcp__juggler__`). Either
+  // spelling is the tool, recorded by its own name; the prefix admits nothing
+  // the bare name would not.
+  await test('a tool named as a provider lists it is the tool itself', async () => {
+    const h = harness();
+    const call = h.invoker.invoke('mcp__juggler__read', { file_path: 'a' });
+    await tick();
+    assert(h.startedNames().join(',') === 'read', `the prefixed name runs read: ${h.startedNames()}`);
+    h.finish('read');
+    assert(await call === 'read done', 'and answers as read');
+    assert(h.invoker.record.calls[0]?.name === 'read', `recorded by its own name: ${JSON.stringify(h.invoker.record.calls[0])}`);
+    const err = await rejection(h.invoker.invoke('mcp__juggler__keep_notes', {}));
+    assert(err instanceof ToolError && err.message === "Couldn't run mcp__juggler__keep_notes: it wasn't available in this thread.",
+      `a prefix does not admit a native tool: ${err?.message}`);
+  });
+
   await test('a parked call ends the program', async () => {
     const h = harness({ decide: () => ({ verdict: 'park', reason: 'it needs your approval' }) });
     const err = await rejection(h.invoker.invoke('bash', { command: 'rm x' }));

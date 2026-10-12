@@ -219,7 +219,7 @@ export async function runTests(_ctx) {
     assert(strategyDisplayName(null) === '', 'no strategy means no name');
   });
 
-  await run('the program SDK is rendered over the callable offered tools', () => {
+  await run('the program SDK is rendered over the callable offered tools and the rest', () => {
     const offered = [
       { name: 'read', category: 'read', description: 'Read' },
       { name: 'keep_notes', category: 'meta', description: 'Keep notes', composable: false },
@@ -228,14 +228,19 @@ export async function runTests(_ctx) {
     ];
     /** @type {any[]} */
     let seen = [];
-    const out = attachProgramSdk(offered, () => (/** @type {any[]} */ callable) => {
+    /** @type {string[]} */
+    let excludedFromProgram = [];
+    const out = attachProgramSdk(offered, (def) => (/** @type {any[]} */ callable, /** @type {any[]} */ excluded) => {
       seen = callable;
-      return 'SDK:' + callable.map((t) => t.name).join(',');
+      if (def.name === 'program_tool') excludedFromProgram = excluded.map((t) => t.name);
+      return 'SDK:' + callable.map((t) => t.name).join(',') + '|not:' + excluded.map((t) => t.name).join(',');
     });
     const program = out.find((t) => t.name === 'program_tool');
-    assert(program?.description === 'Run a program\n\nSDK:read', `description: ${program?.description}`);
+    assert(program?.description === 'Run a program\n\nSDK:read|not:keep_notes,other_program', `description: ${program?.description}`);
     assert(seen.map((t) => t.name).join(',') === 'read',
-      `a tool declared not composable, and every program tool, stay out of the SDK: ${seen.map((t) => t.name)}`);
+      `a tool declared not composable, and every program tool, stay out of the callable set: ${seen.map((t) => t.name)}`);
+    assert(excludedFromProgram.join(',') === 'keep_notes,other_program',
+      `the offered tools a program cannot call are named, all but the program itself: ${excludedFromProgram}`);
     assert(offered[3].description === 'Run a program', 'the input definitions are not mutated');
   });
 

@@ -55,7 +55,8 @@ const ECONOMY_LINES = [
   ['explore-agent', '→ `Explore`'],
   ['research-agent', '→ `Research`'],
   ['web-fetch', '→ `WebFetch` with a `prompt`'],
-  ['thread', THREAD_MARKER]
+  ['thread', THREAD_MARKER],
+  ['run-code', '**A program of tool calls → `run_code`.**']
 ];
 
 /**

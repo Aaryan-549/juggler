@@ -302,6 +302,14 @@ class ContextItem {
     this.toolName = context.toolName;
 
     /**
+     * The character budget this instance's output is cut to, when its caller
+     * sets one rather than the conversation's (truncationBudget).
+     * @type {number|undefined}
+     * @private
+     */
+    this._truncationBudget = context.truncationBudget;
+
+    /**
      * Abort signal for cooperative cancellation. The framework aborts this
      * when the user cancels (Escape) or the worker writes state='cancelled'
      * on this tool-action. A long-running execute() should forward it to its
@@ -693,11 +701,16 @@ class ContextItem {
    * The character budget for this item's LLM-facing output. The conversation
    * owns the live value (`Conversation#truncationBudget`); an item constructed
    * against a stub conversation falls back to {@link DEFAULT_TRUNCATION_BUDGET}.
-   * Use it directly only when passing a budget to an op (e.g. file extraction);
-   * for output you already have in hand, call {@link ContextItem#truncateForLLM}.
+   * An item whose output goes to a program rather than the model is given the
+   * program's budget at construction (ItemContext.truncationBudget), and that
+   * wins. Use it directly only when passing a budget to an op (e.g. file
+   * extraction); for output you already have in hand, call
+   * {@link ContextItem#truncateForLLM}.
    * @returns {number} Maximum characters of output to hand the LLM
    */
   truncationBudget() {
+    const own = Number(this._truncationBudget);
+    if (Number.isFinite(own) && own > 0) return own;
     const budget = Number(/** @type {any} */ (this.conversation)?.truncationBudget);
     return Number.isFinite(budget) && budget > 0 ? budget : DEFAULT_TRUNCATION_BUDGET;
   }

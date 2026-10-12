@@ -13,7 +13,8 @@
  * either half that the other does not follow fails here or there.
  *
  * Contract under test:
- *   1. Every call that changes things is listed, one line each; reads never.
+ *   1. Every call that changes things is listed; reads never. Identical
+ *      lines merge into the first, with a count.
  *   2. A failed call is marked "(failed)"; any call that did not finish,
  *      "(interrupted)".
  *   3. Fifty lines, then a count of the rest, including effects the record gave up.
@@ -94,6 +95,26 @@ export async function runTests(_ctx) {
     const got = programChangeReport({ nestedCalls, omittedEffects: 3 });
     assert(got.endsWith('- edit: f49.js\n…and 5 more'), `tail wrong: ${JSON.stringify(got.slice(-60))}`);
     assert(!got.includes('f50.js'), 'listed past the cap');
+  });
+
+  await test('repeated changes merge into one line with a count', () => {
+    const got = programChangeReport({
+      nestedCalls: [
+        { name: 'edit', status: 'ok', effect: 'edit: a.js' },
+        { name: 'edit', status: 'ok', effect: 'edit: b.js' },
+        { name: 'edit', status: 'ok', effect: 'edit: a.js' },
+        { name: 'edit', status: 'error', effect: 'edit: a.js' },
+        { name: 'bash', status: 'ok', effect: 'bash: make' }
+      ]
+    });
+    const want = '\n\nChanges the program made:\n- edit: a.js (×2)\n- edit: b.js\n- edit: a.js (failed)\n- bash: make';
+    assert(got === want, `got ${JSON.stringify(got)}, want ${JSON.stringify(want)}`);
+    const nestedCalls = [
+      ...Array.from({ length: 50 }, (_, i) => ({ name: 'edit', status: 'ok', effect: `edit: f${i}.js` })),
+      ...Array.from({ length: 3 }, () => ({ name: 'edit', status: 'ok', effect: 'edit: last.js' }))
+    ];
+    const capped = programChangeReport({ nestedCalls });
+    assert(capped.endsWith('- edit: f49.js\n…and 3 more'), `the cut line's changes are counted: ${JSON.stringify(capped.slice(-60))}`);
   });
 
   await test('no record, or reads only, adds nothing', () => {

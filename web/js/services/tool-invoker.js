@@ -34,6 +34,8 @@
  *     time instead of all at once.
  *   - Cancellation. When the program's signal aborts, every running call is
  *     cancelled through the executor and every queued call is refused.
+ *   - Output. A call answers with its result text whole, not cut to the
+ *     model's budget (PROGRAM_RESULT_BUDGET).
  *   - The record: name, clipped args, status, duration, error and — for calls
  *     that change something — a one-line effect. Never a result: hiding results
  *     is the point. It is bounded, and gives up reads before effects, because
@@ -117,6 +119,16 @@ function keepNamedGrants(options) {
     || (Array.isArray(o.allowedPaths) && o.allowedPaths.length > 0));
 }
 
+/**
+ * The character budget a call's output is cut to for a program, in place of
+ * the conversation's. The conversation's is sized for the model's context; a
+ * program reads the output to work on it, and only what it returns reaches the
+ * model. Still bounded, because the program's journal holds every answer in
+ * memory while it waits on the user; past it, the output ends with the usual
+ * "(Output truncated …)" note, so a program can tell.
+ */
+export const PROGRAM_RESULT_BUDGET = 2_000_000;
+
 /** Calls running at once, by default. */
 const DEFAULT_LIMIT = 4;
 /** Calls kept in the record, by default. */
@@ -156,6 +168,21 @@ function clipArg(value, depth = 0) {
   const out = {};
   for (const [k, v] of Object.entries(value)) out[k] = clipArg(v, depth + 1);
   return out;
+}
+
+/**
+ * A tool name without the `mcp__<server>__` prefix a provider may list it under
+ * (Claude Code lists Juggler's tools as `mcp__juggler__<name>`), so a program
+ * that calls a tool by the name in the model's tool list reaches it. Only ever
+ * tried when the name as given is not a tool, so a tool whose own name has that
+ * shape (an MCP server's) is found as it is. run_code's describeTool looks
+ * tools up by the same rule (render-sdk.js toolOwnName).
+ * @param {string} name - A tool name as a program called it
+ * @returns {string} The name after the prefix, or the name unchanged
+ */
+function unprefixed(name) {
+  const match = /^mcp__.+?__(.+)$/.exec(name);
+  return match ? /** @type {string} */ (match[1]) : name;
 }
 
 /**
@@ -254,6 +281,7 @@ function defaultDeps(conversation, messageThread) {
         messageThread,
         toolUseId,
         toolName,
+        truncationBudget: PROGRAM_RESULT_BUDGET,
         _approvalHandled: true
       });
       // A tool's images ride its summary as asset refs, as they reach the
@@ -509,7 +537,8 @@ export function createToolInvoker(opts) {
     // Taken before the first await, by the call approveNext named — the same
     // tool with the same arguments — and by no other: the user approved that
     // call, not its tool.
-    const approval = approved?.name === name && approved.args === argsIdentity(input)
+    const approval = (approved?.name === name || approved?.name === unprefixed(name))
+      && approved.args === argsIdentity(input)
       ? { response: approved.response } : null;
     approved = null;
     /** @type {NestedCall} */
@@ -519,20 +548,24 @@ export function createToolInvoker(opts) {
       keep(entry);
       throw refusal || new ToolRefused('The program was interrupted.');
     }
-    const def = (await offered()).get(name);
+    const admitted = await offered();
+    const def = admitted.get(name) ?? admitted.get(unprefixed(name));
     if (!def) {
       entry.status = 'error';
       entry.error = `Couldn't run ${name}: it wasn't available in this thread.`;
       keep(entry);
       throw new ToolError(entry.error);
     }
+    // Run, decided and recorded under the tool's own name.
+    const tool = /** @type {string} */ (def.name);
+    entry.name = tool;
     const alongside = def.category === 'read' || def.category === 'meta';
-    if (!alongside) entry.effect = effectLine(name, input);
+    if (!alongside) entry.effect = effectLine(tool, input);
     keep(entry);
     /** @type {Promise<{content: string, attachments: AssetRef[]}>} */
     const settled = new Promise((resolve, reject) => {
       calls.push({
-        name, args: input, alongside, entry, phase: 'queued', resolve, reject, approval,
+        name: tool, args: input, alongside, entry, phase: 'queued', resolve, reject, approval,
         toolUseId: `code_${opts.parentToolUseId}_${++ordinal}`,
       });
       if (refusal) {

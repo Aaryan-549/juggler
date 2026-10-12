@@ -25,9 +25,10 @@ type programCallRecord struct {
 
 // programChangeReport renders the changes a program tool made, for the
 // model, from the call record the engine keeps on the program's tool-action
-// while it runs. Reads are never listed; every call that changes things is, one
-// line each, noted when it failed or never finished. Empty when the item has no
-// record or the record holds no change.
+// while it runs. Reads are never listed; every call that changes things is,
+// noted when it failed or never finished. Identical lines (a file edited twice)
+// are listed once, where the first fell, with a count. Empty when the item has
+// no record or the record holds no change.
 //
 // It is built here, in the wire projection, rather than by the program, so the
 // model is told what changed however the program ended. A program the user
@@ -48,7 +49,12 @@ func programChangeReport(displayData json.RawMessage) string {
 	if err := json.Unmarshal(displayData, &record); err != nil {
 		return ""
 	}
-	var lines []string
+	type changeLine struct {
+		text  string
+		count int
+	}
+	var lines []changeLine
+	at := map[string]int{}
 	for _, c := range record.NestedCalls {
 		if c.Effect == "" {
 			continue
@@ -61,11 +67,20 @@ func programChangeReport(displayData json.RawMessage) string {
 		default:
 			note = " (interrupted)"
 		}
-		lines = append(lines, c.Effect+note)
+		text := c.Effect + note
+		if i, seen := at[text]; seen {
+			lines[i].count++
+			continue
+		}
+		at[text] = len(lines)
+		lines = append(lines, changeLine{text: text, count: 1})
 	}
+	// Past the cap, the rest are counted in changes, not lines.
 	extra := record.OmittedEffects
 	if len(lines) > maxProgramChangeLines {
-		extra += len(lines) - maxProgramChangeLines
+		for _, l := range lines[maxProgramChangeLines:] {
+			extra += l.count
+		}
 		lines = lines[:maxProgramChangeLines]
 	}
 	if len(lines) == 0 && extra == 0 {
@@ -75,7 +90,10 @@ func programChangeReport(displayData json.RawMessage) string {
 	b.WriteString("\n\nChanges the program made:")
 	for _, l := range lines {
 		b.WriteString("\n- ")
-		b.WriteString(l)
+		b.WriteString(l.text)
+		if l.count > 1 {
+			fmt.Fprintf(&b, " (×%d)", l.count)
+		}
 	}
 	if extra > 0 {
 		fmt.Fprintf(&b, "\n…and %d more", extra)

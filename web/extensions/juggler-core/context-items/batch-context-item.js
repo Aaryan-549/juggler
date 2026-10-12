@@ -6,6 +6,7 @@
 import ContextItem from 'juggler/context-item';
 import { createTextBlock, formatFileContentForLLM } from 'juggler/item-utils';
 import { formatGrepResults } from './search/grep-format.js';
+import { creditProgramRead } from './read-history.js';
 
 /**
  * Wrap a value as markdown inline code, widening the fence when the value
@@ -235,6 +236,8 @@ class BatchContextItem extends ContextItem {
             readParams.lineRange = { start: offset, end: offset + limit - 1 };
           }
           const result = await this.ops.readFile(/** @type {any} */ (readParams), this.signal);
+          // A program reading through this tool saw the bytes, as through its `fs`.
+          if (result?.exists !== false) creditProgramRead(this.conversation, this.toolUseId, f.file_path, result?.contentHash);
           return { file: f.file_path, success: true, result };
         } catch (err) {
           return { file: f.file_path, success: false, error: err instanceof Error ? err.message : String(err) };
