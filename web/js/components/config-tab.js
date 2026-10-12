@@ -687,7 +687,7 @@ export class ConfigTabController {
     // Name
     const nameInput = document.createElement('input');
     nameInput.type = 'text';
-    nameInput.className = `mcp-input ${spec.id}-name-input`;
+    nameInput.className = `mcp-input field-input ${spec.id}-name-input`;
     nameInput.placeholder = spec.namePlaceholder;
     nameInput.value = f.name;
     if (f.mode === 'edit') nameInput.readOnly = true;
@@ -695,7 +695,7 @@ export class ConfigTabController {
 
     // Scope
     const scopeSelect = document.createElement('select');
-    scopeSelect.className = `mcp-input ${spec.id}-scope-input`;
+    scopeSelect.className = `mcp-input field-input ${spec.id}-scope-input`;
     const optGlobal = document.createElement('option');
     optGlobal.value = 'global';
     optGlobal.textContent = 'Global (all projects)';
@@ -715,7 +715,7 @@ export class ConfigTabController {
     // group (command/args/env) and the remote field group (url/headers).
     if (spec.supportsTransport) {
       const transportSelect = document.createElement('select');
-      transportSelect.className = `mcp-input ${spec.id}-transport-input`;
+      transportSelect.className = `mcp-input field-input ${spec.id}-transport-input`;
       /** @type {Array<[string, string]>} */
       const transportOptions = [
         ['stdio', 'Local process (stdio)'],
@@ -812,7 +812,7 @@ export class ConfigTabController {
     // Command
     const cmdInput = document.createElement('input');
     cmdInput.type = 'text';
-    cmdInput.className = `mcp-input ${spec.id}-command-input`;
+    cmdInput.className = `mcp-input field-input ${spec.id}-command-input`;
     cmdInput.placeholder = spec.commandPlaceholder;
     cmdInput.value = f.command;
     wrap.appendChild(this._formField('Command', cmdInput, spec.commandHint));
@@ -876,7 +876,7 @@ export class ConfigTabController {
     // URL
     const urlInput = document.createElement('input');
     urlInput.type = 'text';
-    urlInput.className = `mcp-input ${spec.id}-url-input`;
+    urlInput.className = `mcp-input field-input ${spec.id}-url-input`;
     urlInput.placeholder = spec.urlPlaceholder || 'https://example.com/mcp';
     urlInput.value = f.url || '';
     wrap.appendChild(this._formField('URL', urlInput, spec.urlHint || 'The remote MCP endpoint URL.'));
@@ -943,7 +943,7 @@ export class ConfigTabController {
       rowEl.className = 'mcp-repeat-row';
       const input = document.createElement('input');
       input.type = 'text';
-      input.className = `mcp-input ${spec.id}-arg-input`;
+      input.className = `mcp-input field-input ${spec.id}-arg-input`;
       input.placeholder = i === 0 ? spec.argFirstPlaceholder : spec.argRestPlaceholder;
       input.value = arg;
       const remove = document.createElement('button');
@@ -977,12 +977,12 @@ export class ConfigTabController {
       rowEl.className = `mcp-repeat-row ${spec.id}-env-row`;
       const key = document.createElement('input');
       key.type = 'text';
-      key.className = `mcp-input ${spec.id}-env-key`;
+      key.className = `mcp-input field-input ${spec.id}-env-key`;
       key.placeholder = spec.envKeyPlaceholder;
       key.value = pair.key;
       const value = document.createElement('input');
       value.type = 'password';
-      value.className = `mcp-input ${spec.id}-env-value`;
+      value.className = `mcp-input field-input ${spec.id}-env-value`;
       value.placeholder = 'value';
       value.value = pair.value;
       value.autocomplete = 'off';
@@ -1028,12 +1028,12 @@ export class ConfigTabController {
       rowEl.className = `mcp-repeat-row ${spec.id}-header-row`;
       const key = document.createElement('input');
       key.type = 'text';
-      key.className = `mcp-input ${spec.id}-header-key`;
+      key.className = `mcp-input field-input ${spec.id}-header-key`;
       key.placeholder = spec.headerKeyPlaceholder || 'Authorization';
       key.value = pair.key;
       const value = document.createElement('input');
       value.type = 'password';
-      value.className = `mcp-input ${spec.id}-header-value`;
+      value.className = `mcp-input field-input ${spec.id}-header-value`;
       value.placeholder = 'value';
       value.value = pair.value;
       value.autocomplete = 'off';

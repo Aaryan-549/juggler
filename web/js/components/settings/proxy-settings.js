@@ -105,7 +105,7 @@ export class ProxySettings {
 
     const select = document.createElement('select');
     select.id = 'proxy-mode';
-    select.className = 'proxy-mode-select';
+    select.className = 'proxy-mode-select field-input';
     select.setAttribute('aria-label', 'Proxy mode');
     for (const mode of MODES) {
       const opt = document.createElement('option');
@@ -131,7 +131,7 @@ export class ProxySettings {
     const urlInput = document.createElement('input');
     urlInput.type = 'text';
     urlInput.id = 'proxy-url';
-    urlInput.className = 'proxy-url-input';
+    urlInput.className = 'proxy-url-input field-input';
     urlInput.placeholder = 'http://host:port or socks5://host:port';
     urlInput.autocomplete = 'off';
     urlInput.spellcheck = false;

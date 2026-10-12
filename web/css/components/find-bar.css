@@ -52,17 +52,9 @@
     flex: 0 1 11rem;
     min-width: 3rem;
     padding: 0.25rem 0.5rem;
-    border: 0.0625rem solid var(--border-color);
-    border-radius: var(--radius-lg);
-    background: var(--bg-primary);
     color: var(--text-primary);
     font: inherit;
     font-size: 0.8125rem;
-    outline: none;
-}
-
-.find-bar__input:focus {
-    border-color: var(--accent-blue);
 }
 
 .find-bar__counter {

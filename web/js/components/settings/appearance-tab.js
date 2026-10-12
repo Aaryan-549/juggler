@@ -105,7 +105,7 @@ export class AppearanceTab {
     ctrl.className = 'provider-control';
 
     const select = document.createElement('select');
-    select.className = 'settings-select';
+    select.className = 'settings-select field-input';
     select.id = 'appearance-theme-select';
     select.setAttribute('aria-label', 'Theme');
     for (const opt of THEME_OPTIONS) {

@@ -167,11 +167,6 @@ pinboard-shell.open .pinboard-panel {
     fill: currentcolor;
 }
 
-.pinboard-toolbar__popout:focus-visible {
-    outline: 0.125rem solid var(--accent-blue);
-    outline-offset: 0.125rem;
-}
-
 /* Band 2: the tab strip. Tabs wrap onto as many rows as they need — the board
    is a narrow column with height to spare, so a second row costs less than
    hiding half the pins behind a pair of arrows. `+` is pinned to the top so it
@@ -225,11 +220,6 @@ pinboard-tabbar {
 
 .pinboard-tabbar__add:active {
     transform: scale(0.95);
-}
-
-.pinboard-tabbar__add:focus-visible {
-    outline: 0.125rem solid var(--accent-blue);
-    outline-offset: 0.125rem;
 }
 
 /* Pills, on the pattern of the conversation sidebar's tabs — the board's tabs
@@ -304,8 +294,8 @@ pinboard-tabbar {
    it traces a shape that is not the one being focused. Scoped to the tab button
    so that focusing the bin rings the bin, not the whole tab. */
 .pinboard-tab:has(.pinboard-tab__button:focus-visible) {
-    outline: 0.125rem solid var(--accent-blue);
-    outline-offset: 0.125rem;
+    outline: var(--focus-ring);
+    outline-offset: var(--focus-ring-offset);
 }
 
 .pinboard-tab__button:focus-visible {
@@ -382,11 +372,6 @@ pinboard-tabbar {
 .pinboard-tab:hover .pinboard-tab__remove,
 .pinboard-tab__remove:focus-visible {
     opacity: 0.8;
-}
-
-.pinboard-tab__remove:focus-visible {
-    outline: 0.125rem solid var(--accent-blue);
-    outline-offset: 0.125rem;
 }
 
 .pinboard-tab__remove:hover {
@@ -528,12 +513,6 @@ pinboard-content:focus {
     cursor: default;
 }
 
-.pinboard-item-toolbar__action:focus-visible,
-.pinboard-item-toolbar__more:focus-visible {
-    outline: 0.125rem solid var(--accent-blue);
-    outline-offset: 0.125rem;
-}
-
 .pinboard-item-toolbar__more {
     width: 1.75rem;
     padding: 0;
@@ -623,9 +602,6 @@ pinboard-content:focus {
     width: 100%;
     margin-bottom: var(--spacing-xs);
     padding: var(--spacing-xs) var(--spacing-sm);
-    border: 0.0625rem solid var(--border-color);
-    border-radius: var(--radius-lg);
-    background: var(--bg-primary);
     color: var(--text-primary);
     font-family: var(--font-ui);
     font-size: var(--font-size-base);
@@ -745,11 +721,6 @@ button.app-header__board-conversation {
 
 button.app-header__board-conversation:hover {
     text-decoration: underline;
-}
-
-button.app-header__board-conversation:focus-visible {
-    outline: 0.125rem solid var(--accent-blue);
-    outline-offset: 0.125rem;
 }
 
 /* What the window is, in the treatment the board's own toolbar band used to

@@ -542,7 +542,7 @@ export function openNewProjectPanel(recents = []) {
         <path-input dirs-only placeholder="Where to create it…" value="${parentValue.replace(/"/g, '&quot;')}" class="pp-path-input"></path-input>
         ${hasNativeHost() ? '<button class="pp-btn pp-btn-browse" type="button">Browse…</button>' : ''}
       </div>
-      <input type="text" class="pp-name-input" placeholder="Folder name" spellcheck="false" autocomplete="off">
+      <input type="text" class="pp-name-input field-input" placeholder="Folder name" spellcheck="false" autocomplete="off">
       <div class="pp-status" aria-live="polite"></div>
     </div>
     <div class="pp-footer">

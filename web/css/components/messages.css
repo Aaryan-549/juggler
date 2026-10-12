@@ -930,11 +930,6 @@ thinking-message article.thinking .message-content-box {
     opacity: 1;
 }
 
-.pending-messages .queued-message-delete-btn:focus-visible {
-    outline: 0.125rem solid color-mix(in srgb, var(--accent-red) 45%, transparent);
-    outline-offset: 0.125rem;
-}
-
 /* Terminal "Result" block synthesized at the end of an open thread column's
    transcript (from the thread's `result` field). Distinct from the parent
    tile and from any message bubble. */

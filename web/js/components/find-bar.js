@@ -240,7 +240,7 @@ class FindBar {
     el.className = 'find-bar';
     el.setAttribute('role', 'search');
     el.innerHTML = `
-      <input type="text" class="find-bar__input" aria-label="Find"
+      <input type="text" class="find-bar__input field-input" aria-label="Find"
         placeholder="Find" spellcheck="false" autocomplete="off" />
       <span class="find-bar__counter" aria-live="polite"></span>
       <button type="button" class="find-bar__btn find-bar__prev" aria-label="Previous match" title="Previous match (⇧⏎)">${EXPAND_LESS_SVG}</button>

@@ -240,6 +240,13 @@
 			]
 		},
 		{
+			"file": "patterns/fields.css",
+			"layer": "patterns",
+			"owns": [
+				"field-input"
+			]
+		},
+		{
 			"file": "patterns/labels.css",
 			"layer": "patterns",
 			"enumerates": true,

@@ -318,7 +318,7 @@ export class DefaultsTab {
     controlColumn.className = 'provider-control';
 
     const select = document.createElement('select');
-    select.className = 'settings-select';
+    select.className = 'settings-select field-input';
     select.id = 'default-strategy-select';
 
     const configured = getDefaultStrategyId(getAppSession());
@@ -510,7 +510,7 @@ export class DefaultsTab {
     const control = document.createElement('div');
     control.className = 'provider-control';
     const select = document.createElement('select');
-    select.className = 'settings-select';
+    select.className = 'settings-select field-input';
     select.id = 'diff-context-select';
     const current = defaultDiffContext();
     for (const lines of CONTEXT_CHOICES) {
@@ -575,7 +575,7 @@ export class DefaultsTab {
 
     const row = document.createElement('div');
     const inputWrapper = document.createElement('div');
-    inputWrapper.className = 'provider-input-wrapper';
+    inputWrapper.className = 'provider-input-wrapper field-input';
 
     const input = document.createElement('input');
     input.type = 'text';

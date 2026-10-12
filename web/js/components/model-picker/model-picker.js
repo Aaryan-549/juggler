@@ -898,7 +898,7 @@ class ModelPicker extends JugglerElement {
             <div class="model-picker-recent">${this._lastRecentHTML}</div>
             <div class="model-picker-list">
                 <div class="model-picker-filter">
-                    <input type="text" class="model-picker-filter-input" aria-label="Filter models" placeholder="Filter models" value="${escapeHtml(this._filter)}">
+                    <input type="text" class="model-picker-filter-input field-input" aria-label="Filter models" placeholder="Filter models" value="${escapeHtml(this._filter)}">
                 </div>
                 <menu class="model-picker-rows">${this._lastListHTML}</menu>
             </div>

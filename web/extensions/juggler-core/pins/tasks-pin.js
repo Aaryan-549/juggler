@@ -46,11 +46,6 @@ injectStylesOnce('tasks-pin-styles', `
 .tasks-pin__open:hover .tasks-pin__command {
   text-decoration: underline;
 }
-.tasks-pin__open:focus-visible,
-.tasks-pin__stop:focus-visible {
-  outline: 0.125rem solid var(--accent-blue);
-  outline-offset: 0.125rem;
-}
 .tasks-pin__command {
   font-family: var(--font-mono);
   font-size: var(--font-size-sm);

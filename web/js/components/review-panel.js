@@ -799,7 +799,7 @@ class ReviewPanel {
     const label = el('label', 'review-panel__editor-label', this._editorLabel(anchor));
     /** @type {HTMLLabelElement} */ (label).htmlFor = id;
     const textarea = document.createElement('textarea');
-    textarea.className = 'review-panel__editor-text';
+    textarea.className = 'review-panel__editor-text field-input';
     textarea.id = id;
     textarea.rows = 3;
     textarea.value = typeof anchor.body === 'string' ? anchor.body : '';

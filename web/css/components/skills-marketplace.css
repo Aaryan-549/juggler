@@ -107,7 +107,8 @@
 
 .skills-search:focus {
   outline: none;
-  border-color: var(--accent-blue);
+  border-color: var(--field-focus-border);
+  box-shadow: var(--field-focus-halo);
 }
 
 /* Buttons */

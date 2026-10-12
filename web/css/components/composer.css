@@ -125,7 +125,7 @@ composer-box composer-box-wrapper {
     position: relative;
 }
 
-composer-box textarea {
+composer-box textarea:not(.field-input) {
     flex: none;
     width: 100%;
     background: transparent;
@@ -182,11 +182,6 @@ reply-suggestions .reply-suggestion {
    this quiet is not something to hunt for with a tab key. */
 reply-suggestions .reply-suggestion:hover {
     background: var(--bubble-user-bg-hover);
-}
-
-reply-suggestions .reply-suggestion:focus-visible {
-    outline: 0.125rem solid var(--accent-blue);
-    outline-offset: 0.0625rem;
 }
 
 /* Staged image-attachment chip row. Hidden until it holds chips so it adds no
@@ -360,10 +355,6 @@ composer-box .attach-btn .attach-icon {
     display: flex;
     width: 1.125rem;
     height: 1.125rem;
-}
-
-composer-box textarea:focus {
-    outline: none;
 }
 
 composer-box textarea:disabled {

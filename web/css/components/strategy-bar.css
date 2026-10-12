@@ -112,11 +112,6 @@ strategy-selector {
     height: 1rem;
 }
 
-.strategy-info-button:focus-visible {
-    outline: 0.125rem solid var(--accent-blue);
-    outline-offset: 0.125rem;
-}
-
 /* Strategy description */
 .strategy-item-description {
     font-size: 0.8125rem;

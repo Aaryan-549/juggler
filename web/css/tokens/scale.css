@@ -206,6 +206,17 @@
     --shadow-lg: 0 0.25rem 1rem rgb(0 0 0 / 30%);
     --shadow-xl: 0 0.5rem 1.5rem rgb(0 0 0 / 40%);
 
+    /* Keyboard focus, in two looks. A control gets the ring, drawn around it
+       by the one :focus-visible rule in base/elements.css. A text field gets an
+       accent border and a soft halo (.field-input, patterns/fields.css). A ring
+       on an element whose container clips it is inset by its own width:
+       `outline-offset: calc(-1 * var(--focus-ring-width))`. */
+    --focus-ring-width: 0.125rem;
+    --focus-ring: var(--focus-ring-width) solid var(--accent-blue);
+    --focus-ring-offset: 0.125rem;
+    --field-focus-border: var(--accent-blue);
+    --field-focus-halo: 0 0 0 0.1875rem color-mix(in srgb, var(--accent-blue) 10%, transparent);
+
     /* Scrollbar metrics. The colours are per theme. */
     --scrollbar-size-thin: 0.375rem;
     --scrollbar-size-medium: 0.5rem;

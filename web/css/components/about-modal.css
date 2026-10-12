@@ -171,7 +171,3 @@ about-modal .about-button {
     border: none;
 }
 
-about-modal .about-button:focus {
-    outline: none;
-    box-shadow: 0 0 0 0.1875rem color-mix(in srgb, var(--accent-blue) 30%, transparent);
-}

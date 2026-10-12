@@ -43,8 +43,7 @@ injectStylesOnce('project-files-pin-styles', `
   background: color-mix(in srgb, var(--text-primary) 5%, transparent);
 }
 .project-files-pin__row:focus-visible {
-  outline: 0.125rem solid var(--accent-blue);
-  outline-offset: -0.125rem;
+  outline-offset: calc(-1 * var(--focus-ring-width));
 }
 /* Drawn rather than written: a glyph would be at the mercy of whichever font the
    platform has, and this one only ever has to be a triangle that turns. A file

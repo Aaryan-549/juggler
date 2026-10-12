@@ -39,18 +39,9 @@ modal-dialog .modal-message {
 modal-dialog .modal-input {
     width: 100%;
     padding: 0.625rem 0.875rem;
-    background: var(--bg-primary);
-    border: 0.0625rem solid var(--border-color);
-    border-radius: var(--radius-lg);
     color: var(--text-primary);
     font-size: 0.875rem;
     font-family: inherit;
-}
-
-modal-dialog .modal-input:focus {
-    outline: none;
-    border-color: var(--accent-blue);
-    box-shadow: 0 0 0 0.1875rem color-mix(in srgb, var(--accent-blue) 10%, transparent);
 }
 
 modal-dialog .modal-footer {
@@ -165,8 +156,8 @@ modal-dialog .modal-choice-button:hover {
 
 modal-dialog .modal-choice-button.focused {
     background: var(--bg-raised);
-    border-color: var(--accent-blue);
-    box-shadow: 0 0 0 0.1875rem color-mix(in srgb, var(--accent-blue) 20%, transparent);
+    outline: var(--focus-ring);
+    outline-offset: var(--focus-ring-offset);
 }
 
 modal-dialog .modal-choice-button-none {
@@ -192,7 +183,7 @@ modal-dialog .modal-custom-input {
 
 modal-dialog .modal-custom-input:focus {
     outline: none;
-    box-shadow: 0 0 0 0.1875rem color-mix(in srgb, var(--accent-blue) 20%, transparent);
+    box-shadow: var(--field-focus-halo);
 }
 
 /* Settings panel - Get API Key link */

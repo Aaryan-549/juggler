@@ -112,7 +112,7 @@ export function openAddPicker({ anchor, active, onPick }) {
   if (entries.length > FILTER_THRESHOLD) {
     filter = document.createElement('input');
     filter.type = 'search';
-    filter.className = 'pinboard-add-picker__filter';
+    filter.className = 'pinboard-add-picker__filter field-input';
     filter.placeholder = 'Search…';
     filter.setAttribute('aria-label', 'Search pinboard items');
     filter.addEventListener('input', () => render(filter?.value || ''));

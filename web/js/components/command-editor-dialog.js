@@ -585,24 +585,24 @@ function buildMarkup(v) {
         <div class="command-editor-row">
           <label class="command-editor-label command-editor-name-field">Name
             <div class="command-editor-name-row"><span class="command-editor-slash">/</span>
-              <input id="cmd-name" type="text" class="command-editor-input" value="${esc(v.name)}"
+              <input id="cmd-name" type="text" class="field-input command-editor-input" value="${esc(v.name)}"
                 autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="review-pr" /></div>
           </label>
           <label class="command-editor-label">
             <span class="command-editor-label-text">Args hint <span class="command-editor-optional">(optional)</span></span>
-            <input id="cmd-argshint" type="text" class="command-editor-input" value="${esc(v.argsHint)}" placeholder="&lt;pr-number&gt;" />
+            <input id="cmd-argshint" type="text" class="field-input command-editor-input" value="${esc(v.argsHint)}" placeholder="&lt;pr-number&gt;" />
           </label>
         </div>
         <div id="cmd-name-error" class="command-editor-field-error" data-error-for="name"></div>
 
         <label class="command-editor-label">Description
-          <input id="cmd-description" type="text" class="command-editor-input" value="${esc(v.description)}"
+          <input id="cmd-description" type="text" class="field-input command-editor-input" value="${esc(v.description)}"
             placeholder="Shown in the slash menu" />
           <div class="command-editor-field-error" data-error-for="description"></div>
         </label>
 
         <label class="command-editor-label">Prompt template
-          <textarea id="cmd-template" class="command-editor-textarea" rows="6"
+          <textarea id="cmd-template" class="command-editor-textarea field-input" rows="6"
             placeholder="Review PR $1. $ARGUMENTS">${esc(v.template)}</textarea>
           <div class="command-editor-field-error" data-error-for="template"></div>
           <div class="command-editor-hint">Placeholders: <code>$1</code>…<code>$9</code>, <code>$ARGUMENTS</code>, <code>$$</code> for a literal $.</div>
@@ -611,7 +611,7 @@ function buildMarkup(v) {
         <div class="command-editor-preview surface-well">
           <div class="command-editor-preview-head">
             <span class="command-editor-preview-title">Preview</span>
-            <input id="cmd-preview-args" type="text" class="command-editor-input command-editor-preview-args"
+            <input id="cmd-preview-args" type="text" class="field-input command-editor-input command-editor-preview-args"
               placeholder="sample args" aria-label="Sample arguments for the preview" />
           </div>
           <pre id="cmd-preview-out" class="command-editor-preview-out"></pre>
@@ -626,10 +626,10 @@ function buildMarkup(v) {
         <div id="cmd-subthread-fields" class="command-editor-subthread hidden">
           <div class="command-editor-hint">Applied to the thread only. Anything left inherited follows this conversation.</div>
           <label class="command-editor-label">Thread goal
-            <input id="cmd-goal" type="text" class="command-editor-input" value="${esc(v.goal)}" placeholder="PR review" />
+            <input id="cmd-goal" type="text" class="field-input command-editor-input" value="${esc(v.goal)}" placeholder="PR review" />
           </label>
           <label class="command-editor-label">Strategy
-            <select id="cmd-strategy" class="command-editor-select"><option value="">Inherit from parent</option></select>
+            <select id="cmd-strategy" class="command-editor-select field-input"><option value="">Inherit from parent</option></select>
           </label>
           <div class="command-editor-label">
             <span class="command-editor-label-text">Model</span>

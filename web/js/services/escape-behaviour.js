@@ -641,7 +641,7 @@ export function buildEscapeBehaviourRow() {
   const ctrl = document.createElement('div');
   ctrl.className = 'provider-control';
   const select = document.createElement('select');
-  select.className = 'settings-select';
+  select.className = 'settings-select field-input';
   select.setAttribute('aria-label', 'What the Escape key does');
   for (const preset of ESCAPE_PRESETS) {
     const option = document.createElement('option');

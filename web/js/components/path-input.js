@@ -86,7 +86,7 @@ class PathInput extends HTMLElement {
     const placeholder = this.getAttribute('placeholder') || '';
     const initial = this.getAttribute('value') || '';
 
-    this.innerHTML = `<input class="path-input-field" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">`;
+    this.innerHTML = `<input class="path-input-field field-input" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">`;
     this._input = /** @type {HTMLInputElement} */ (this.querySelector('.path-input-field'));
     this._input.placeholder = placeholder;
     this._input.value = initial;

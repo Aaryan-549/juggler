@@ -134,7 +134,7 @@ function subfield(label) {
  */
 function wrappedInput({ value, placeholder, ariaLabel, className }) {
   const wrapper = document.createElement('div');
-  wrapper.className = 'provider-input-wrapper';
+  wrapper.className = 'provider-input-wrapper field-input';
 
   const input = document.createElement('input');
   input.type = 'text';
@@ -488,7 +488,7 @@ function buildKeyField(endpoint, ctx) {
   const fromEnv = endpoint.keySource === 'env';
 
   const wrapper = document.createElement('div');
-  wrapper.className = 'provider-input-wrapper';
+  wrapper.className = 'provider-input-wrapper field-input';
 
   const input = document.createElement('input');
   input.type = 'text';

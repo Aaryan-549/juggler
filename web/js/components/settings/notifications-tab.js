@@ -310,7 +310,7 @@ export class NotificationsTab {
     label.textContent = name;
 
     const select = document.createElement('select');
-    select.className = 'chime-select';
+    select.className = 'chime-select field-input';
     select.setAttribute('aria-label', name);
     for (const opt of options) {
       const el = document.createElement('option');

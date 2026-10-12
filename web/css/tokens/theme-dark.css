@@ -50,11 +50,6 @@
     --notice-bg: #e6b93f;
     --notice-text: #241c00;
 
-    /* Approval-button keyboard-focus ring (action-confirmation ↑/↓ cursor).
-       A neutral near-white reads clearly on every button fill in dark mode. */
-    --approval-focus-ring: var(--text-primary);
-    --approval-focus-ring-on-green: var(--text-primary);
-
     /* Tab "awaiting your input" pulse. */
     --tab-awaiting: #705c1c;
 

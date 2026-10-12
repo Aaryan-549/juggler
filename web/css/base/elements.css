@@ -103,8 +103,18 @@ input, textarea {
     cursor: var(--cursor-row-resize);
 }
 
-input:focus, textarea:focus {
-    border-color: var(--accent-green);
+input:where(:focus), textarea:where(:focus) {
+    border-color: var(--field-focus-border);
+}
+
+/* The focus ring every control gets from the keyboard. It replaces the
+   engine's own ring, which appears exactly where this one does, so it decides
+   only the look. At zero specificity, any rule that suppresses it (a text
+   field, which takes the field look instead, or a container whose rows show
+   focus themselves) wins without having to out-rank it. */
+:where(:focus-visible) {
+    outline: var(--focus-ring);
+    outline-offset: var(--focus-ring-offset);
 }
 
 /* `pre` and `code` live in patterns/code.css, with the rest of the code-block

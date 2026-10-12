@@ -21,10 +21,6 @@ injectStylesOnce('pin-to-pinboard-styles', `
 .pinned-summary-link:hover {
   text-decoration: underline;
 }
-.pinned-summary-link:focus-visible {
-  outline: 2px solid var(--accent-color, currentColor);
-  outline-offset: 1px;
-}
 `);
 
 /**

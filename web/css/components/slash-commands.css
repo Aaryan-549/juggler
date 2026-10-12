@@ -197,10 +197,7 @@
 .command-editor-textarea {
     width: 100%;
     padding: 0.4rem 0.55rem;
-    background: var(--bg-primary);
     color: var(--text-primary);
-    border: 1px solid var(--border-color);
-    border-radius: 0.35rem;
     font-family: var(--font-sans);
     font-size: 0.85rem;
 }
@@ -216,10 +213,7 @@
 .command-editor-select {
     width: 100%;
     padding: 0.4rem 1.8rem 0.4rem 0.55rem;
-    background: var(--bg-primary);
     color: var(--text-primary);
-    border: 1px solid var(--border-color);
-    border-radius: 0.35rem;
     font-family: var(--font-sans);
     font-size: 0.85rem;
     cursor: pointer;
@@ -227,19 +221,11 @@
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 -960 960 960' width='16' height='16'%3E%3Cpath fill='%238b949e' d='M480-360 280-560h400L480-360Z'/%3E%3C/svg%3E");
     background-repeat: no-repeat;
     background-position: right 0.5rem center;
-    transition: border-color var(--transition-base), box-shadow var(--transition-base);
 }
 
-.command-editor-select:hover {
+/* Not while focused: the focus border is the field's (.field-input). */
+.command-editor-select:hover:not(:focus) {
     border-color: var(--text-secondary);
-}
-
-.command-editor-input:focus,
-.command-editor-textarea:focus,
-.command-editor-select:focus {
-    outline: none;
-    border-color: var(--accent-blue);
-    box-shadow: 0 0 0 0.1875rem color-mix(in srgb, var(--accent-blue) 10%, transparent);
 }
 
 .command-editor-name-row {

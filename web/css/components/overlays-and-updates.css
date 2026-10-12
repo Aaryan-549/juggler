@@ -289,20 +289,10 @@
     display: block;
     width: 100%;
     box-sizing: border-box;
-    background: var(--bg-primary);
-    border: 0.0625rem solid var(--border-color);
-    border-radius: var(--radius-lg);
     color: var(--text-primary);
     font-family: var(--font-mono);
     font-size: 0.8125rem;
     padding: 0.5rem 0.75rem;
-    outline: none;
-    transition: border-color var(--transition-base), box-shadow var(--transition-base);
-}
-
-.pp-body .pp-name-input:focus {
-    border-color: var(--accent-blue);
-    box-shadow: 0 0 0 0.1875rem color-mix(in srgb, var(--accent-blue) 10%, transparent);
 }
 
 path-input {
@@ -323,20 +313,10 @@ path-input .path-input-field {
     display: block;
     width: 100%;
     box-sizing: border-box;
-    background: var(--bg-primary);
-    border: 0.0625rem solid var(--border-color);
-    border-radius: var(--radius-lg);
     color: var(--text-primary);
     font-family: var(--font-mono);
     font-size: 0.8125rem;
     padding: 0.5rem 0.75rem;
-    outline: none;
-    transition: border-color var(--transition-base), box-shadow var(--transition-base);
-}
-
-path-input .path-input-field:focus {
-    border-color: var(--accent-blue);
-    box-shadow: 0 0 0 0.1875rem color-mix(in srgb, var(--accent-blue) 10%, transparent);
 }
 
 .pp-status {

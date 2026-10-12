@@ -47,12 +47,6 @@
     --notice-bg: #ffdf7e;
     --notice-text: #3d2c00;
 
-    /* Approval-button keyboard-focus ring (action-confirmation ↑/↓ cursor).
-       Greens rather than a harsh near-black outline: a solid green reads on the
-       light secondary buttons, a pale green rings the green primary fill. */
-    --approval-focus-ring: var(--accent-green);
-    --approval-focus-ring-on-green: color-mix(in srgb, var(--accent-green) 28%, #fff);
-
     /* Tab "awaiting your input" pulse. */
     --tab-awaiting: #ffe16f;
 

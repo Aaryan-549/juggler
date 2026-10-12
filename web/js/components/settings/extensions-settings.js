@@ -224,7 +224,7 @@ export class ExtensionSettingsEditor {
     }
     if (setting.type === 'enum') {
       const select = document.createElement('select');
-      select.className = 'settings-select extension-setting-input';
+      select.className = 'settings-select field-input extension-setting-input';
       const blank = document.createElement('option');
       blank.value = '';
       blank.textContent = setting.required ? 'Choose an option' : 'Use default';

@@ -170,7 +170,8 @@
 
 .permissions-popup .pattern-edit-input:focus {
     outline: none;
-    border-color: var(--accent-blue);
+    border-color: var(--field-focus-border);
+    box-shadow: var(--field-focus-halo);
 }
 
 /* Path editor uses <path-input> for autocomplete; its inner .path-input-field
@@ -551,28 +552,24 @@ action-confirmation:focus {
     color: var(--text-primary);
 }
 
-/* Keyboard-focused approval button (the ↑/↓ cursor). The ring is an *outward*
-   box-shadow: it sits cleanly outside the button edge (no inset bleed of the
-   button's own border/background around it), it's a single even stroke that
-   follows the corner radius, and being a shadow it never affects layout — so
-   the button and column don't twitch as focus comes and goes. The buttons are
-   inset from the approval container's `overflow: hidden` edges (see
-   .action-approval-buttons padding) so the ring isn't clipped. Colour is
-   theme-aware (see --approval-focus-ring): near-white in dark mode, a soft
-   green in light mode instead of a harsh near-black. Shown only while a button
-   actually holds keyboard focus (cleared on focusout in action-confirmation.js),
-   so it never implies the arrow/return keys act here when they don't. */
+/* Keyboard-focused approval button (the ↑/↓ cursor): the shared focus ring,
+   drawn outside the button edge, which never affects layout, so the button and
+   column don't twitch as focus comes and goes. The buttons are inset from the
+   approval container's `overflow: hidden` sides by more than the ring's reach
+   (see .action-approval-buttons padding), so it isn't clipped. Shown only while
+   a button actually holds keyboard focus (cleared on focusout in
+   action-confirmation.js), so it never implies the arrow/return keys act here
+   when they don't. */
 .action-confirmation-button.focused {
-    box-shadow: 0 0 0 0.1875rem var(--approval-focus-ring);
+    outline: var(--focus-ring);
+    outline-offset: var(--focus-ring-offset);
     background: color-mix(in srgb, var(--accent-green) 12%, var(--bg-secondary));
     color: var(--text-primary);
 }
 
 /* The primary (green) button keeps its fill — it's the default action — so it
-   holds the muted-green background (beating the tint above) with white text and
-   rings in the on-green variant that contrasts its own fill. */
+   holds the muted-green background (beating the tint above) with white text. */
 .action-confirmation-button.primary.focused {
-    box-shadow: 0 0 0 0.1875rem var(--approval-focus-ring-on-green);
     background: var(--accent-green-muted);
     color: #fff;
 }
@@ -784,7 +781,7 @@ action-confirmation:focus {
     border-radius: var(--radius-md);
     background: var(--bg-secondary);
     cursor: var(--cursor-text);
-    transition: background var(--transition-base), border-color var(--transition-base);
+    transition: background var(--transition-base), border-color var(--transition-base), box-shadow var(--transition-base);
 }
 
 .question-custom-option:hover {
@@ -792,7 +789,8 @@ action-confirmation:focus {
 }
 
 .question-custom-option:focus-within {
-    border-color: var(--accent-green);
+    border-color: var(--field-focus-border);
+    box-shadow: var(--field-focus-halo);
     background: var(--bg-secondary);
 }
 

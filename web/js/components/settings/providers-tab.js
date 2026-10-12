@@ -661,7 +661,7 @@ export class ProvidersTab {
     const input = document.createElement('input');
     input.type = 'text';
     input.id = inputId;
-    input.className = 'settings-input small';
+    input.className = 'settings-input small field-input';
     input.value = 'github.com';
     input.placeholder = 'github.com or your-tenant.ghe.com';
     input.autocapitalize = 'off';
@@ -1044,7 +1044,7 @@ export class ProvidersTab {
     }
 
     const inputWrapper = document.createElement('div');
-    inputWrapper.className = 'provider-input-wrapper';
+    inputWrapper.className = 'provider-input-wrapper field-input';
 
     const input = document.createElement('input');
     input.type = 'text';
@@ -1200,7 +1200,7 @@ export class ProvidersTab {
 
     const filter = document.createElement('input');
     filter.type = 'text';
-    filter.className = 'settings-value-input model-visibility-filter';
+    filter.className = 'settings-value-input model-visibility-filter field-input';
     filter.placeholder = 'Filter models';
     filter.autocomplete = 'off';
     filter.setAttribute('autocorrect', 'off');
@@ -1532,7 +1532,7 @@ export class ProvidersTab {
     // Reuse the same wrapper as API-key rows so the input picks up the
     // shared border / focus-ring styling without provider-specific CSS.
     const inputWrapper = document.createElement('div');
-    inputWrapper.className = 'provider-input-wrapper';
+    inputWrapper.className = 'provider-input-wrapper field-input';
 
     const input = document.createElement('input');
     input.type = 'text';
@@ -1597,7 +1597,7 @@ export class ProvidersTab {
     // Reuse the API-key row wrapper so the input inherits the shared border /
     // focus-ring styling without provider-specific CSS.
     const inputWrapper = document.createElement('div');
-    inputWrapper.className = 'provider-input-wrapper';
+    inputWrapper.className = 'provider-input-wrapper field-input';
 
     const input = document.createElement('input');
     input.type = 'text';

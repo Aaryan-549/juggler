@@ -133,7 +133,7 @@ class ModalDialog extends HTMLElement {
         </header>
         <div class="modal-body">
           <div class="modal-message"></div>
-          <input type="text" class="modal-input hidden" autocorrect="off" autocapitalize="off" spellcheck="false" />
+          <input type="text" class="modal-input field-input hidden" autocorrect="off" autocapitalize="off" spellcheck="false" />
           <div class="modal-choice-options hidden"></div>
           <input type="text" class="modal-custom-input hidden" placeholder="Enter your answer..." autocorrect="off" autocapitalize="off" spellcheck="false" />
         </div>

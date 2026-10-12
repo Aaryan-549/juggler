@@ -32,9 +32,8 @@
     text-decoration: underline;
 }
 
+/* The button has no corner of its own, so the shared ring would be square. */
 .workspace-banner-open:focus-visible {
-    outline: 0.125rem solid var(--accent-blue);
-    outline-offset: 0.125rem;
     border-radius: var(--radius-md);
 }
 
@@ -173,8 +172,7 @@
    every row but one: an offer is only focused, never checked, and without this
    it is walked onto invisibly. */
 .setup-rows-rail .setup-row:focus-visible {
-    outline: 1px solid var(--accent-blue);
-    outline-offset: -0.125rem;
+    outline-offset: calc(-1 * var(--focus-ring-width));
 }
 
 /* The name, and the verb of the one row that does something rather than being
@@ -305,7 +303,8 @@
 
 .setup-field-input:focus {
     outline: none;
-    border-color: var(--accent-blue);
+    border-color: var(--field-focus-border);
+    box-shadow: var(--field-focus-halo);
 }
 
 /* A field whose answer is a path completed as it is typed. <path-input> brings
@@ -320,11 +319,6 @@
     padding: 0.3125rem 0.5rem;
     border-radius: var(--radius-xl);
     font-size: 0.8125rem;
-}
-
-.setup-field > path-input .path-input-field:focus {
-    border-color: var(--accent-blue);
-    box-shadow: none;
 }
 
 /* A field whose answer is picked rather than typed. What is picked is still a
@@ -351,7 +345,7 @@
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 -960 960 960' width='16' height='16'%3E%3Cpath fill='%238b949e' d='M480-360 280-560h400L480-360Z'/%3E%3C/svg%3E");
     background-repeat: no-repeat;
     background-position: right 0.5rem center;
-    transition: border-color var(--transition-base);
+    transition: border-color var(--transition-base), box-shadow var(--transition-base);
 }
 
 /* The field above it is typed into and has no hover; this one opens a menu, and
@@ -362,7 +356,8 @@
 
 .setup-field-select:focus {
     outline: none;
-    border-color: var(--accent-blue);
+    border-color: var(--field-focus-border);
+    box-shadow: var(--field-focus-halo);
 }
 
 /* Plain by default: most of what lands here is the form reporting what it

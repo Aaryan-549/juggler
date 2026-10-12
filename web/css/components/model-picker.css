@@ -442,17 +442,9 @@ model-tuning:empty {
 .model-picker-filter-input {
     width: 100%;
     padding: 0.375rem 0.5rem;
-    background: var(--bg-primary);
     color: var(--text-primary);
-    border: 0.0625rem solid var(--border-color);
-    border-radius: var(--radius-lg);
     font-size: 0.8125rem;
     font-family: inherit;
-}
-
-.model-picker-filter-input:focus {
-    outline: none;
-    border-color: var(--accent-blue);
 }
 
 /* The scroller. `scrollbar-gutter: stable` reserves the bar's width whether or
@@ -565,12 +557,6 @@ model-tuning:empty {
 
 .provider-view-toggle:active {
     background-color: var(--bg-primary);
-}
-
-.provider-view-toggle:focus-visible {
-    outline: none;
-    border-color: var(--accent-blue);
-    box-shadow: 0 0 0 0.1875rem color-mix(in srgb, var(--accent-blue) 25%, transparent);
 }
 
 /* A provider's recommended models. */

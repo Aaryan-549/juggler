@@ -108,11 +108,6 @@ settings-panel .model-visibility-summary:hover {
     color: var(--text-primary);
 }
 
-settings-panel .model-visibility-summary:focus-visible {
-    outline: none;
-    box-shadow: 0 0 0 0.125rem color-mix(in srgb, var(--accent-blue) 40%, transparent);
-}
-
 /* The count is the part that changes, so it stays a shade brighter than its
    label rather than trailing off after it. */
 settings-panel .model-visibility-count {
@@ -154,25 +149,16 @@ settings-panel .model-visibility-row .model-window-assumed {
     color: var(--accent-orange);
 }
 
-/* Matches the panel's other compact sub-inputs (.mcp-input): a field on
-   --bg-primary rather than the browser default the global input rule leaves. */
+/* Sized like the panel's other compact sub-inputs (.mcp-input); the box is
+   .field-input. */
 settings-panel .model-visibility-filter {
     width: 100%;
     box-sizing: border-box;
     margin-top: 0.5rem;
     padding: 0.375rem 0.5rem;
-    background: var(--bg-primary);
     color: var(--text-primary);
-    border: 0.0625rem solid var(--border-color);
-    border-radius: var(--radius-lg);
     font-family: var(--font-mono);
     font-size: 0.8125rem;
-}
-
-settings-panel .model-visibility-filter:focus {
-    outline: none;
-    border-color: var(--accent-blue);
-    box-shadow: 0 0 0 0.1875rem color-mix(in srgb, var(--accent-blue) 10%, transparent);
 }
 
 /* Capped and scrollable: OpenRouter lists several hundred models, and without a
@@ -253,7 +239,8 @@ settings-panel .model-limit-input {
 
 settings-panel .model-limit-input:focus {
     outline: none;
-    border-color: var(--accent-blue);
+    border-color: var(--field-focus-border);
+    box-shadow: var(--field-focus-halo);
 }
 
 /* An overridden limit is the exception, so it reads as one rather than sitting
@@ -775,8 +762,9 @@ settings-panel .logs-picker {
 }
 
 settings-panel .logs-picker:focus-visible {
-    outline: 0.125rem solid var(--accent-green);
-    outline-offset: 0.0625rem;
+    outline: none;
+    border-color: var(--field-focus-border);
+    box-shadow: var(--field-focus-halo);
 }
 
 settings-panel .logs-filepath {
@@ -902,19 +890,11 @@ settings-panel .auto-name-instruction {
     border-top: 0.0625rem solid var(--border-color);
 }
 
+/* A .field-input box around a bare input and its buttons. */
 settings-panel .provider-input-wrapper {
     position: relative;
     display: flex;
     align-items: center;
-    border: 0.0625rem solid var(--border-color);
-    border-radius: var(--radius-lg);
-    background: var(--bg-primary);
-    transition: border-color var(--transition-base), box-shadow var(--transition-base);
-}
-
-settings-panel .provider-input-wrapper:focus-within {
-    border-color: var(--accent-blue);
-    box-shadow: 0 0 0 0.1875rem color-mix(in srgb, var(--accent-blue) 10%, transparent);
 }
 
 settings-panel .provider-input-wrapper input {
@@ -927,10 +907,6 @@ settings-panel .provider-input-wrapper input {
     color: var(--text-primary);
     font-size: 0.875rem;
     font-family: var(--font-mono);
-}
-
-settings-panel .provider-input-wrapper input:focus {
-    outline: none;
 }
 
 settings-panel .provider-buttons {
@@ -959,18 +935,9 @@ settings-panel .copilot-host-field input {
     width: 100%;
     box-sizing: border-box;
     padding: 0.4rem 0.6rem;
-    border: 0.0625rem solid var(--border-color);
-    border-radius: var(--radius-lg);
-    background: var(--bg-primary);
     color: var(--text-primary);
     font-size: 0.8125rem;
     font-family: var(--font-mono);
-}
-
-settings-panel .copilot-host-field input:focus {
-    outline: none;
-    border-color: var(--accent-blue);
-    box-shadow: 0 0 0 0.1875rem color-mix(in srgb, var(--accent-blue) 10%, transparent);
 }
 
 settings-panel .provider-active-badge {
@@ -998,10 +965,7 @@ settings-panel .chime-select,
 settings-panel .proxy-mode-select {
     width: 100%;
     padding: 0.625rem 2rem 0.625rem 0.875rem;
-    background: var(--bg-primary);
     color: var(--text-primary);
-    border: 0.0625rem solid var(--border-color);
-    border-radius: var(--radius-lg);
     font-size: 0.875rem;
     font-family: inherit;
     cursor: pointer;
@@ -1009,21 +973,13 @@ settings-panel .proxy-mode-select {
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 -960 960 960' width='16' height='16'%3E%3Cpath fill='%238b949e' d='M480-360 280-560h400L480-360Z'/%3E%3C/svg%3E");
     background-repeat: no-repeat;
     background-position: right 0.625rem center;
-    transition: border-color var(--transition-base), box-shadow var(--transition-base);
 }
 
-settings-panel .settings-select:hover,
-settings-panel .chime-select:hover,
-settings-panel .proxy-mode-select:hover {
+/* Not while focused: the focus border is the field's (.field-input). */
+settings-panel .settings-select:hover:not(:focus),
+settings-panel .chime-select:hover:not(:focus),
+settings-panel .proxy-mode-select:hover:not(:focus) {
     border-color: var(--text-secondary);
-}
-
-settings-panel .settings-select:focus,
-settings-panel .chime-select:focus,
-settings-panel .proxy-mode-select:focus {
-    outline: none;
-    border-color: var(--accent-blue);
-    box-shadow: 0 0 0 0.1875rem color-mix(in srgb, var(--accent-blue) 10%, transparent);
 }
 
 settings-panel .chime-select option {
@@ -1136,8 +1092,10 @@ settings-panel .provider-toggle:checked + .toggle-switch::after {
     transform: translateX(var(--toggle-travel));
 }
 
-settings-panel .provider-toggle:focus + .toggle-switch {
-    box-shadow: 0 0 0 0.1875rem color-mix(in srgb, var(--accent-blue) 20%, transparent);
+/* The checkbox is hidden, so the switch drawn for it wears its ring. */
+settings-panel .provider-toggle:focus-visible + .toggle-switch {
+    outline: var(--focus-ring);
+    outline-offset: var(--focus-ring-offset);
 }
 
 /* Connectivity tab */
@@ -1147,22 +1105,13 @@ settings-panel .connectivity-wan-error {
 }
 
 /* The proxy-mode picker reuses the shared settings-panel native-select styling
-   (.settings-select / .chime-select). The Manual URL field mirrors the
-   .mcp-input look: a bordered text control on the panel's primary surface. */
+   (.settings-select / .chime-select). The Manual URL field is sized like
+   .mcp-input; the box is .field-input. */
 settings-panel .proxy-url-input {
     padding: 0.4375rem 0.625rem;
-    background: var(--bg-primary);
     color: var(--text-primary);
-    border: 0.0625rem solid var(--border-color);
-    border-radius: var(--radius-lg);
     font-family: var(--font-ui);
     font-size: 0.8125rem;
-}
-
-settings-panel .proxy-url-input:focus-visible {
-    outline: none;
-    border-color: var(--accent-blue);
-    box-shadow: 0 0 0 0.1875rem color-mix(in srgb, var(--accent-blue) 10%, transparent);
 }
 
 /* Manual URL field: revealed only when Manual is selected (JS toggles [hidden]),
@@ -1415,18 +1364,9 @@ settings-panel .mcp-field-hint {
 
 settings-panel .mcp-input {
     padding: 0.4375rem 0.625rem;
-    background: var(--bg-primary);
     color: var(--text-primary);
-    border: 0.0625rem solid var(--border-color);
-    border-radius: var(--radius-lg);
     font-family: var(--font-ui);
     font-size: 0.8125rem;
-}
-
-settings-panel .mcp-input:focus-visible {
-    outline: none;
-    border-color: var(--accent-blue);
-    box-shadow: 0 0 0 0.1875rem color-mix(in srgb, var(--accent-blue) 10%, transparent);
 }
 
 settings-panel select.mcp-input {

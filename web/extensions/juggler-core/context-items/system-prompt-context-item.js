@@ -50,7 +50,8 @@ const SYSTEM_PROMPT_STYLES = `
 }
 .system-prompt-textarea:focus {
   outline: none;
-  border-color: var(--text-tertiary);
+  border-color: var(--field-focus-border);
+  box-shadow: var(--field-focus-halo);
   background: var(--bg-raised);
 }
 .system-prompt-textarea::placeholder {

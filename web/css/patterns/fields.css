@@ -1,0 +1,30 @@
+/*
+ *     ▄▄ ▄▄ ▄▄  ▄▄▄▄  ▄▄▄▄ ▄▄    ▄▄▄▄▄ ▄▄▄▄
+ *     ██ ██ ██ ██ ▄▄ ██ ▄▄ ██    ██▄▄  ██▄█▄   Copyright (c) 2026 Julian Storer
+ *   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
+ */
+
+/* The text field: an input, textarea or select set into a panel, shared by
+   settings, the project picker, the model picker, the pinboard, the find bar,
+   the review panel, the command editor and the modal dialog.
+
+   Only the fill, border, corner and the focus look live here. Size, padding
+   and type belong to the component.
+
+   :focus-within rather than :focus, so a wrapper drawing the box around a bare
+   input (with a button or a prefix beside it) takes the same look as an input
+   drawing its own. It is held in :where() so that from down here it never
+   outranks a component's own rule. */
+
+.field-input {
+    background-color: var(--bg-primary);
+    border: 0.0625rem solid var(--border-color);
+    border-radius: var(--radius-lg);
+    transition: border-color var(--transition-base), box-shadow var(--transition-base);
+}
+
+.field-input:where(:focus-within) {
+    outline: none;
+    border-color: var(--field-focus-border);
+    box-shadow: var(--field-focus-halo);
+}
