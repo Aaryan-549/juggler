@@ -45,15 +45,19 @@ func windowStateURL(serverURL, role string) string {
 // connections, so the first few requests can fail on connection refused; we
 // retry transport errors briefly. A response (even non-200) is authoritative
 // and ends the loop.
+//
+// serverURL is always one the app owns, from windowSpec.resolve: the address a
+// server it spawned printed, a verified instance lock's, or --url. A control
+// request reaches here only by naming a project folder, never a host.
 func fetchWindowState(serverURL, role string) (core.WindowState, bool) {
 	url := windowStateURL(serverURL, role)
 	const attempts = 30
 	for i := 0; i < attempts; i++ {
-		req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, url, nil)
+		req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, url, nil) //nolint:gosec // app-owned server URL, see above
 		if err != nil {
 			return core.WindowState{}, false
 		}
-		resp, err := windowStateHTTP.Do(req)
+		resp, err := windowStateHTTP.Do(req) //nolint:gosec // app-owned server URL, see above
 		if err != nil {
 			// Server not accepting yet — back off and retry.
 			time.Sleep(100 * time.Millisecond)

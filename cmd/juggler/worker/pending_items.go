@@ -125,38 +125,12 @@ func (w *ConversationWorker) hasPendingItems(threadItemID string) bool {
 // array as a user message (chronologically last) and clears the queue. The
 // promoted items are left UNSTAMPED (no transactionId) so the strategy loop's
 // findUnstampedUserMsgID picks up the last one for the next round-trip. Returns
-// the number promoted.
+// the number promoted. The move itself, and why it is one hold, is
+// OperationTracker.PromotePending.
 func (r *run) promotePendingItems(threadItemID string) int {
-	ycrdtMu.Lock()
-	arr := r.doc.getPendingArrayLocked(threadItemID)
-	if arr == nil || arr.GetLength() == 0 {
-		ycrdtMu.Unlock()
+	pending := r.tracker.PromotePending(threadItemID)
+	if len(pending) == 0 {
 		return 0
-	}
-	pending := r.doc.getItemsFromArrayLocked(arr)
-	length := int(arr.GetLength())
-	r.doc.doc.Transact(func(_ *ycrdt.Transaction) {
-		arr.Delete(ycrdt.Number(0), length)
-	}, r.doc.txOrigin())
-	ycrdtMu.Unlock()
-
-	for i := range pending {
-		// Next turn's user input — must not carry the previous round-trip's id.
-		pending[i].TransactionID = ""
-	}
-
-	if threadItemID == "" {
-		// Root: tracker insert keeps undo parity with a normal user send.
-		r.tracker.AppendMessage(pending...)
-	} else {
-		target := r.doc.GetThreadItemsArray(threadItemID)
-		if target == nil {
-			return 0
-		}
-		// Tracker insert, mirroring the root branch: a promotion into a sub-thread
-		// is undoable just like a normal user send. (The pending-queue clear above
-		// stays untracked — queuing is not conversation content.)
-		r.tracker.AppendMessageIntoArray(target, pending...)
 	}
 
 	r.tape.Record("pending-promote", map[string]any{
@@ -168,15 +142,14 @@ func (r *run) promotePendingItems(threadItemID string) int {
 	return len(pending)
 }
 
-// CollectPendingAssetIDs adds every asset id referenced by a QUEUED (pending)
-// user message — the root queue and every thread container's queue — to dst. A
-// queued message lives in a `pendingItems` sibling array, NOT in `items`, so
-// the committed-item walk in collectAssetIDsFromItems never sees it; without
-// this a queued attachment's bytes could be reclaimed by the asset sweep before
-// the message is promoted, landing a broken image. Mirrors CollectDraftAssetIDs.
-func (cd *ConversationDocument) CollectPendingAssetIDs(dst map[string]bool) {
-	ycrdtMu.Lock()
-	defer ycrdtMu.Unlock()
+// collectPendingAssetIDsLocked adds every asset id referenced by a QUEUED
+// (pending) user message — the root queue and every thread container's queue —
+// to dst. A queued message lives in a `pendingItems` sibling array, NOT in
+// `items`, so the committed-item walk in collectAssetIDsFromItems never sees it;
+// without this a queued attachment's bytes could be reclaimed by the asset sweep
+// before the message is promoted, landing a broken image. Mirrors
+// collectDraftAssetIDsLocked. Caller MUST hold ycrdtMu.
+func (cd *ConversationDocument) collectPendingAssetIDsLocked(dst map[string]bool) {
 	collectPendingAssetIDsFromMap(cd.root, dst)
 	if arr := cd.getItems(); arr != nil {
 		collectPendingAssetIDsFromArray(arr, dst)

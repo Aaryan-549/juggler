@@ -259,6 +259,11 @@ func (t *OperationTracker) InsertMessage(index int, messages ...ConversationItem
 func (t *OperationTracker) AppendMessage(messages ...ConversationItem) {
 	ycrdtMu.Lock()
 	defer ycrdtMu.Unlock()
+	t.appendMessageLocked(messages...)
+}
+
+// appendMessageLocked is AppendMessage for a caller already holding ycrdtMu.
+func (t *OperationTracker) appendMessageLocked(messages ...ConversationItem) {
 	um := t.ensureUndoManager()
 	if !allAuxiliary(messages) {
 		um.StopCapturing()
@@ -279,6 +284,12 @@ func (t *OperationTracker) AppendMessage(messages ...ConversationItem) {
 func (t *OperationTracker) AppendMessageIntoArray(arr *ycrdt.YArray, messages ...ConversationItem) {
 	ycrdtMu.Lock()
 	defer ycrdtMu.Unlock()
+	t.appendMessageIntoArrayLocked(arr, messages...)
+}
+
+// appendMessageIntoArrayLocked is AppendMessageIntoArray for a caller already
+// holding ycrdtMu.
+func (t *OperationTracker) appendMessageIntoArrayLocked(arr *ycrdt.YArray, messages ...ConversationItem) {
 	um := t.ensureUndoManager()
 	if !allAuxiliary(messages) {
 		um.StopCapturing()
@@ -289,6 +300,51 @@ func (t *OperationTracker) AppendMessageIntoArray(arr *ycrdt.YArray, messages ..
 			insertItemWithNested(arr, index+i, msg)
 		}
 	}, t.doc.authorID, true)
+}
+
+// PromotePending moves every queued message for the thread ("" => root) to the
+// end of its items array and empties the queue, returning what it moved. The
+// promoted items are left unstamped (no transactionId), since they are the next
+// turn's input, not part of the round-trip that was running when they queued.
+//
+// The whole move is one ycrdtMu hold. The thread's turn runs on a goroutine of
+// its own, and the run loop's save sweeps assets and applies viewer syncs
+// concurrently, so a move made in two holds would leave the messages in neither
+// array for a moment: long enough for a sweep to reclaim a queued attachment,
+// or for a deleted thread to take the messages with it. A thread with no items
+// array to receive them keeps its queue.
+//
+// The append is tracked, so a promotion is undoable like a normal user send;
+// emptying the queue is not, since queuing is not conversation content.
+func (t *OperationTracker) PromotePending(threadItemID string) []ConversationItem {
+	ycrdtMu.Lock()
+	defer ycrdtMu.Unlock()
+	queue := t.doc.getPendingArrayLocked(threadItemID)
+	if queue == nil || queue.GetLength() == 0 {
+		return nil
+	}
+	var target *ycrdt.YArray
+	if threadItemID != "" {
+		if target = findThreadItemsArray(t.doc.getItems(), threadItemID); target == nil {
+			return nil
+		}
+	}
+
+	pending := t.doc.getItemsFromArrayLocked(queue)
+	for i := range pending {
+		pending[i].TransactionID = ""
+	}
+	length := int(queue.GetLength())
+	t.doc.doc.Transact(func(_ *ycrdt.Transaction) {
+		queue.Delete(ycrdt.Number(0), length)
+	}, t.doc.txOrigin())
+
+	if target == nil {
+		t.appendMessageLocked(pending...)
+	} else {
+		t.appendMessageIntoArrayLocked(target, pending...)
+	}
+	return pending
 }
 
 // SeedThreadFromParent clones the parent's starting-context items into the head

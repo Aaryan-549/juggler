@@ -162,16 +162,15 @@ func yMapRawJSON(m *ycrdt.YMap, key string) json.RawMessage {
 	return data
 }
 
-// CollectDraftAssetIDs adds every asset id referenced by an UNSENT draft — the
-// root draft (conversation metadata) and each thread container's draft — to
+// collectDraftAssetIDsLocked adds every asset id referenced by an UNSENT draft —
+// the root draft (conversation metadata) and each thread container's draft — to
 // dst. A draft's attachments live on container/metadata state, NOT on a
 // committed item, so the item walk in collectAssetIDsFromItems never sees them;
 // without this a staged-but-unsent attachment's bytes would be reclaimed by the
 // asset sweep and the persisted draft ref would dangle after a restart. Mirrors
-// the JS `draft` accessor in web/js/model/message-thread.js.
-func (cd *ConversationDocument) CollectDraftAssetIDs(dst map[string]bool) {
-	ycrdtMu.Lock()
-	defer ycrdtMu.Unlock()
+// the JS `draft` accessor in web/js/model/message-thread.js. Caller MUST hold
+// ycrdtMu.
+func (cd *ConversationDocument) collectDraftAssetIDsLocked(dst map[string]bool) {
 	addDraftAssetIDs(yMapRawJSON(cd.metadata, "draft"), dst)
 	if arr := cd.getItems(); arr != nil {
 		collectDraftAssetIDsFromArray(arr, dst)

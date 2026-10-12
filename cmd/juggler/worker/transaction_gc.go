@@ -94,25 +94,15 @@ func collectUnsettledToolUseIDs(items []ConversationItem, dst map[string]bool) (
 // collectLiveAssetIDs returns the set of asset shas referenced by the live doc,
 // plus keepAll: when true the sweep is skipped entirely (nothing is deleted).
 //
-// Walks all items (root + nested threads) collecting every attachment id, folds
-// in ids referenced by unsent drafts and by queued pending messages (root +
-// thread containers), then folds in
-// ids restorable via the undo/redo stacks — mirroring sweepTransactions
+// Collects every attachment id the document refers to (CollectAssetIDs), then
+// folds in ids restorable via the undo/redo stacks — mirroring sweepTransactions
 // (collectTxnIDsFromItems + undoableTransactionIDs) so a just-deleted-but-undoable
-// attachment is not GC'd prematurely.
+// attachment is not GC'd prematurely. The undo stacks are read after the items:
+// an item a turn deletes moves from the one to the other, so reading them in
+// that order sees it in at least one.
 func (w *ConversationWorker) collectLiveAssetIDs() (live map[string]bool, keepAll bool) {
 	live = make(map[string]bool)
-	collectAssetIDsFromItems(w.doc.GetItems(), live)
-
-	// Unsent drafts reference staged-but-uncommitted attachments (root + every
-	// thread container). Keep their bytes alive so a persisted draft survives a
-	// restart with its images intact.
-	w.doc.CollectDraftAssetIDs(live)
-
-	// Queued ("type while busy") messages live in a pendingItems sibling array,
-	// not in items — keep their attachment bytes alive until the message is
-	// promoted, or a queued image's bytes could be swept before it is sent.
-	w.doc.CollectPendingAssetIDs(live)
+	w.doc.CollectAssetIDs(live)
 
 	for _, id := range w.tracker.undoableAssetIDs() {
 		if id != "" {
@@ -121,6 +111,21 @@ func (w *ConversationWorker) collectLiveAssetIDs() (live map[string]bool, keepAl
 	}
 
 	return live, false
+}
+
+// CollectAssetIDs adds to dst every attachment id the document refers to:
+// committed items (root and nested threads), unsent drafts, and queued
+// ("type while busy") messages, which live in pendingItems sibling arrays.
+//
+// One hold for all three. A turn promotes a queued message from pendingItems
+// to items on its own goroutine while the sweep runs on the run loop, so reads
+// in separate holds could each land on the wrong side of the move and miss it.
+func (cd *ConversationDocument) CollectAssetIDs(dst map[string]bool) {
+	ycrdtMu.Lock()
+	defer ycrdtMu.Unlock()
+	collectAssetIDsFromItems(cd.getConversationItems(), dst)
+	cd.collectDraftAssetIDsLocked(dst)
+	cd.collectPendingAssetIDsLocked(dst)
 }
 
 // collectTxnIDsFromItems walks items recursively (into nested thread items)
