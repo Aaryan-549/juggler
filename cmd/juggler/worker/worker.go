@@ -96,10 +96,12 @@ type ConversationWorker struct {
 	// txnStore is the per-conversation transaction blob store (input/output
 	// context for each LLM round-trip), and assetStore the content-addressed
 	// asset store (attached images, etc.), whose bytes live out-of-doc under
-	// <convDir>/assets/ while the doc holds only refs. Both are nil until
-	// handleInit knows projectPath.
-	txnStore   *TransactionStore
-	assetStore *AssetStore
+	// <convDir>/assets/ while the doc holds only refs; programStore keeps the
+	// snapshot a program tool takes while one of its calls waits on the user.
+	// All are nil until handleInit knows projectPath.
+	txnStore     *TransactionStore
+	assetStore   *AssetStore
+	programStore *ProgramStore
 
 	// saver decides when the doc is written: the unsaved bit, the save debounce
 	// and the forced-flush queue. See doc_saver.go, which owns every rule here;
@@ -354,6 +356,9 @@ func (w *ConversationWorker) SetPathProvider(fn PathProviderFunc) {
 	}
 	if w.assetStore != nil {
 		w.assetStore.SetPathProvider(fn)
+	}
+	if w.programStore != nil {
+		w.programStore.SetPathProvider(fn)
 	}
 }
 

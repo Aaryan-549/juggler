@@ -6,14 +6,17 @@
 /**
  * The journal a run_code program replays from.
  *
- * A program that stops to wait for an approval is run again from the top once
- * it is given, so everything it did before the stop must not happen twice.
+ * A program that waits for an approval waits alive, holding the call. But if
+ * the engine running it dies while it waits, the program is lost with it, and
+ * is run again from the top once the user answers — so everything it did
+ * before the stop must not happen twice. Each time a call is held, the program
+ * keeps a snapshot of its journal (`snapshot`) for that.
  * The journal records every call the program makes through its capabilities
- * (`fs`, `grep`, `glob`, `tools`, and the read behind `image(path)`), in the
- * order the program makes them, with what each gave back. On a replay, each
- * call is matched against the record at its step and answered from it without
- * calling through; past the end of the record, or at a step left unsettled
- * when the last pass ended, calls go through and are recorded in turn.
+ * (`fs`, `grep`, `glob`, `tools`, and the read behind `image(path)`), by step:
+ * the order in which the program makes them, with what each gave back. On a
+ * replay, each call is matched against the record at its step and answered
+ * from it without calling through; past the end of the record, or at a step
+ * with no answer recorded, calls go through and are recorded in turn.
  *
  * The replay stands in for the program's state having been kept and restored:
  * it is how a program picks up where it stopped, not a second run. So a
@@ -26,39 +29,29 @@
  * Capabilities are the program's only way to see or touch anything, so a
  * program that makes the same calls sees the same answers. One whose call at
  * some step differs from the record — another capability, other arguments —
- * has diverged: it would act on answers it never saw, so the call is refused
- * and `onDiverge` is told, which ends the program. Nothing else needs to be
- * deterministic: `Date.now` or `Math.random` matter only when they change a
- * call, and then they diverge.
- *
- * Steps are taken in the order calls are made, and calls made concurrently
- * are made in the order the answers before them arrived: under `Promise.all`,
- * the read that answers first is the one whose follow-up call comes next. So
- * a replay gives its answers in the order the pass that recorded them got
- * them (each entry's `seq`), each once it has been asked for and every answer
- * before it has been given. Every call that goes through on a replay waits
- * for the recorded answers to have all been given before it answers: none of
- * them had answered when the recorded pass ended. A program that never asks
- * for an answer it asked for before leaves the rest waiting; `stalledOn`
- * names the call it never made.
- *
- * Answers due together are given together, so the order holds only because
- * the sandbox hands each to the program as a message of its own: the program
- * has made every call the first leads to before it sees the second. A program
- * given two answers in one microtask burst would act on whichever its code
- * reaches sooner, and take its steps out of order.
+ * has diverged: it would act on answers it never saw, so the call is refused,
+ * as is every call after it, and `onDiverge` is told, which ends the program.
+ * Nothing else needs to be deterministic: `Date.now` or `Math.random` matter
+ * only when they change a call, and then they diverge. Nor is the order in
+ * which concurrent answers arrived kept: a replay answers each recorded call
+ * as soon as it is made again, so a program whose next calls depend on which
+ * of several answers came first may make them in another order, and
+ * diverges. That costs only the resume, which is the rare case of an engine
+ * lost mid-hold: nothing from the diverging step on runs.
  *
  * A refusal or a cancel is not an answer, so neither is recorded: a replay
  * makes that call again, and asks again.
  *
- * The call a program was suspended on is recorded as held: it has no answer
- * yet, but it is the call the user was asked about. A replay that reaches its
- * step checks it like any other, tells `onHeld`, and calls through, so the
- * caller can hand it over as answered; what it then gives back replaces the
- * held entry.
+ * A snapshot is the journal as it stands, with every call made and not yet
+ * answered recorded as `pending`: the held call the user is asked about, and
+ * any read running beside it. A replay checks a pending step like any other,
+ * then calls through, and what the call gives back replaces the entry. So
+ * every step a snapshot covers is checked: a call that ran before the
+ * snapshot cannot be made again at a step it did not take, by a replay whose
+ * calls come in another order.
  *
  * Pure — capabilities in, wrapped capabilities out; the journal is the
- * caller's to keep between passes.
+ * caller's to keep.
  * @module context-items/code/program-journal
  */
 
@@ -78,12 +71,11 @@ export class ProgramDiverged extends Error {
  * @property {string} key - The capability called: `fs.readFile`, `grep`, `tools.edit`
  * @property {string} args - Its arguments, as JSON
  * @property {boolean} ok - Whether it answered or threw
- * @property {boolean} [held] - The program was suspended on it: no answer yet
+ * @property {boolean} [pending] - Made, and not answered when the snapshot was taken
  * @property {unknown} [value] - What it answered
  * @property {string} [error] - What it threw
  * @property {string} [errorName] - The thrown error's name
  * @property {Array<[string, string|null]>} [reads] - Read credit it earned, path → hash
- * @property {number} [seq] - Where its answer came in the order the program got answers
  */
 
 /** Errors that are not a call's answer, and so are never recorded. */
@@ -121,84 +113,43 @@ function describeCall(key, args) {
  * from, `journal`.
  * @param {Record<string, any>} capabilities - Functions (`grep`) and namespaces (`fs`, `tools`)
  * @param {object} opts
- * @param {Array<JournalEntry|undefined>} opts.journal - The record, kept between passes; mutated
+ * @param {Array<JournalEntry|undefined>} opts.journal - The record; mutated
  * @param {Map<string, string|null>} [opts.ledger] - Read credit the program's reads earn, path → hash; a replayed call restores what it earned
  * @param {(err: ProgramDiverged) => void} opts.onDiverge - Told when a call diverges
- * @param {(entry: JournalEntry) => void} [opts.onHeld] - Told, synchronously
- *   before it calls through, when a replay makes the call it was suspended on
  * @returns {Record<string, any>} The wrapped capabilities, by the same names,
- *   and — not enumerable, so it is never handed to the program among them —
- *   `stalledOn()`: the call a replay is waiting for the program to make again
- *   before it can give any more answers, as a divergence names it, or null
+ *   and — not enumerable, so they are never handed to the program among them —
+ *   `stepNow()`: the step of the call being made, read synchronously while its
+ *   capability is called, or null; and `snapshot()`: the journal to replay
+ *   from should the program be lost while one of its calls waits on the user
  */
 export function journalCapabilities(capabilities, opts) {
-  const { journal, ledger, onDiverge, onHeld } = opts;
+  const { journal, ledger, onDiverge } = opts;
   let step = 0;
-
-  // The recorded answers, in the order the program got them. An entry with no
-  // `seq` keeps no order and answers as soon as it is asked for.
-  const order = /** @type {JournalEntry[]} */ (journal.filter((e) => e && !e.held && typeof e.seq === 'number'))
-    .sort((a, b) => /** @type {number} */ (a.seq) - /** @type {number} */ (b.seq));
-  let nextSeq = (order.at(-1)?.seq ?? -1) + 1;
-  let given = 0;
   /**
-   * Recorded calls asked for again, each waiting its turn to answer.
-   * @type {Map<JournalEntry, () => void>}
+   * The divergence, once there is one: every call after it is refused with
+   * it, whatever its step, since none of them can be trusted to be the call
+   * the record holds.
+   * @type {ProgramDiverged|null}
    */
-  const asked = new Map();
-  /** Calls gone through on this replay, waiting for the recorded answers to be given. */
-  let throughWaiting = 0;
-  /** @type {(() => void)|null} */
-  let allGiven = null;
-  /** @type {Promise<void>} */
-  const replayed = order.length === 0 ? Promise.resolve() : new Promise((resolve) => { allGiven = resolve; });
-
-  /** Give every answer whose turn has come. */
-  const give = () => {
-    while (given < order.length) {
-      const entry = /** @type {JournalEntry} */ (order[given]);
-      const answer = asked.get(entry);
-      if (!answer) return;
-      asked.delete(entry);
-      given++;
-      answer();
-    }
-    allGiven?.();
-  };
+  let diverged = null;
+  /** @type {number|null} */
+  let calling = null;
+  /**
+   * Calls gone through and not yet answered, by step.
+   * @type {Map<number, {key: string, args: string}>}
+   */
+  const inFlight = new Map();
 
   /**
-   * Wait until a recorded call's answer is due.
-   * @param {JournalEntry} entry - The recorded call
-   * @returns {Promise<void>} Resolves at its turn
+   * The journal to replay from if the program is lost now, while one of its
+   * calls waits on the user: every answer recorded, and every call made and
+   * not yet answered marked pending. A copy: the journal goes on being written.
+   * @returns {Array<JournalEntry|undefined>} The snapshot
    */
-  const turnOf = (entry) => new Promise((resolve) => {
-    asked.set(entry, resolve);
-    // Given only once its caller is awaiting it: given here, at once, its
-    // answer would come after those of calls already waiting, out of turn.
-    queueMicrotask(give);
-  });
-
-  /**
-   * Wait, for a call that went through, until every recorded answer is given.
-   * @returns {Promise<void>} Resolves once they are
-   */
-  const afterReplay = async () => {
-    throughWaiting++;
-    try {
-      await replayed;
-    } finally {
-      throughWaiting--;
-    }
-  };
-
-  /**
-   * @returns {string|null} The recorded call the replay waits on and the
-   *   program has not made, while anything waits on it
-   */
-  const stalledOn = () => {
-    const next = order[given];
-    if (!next || asked.has(next) || (asked.size === 0 && throughWaiting === 0)) return null;
-    return describeCall(next.key, next.args);
+  const snapshot = () => {
+    const out = [...journal];
+    for (const [at, call] of inFlight) out[at] = { key: call.key, args: call.args, ok: false, pending: true };
+    return out;
   };
 
   /**
@@ -208,21 +159,19 @@ export function journalCapabilities(capabilities, opts) {
    * @returns {(...args: unknown[]) => Promise<unknown>} The journalled call
    */
   const journalled = (key, call) => async (...args) => {
+    if (diverged) throw diverged;
     const at = step++;
     const json = argsKey(args);
     const prior = journal[at];
     if (prior) {
       if (prior.key !== key || prior.args !== json) {
-        const err = new ProgramDiverged(`Couldn't resume the program: at step ${at + 1} it called `
+        diverged = new ProgramDiverged(`Couldn't resume the program: at step ${at + 1} it called `
           + `${describeCall(key, json)}, but last time it called ${describeCall(prior.key, prior.args)}. `
           + 'Nothing from that step on ran.');
-        onDiverge(err);
-        throw err;
+        onDiverge(diverged);
+        throw diverged;
       }
-      if (prior.held) {
-        onHeld?.(prior);
-      } else {
-        if (typeof prior.seq === 'number') await turnOf(prior);
+      if (!prior.pending) {
         for (const [p, hash] of prior.reads ?? []) ledger?.set(p, hash);
         if (prior.ok) return prior.value;
         const err = new Error(prior.error);
@@ -242,22 +191,29 @@ export function journalCapabilities(capabilities, opts) {
     };
     /** @type {unknown} */
     let value;
+    inFlight.set(at, { key, args: json });
     try {
-      value = await call(...args);
+      /** @type {unknown} */
+      let pending;
+      // The step is readable while the capability is called, synchronously,
+      // so the caller can tag what it starts with it (stepNow).
+      calling = at;
+      try {
+        pending = call(...args);
+      } finally {
+        calling = null;
+      }
+      value = await pending;
     } catch (err) {
+      inFlight.delete(at);
       const e = /** @type {Error} */ (err);
-      if (e?.name === 'ToolSuspended') {
-        journal[at] = { key, args: json, ok: false, held: true };
-      } else if (!UNRECORDED.has(e?.name)) {
-        const reads = earned();
-        await afterReplay();
-        journal[at] = { key, args: json, ok: false, error: extractErrorMessage(err), errorName: e?.name, reads, seq: nextSeq++ };
+      if (!UNRECORDED.has(e?.name)) {
+        journal[at] = { key, args: json, ok: false, error: extractErrorMessage(err), errorName: e?.name, reads: earned() };
       }
       throw err;
     }
-    const reads = earned();
-    await afterReplay();
-    journal[at] = { key, args: json, ok: true, value, reads, seq: nextSeq++ };
+    inFlight.delete(at);
+    journal[at] = { key, args: json, ok: true, value, reads: earned() };
     return value;
   };
 
@@ -284,6 +240,7 @@ export function journalCapabilities(capabilities, opts) {
       wrapped[name] = cap;
     }
   }
-  Object.defineProperty(wrapped, 'stalledOn', { value: stalledOn, enumerable: false });
+  Object.defineProperty(wrapped, 'stepNow', { value: () => calling, enumerable: false });
+  Object.defineProperty(wrapped, 'snapshot', { value: snapshot, enumerable: false });
   return wrapped;
 }

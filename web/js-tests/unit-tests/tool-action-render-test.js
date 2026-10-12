@@ -28,6 +28,7 @@
 
 import { TOOL_STATES } from '../../sdk/lib/message.js';
 import { buildApprovalSourceBadge } from '../../js/services/renderers/item-renderers.js';
+import contextItemRegistry from '../../js/registries/context-item-registry.js';
 import '../../js/components/tool-action-message.js'; // registers the custom element
 import '../../js/components/action-confirmation.js'; // registers <action-confirmation>
 
@@ -70,6 +71,32 @@ export async function runTests() {
     if (busy !== null) throw new Error(`expected null (terminal), got ${JSON.stringify(busy)}`);
     passed++;
   } catch (e) { failed++; errors.push(`getBusyState terminal-result: ${e.message}`); }
+
+  // A2 — the footer names a running tool as its card does (the card's type
+  // label and summary), never by its wire name; a tool with no status UI
+  // falls back to the wire name.
+  const realGetByToolName = contextItemRegistry.getByToolName;
+  try {
+    const summary = document.createElement('span');
+    summary.textContent = 'Swap the greeting';
+    class CardTool {
+      getStatusUI() { return { typeName: 'Program', summary, status: 'running' }; }
+    }
+    contextItemRegistry.getByToolName = (name) => (name === 'run_code' ? CardTool : undefined);
+    const busyEl = /** @type {any} */ (document.createElement('tool-action-message'));
+    busyEl._getConversation = () => ({ session: {} });
+    busyEl._getMessageThread = () => ({});
+    busyEl._getItem = () => fakeItem({ state: TOOL_STATES.RUNNING, toolName: 'run_code', toolInput: {} });
+    const busy = busyEl.getBusyState();
+    if (busy?.message !== 'Program: Swap the greeting')
+      throw new Error(`expected the card's label, got ${JSON.stringify(busy)}`);
+    busyEl._getItem = () => fakeItem({ state: TOOL_STATES.RUNNING, toolName: 'mystery', toolInput: {} });
+    const bare = busyEl.getBusyState();
+    if (bare?.message !== 'Running mystery...')
+      throw new Error(`expected the wire-name fallback, got ${JSON.stringify(bare)}`);
+    passed++;
+  } catch (e) { failed++; errors.push(`getBusyState card label: ${e.message}`); }
+  finally { contextItemRegistry.getByToolName = realGetByToolName; }
 
   // B — transcript body must render the cancelled row, not the running row.
   try {

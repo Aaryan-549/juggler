@@ -27,7 +27,7 @@ import * as actions from './response-handler-actions.js';
 
 /**
  * Result status for tool execution - matches backend ResultStatus type.
- * @typedef {'success' | 'error' | 'cancelled' | 'suspended'} ResultStatus
+ * @typedef {'success' | 'error' | 'cancelled'} ResultStatus
  */
 
 /**

@@ -115,9 +115,12 @@ console.log(JSON.stringify({ ticksBeforeAbort, outcome, ticksAfterAbort, ticksLa
 // a loop that never awaits, so no capability call is in flight and its own
 // in-worker timer can never fire — is ended both by an abort (Escape) and by
 // its timeout, and that ending it stops the thread rather than abandoning it.
-// The witness is a SharedArrayBuffer the script counts into: the count is
-// visible here without the script ever yielding, so a Worker left spinning
-// shows as a count that keeps climbing.
+// That includes a run with no deadline (timeoutMs 0, as run_code passes), for
+// which the abort is the only thing that can end it: runInSandbox answers its
+// caller on the signal by itself, so only the counter shows whether the host
+// heard it. The witness is a SharedArrayBuffer the script counts into: the
+// count is visible here without the script ever yielding, so a Worker left
+// spinning shows as a count that keeps climbing.
 func TestNodeSandboxEndsASpinningScript(t *testing.T) {
 	type run struct {
 		Spinning      bool   `json:"spinning"`
@@ -150,10 +153,14 @@ async function spin(timeoutMs, abort) {
 }
 console.log(JSON.stringify({
   escape: await spin(60000, true),
+  escapeNoDeadline: await spin(0, true),
   timeout: await spin(1000, false),
 }));
 `, &got)
 
+	if len(got) != 3 {
+		t.Fatalf("expected three runs, got %v", got)
+	}
 	for name, r := range got {
 		if !r.Spinning {
 			t.Fatalf("%s: the script never started spinning", name)
@@ -162,11 +169,35 @@ console.log(JSON.stringify({
 			t.Errorf("%s: the script kept running after it was ended (%q)", name, r.Outcome)
 		}
 	}
-	if got["escape"].Outcome != "AbortError" {
-		t.Errorf("an abort must settle a spinning run with an AbortError, got %q", got["escape"].Outcome)
+	for _, name := range []string{"escape", "escapeNoDeadline"} {
+		if got[name].Outcome != "AbortError" {
+			t.Errorf("%s: an abort must settle a spinning run with an AbortError, got %q", name, got[name].Outcome)
+		}
 	}
 	if !strings.Contains(got["timeout"].Outcome, "timed out") {
 		t.Errorf("a spinning run must end at its timeout, got %q", got["timeout"].Outcome)
+	}
+}
+
+// TestNodeSandboxRunsWithNoDeadline pins that `timeoutMs: 0` asks for no
+// deadline, on the Node engine host: a run outlives any timer the host or its
+// worker would otherwise set. run_code keeps its own clock, which stops while
+// the program waits on the user. That the signal still ends such a run is
+// pinned by TestNodeSandboxEndsASpinningScript.
+func TestNodeSandboxRunsWithNoDeadline(t *testing.T) {
+	var got struct {
+		Slow string `json:"slow"`
+	}
+	runNodeSandboxHarness(t, `
+const controller = new AbortController();
+const slow = await runInSandbox('await new Promise((r) => setTimeout(r, 600)); return "finished";',
+  { timeoutMs: 0, signal: controller.signal })
+  .then((v) => String(v), (e) => 'error: ' + e.message);
+console.log(JSON.stringify({ slow }));
+`, &got)
+
+	if got.Slow != "finished" {
+		t.Errorf("a run with no deadline must finish however long it takes, got %q", got.Slow)
 	}
 }
 

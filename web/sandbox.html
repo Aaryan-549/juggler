@@ -400,9 +400,10 @@ self.addEventListener('message', (event) => {
   }
 
   const run = Promise.resolve().then(() => fn(...names.map((n) => bindings[n])));
-  const timeout = new Promise((_, reject) =>
-    setTimeout(() => reject(new Error('Script timed out after ' + timeoutMs + 'ms')), timeoutMs)
-  );
+  // timeoutMs 0: no deadline; the caller ends the run through its signal.
+  const timeout = new Promise((_, reject) => {
+    if (timeoutMs > 0) setTimeout(() => reject(new Error('Script timed out after ' + timeoutMs + 'ms')), timeoutMs);
+  });
 
   Promise.race([run, timeout]).then(
     (result) => {
@@ -471,12 +472,14 @@ self.addEventListener('message', (event) => {
             // Backstop timeout: a synchronously-hanging script never lets the
             // worker's own timer fire, so terminate it from here. (The host has
             // its own timer too, but only the iframe holds the Worker handle.)
-            const killTimer = setTimeout(() => {
+            // A run with no deadline (timeoutMs 0) arms none: the host's abort
+            // below is then the only thing that ends it.
+            const killTimer = timeoutMs > 0 ? setTimeout(() => {
                 if (settled) return;
                 settled = true;
                 cleanup();
                 hostPort.postMessage({ kind: 'result', ok: false, error: `Script timed out after ${timeoutMs}ms` });
-            }, timeoutMs);
+            }, timeoutMs) : undefined;
 
             // Relay worker → host. On the final result, tear the worker down.
             channel.port1.onmessage = (e) => {
@@ -493,7 +496,8 @@ self.addEventListener('message', (event) => {
             // Relay host → worker (capability replies). An abort is the one
             // message for this frame rather than the worker: the caller has
             // stopped listening, so terminate the run instead of letting it go
-            // on calling capabilities until its timeout.
+            // on calling capabilities until its timeout — or, with no deadline,
+            // for as long as it likes.
             hostPort.onmessage = (e) => {
                 if (settled) return;
                 if (e.data && e.data.kind === 'abort') {

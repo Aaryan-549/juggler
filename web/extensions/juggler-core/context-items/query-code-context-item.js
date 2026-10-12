@@ -46,6 +46,9 @@ class QueryCodeContextItem extends ContextItem {
   /** The longest timeout a script may ask for, in milliseconds. */
   static MAX_TIMEOUT_MS = 600000;
 
+  /** The timeout of a script that asks for none, in milliseconds. */
+  static DEFAULT_TIMEOUT_MS = 120000;
+
   /**
    * Get tool definitions for query_code
    * @returns {Array<{name: string, category: string, description: string, input_schema: import('juggler/strategy-type').JSONObjectSchema}>} Tool definitions
@@ -119,7 +122,7 @@ class QueryCodeContextItem extends ContextItem {
    */
   async execute(params) {
     const code = /** @type {string} */ (params.code);
-    const timeoutMs = params.timeout ? Number(params.timeout) : 120000;
+    const timeoutMs = params.timeout ? Number(params.timeout) : QueryCodeContextItem.DEFAULT_TIMEOUT_MS;
 
     // `projectRoot` is the one root the script is given rather than confined by:
     // its fs/grep/glob already follow this conversation's workspace, but the

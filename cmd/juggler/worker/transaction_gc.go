@@ -48,6 +48,49 @@ func (w *ConversationWorker) sweepAssets() error {
 	return w.assetStore.Sweep(w.conversationID, live, AssetStagingGrace)
 }
 
+// sweepPrograms drops the snapshot of every program that can no longer resume
+// from it: its tool-action has settled (completed, or cancelled — a denial), or
+// is gone from the document. One still unsettled — pending on the user, or
+// running — keeps its snapshot, at root or in any thread.
+//
+// A thread whose items cannot be read hides what is unsettled in it, so then
+// nothing is swept (as collectLiveAssetIDs' keepAll does for assets).
+//
+// Run after every persisted save, alongside sweepAssets.
+func (w *ConversationWorker) sweepPrograms() error {
+	if w.programStore == nil {
+		return nil
+	}
+	live := make(map[string]bool)
+	if keepAll := collectUnsettledToolUseIDs(w.doc.GetItems(), live); keepAll {
+		return nil
+	}
+	return w.programStore.Sweep(w.conversationID, live)
+}
+
+// collectUnsettledToolUseIDs walks items recursively (into nested thread
+// items) adding the tool-use id of every tool-action not yet settled. It
+// returns keepAll when a thread's items fail to unmarshal: dst is then
+// incomplete, and a sweep against it would drop live snapshots.
+func collectUnsettledToolUseIDs(items []ConversationItem, dst map[string]bool) (keepAll bool) {
+	for _, it := range items {
+		if it.Type == ItemTypeToolAction && it.ToolUseID != "" && !isToolTerminal(it) {
+			dst[it.ToolUseID] = true
+		}
+		if it.Type == ItemTypeThread && len(it.Items) > 0 {
+			var nested []ConversationItem
+			if err := json.Unmarshal(it.Items, &nested); err != nil {
+				keepAll = true
+				continue
+			}
+			if collectUnsettledToolUseIDs(nested, dst) {
+				keepAll = true
+			}
+		}
+	}
+	return keepAll
+}
+
 // collectLiveAssetIDs returns the set of asset shas referenced by the live doc,
 // plus keepAll: when true the sweep is skipped entirely (nothing is deleted).
 //

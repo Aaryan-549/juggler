@@ -81,6 +81,10 @@ func (a *windowApp) startup() {
 	// client. Owned by this process — independent of any user UI.
 	if a.engineWin != nil {
 		a.engineWin.Run()
+		// The same recovery lever production's engine host hands the server:
+		// reloading the page replaces the engine's realm with a fresh one.
+		engineWin := a.engineWin
+		a.srv.SetEngineRecovery(func() { engineWin.Reload() })
 		// Engine stays Hidden:true. macOS would normally throttle a hidden
 		// WKWebView's JS event loop to 0 Hz, but our patched Wails fork
 		// sets `WKInactiveSchedulingPolicyNone` on the WKWebViewConfiguration

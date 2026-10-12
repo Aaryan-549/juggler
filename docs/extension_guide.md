@@ -1193,19 +1193,22 @@ A call a hook denies is refused: the invoke rejects, and `onRefused` is told
 once; treat it as the end of your work, not an error to route around. A call
 that must wait for the user — a gate the strategy does not approve, an
 elicitation, a hook that asks — is refused the same way unless you pass
-`onSuspended`. Then the invoke rejects with a `ToolSuspended` error whose
-`suspension` carries the call's own approval form, and `onSuspended` is told.
-Return `{ suspended: suspension }` from `execute` and your item goes back to
-the user with that form; once they answer, it is executed again. When it makes
-the held call again, `approveNext(name, args, response)` hands that call over
-as approved, with the user's response (an elicitation's answer) — the very
-next call, and only if it is that tool with those arguments (pass the
-`input` from the suspension); any other call is decided as usual. Making the
-calls before it again without repeating their effects is up to you: for
-example, journal each call's result and answer from the journal on the next
-pass. Aborting the `signal` you pass (by default your
-item's own) cancels every call. Calls run in the order you make them, reads
-side by side and anything else one at a time, at most four at once.
+`waitForUser: true`. Then the call is held: your item goes back to the user
+with that call's own approval form while your `execute` goes on, awaiting the
+call. Their answer runs it and the invoke resolves as usual; a denial cancels
+your item, and the invoke rejects as a refusal does. Holds take turns, one
+form at a time. `beforeHold(request, tag)` is awaited before each form is
+shown — `tag` is whatever you passed as `invoke(name, args, {tag})` — and
+`afterHold()` is told when it ends; stop your own clock between them, since
+the user's time is not your program's. When your work ends other than by your
+item's cancel, call `end()`: anything still held is refused and your item is
+running again for its result. If your engine may be lost while a call waits,
+keeping enough to resume is up to you: run again, your item still carries the
+held call, and `invoke(name, args, {answer})` makes that call with the
+user's answer rather than putting it to the decision again. Aborting the
+`signal` you pass (by default your item's own) cancels every call. Calls run in
+the order you make them, reads side by side and anything else one at a time,
+at most four at once.
 
 ## Pinned file content vs. reads
 

@@ -586,6 +586,81 @@ export async function uploadAssetBase64(convId, base64, mime, signal) {
 }
 
 /**
+ * The URL of a program's snapshot.
+ * @param {string} convId - Conversation that owns the program
+ * @param {string} toolUseId - The program's tool-use id
+ * @returns {string} The URL
+ */
+function programSnapshotUrl(convId, toolUseId) {
+  if (!convId || !toolUseId) {
+    throw new TypeError('convId and toolUseId are required');
+  }
+  return apiUrl(`/session/conversations/${encodeURIComponent(convId)}/programs/${encodeURIComponent(toolUseId)}`);
+}
+
+/**
+ * Keep the snapshot a program tool takes while one of its calls waits on the
+ * user, beside its conversation and out of its document, replacing any earlier
+ * one. Read back only by a program run again after its engine was lost.
+ * @param {string} convId - Conversation that owns the program
+ * @param {string} toolUseId - The program's tool-use id
+ * @param {unknown} snapshot - Anything JSON can hold
+ * @param {AbortSignal} [signal] - Abort signal for cancellation
+ * @returns {Promise<void>}
+ * @throws {OpsError} When it is not kept: too large (past 32 MiB), or the
+ *   conversation is not this project's
+ */
+export async function saveProgramSnapshot(convId, toolUseId, snapshot, signal) {
+  const response = await fetch(programSnapshotUrl(convId, toolUseId), {
+    method: 'PUT',
+    headers: withApiToken({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(snapshot),
+    signal
+  });
+  if (!response.ok) {
+    const detail = await extractHttpErrorDetail(response);
+    throw new OpsError(`Failed to keep the program's snapshot (HTTP ${response.status}): ${detail}`);
+  }
+}
+
+/**
+ * A program's snapshot, if one was kept.
+ * @param {string} convId - Conversation that owns the program
+ * @param {string} toolUseId - The program's tool-use id
+ * @param {AbortSignal} [signal] - Abort signal for cancellation
+ * @returns {Promise<unknown|null>} The snapshot, or null when there is none
+ */
+export async function loadProgramSnapshot(convId, toolUseId, signal) {
+  const response = await fetch(programSnapshotUrl(convId, toolUseId), {
+    headers: withApiToken({}),
+    signal
+  });
+  if (response.status === 404) return null;
+  if (!response.ok) {
+    const detail = await extractHttpErrorDetail(response);
+    throw new OpsError(`Failed to read the program's snapshot (HTTP ${response.status}): ${detail}`);
+  }
+  return response.json();
+}
+
+/**
+ * Drop a program's snapshot. One that is not there is not an error.
+ * @param {string} convId - Conversation that owns the program
+ * @param {string} toolUseId - The program's tool-use id
+ * @returns {Promise<void>}
+ */
+export async function deleteProgramSnapshot(convId, toolUseId) {
+  const response = await fetch(programSnapshotUrl(convId, toolUseId), {
+    method: 'DELETE',
+    headers: withApiToken({})
+  });
+  if (!response.ok) {
+    const detail = await extractHttpErrorDetail(response);
+    throw new OpsError(`Failed to drop the program's snapshot (HTTP ${response.status}): ${detail}`);
+  }
+}
+
+/**
  * Write content to a file (creates or overwrites)
  * @param {ReadFileWriteParams} params
  * @param {AbortSignal} [signal] - Abort signal for cancellation

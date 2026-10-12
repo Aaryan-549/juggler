@@ -20,6 +20,7 @@ import strategyRegistry from '../registries/strategy-registry.js';
 import contextItemRegistry from '../registries/context-item-registry.js';
 import { whenRegistriesRebuilt } from '../registries/registry-ready.js';
 import actionExecutor from './action-executor.js';
+import { heldDelivery } from './held-calls.js';
 import wsService from './websocket.js';
 import {
   handleNewToolAction,
@@ -773,6 +774,28 @@ export async function handleEvaluateTool(wm, conversationId, toolUseId) {
 }
 
 /**
+ * Hand an approved item's answer to the call its running program holds for the
+ * user (services/held-calls.js), if one waits: the approval is the answer that
+ * call is waiting for, not a reason to run the program again. A "don't ask
+ * again" on it is saved first, as it is for any approval — but only one that
+ * names its grant: a bare one would be derived from the item's own tool, the
+ * program, not from the held call (tool-invoker.js keepNamedGrants).
+ * @param {any} c - Conversation
+ * @param {any} mt - The item's thread
+ * @param {any} ymap - The approved tool-action
+ * @param {string} toolUseId - Its id
+ * @returns {boolean} True when a held call took the answer
+ */
+export function handOverToHeldCall(c, mt, ymap, toolUseId) {
+  const deliver = heldDelivery(c, ymap, toolUseId);
+  if (!deliver) return false;
+  const namesGrant = (ymap.get('approvalRules') && ymap.get('approvalItemType')) || ymap.get('approvalAllowedPaths');
+  if (ymap.get('approvalResponse') === 'yes-always' && namesGrant) saveAutoApprovalPermission(c, ymap, mt);
+  deliver();
+  return true;
+}
+
+/**
  * Engine handler for the worker's `execute-tool` command: claim an approved
  * tool-action (approved→running) and run its side effect by id. The worker is
  * the sole driver of the tool lifecycle (the engine has no reactive tool
@@ -818,6 +841,10 @@ export async function handleExecuteTool(wm, conversationId, toolUseId) {
   // attempt cap and escalated to a terminal error while it is still running.
   const inFlight = c._actionExecutor?.runningActionFor(toolUseId, c.id);
   if (inFlight) {
+    if (handOverToHeldCall(c, mt, ymap, toolUseId)) {
+      sendEngineTrace(wm, conversationId, 'execute-handover', { toolUseId });
+      return true;
+    }
     const repaired = reassertRunning(c, ymap, inFlight);
     // `state` is what the repair turned on: reassertRunning only writes when it
     // reads `approved`, so repaired=false means the doc was already past it and

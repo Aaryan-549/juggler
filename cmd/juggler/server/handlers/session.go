@@ -881,16 +881,9 @@ func (api *SessionAPI) HandleUploadAsset(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// The asset store resolves the per-conversation folder through the current
-	// session manager, knowing nothing about the project layout. With no project
-	// loaded there is no manager, and no conversation to store into.
-	assetStore := worker.NewAssetStore(func(convID string) (string, bool) {
-		sm := api.manager()
-		if sm == nil {
-			return "", false
-		}
-		return sm.ConvDir(convID)
-	})
+	// The asset store resolves the per-conversation folder through convDirOf,
+	// knowing nothing about the project layout.
+	assetStore := worker.NewAssetStore(api.convDirOf)
 
 	r.Body = http.MaxBytesReader(w, r.Body, maxAssetUploadBytes)
 	data, err := io.ReadAll(r.Body)
@@ -909,6 +902,99 @@ func (api *SessionAPI) HandleUploadAsset(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	WriteJSON(w, r, http.StatusOK, ref)
+}
+
+// convDirOf resolves a conversation's folder through the current session
+// manager, for the stores that keep files in it. With no project loaded there
+// is no manager, and no conversation to keep anything for.
+func (api *SessionAPI) convDirOf(convID string) (string, bool) {
+	sm := api.manager()
+	if sm == nil {
+		return "", false
+	}
+	return sm.ConvDir(convID)
+}
+
+// programStore resolves a conversation's program snapshots through convDirOf.
+func (api *SessionAPI) programStore() *worker.ProgramStore {
+	return worker.NewProgramStore(api.convDirOf)
+}
+
+// writeProgramStoreError maps a ProgramStore error to its HTTP status.
+func writeProgramStoreError(w http.ResponseWriter, r *http.Request, err error) {
+	switch {
+	case errors.Is(err, worker.ErrBadProgramKey):
+		WriteError(w, r, http.StatusBadRequest, "Invalid tool-use id")
+	case errors.Is(err, worker.ErrProgramTooLarge):
+		WriteError(w, r, http.StatusRequestEntityTooLarge, "Program snapshot too large")
+	case errors.Is(err, worker.ErrUnknownConversation):
+		WriteError(w, r, http.StatusNotFound, "No such conversation")
+	case errors.Is(err, os.ErrNotExist):
+		WriteError(w, r, http.StatusNotFound, "No program snapshot")
+	default:
+		WriteError(w, r, http.StatusInternalServerError, err.Error())
+	}
+}
+
+// HandlePutProgram keeps the snapshot a program tool takes while one of its
+// calls waits on the user: the JSON body, opaque here, replacing any earlier
+// one for the same tool-use id. HandleGetProgram serves it back to a program
+// run again after its engine was lost; HandleDeleteProgram drops it.
+func (api *SessionAPI) HandlePutProgram(w http.ResponseWriter, r *http.Request) {
+	convID, ok := ConvIDFromVars(w, r)
+	if !ok {
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, worker.MaxProgramSnapshotBytes)
+	data, err := io.ReadAll(r.Body)
+	if err != nil {
+		var tooBig *http.MaxBytesError
+		if errors.As(err, &tooBig) {
+			writeProgramStoreError(w, r, worker.ErrProgramTooLarge)
+			return
+		}
+		WriteError(w, r, http.StatusBadRequest, "Couldn't read request body")
+		return
+	}
+	if err := api.programStore().Save(convID, mux.Vars(r)["toolUseId"], data); err != nil {
+		writeProgramStoreError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// HandleGetProgram serves a program's snapshot (see HandlePutProgram).
+func (api *SessionAPI) HandleGetProgram(w http.ResponseWriter, r *http.Request) {
+	convID, ok := ConvIDFromVars(w, r)
+	if !ok {
+		return
+	}
+	data, err := api.programStore().Get(convID, mux.Vars(r)["toolUseId"])
+	if err != nil {
+		writeProgramStoreError(w, r, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	if _, err := w.Write(data); err != nil {
+		jlog.Debug("[session.GetProgram] write failed conv=%s: %v", convID, err)
+	}
+}
+
+// HandleDeleteProgram drops a program's snapshot (see HandlePutProgram). A
+// conversation that is gone has no snapshot either, and deleting what is not
+// there is not an error.
+func (api *SessionAPI) HandleDeleteProgram(w http.ResponseWriter, r *http.Request) {
+	convID, ok := ConvIDFromVars(w, r)
+	if !ok {
+		return
+	}
+	err := api.programStore().Delete(convID, mux.Vars(r)["toolUseId"])
+	if err != nil && !errors.Is(err, worker.ErrUnknownConversation) {
+		writeProgramStoreError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // HandleUpdateConversation updates a single conversation (binary Yjs format)

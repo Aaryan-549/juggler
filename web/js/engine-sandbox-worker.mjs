@@ -23,8 +23,9 @@
  *     removed from the global scope before any user code runs; if `process`
  *     cannot be removed the run fails closed.
  *   - the only channel out is the capability RPC over parentPort; the main
- *     thread terminates this Worker on timeout or abort, giving true hang-parity
- *     with the iframe teardown.
+ *     thread terminates this Worker on timeout (when the run has one) or abort
+ *     (the only end of a run with no deadline), giving true hang-parity with the
+ *     iframe teardown.
  *
  * All run configuration arrives via workerData; results and capability calls
  * flow over parentPort.
@@ -229,9 +230,10 @@ function runUserCode() {
   }
 
   const run = Promise.resolve().then(() => fn(...names.map((n) => bindings[n])));
-  const timeout = new Promise((_, reject) =>
-    setTimeout(() => reject(new Error(`Script timed out after ${timeoutMs}ms`)), timeoutMs)
-  );
+  // timeoutMs 0: no deadline; the host ends the run on its caller's signal.
+  const timeout = new Promise((_, reject) => {
+    if (timeoutMs > 0) setTimeout(() => reject(new Error(`Script timed out after ${timeoutMs}ms`)), timeoutMs);
+  });
 
   Promise.race([run, timeout]).then(
     (result) => {

@@ -463,14 +463,17 @@ class ContextItem {
    * the invoker's `record` lists the calls (never their results). A call a
    * hook refuses ends the program: `invoke` rejects with a `ToolRefused` error
    * and `onRefused` is told. A call the gate would hold for a person does the
-   * same unless `onSuspended` is given: then `invoke` rejects with a
-   * `ToolSuspended` error carrying the call's approval form (`suspension`),
-   * and `onSuspended` is told. Returning `{suspended: suspension}` from
-   * `execute` puts this item in front of the user with that form; once they
-   * approve, it is executed again, and `approveNext(name, args, response)`
-   * hands the held call over as approved when the item makes it again — the
-   * very next call, and only if it is that tool with those arguments; any
-   * other is decided as usual. Aborting
+   * same unless `waitForUser` is set: then the call is held, and this item
+   * waits on the user with the call's own approval form while `execute` goes
+   * on, awaiting the call. Their answer runs it; a denial cancels this item
+   * and ends the program. `beforeHold(request, tag)` is awaited before each
+   * hold is put to the user, with the `tag` its call was made with
+   * (`invoke(name, args, {tag})`), and `afterHold()` is told when it ends. A
+   * program that ends, other than by this item's cancel, calls `end()`, which
+   * refuses anything still held and puts this item back to running.
+   * `invoke(name, args, {answer})` makes a call with the user's answer to it,
+   * already given on this item's card, rather than putting it to the decision:
+   * for the held call of a program resuming after its engine was lost. Aborting
    * `signal` (by default this item's own) cancels every call. `offered()`
    * resolves to the tools a call is admitted to, by name, with their
    * definitions. `invoke(name, args, {withAttachments: true})` resolves to
@@ -482,8 +485,10 @@ class ContextItem {
    * @param {object} [opts]
    * @param {AbortSignal} [opts.signal] - Cancels every call when aborted
    * @param {(err: Error) => void} [opts.onRefused] - Told once when a refusal ends the program
-   * @param {(err: Error & {suspension: Record<string, unknown>}) => void} [opts.onSuspended] - Told once when a call waits on the user
-   * @returns {{invoke: (name: string, args: Record<string, unknown>, how?: {withAttachments?: boolean}) => Promise<any>, record: {calls: Array<Record<string, unknown>>, omitted: number, omittedEffects: number}, offered: () => Promise<Map<string, Record<string, any>>>, approveNext: (name: string, args: Record<string, unknown>, response: string) => void}} The invoker
+   * @param {boolean} [opts.waitForUser] - Hold a call that waits on the user, rather than refuse it
+   * @param {(request: Record<string, unknown>, tag: unknown) => Promise<void>|void} [opts.beforeHold] - Awaited before each hold is put to the user
+   * @param {() => void} [opts.afterHold] - Told when each hold has ended
+   * @returns {{invoke: (name: string, args: Record<string, unknown>, how?: {withAttachments?: boolean, tag?: unknown, answer?: string}) => Promise<any>, record: {calls: Array<Record<string, unknown>>, omitted: number, omittedEffects: number}, offered: () => Promise<Map<string, Record<string, any>>>, end: () => void}} The invoker
    */
   createToolInvoker(opts = {}) {
     const host = /** @type {any} */ (globalThis).__hostToolInvoker;
@@ -494,7 +499,9 @@ class ContextItem {
       parentToolUseId: this.toolUseId || this.id,
       signal: opts.signal ?? this.signal,
       onRefused: opts.onRefused,
-      onSuspended: opts.onSuspended,
+      waitForUser: opts.waitForUser,
+      beforeHold: opts.beforeHold,
+      afterHold: opts.afterHold,
       conversation: this.conversation,
       messageThread: this.messageThread
     });

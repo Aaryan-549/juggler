@@ -22,10 +22,10 @@ import ycrdt "github.com/skyterra/y-crdt"
 // approves runs, whatever is still awaiting a decision above it. Once approved,
 // the parked call takes its place in the order like any other.
 //
-// A call that has already run and is pending again is the exception: it
-// stopped part-way to wait on the user (a program tool suspended on one of
-// its calls), and whatever it did so far has happened. It holds back what
-// follows it as a running call does.
+// A call that has already run and is pending again is the exception: it is
+// waiting on the user part-way through (a program tool holding one of its
+// calls), and whatever it did so far has happened. It holds back what follows
+// it as a running call does.
 //
 // A held call stays approved and is simply not commanded: driveToolActions picks
 // it up on the tick after the call it waits for settles. Holding is not a failed

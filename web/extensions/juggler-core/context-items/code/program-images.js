@@ -18,13 +18,12 @@
  *
  * Handles are checked against the images this program was actually given, so
  * one it made up, or copied from elsewhere, attaches nothing. The images it was
- * given are kept between passes with its journal (program-journal.js), since a
- * replayed call's handle comes back from the journal rather than from the
+ * given are kept in its snapshot with its journal (program-journal.js), since
+ * a replayed call's handle comes back from the journal rather than from the
  * call. A path's image is read through `loadPath`, which run_code journals, so
- * a replay attaches what the first pass read. Every image the program holds is
- * named on its item as
- * `heldAssets`, so the asset store keeps it while the program waits on the
- * user.
+ * a replay attaches what the run before it read. Every image the program holds
+ * is named on its item as `heldAssets`, so the asset store keeps it while the
+ * program waits on the user.
  * @module context-items/code/program-images
  */
 
@@ -60,7 +59,7 @@ export const MAX_PROGRAM_IMAGES = 8;
 /**
  * The images one program run holds and shows.
  * @param {object} opts
- * @param {Map<string, ReceivedImage>} [opts.received] - Images an earlier pass was given, by id; mutated
+ * @param {Map<string, ReceivedImage>} [opts.received] - Images the run a replay resumes was given, by id; mutated
  * @param {(path: string) => Promise<AssetRef>} [opts.loadPath] - Read and store the image at a path; without it, image() takes only handles
  * @param {(ids: string[]) => void} [opts.onHeld] - Told every id the program holds, whenever that grows
  * @param {number} [opts.max] - Most images the result may carry

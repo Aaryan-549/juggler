@@ -46,6 +46,9 @@ import {
 import { shellExecuteStreaming } from '../js/services/shell-streaming.js';
 import { FileSystem, ReadOnlyFileSystem } from '../js/services/fs.js';
 
+// No quote characters in comments inside these export lists: the engine
+// worker's import rewriter (cmd/juggler/server/worker_module.go) reads one as
+// the start of a module specifier, and the engine then fails to load.
 export {
   OpsError,
   MAX_EXEC_TIMEOUT_MS,
@@ -53,6 +56,10 @@ export {
   // Filesystem
   readFileLoad as readFile,
   uploadAssetBase64,
+  // The snapshot a program tool keeps while one of its calls waits on the user
+  saveProgramSnapshot,
+  loadProgramSnapshot,
+  deleteProgramSnapshot,
   writeFileOp as writeFile,
   readFileEdit as editFile,
   readFileEditLines as editFileLines,

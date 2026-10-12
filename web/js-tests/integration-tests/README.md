@@ -218,6 +218,26 @@ Simulate WebSocket disconnection for reconnection tests.
 { type: 'simulate-disconnect', reconnectMs: 100 }
 ```
 
+### `restart-engine`
+
+Reload the shared engine, as the server's recovery does for a dead one: every
+in-flight execution is lost with nothing written to the document, and the step
+returns once a fresh engine is attached. The engine serves every lane, so a test
+that uses it must set `needsExclusiveRun`.
+
+```javascript
+{ type: 'restart-engine' }
+```
+
+### `assert-program-snapshot`
+
+Assert whether a program tool's snapshot is kept for `toolUseId`, and with
+`callName`, that it was taken for a call to that tool.
+
+```javascript
+{ type: 'assert-program-snapshot', toolUseId: 'call_1', exists: true, callName: 'bash' }
+```
+
 ### `wait-for-state`
 
 Wait for specific conversation state.

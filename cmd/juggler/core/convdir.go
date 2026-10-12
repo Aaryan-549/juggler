@@ -55,6 +55,8 @@ func generatePrefixedID(prefix string) string {
 //       <txnID>.json
 //     assets/
 //       <sha256>.<ext>
+//     programs/
+//       <toolUseId>.json
 //
 // The folder name is the source of truth for the human-readable name; the
 // id is the stable internal handle (conv_<base36>) used everywhere in code,
@@ -62,7 +64,7 @@ func generatePrefixedID(prefix string) string {
 // the trailing "--<id>" is unambiguously the suffix.
 //
 // Every name in that tree is spelled in this file and nowhere else: the
-// folder name by BuildDirName/ParseDirName, its contents by the three
+// folder name by BuildDirName/ParseDirName, its contents by the four
 // accessors below. A package that stores something for a conversation is
 // handed the folder path and asks here what lives inside it, so how a
 // conversation is laid out on disk stays a question only this package
@@ -78,6 +80,9 @@ const (
 	txnsDirName = "txns"
 	// assetsDirName holds content-addressed attachment blobs.
 	assetsDirName = "assets"
+	// programsDirName holds the snapshot a program tool keeps while one of
+	// its calls waits on the user, one per tool-use id.
+	programsDirName = "programs"
 )
 
 // ConvDocPath returns the Yjs document path inside a conversation folder.
@@ -95,6 +100,14 @@ func ConvTxnsDir(convDir string) string {
 // Created lazily by whoever saves the first attachment.
 func ConvAssetsDir(convDir string) string {
 	return filepath.Join(convDir, assetsDirName)
+}
+
+// ConvProgramsDir returns the program-snapshot directory inside a conversation
+// folder. Created lazily by whoever saves the first snapshot. A clone does not
+// carry it: a snapshot resumes one program, and two conversations resuming the
+// same one would each redo what it did after the stop.
+func ConvProgramsDir(convDir string) string {
+	return filepath.Join(convDir, programsDirName)
 }
 
 // CloneConvFolder fills dstDir, an already-created conversation folder, with

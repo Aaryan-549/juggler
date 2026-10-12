@@ -49,7 +49,6 @@ function warnOnEmptySuccessSummary(rawSummary, className) {
  * @property {object} [displayData] - UI display context (from prepared.displayData)
  * @property {boolean} [pending] - True if action is pending/running (checked before success is known)
  * @property {boolean} [cancelled] - True if action was cancelled (checked before success is known)
- * @property {import('./tool-invoker.js').Suspension} [suspended] - Set when the action stopped to wait on the user: the call it waits on, as the user is asked about it
  * @property {object} [result] - Result data (may exist on failure for partial results)
  * @property {number} [durationMs] - How long the action took in milliseconds
  * @property {import('./hook-runtime.js').HookRecord[]} [hookRecords] - What the afterTool hooks did (set by execute())
@@ -125,6 +124,8 @@ function warnOnEmptySuccessSummary(rawSummary, className) {
  * @property {number} [runningStartedAt] - The tool-action's claim stamp (for the tool-execution-report happens-after guard)
  * @property {number} startTime - Start timestamp
  * @property {number} [overdueReportedAt] - When this execution was last flagged as overdue (see overdueRunningActions); absent until the first flag
+ * @property {number} [heldSince] - When it began waiting on the user (a program holding one of its calls for an answer, services/held-calls.js); absent while it is not
+ * @property {number} [heldMs] - Time it has spent waiting on the user, all told
  */
 
 /**
@@ -270,8 +271,7 @@ class ActionExecutor {
       // while they think, and the await-free region between the delete below and
       // the caller's result write is left exactly as it was. Not for a cancelled
       // call (the worker owns its terminal state) nor outside a thread.
-      // Nor for a suspended one: it has not finished, and runs again.
-      if (!actionResult.cancelled && !actionResult.suspended && !controller.signal.aborted
+      if (!actionResult.cancelled && !controller.signal.aborted
           && context.messageThread && context.toolUseId) {
         actionResult.hookRecords = await this._runAfterToolHooks(actionId, toolInput, context, actionResult, controller.signal);
       }
@@ -504,18 +504,6 @@ class ActionExecutor {
    * @private
    */
   _formatExecutionResult(actionId, action, prepared, result) {
-    // The action stopped to wait on the user (a program tool whose call was
-    // parked). Not an outcome: the caller puts the item back in front of the
-    // user, and it is executed again once they answer.
-    if (result && typeof result === 'object' && result.suspended) {
-      return /** @type {ActionStatus} */ ({
-        actionId,
-        success: false,
-        error: 'Waiting for approval',
-        suspended: result.suspended,
-        displayData: prepared.displayData
-      });
-    }
     // Check if action was cancelled during execution (streaming actions)
     if (result && result.cancelled) {
       const formatted = ContextItem.validateSummary(action.getSummary({ success: false, error: 'Action cancelled', cancelled: true, result, prepared }));
@@ -718,6 +706,27 @@ class ActionExecutor {
   }
 
   /**
+   * Mark an in-flight execution as waiting on the user, or as running again.
+   * A program tool holds one of its calls for the user's answer while it lives
+   * on (services/held-calls.js); the watchdog does not count that time.
+   * @param {string} toolUseId - Tool use ID of the execution
+   * @param {string|undefined} conversationId - Conversation it belongs to
+   * @param {boolean} held - Waiting on the user (true), or running again (false)
+   */
+  markHeld(toolUseId, conversationId, held) {
+    const now = Date.now();
+    for (const a of this._runningActions.values()) {
+      if (a.toolUseId !== toolUseId || a.conversationId !== conversationId) continue;
+      if (held && a.heldSince === undefined) {
+        a.heldSince = now;
+      } else if (!held && a.heldSince !== undefined) {
+        a.heldMs = (a.heldMs ?? 0) + (now - a.heldSince);
+        delete a.heldSince;
+      }
+    }
+  }
+
+  /**
    * The in-flight execution for one tool-use id in one conversation, or null.
    *
    * The engine's re-entrancy witness. A re-driven `execute-tool` is normally
@@ -816,7 +825,10 @@ class ActionExecutor {
       // An execution with no conversation (a direct execute() outside the
       // command-driven path) has nowhere to be reported to.
       if (!a.conversationId) continue;
-      const runningMs = now - a.startTime;
+      // Time spent waiting on the user is not time spent running: a program
+      // holding a call for an answer is as long as the user takes.
+      if (a.heldSince !== undefined) continue;
+      const runningMs = now - a.startTime - (a.heldMs ?? 0);
       if (runningMs < OVERDUE_EXECUTION_MS) continue;
       if (a.overdueReportedAt !== undefined && now - a.overdueReportedAt < OVERDUE_REPEAT_MS) continue;
       a.overdueReportedAt = now;

@@ -125,7 +125,12 @@ function getSandboxFrame() {
  *   host side of the MessagePort. Names must be valid JS identifiers. The
  *   sandbox also injects the built-ins `path` and `projectRoot`.
  * @property {number} [timeoutMs] - Reject if the code runs longer than this
- *   (default 30000).
+ *   many milliseconds: a positive finite number (default 30000). Exactly 0 sets
+ *   no deadline, for a caller that keeps its own clock and ends the run through
+ *   `signal` (run_code, whose clock stops while the program waits on the user);
+ *   it requires a `signal`, which is then the only thing that ends a run that
+ *   never returns. Any other value throws: a RangeError for the number, a
+ *   TypeError for 0 without a signal.
  * @property {string} [projectRoot] - The root the code is working in, exposed as
  *   the `projectRoot` built-in. Normalized to POSIX form here. When omitted, the
  *   realm falls back to its own live root (the engine's global) and then to the
@@ -155,8 +160,20 @@ function getSandboxFrame() {
  * @param {RunInSandboxOptions} [options] - Capabilities and timeout.
  * @returns {Promise<unknown>} The code's return value (null if it returned
  *   undefined).
+ * @throws {RangeError} When `timeoutMs` is neither a positive finite number nor 0
+ * @throws {TypeError} When `timeoutMs` is 0 and no `signal` is given
  */
 export async function runInSandbox(code, { capabilities = {}, timeoutMs = 30000, projectRoot = undefined, signal = undefined, onConsole = undefined } = {}) {
+  // Every host tests `timeoutMs > 0` to decide whether to arm a timer, so NaN,
+  // null or a negative would quietly mean "no deadline". Only 0 may say that.
+  if (timeoutMs !== 0 && !(typeof timeoutMs === 'number' && Number.isFinite(timeoutMs) && timeoutMs > 0)) {
+    throw new RangeError(
+      `runInSandbox: timeoutMs must be a positive number of milliseconds, or 0 with a signal (got ${String(timeoutMs)})`);
+  }
+  if (timeoutMs === 0 && !signal) {
+    throw new TypeError('runInSandbox: timeoutMs 0 sets no deadline, so a signal is required to end the run');
+  }
+
   // One normalization for both realms, so a caller passing a native root cannot
   // hand the sandbox a `projectRoot` its own `path` and `glob` disagree with.
   const root = projectRoot === undefined ? undefined : toSandboxRoot(projectRoot);
@@ -197,7 +214,10 @@ export async function runInSandbox(code, { capabilities = {}, timeoutMs = 30000,
   const channel = new MessageChannel();
   const port = channel.port1;
 
+  /** @type {(reason: unknown) => void} */
+  let rejectDone = () => {};
   const done = new Promise((resolve, reject) => {
+    rejectDone = reject;
     port.onmessage = async (e) => {
       const msg = e.data || {};
       if (msg.kind === 'result') {
@@ -230,23 +250,37 @@ export async function runInSandbox(code, { capabilities = {}, timeoutMs = 30000,
     };
   });
 
-  const timer = new Promise((_, reject) =>
-    setTimeout(() => reject(new Error(`Script timed out after ${timeoutMs}ms`)), timeoutMs)
-  );
-
   const contentWindow = iframe.contentWindow;
   if (!contentWindow) throw new Error('sandbox iframe has no contentWindow');
   const descriptors = Object.entries(capabilities).map(([name, cap]) => ({ name, callable: typeof cap === 'function' }));
   contentWindow.postMessage({ type: 'sandbox-execute', code, timeoutMs, capabilities: descriptors, projectRoot: root }, '*', [channel.port2]);
 
+  // A deadline only when there is one to keep. With timeoutMs 0 the caller keeps
+  // its own clock and the signal is the only thing that ends the run.
+  /** @type {ReturnType<typeof setTimeout>|undefined} */
+  let deadlineTimer;
+  const outcome = timeoutMs > 0
+    ? Promise.race([done, new Promise((_, reject) => {
+      deadlineTimer = setTimeout(() => reject(new Error(`Script timed out after ${timeoutMs}ms`)), timeoutMs);
+    })])
+    : done;
+
   // Only the frame holds the run's Worker, so stopping it takes a message. The
-  // caller has already been answered by `cancelled`; this is the teardown.
+  // caller has already been answered by `cancelled`; this is the teardown. The
+  // frame's "Script was cancelled" reply is not waited for: a lost reply would
+  // otherwise hold the port, and the capability closures it services, for good
+  // when there is no deadline to end them. Closing the port drops any reply that
+  // does come, so `done` settles exactly once, here.
   const onAbort = () => {
     try { port.postMessage({ kind: 'abort' }); } catch { /* port already closed: the run is over */ }
+    port.close();
+    rejectDone(new DOMException('The operation was aborted.', 'AbortError'));
   };
   signal?.addEventListener('abort', onAbort, { once: true });
-  const outcome = Promise.race([done, timer]);
-  outcome.catch(() => {}).finally(() => signal?.removeEventListener('abort', onAbort));
+  outcome.catch(() => {}).finally(() => {
+    clearTimeout(deadlineTimer);
+    signal?.removeEventListener('abort', onAbort);
+  });
 
   return withCancel(outcome);
 }

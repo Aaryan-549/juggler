@@ -359,7 +359,39 @@ class ToolActionMessage extends HTMLElement {
     const result = item.get('result');
     if (result !== null && result !== undefined) return null;
     const toolName = item.get('toolName') || 'tool';
-    return { message: `Running ${toolName}...`, spinner: true };
+    const label = this._runningLabel(item, toolName);
+    return { message: label || `Running ${toolName}...`, spinner: true };
+  }
+
+  /**
+   * The running card's own words — its type label and summary, as
+   * `_renderRunning` draws them — so the footer names a tool as the user
+   * sees it rather than by its wire name.
+   * @param {ToolActionItem} item
+   * @param {string} toolName - The item's tool name
+   * @returns {string} `Type: summary`, or '' when the tool draws no status UI
+   * @private
+   */
+  _runningLabel(item, toolName) {
+    /** @type {ActionTypeClass|undefined} */
+    const ActionClass = contextItemRegistry.getByToolName(toolName);
+    if (!ActionClass || typeof ActionClass.prototype.getStatusUI !== 'function') return '';
+    try {
+      const conversation = this._getConversation();
+      const actionInstance = this._createActionForUI(ActionClass, toolName, conversation);
+      if (!actionInstance) return '';
+      const config = actionInstance.getStatusUI(
+        { pending: true, actionId: toolName, displayData: yGet(item, 'displayData'), state: item.get('state') },
+        yGet(item, 'toolInput'),
+        { conversation, messageThread: this._getMessageThread(), session: conversation?.session, toolUseId: item.get('toolUseId') }
+      );
+      if (!config) return '';
+      const summary = (typeof config.summary === 'string' ? config.summary : config.summary?.textContent || '').trim();
+      const typeName = config.typeName || ActionClass.MANIFEST?.name || toolName;
+      return summary ? `${typeName}: ${summary}` : typeName;
+    } catch {
+      return '';
+    }
   }
 
   /**

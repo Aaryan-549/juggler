@@ -12,12 +12,13 @@
  * (`decideToolCall`), so the user's rules, hooks and strategy rule on it as
  * they would on the model's own call:
  *   - "approve" runs it;
- *   - "park" suspends the program (`onSuspended`, with the call's own approval
- *     form): the pass ends, and the program's item waits on the user as a
- *     parked call does. Approving it runs the program again from the top,
- *     replaying what it did from its journal, and the held call is then
- *     handed over as approved (`approveNext`). Without `onSuspended` a park
- *     refuses, as a deny does;
+ *   - "park" holds the call for the user (`waitForUser`): the program's item
+ *     waits on them with the call's own approval form, as a parked call does,
+ *     while the program lives on, waiting on that call (services/held-calls.js).
+ *     Their answer runs it; an answer that was not theirs to give it (the item
+ *     was reset and approved on its own account) puts it to the decision
+ *     again. Holds take turns, so the item asks one thing at a time. Without
+ *     `waitForUser` a park refuses, as a deny does;
  *   - "deny" (a hook said no) refuses, and the program ends;
  *   - "invalid" is an error the program may catch.
  *
@@ -48,6 +49,7 @@ import contextItemRegistry from '../registries/context-item-registry.js';
 import { extractErrorMessage } from '../../sdk/lib/error-utils.js';
 import { isComposableTool } from './composable-tools.js';
 import { INTERACTION_KIND } from '../../sdk/context-item.js';
+import { holdForUser, releaseHold } from './held-calls.js';
 
 /** @typedef {import('./ops-api.js').AssetRef} AssetRef */
 
@@ -73,9 +75,9 @@ export class ToolRefused extends Error {
 }
 
 /**
- * What a suspended call needs to be put to the user: the program's item shows
- * it in its approval card, and its buttons are the sub-tool's own.
- * @typedef {object} Suspension
+ * What a held call needs to be put to the user: the program's item shows it in
+ * its approval card, and its buttons are the sub-tool's own.
+ * @typedef {object} HoldRequest
  * @property {string} name - The held tool
  * @property {Record<string, unknown>} input - Its arguments, as the program passed them
  * @property {string} reason - What it waits on, in the decision's words
@@ -85,25 +87,9 @@ export class ToolRefused extends Error {
  * @property {string} [note] - A line for the card, when a hook is holding it
  * @property {(import('../model/conversation-tool-actions.js').ReviewableCall & {label: string|null})|null} [review] -
  *   The call as the strategy's reviewer is handed it, when one may be
- *   (conversation-tool-actions.js reviewForSuspension); `label` marks the
- *   suspension as under review when the strategy has a reviewer
+ *   (conversation-tool-actions.js reviewForHold); `label` marks the
+ *   hold as under review when the strategy has a reviewer
  */
-
-/**
- * A call is waiting on the user, so the program stops here until they answer.
- * The program ends as a refusal ends it; the call is not refused.
- */
-export class ToolSuspended extends Error {
-  /**
-   * @param {string} message - What it waits on
-   * @param {Suspension} suspension - The call, as the user is asked about it
-   */
-  constructor(message, suspension) {
-    super(message);
-    this.name = 'ToolSuspended';
-    this.suspension = suspension;
-  }
-}
 
 /**
  * Keep the buttons of an approval form that are safe on a program's card: all
@@ -186,29 +172,6 @@ function unprefixed(name) {
 }
 
 /**
- * A call's arguments as a key that two spellings of the same arguments share:
- * JSON with every object's keys sorted, since arguments that went through the
- * document come back in whatever order it keeps them.
- * @param {unknown} value - Arguments
- * @returns {string} The key
- */
-function argsIdentity(value) {
-  /**
-   * @param {unknown} v - A value
-   * @returns {unknown} It, with every object's keys in sorted order
-   */
-  const sorted = (v) => {
-    if (Array.isArray(v)) return v.map(sorted);
-    if (v === null || typeof v !== 'object') return v;
-    /** @type {Record<string, unknown>} */
-    const out = {};
-    for (const k of Object.keys(v).sort()) out[k] = sorted(/** @type {Record<string, unknown>} */ (v)[k]);
-    return out;
-  };
-  return JSON.stringify(sorted(value ?? {})) ?? '';
-}
-
-/**
  * The one-line effect of a call that changes something: the command it ran, or
  * the path it acted on, or failing both, its arguments in brief.
  * @param {string} name - Tool name
@@ -232,7 +195,7 @@ function effectLine(name, args) {
  * @typedef {object} NestedCall
  * @property {string} name - Tool name as the program called it
  * @property {unknown} args - Its arguments, clipped
- * @property {'queued'|'running'|'ok'|'error'|'refused'|'cancelled'|'suspended'} status - Where it got to
+ * @property {'queued'|'running'|'ok'|'error'|'refused'|'cancelled'|'held'} status - Where it got to
  * @property {number} [durationMs] - How long it ran
  * @property {string} [error] - Why it failed or was refused
  * @property {string} [effect] - What it changed, for a call that changes things
@@ -251,8 +214,10 @@ function effectLine(name, args) {
  * @property {(call: {toolName: string, toolInput: Record<string, unknown>, toolUseId: string}) => Promise<{verdict: string, reason: string}>} decide - The approval decision
  * @property {(call: {toolName: string, input: Record<string, unknown>, toolUseId: string}) => Promise<{success: boolean, cancelled?: boolean, content: string, error?: string, attachments?: AssetRef[]}>} run - Run the tool
  * @property {(toolUseId: string) => void} cancel - Cancel a running call
- * @property {(call: {name: string, args: Record<string, unknown>}, decision: any) => Promise<Suspension>} suspension - A parked call, as the user is asked about it
+ * @property {(call: {name: string, args: Record<string, unknown>}, decision: any) => Promise<HoldRequest>} holdRequest - A parked call, as the user is asked about it
  * @property {(toolName: string, input: Record<string, unknown>, response: string) => Record<string, unknown>} answer - Fold the user's answer into an elicitation's input
+ * @property {(request: HoldRequest, signal: AbortSignal) => Promise<import('./held-calls.js').HeldAnswer>} hold - Hold a parked call for the user, until they answer or `signal` aborts
+ * @property {() => void} release - Put the program's item back to running once the program has ended with a call held
  */
 
 /**
@@ -261,9 +226,10 @@ function effectLine(name, args) {
  * the executor that installs this module.
  * @param {any} conversation - The conversation
  * @param {any} messageThread - The thread the program runs in
+ * @param {string} parentToolUseId - The program's own tool-action, which holds its calls
  * @returns {InvokerDeps} The seams
  */
-function defaultDeps(conversation, messageThread) {
+function defaultDeps(conversation, messageThread, parentToolUseId) {
   return {
     offeredTools: async () => {
       const { buildToolInventory } = await import('./thread-tool-inventory.js');
@@ -302,14 +268,14 @@ function defaultDeps(conversation, messageThread) {
     },
     // Built as the evaluate path builds a parked call's form
     // (conversation-tool-actions.js), from the decision's own action.
-    suspension: async ({ name, args }, decision) => {
+    holdRequest: async ({ name, args }, decision) => {
       const { buildApprovalOptions } = await import('./response-handler-actions.js');
-      const { reviewForSuspension } = await import('../model/conversation-tool-actions.js');
+      const { reviewForHold } = await import('../model/conversation-tool-actions.js');
       const built = buildApprovalOptions(decision.action, decision.prepared);
       return {
         name,
         input: args,
-        review: reviewForSuspension(messageThread, decision, name, args),
+        review: reviewForHold(messageThread, decision, name, args),
         reason: decision.reason,
         approvalOptions: { ...built, options: keepNamedGrants(built.options || []) },
         displayData: decision.prepared?.displayData,
@@ -323,8 +289,21 @@ function defaultDeps(conversation, messageThread) {
       if (ItemClass?.interactionKind?.() !== INTERACTION_KIND.ELICITATION) return input;
       return ItemClass.applyApprovalResponse(input, response);
     },
+    hold: (request, signal) => holdForUser({ conversation, messageThread, toolUseId: parentToolUseId, request, signal }),
+    release: () => releaseHold(messageThread, parentToolUseId),
   };
 }
+
+/**
+ * @typedef {object} InvokeHow
+ * @property {boolean} [withAttachments] - Resolve `{content, attachments}`, the
+ *   asset refs of any images the call produced, rather than the content alone.
+ *   The record never holds either.
+ * @property {unknown} [tag] - Handed to `beforeHold` if the call is held
+ * @property {string} [answer] - The user's answer to this very call, already
+ *   given on its card (a held call made again by a program resumed after its
+ *   engine was lost): the call is run with it rather than put to the decision
+ */
 
 /**
  * Create the invoker for one run of a program.
@@ -332,19 +311,29 @@ function defaultDeps(conversation, messageThread) {
  * @param {string} opts.parentToolUseId - The program's own tool-use id, the stem of its sub-calls' ids
  * @param {AbortSignal} [opts.signal] - The program's signal; aborting it cancels every call
  * @param {(err: ToolRefused) => void} [opts.onRefused] - Told once, when a refusal ends the program
- * @param {(err: ToolSuspended) => void} [opts.onSuspended] - Told once, when a call the
- *   decision parks ends the program to wait for the user. Without it, a park refuses.
+ * @param {boolean} [opts.waitForUser] - Hold a call the decision parks for the
+ *   user, with the program waiting on it. Without it, a park refuses.
+ * @param {(request: HoldRequest, tag: unknown) => Promise<void>|void} [opts.beforeHold] -
+ *   Awaited before each hold is put to the user, with the `tag` its call was
+ *   made with (invoke's `how.tag`)
+ * @param {() => void} [opts.afterHold] - Told when each hold has ended, answered or not
  * @param {any} [opts.conversation] - The conversation (for the default seams)
  * @param {any} [opts.messageThread] - The thread the program runs in (for the default seams)
  * @param {number} [opts.limit] - Calls running at once
  * @param {number} [opts.maxRecords] - Calls kept in the record
  * @param {Partial<InvokerDeps>} [opts.deps] - Seams to replace, for tests
- * @returns {{invoke: (name: string, args: Record<string, unknown>, how?: {withAttachments?: boolean}) => Promise<any>, record: NestedCallRecord, offered: () => Promise<Map<string, Record<string, any>>>, approveNext: (name: string, args: Record<string, unknown>, response: string) => void}} The invoker
+ * @returns {{invoke: (name: string, args: Record<string, unknown>, how?: InvokeHow) => Promise<any>, record: NestedCallRecord, offered: () => Promise<Map<string, Record<string, any>>>, end: () => void}} The invoker
  */
 export function createToolInvoker(opts) {
   const limit = Math.max(1, opts.limit ?? DEFAULT_LIMIT);
   const maxRecords = Math.max(1, opts.maxRecords ?? DEFAULT_MAX_RECORDS);
-  const deps = { ...defaultDeps(opts.conversation, opts.messageThread), ...(opts.deps || {}) };
+  const deps = { ...defaultDeps(opts.conversation, opts.messageThread, opts.parentToolUseId), ...(opts.deps || {}) };
+  /** Ends every hold: the program's signal, or the program ending (end()). */
+  const holds = new AbortController();
+  /** The hold before the next, which waits its turn behind it. */
+  let lastHold = Promise.resolve();
+  /** Whether a call has been held, so the program's item may need releasing. */
+  let everHeld = false;
 
   /** @type {NestedCallRecord} */
   const record = { calls: [], omitted: 0, omittedEffects: 0 };
@@ -353,8 +342,6 @@ export function createToolInvoker(opts) {
   /** @type {ToolRefused|null} */
   let refusal = null;
   let ordinal = 0;
-  /** @type {{name: string, args: string, response: string}|null} */
-  let approved = null;
 
   /**
    * @typedef {object} Pending
@@ -362,7 +349,8 @@ export function createToolInvoker(opts) {
    * @property {Record<string, unknown>} args - Its arguments, unclipped
    * @property {string} toolUseId - The id it runs under in the executor
    * @property {boolean} alongside - A read: may overlap its neighbours
-   * @property {{response: string}|null} approval - The user's answer, for the held call a replay hands over
+   * @property {{response: string}|null} approval - The user's answer it was made with (invoke's `how.answer`)
+   * @property {unknown} tag - What the caller made it with (beforeHold is handed it)
    * @property {NestedCall} entry - Its record entry
    * @property {'queued'|'running'|'done'} phase - Where it is in its life
    * @property {(v: {content: string, attachments: AssetRef[]}) => void} resolve - Settles the program's await with a value
@@ -442,11 +430,20 @@ export function createToolInvoker(opts) {
     const startedAt = Date.now();
     let ran = false;
     try {
-      // The held call a replay hands over was decided by the user: it is not
-      // put to the decision again.
-      const decision = call.approval
-        ? { verdict: 'approve', reason: '' }
-        : await deps.decide({ toolName: call.name, toolInput: call.args, toolUseId: call.toolUseId });
+      const decide = () => deps.decide({ toolName: call.name, toolInput: call.args, toolUseId: call.toolUseId });
+      // A call made with the user's answer was decided by them: it is not put
+      // to the decision again.
+      let decision = call.approval ? { verdict: 'approve', reason: '' } : await decide();
+      let response = call.approval?.response;
+      while (decision.verdict === 'park' && opts.waitForUser && !refusal) {
+        const answer = await holdCall(call, decision);
+        if (answer.redecide) {
+          decision = await decide();
+        } else {
+          response = answer.response;
+          decision = { verdict: 'approve', reason: '' };
+        }
+      }
       if (refusal) {
         settle(call, 'cancelled', { error: refusal, startedAt });
         return;
@@ -455,27 +452,12 @@ export function createToolInvoker(opts) {
         settle(call, 'error', { error: new ToolError(`Couldn't run ${call.name}: ${decision.reason}`), startedAt });
         return;
       }
-      if (decision.verdict === 'park' && opts.onSuspended) {
-        const suspension = await deps.suspension({ name: call.name, args: call.args }, decision);
-        if (refusal) {
-          settle(call, 'cancelled', { error: refusal, startedAt });
-          return;
-        }
-        const err = new ToolSuspended(`${call.name} is waiting for you: ${decision.reason}.`, suspension);
-        // Stop first, so settling this call releases nothing queued behind it.
-        const stop = new ToolRefused('The program stopped to wait for you.');
-        refusal = stop;
-        settle(call, 'suspended', { error: err, startedAt });
-        stopAll(stop, 'cancelled');
-        opts.onSuspended(err);
-        return;
-      }
       if (decision.verdict !== 'approve') {
         const reason = decision.verdict === 'park'
           ? `${decision.reason}, so call it directly.`
           : decision.reason;
         const err = new ToolRefused(`Couldn't run ${call.name}: ${reason}`);
-        // Stop first, as a suspension does, so settling this call releases
+        // Stop first, as a hold does, so settling this call releases
         // nothing queued behind it.
         const first = !refusal;
         if (first) refusal = err;
@@ -484,7 +466,7 @@ export function createToolInvoker(opts) {
         if (first) opts.onRefused?.(err);
         return;
       }
-      const input = call.approval ? deps.answer(call.name, call.args, call.approval.response) : call.args;
+      const input = response !== undefined ? deps.answer(call.name, call.args, response) : call.args;
       ran = true;
       const result = await deps.run({ toolName: call.name, input, toolUseId: call.toolUseId });
       if (result.cancelled || refusal) {
@@ -495,7 +477,55 @@ export function createToolInvoker(opts) {
         settle(call, 'ok', { value: { content: result.content, attachments: result.attachments ?? [] }, startedAt, ran });
       }
     } catch (err) {
+      if (err instanceof ToolRefused) {
+        // A hold that ended unanswered: the user declined, or the program
+        // ended under it. The program ends as a refusal ends it.
+        const first = !refusal;
+        if (first) refusal = err;
+        settle(call, first ? 'refused' : 'cancelled', { error: /** @type {ToolRefused} */ (refusal), startedAt });
+        stopAll(/** @type {ToolRefused} */ (refusal), first ? 'refused' : 'cancelled');
+        if (first) opts.onRefused?.(err);
+        return;
+      }
       settle(call, 'error', { error: new ToolError(extractErrorMessage(err)), startedAt, ran });
+    }
+  };
+
+  /**
+   * Hold a parked call for the user, once every hold before it has ended, and
+   * wait for their answer. While it is held the call is recorded as waiting,
+   * and with no effect: it has not run, and may never.
+   * @param {Pending} call - The parked call
+   * @param {any} decision - The decision that parked it
+   * @returns {Promise<import('./held-calls.js').HeldAnswer>} The answer
+   * @throws {ToolRefused} When the hold ends unanswered
+   */
+  const holdCall = async (call, decision) => {
+    const request = await deps.holdRequest({ name: call.name, args: call.args }, decision);
+    const before = lastHold;
+    /** @type {() => void} */
+    let done = () => {};
+    lastHold = new Promise((resolve) => { done = () => resolve(undefined); });
+    try {
+      await before;
+      if (refusal) throw refusal;
+      everHeld = true;
+      const effect = call.entry.effect;
+      delete call.entry.effect;
+      call.entry.status = 'held';
+      try {
+        await opts.beforeHold?.(request, call.tag);
+        if (refusal) throw refusal;
+        return await deps.hold(request, holds.signal);
+      } catch (err) {
+        throw err instanceof ToolRefused ? err : new ToolRefused(extractErrorMessage(err));
+      } finally {
+        call.entry.status = 'running';
+        if (effect !== undefined) call.entry.effect = effect;
+        opts.afterHold?.();
+      }
+    } finally {
+      done();
     }
   };
 
@@ -519,6 +549,7 @@ export function createToolInvoker(opts) {
 
   opts.signal?.addEventListener('abort', () => {
     stopAll(new ToolRefused('The program was interrupted.'), 'cancelled');
+    holds.abort();
     // A running call whose cancel lands is recorded as cancelled when it returns.
     for (const call of calls) if (call.phase === 'running') call.entry.status = 'cancelled';
   }, { once: true });
@@ -527,20 +558,12 @@ export function createToolInvoker(opts) {
    * Call one tool from the program.
    * @param {string} name - Tool name
    * @param {Record<string, unknown>} args - Its arguments
-   * @param {{withAttachments?: boolean}} [how] - withAttachments: resolve
-   *   `{content, attachments}`, the asset refs of any images the call produced,
-   *   rather than the content alone. The record never holds either.
+   * @param {InvokeHow} [how] - How to make it
    * @returns {Promise<any>} What the tool returned: its content, or with its attachments
    */
   async function invoke(name, args, how = {}) {
     const input = (args && typeof args === 'object') ? args : {};
-    // Taken before the first await, by the call approveNext named — the same
-    // tool with the same arguments — and by no other: the user approved that
-    // call, not its tool.
-    const approval = (approved?.name === name || approved?.name === unprefixed(name))
-      && approved.args === argsIdentity(input)
-      ? { response: approved.response } : null;
-    approved = null;
+    const approval = typeof how.answer === 'string' ? { response: how.answer } : null;
     /** @type {NestedCall} */
     const entry = { name, args: clipArg(input), status: 'queued' };
     if (refusal || opts.signal?.aborted) {
@@ -565,7 +588,7 @@ export function createToolInvoker(opts) {
     /** @type {Promise<{content: string, attachments: AssetRef[]}>} */
     const settled = new Promise((resolve, reject) => {
       calls.push({
-        name: tool, args: input, alongside, entry, phase: 'queued', resolve, reject, approval,
+        name: tool, args: input, alongside, entry, phase: 'queued', resolve, reject, approval, tag: how.tag,
         toolUseId: `code_${opts.parentToolUseId}_${++ordinal}`,
       });
       if (refusal) {
@@ -594,20 +617,17 @@ export function createToolInvoker(opts) {
   }
 
   /**
-   * Hand the next call over as approved by the user, with their response (a
-   * verdict, or an elicitation's answer), if it is the call they were asked
-   * about: `name` with `args` (key order aside). For the call a program was
-   * suspended on, made again by its replay at the same step. The next call
-   * takes the approval or discards it, so it never reaches a later one.
-   * @param {string} name - The held tool
-   * @param {Record<string, unknown>} args - Its arguments, as the user was shown them
-   * @param {string} response - The user's approval response
+   * The program has ended: refuse whatever is still waiting on the user, and
+   * put the program's item back to running if a call was held. Not for a
+   * program whose item was cancelled, whose state is the canceller's.
    */
-  function approveNext(name, args, response) {
-    approved = { name, args: argsIdentity(args), response };
+  function end() {
+    if (!refusal) refusal = new ToolRefused('The program ended before this call was answered.');
+    holds.abort();
+    if (everHeld) deps.release();
   }
 
-  return { invoke, record, offered, approveNext };
+  return { invoke, record, offered, end };
 }
 
 /**

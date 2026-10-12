@@ -29,15 +29,26 @@
  *      call was interrupted, and nothing writes to it once the program has
  *      ended.
  *   5. Writes keep the program's order even when it fires them together.
- *   6. A program run with a journal replays: each recorded call is answered
- *      from it and nothing recorded runs again. A replay that diverges ends
- *      the program unrun. A program that completes leaves no journal behind.
- *   7. A call the decision parks suspends the program: the item is pending
- *      with that call's own approval and no result, and its card is drawn as
- *      the call's tool draws it. Approving replays it to the end, each call
- *      once, saving any "don't ask again" rule for the sub-tool. A suspended
- *      program with no journal fails and runs nothing; a strategy switch
- *      re-decides the held call; a question's answer is its call's result.
+ *   6. A program resuming with a snapshot replays: each recorded call is
+ *      answered from it and nothing recorded runs again. A replay that
+ *      diverges ends the program unrun. A snapshot kept for another call than
+ *      the one the item holds is not resumed from. A program that ends leaves
+ *      no snapshot behind.
+ *   7. A call the decision parks is held: the item is pending with that
+ *      call's own approval and no result, its card drawn as the call's tool
+ *      draws it, while the program lives on, waiting. Approving runs that call
+ *      and the program goes on in the same run, each call once, saving any
+ *      "don't ask again" rule for the sub-tool. A denial or a refusal settles
+ *      the item and ends the program without overwriting it. Waiting is not
+ *      counted against the program's time. A strategy switch, or an approval
+ *      given on the program's own card, puts the held call to the decision
+ *      again; a question's answer is its call's result.
+ *   8. A program whose engine is lost while it waits (here: its run ended
+ *      through the executor, the document untouched) resumes from the
+ *      snapshot taken when the call was held, once the user answers; with no
+ *      snapshot for that call — none kept, or the save for that hold failed —
+ *      it fails and runs nothing again. A program whose snapshot cannot be
+ *      kept still waits, and finishes once answered.
  * @module unit-tests/run-code-program-test
  */
 
@@ -49,11 +60,12 @@ import {
 } from '../../../js-tests/utilities/test-helpers.js';
 import { budgetFor } from '../../../js-tests/utilities/test-deadline.js';
 import { createToolActionMessage } from '../../../sdk/lib/message.js';
-import { writeFileOp, readFileLoad } from '../../../js/services/ops-api.js';
+import { writeFileOp, readFileLoad, loadProgramSnapshot } from '../../../js/services/ops-api.js';
 import actionExecutor from '../../../js/services/action-executor.js';
 import contextItemRegistry from '../../../js/registries/context-item-registry.js';
 import YoloStrategyType from '../strategies/yolo-strategy-type.js';
-import RunCodeContextItem, { programJournals } from '../context-items/run-code-context-item.js';
+import RunCodeContextItem, { saveSnapshot, dropSnapshot } from '../context-items/run-code-context-item.js';
+import { handOverToHeldCall } from '../../../js/services/worker-manager-protocols.js';
 import QueryCodeContextItem from '../context-items/query-code-context-item.js';
 import { programChangeReport } from '../../../js/utils/program-changes.js';
 import {
@@ -132,7 +144,7 @@ export async function runTests(_ctx) {
    * A conversation with a run_code tool-action in it, and the item that runs
    * as that action.
    * @param {string} code - The program
-   * @param {{strategy?: 'yolo'|'default', toolUseId?: string}} [opts] - The thread's policy (YOLO by default), and the call's id
+   * @param {{strategy?: 'yolo'|'default', toolUseId?: string, timeout?: number}} [opts] - The thread's policy (YOLO by default), the call's id, and the program's timeout
    * @returns {Promise<{conversation: any, mt: any, item: any, controller: AbortController}>} The setup
    */
   const setup = async (code, opts = {}) => {
@@ -147,7 +159,8 @@ export async function runTests(_ctx) {
     // unevaluated or approved item into the engine, which would run this
     // program alongside the test. Pending is left to the user, so only the
     // test moves it (runAsAction).
-    mt.addEvent(createToolActionMessage({ toolUseId, toolName: 'run_code', toolInput: { code }, state: 'pending' }));
+    const toolInput = opts.timeout ? { code, timeout: opts.timeout } : { code };
+    mt.addEvent(createToolActionMessage({ toolUseId, toolName: 'run_code', toolInput, state: 'pending' }));
     const controller = new AbortController();
     const item = new RunCodeContextItem({
       id: RunCodeContextItem.MANIFEST.id,
@@ -266,7 +279,7 @@ export async function runTests(_ctx) {
    * @param {any} mt - Thread
    * @param {string} toolUseId - The program's id
    * @param {() => void} [answer] - Written first, in the same transaction
-   * @returns {Promise<any>} The tool-action, plain, once the pass has ended
+   * @returns {Promise<any>} The tool-action, plain, once the run has ended
    */
   const runAsAction = async (conversation, mt, toolUseId, answer) => {
     const ymap = mt.getToolAction(toolUseId);
@@ -281,6 +294,173 @@ export async function runTests(_ctx) {
     await executeToolAction(mt, toolUseId, conversation);
     return mt.getToolAction(toolUseId).toJSON();
   };
+
+  /**
+   * Start the program as runAsAction does, without waiting for it to end: a
+   * program holding a call for the user goes on running.
+   * @param {any} conversation - Conversation
+   * @param {any} mt - Thread
+   * @param {string} toolUseId - The program's id
+   * @returns {Promise<any>} The tool-action, plain, once the program has ended
+   */
+  const startAsAction = (conversation, mt, toolUseId) => {
+    const ymap = mt.getToolAction(toolUseId);
+    let claimed = false;
+    mt.transact(() => {
+      if ((ymap.get('state') ?? '') !== 'approved') mt.updateToolActionState(toolUseId, 'approved');
+      claimed = claimRunning(conversation, ymap);
+    });
+    assert(claimed, 'the claim must succeed');
+    const finished = executeToolAction(mt, toolUseId, conversation).then(() => mt.getToolAction(toolUseId).toJSON());
+    finished.catch(() => {});
+    return finished;
+  };
+
+  /**
+   * Wait until the program's item waits on the user for a call to `name`.
+   * @param {any} mt - Thread
+   * @param {string} toolUseId - The program's id
+   * @param {string} name - The held tool
+   * @param {(t: any) => boolean} [also] - Anything else to wait for
+   * @returns {Promise<any>} The tool-action, plain
+   */
+  const waitHeld = async (mt, toolUseId, name, also) => {
+    await waitUntil(() => {
+      const t = mt.getToolAction(toolUseId)?.toJSON();
+      return t?.state === 'pending' && t.heldCall?.name === name && (!also || also(t));
+    }, `the program to hold ${name}`);
+    return mt.getToolAction(toolUseId).toJSON();
+  };
+
+  /**
+   * Answer the held call as the user and the engine do: the user's approval,
+   * then the handover handleExecuteTool makes on the approved item
+   * (handOverToHeldCall). One transaction, so the live worker never sees the
+   * item approved and commands it into the engine itself.
+   * @param {any} conversation - Conversation
+   * @param {any} mt - Thread
+   * @param {string} toolUseId - The program's id
+   * @param {string|undefined} response - The user's response; undefined approves the item with none
+   * @param {{extra?: Record<string, unknown>, first?: () => void}} [how] - The approval's extras, and
+   *   anything to write first in the same transaction
+   */
+  const answerHeld = (conversation, mt, toolUseId, response, how = {}) => {
+    const ymap = mt.getToolAction(toolUseId);
+    let delivered = false;
+    mt.transact(() => {
+      how.first?.();
+      if (response === undefined) mt.updateToolActionState(toolUseId, 'approved');
+      else assert(mt.resolveApproval(toolUseId, response, { source: 'user', ...(how.extra || {}) }), 'the approval is written');
+      delivered = handOverToHeldCall(conversation, mt, ymap, toolUseId);
+    });
+    assert(delivered, 'the answer reaches the held call');
+  };
+
+  /**
+   * Lose the engine a program runs in while it holds a call, as far as the
+   * document can tell: the run ends through the executor, with no write, and
+   * the item is left pending with the held call's card.
+   * @param {any} conversation - Conversation
+   * @param {string} toolUseId - The program's id
+   * @param {Promise<any>} finished - Its run
+   * @returns {Promise<void>}
+   */
+  const loseEngine = async (conversation, toolUseId, finished) => {
+    actionExecutor.cancelByToolUseId(toolUseId, conversation.id);
+    await finished;
+  };
+
+  /**
+   * Leave the item as a lost program's would be: holding `call`, with the
+   * user's response on its card.
+   * @param {any} mt - Thread
+   * @param {string} toolUseId - The program's id
+   * @param {{name: string, input: Record<string, unknown>}} call - The held call
+   * @param {string} [response] - The user's response
+   */
+  const seedHeld = (mt, toolUseId, call, response = 'yes') => {
+    const ymap = mt.getToolAction(toolUseId);
+    mt.transact(() => {
+      ymap.set('heldCall', call);
+      ymap.set('approvalOptions', { held: true, options: [] });
+      ymap.set('approvalResponse', response);
+    });
+  };
+
+  /**
+   * The snapshot kept for a program, as stored, or null.
+   * @param {any} item - The run_code item
+   * @returns {Promise<any>} The snapshot
+   */
+  const snapshotOf = (item) => loadProgramSnapshot(item.conversation.id, item.toolUseId).catch(() => null);
+
+  /**
+   * Keep a snapshot for a program, as a hold would have left it.
+   * @param {any} item - The run_code item
+   * @param {{held: {name: string, input: Record<string, unknown>}, heldStep: number, journal: any[], calls?: any[]}} saved - What it holds
+   * @returns {Promise<void>}
+   */
+  const seedSnapshot = (item, saved) => saveSnapshot(item, {
+    held: saved.held,
+    heldStep: saved.heldStep,
+    journal: saved.journal,
+    record: { calls: saved.calls ?? [], omitted: 0, omittedEffects: 0 },
+    images: new Map()
+  }, new AbortController().signal);
+
+  /**
+   * Wait until a program's snapshot is gone, within this test's budget.
+   * @param {any} item - The run_code item
+   * @param {string} what - Named in the failure
+   * @returns {Promise<void>}
+   */
+  const waitSnapshotGone = async (item, what) => {
+    const until = Date.now() + budgetFor(10000);
+    while (await snapshotOf(item)) {
+      if (Date.now() > until) throw new Error(`timed out waiting for ${what}`);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+  };
+
+  /**
+   * Fail every snapshot save made while `fn` runs, with `status`, as a server
+   * that refuses it (too large) or cannot write it would.
+   * @template T
+   * @param {(n: number) => boolean} which - Which saves fail, by their 1-based count
+   * @param {number} status - The HTTP status they fail with
+   * @param {() => Promise<T>} fn - What to run
+   * @returns {Promise<T>} fn's result
+   */
+  const failingSaves = async (which, status, fn) => {
+    const real = globalThis.fetch;
+    let n = 0;
+    globalThis.fetch = /** @type {any} */ (async (/** @type {any} */ url, /** @type {any} */ init) => {
+      if (init?.method === 'PUT' && String(url).includes('/programs/') && which(++n)) {
+        return new globalThis.Response(JSON.stringify({ error: 'refused' }), { status, headers: { 'Content-Type': 'application/json' } });
+      }
+      return real(url, init);
+    });
+    try {
+      return await fn();
+    } finally {
+      globalThis.fetch = real;
+    }
+  };
+
+  /**
+   * The rows the item shows for its calls, in brief: `name:status` each.
+   * @param {any} mt - Thread
+   * @param {string} toolUseId - The program's id
+   * @returns {string} The rows
+   */
+  const rowBrief = (mt, toolUseId) => rowsOf(mt, toolUseId).map((r) => `${r.name}:${r.status}`).join(',');
+
+  /**
+   * Whether a file is absent.
+   * @param {string} path - The file
+   * @returns {Promise<boolean>} It does not exist
+   */
+  const absent = async (path) => (await readFileLoad({ path }).catch(() => null))?.exists !== true;
 
   try {
     await test('fs reads then tools.edit: admitted, applied, reported', async () => {
@@ -396,7 +576,6 @@ export async function runTests(_ctx) {
       assert(!text.includes('Changes the program made'), `the list comes from the record, not the summary:\n${text}`);
       const rows = rowsOf(mt, item.toolUseId);
       assert(rows.some((r) => r.name === 'bash' && r.status === 'refused'), `rows: ${JSON.stringify(rows)}`);
-      assert(!programJournals.has(item), 'a refused program leaves no journal');
     });
 
     await test('cancelling stops the sandbox and the running sub-call', async () => {
@@ -430,37 +609,42 @@ export async function runTests(_ctx) {
       assert(later === final, `the record was written after the program ended:\n${final}\n→ ${later}`);
     });
 
-    // A program that suspended for an approval is run again from the top; the
-    // journal is what makes that safe. These seed one directly, as a suspended
-    // pass would have left it.
-    await test('a replay answers from the journal and runs nothing again', async () => {
+    // A program whose engine was lost while it waited is run again from the
+    // top; its snapshot is what makes that safe. These seed one directly, as a
+    // hold would have left it.
+    await test('a replay answers from the snapshot and runs nothing again', async () => {
       const file = `rc-replay-${Date.now()}.txt`;
       const code = `
         const a = await fs.readFile("never-read-${file}");
         const r = await tools.bash({ command: "printf x > ${file}" });
-        return a + "|" + r;`;
+        const s = await tools.bash({ command: "printf y > held-${file}; printf held" });
+        return a + "|" + r + "|" + s;`;
       const { mt, item } = await setup(code);
-      programJournals.set(item, {
+      const held = { name: 'bash', input: { command: `printf y > held-${file}; printf held` } };
+      await seedSnapshot(item, {
+        held,
+        heldStep: 2,
         journal: [
           { key: 'fs.readFile', args: JSON.stringify([`never-read-${file}`]), ok: true, value: 'from the journal' },
           { key: 'tools.bash', args: JSON.stringify([{ command: `printf x > ${file}` }]), ok: true, value: 'ran before' },
+          { key: 'tools.bash', args: JSON.stringify([held.input]), ok: false, pending: true },
         ],
-        record: {
-          calls: [{ name: 'bash', args: { command: `printf x > ${file}` }, status: 'ok', durationMs: 5, effect: `bash: printf x > ${file}` }],
-          omitted: 0,
-          omittedEffects: 0,
-        },
+        calls: [{ name: 'bash', args: { command: `printf x > ${file}` }, status: 'ok', durationMs: 5, effect: `bash: printf x > ${file}` }],
       });
+      seedHeld(mt, item.toolUseId, held);
       const { out, text, wire } = await run(item, code);
       assert(out?.success !== false, `must succeed, got: ${text}`);
-      assert(text === 'from the journal|ran before', `the program sees the journal's answers, got: ${text}`);
-      // The earlier pass's change still reaches the model: the record spans passes.
-      assert(wire.includes(`Changes the program made:\n- bash: printf x > ${file}`), `the earlier pass's change must be reported:\n${wire}`);
-      const rows = rowsOf(mt, item.toolUseId);
-      assert(rows.length === 1 && rows[0].name === 'bash', `one row for the one call, across passes: ${JSON.stringify(rows)}`);
+      assert(text === 'from the journal|ran before|held', `the program sees the snapshot's answers, and the held call's, got: ${text}`);
+      // The earlier run's change still reaches the model: the record spans runs.
+      assert(wire.includes(`Changes the program made:\n- bash: printf x > ${file}`), `the earlier run's change must be reported:\n${wire}`);
+      const rows = rowBrief(mt, item.toolUseId);
+      assert(rows === 'bash:ok,bash:ok', `one row per call, across runs: ${rows}`);
       const written = await readFileLoad({ path: file }).catch(() => null);
       assert(written === null || written.exists === false, `bash must not run again, but ${file} exists`);
-      assert(!programJournals.has(item), 'a completed program leaves no journal');
+      assert(String((await readFileLoad({ path: `held-${file}` })).content) === 'y', 'the held call ran');
+      assert(!(await snapshotOf(item)), 'a completed program leaves no snapshot');
+      const after = mt.getToolAction(item.toolUseId).toJSON();
+      assert(!after.heldCall && !after.approvalOptions, `nor a held call: ${JSON.stringify(after)}`);
     });
 
     await test('a replay that diverges ends the program unrun', async () => {
@@ -469,80 +653,84 @@ export async function runTests(_ctx) {
         try { await tools.bash({ command: "printf x > ${file}" }); }
         catch (e) { return "caught: " + e.message; }
         return "unreachable";`;
-      const { item } = await setup(code);
-      programJournals.set(item, {
-        journal: [
-          { key: 'tools.bash', args: JSON.stringify([{ command: 'printf y > elsewhere.txt' }]), ok: true, value: 'ran before' },
-        ],
-        record: { calls: [], omitted: 0, omittedEffects: 0 },
+      const { mt, item } = await setup(code);
+      const held = { name: 'bash', input: { command: 'printf y > elsewhere.txt' } };
+      await seedSnapshot(item, {
+        held, heldStep: 0, journal: [{ key: 'tools.bash', args: JSON.stringify([held.input]), ok: false, pending: true }]
       });
+      seedHeld(mt, item.toolUseId, held);
       const { out, text } = await run(item, code);
       assert(out?.success === false, `a divergence must not be catchable, got: ${text}`);
       assert(text.includes("Couldn't resume the program") && text.includes('step 1'), `got: ${text}`);
       const written = await readFileLoad({ path: file }).catch(() => null);
       assert(written === null || written.exists === false, `bash must not run, but ${file} exists`);
-      assert(!programJournals.has(item), 'an ended program leaves no journal');
+      assert(!(await snapshotOf(item)), 'an ended program leaves no snapshot');
     });
 
     // Tool-use ids are unique within a conversation, not across them: two
     // conversations' calls can share one, and the engine holds every
-    // conversation's journals.
-    await test('a journal belongs to its own conversation\'s program', async () => {
+    // conversation's snapshots.
+    await test('a snapshot belongs to its own conversation\'s program', async () => {
       const file = `rc-own-${Date.now()}.txt`;
       const code = `return await tools.bash({ command: "printf x > ${file}; printf ran" });`;
       const toolUseId = `rc-shared-${Date.now()}`;
       const other = await setup(code, { toolUseId });
-      const { item } = await setup(code, { toolUseId });
-      programJournals.set(other.item, {
-        journal: [{ key: 'tools.bash', args: JSON.stringify([{ command: 'printf y > elsewhere.txt' }]), ok: true, value: 'theirs' }],
-        record: { calls: [], omitted: 0, omittedEffects: 0 },
+      const { mt, item } = await setup(code, { toolUseId });
+      const held = { name: 'bash', input: { command: `printf x > ${file}; printf ran` } };
+      await seedSnapshot(other.item, {
+        held, heldStep: 1, journal: [{ key: 'tools.bash', args: JSON.stringify([held.input]), ok: true, value: 'theirs' }]
       });
+      seedHeld(mt, toolUseId, held);
       try {
         const { out, text } = await run(item, code);
-        assert(out?.success !== false && text.startsWith('ran'), `it runs as a fresh program, got: ${text}`);
-        const written = await readFileLoad({ path: file });
-        assert(String(written.content) === 'x', `its call ran: ${JSON.stringify(written.content)}`);
-        assert(programJournals.has(other.item), 'the other conversation\'s journal is untouched');
+        assert(out?.success === false && text.includes("Couldn't resume the program"),
+          `it has no snapshot of its own, so it cannot resume, got: ${text}`);
+        const written = await readFileLoad({ path: file }).catch(() => null);
+        assert(written === null || written.exists === false, 'nor does it run');
+        assert(await snapshotOf(other.item), 'the other conversation\'s snapshot is untouched');
       } finally {
-        programJournals.delete(other.item);
+        await dropSnapshot(other.item);
       }
     });
 
-    // Under a strategy that asks, a sub-call the decision would park suspends
-    // the program: the item goes back to pending carrying that call's own
-    // approval, and approving it replays the program to the end.
-    await test('a parked call suspends; approving it replays to the end, each call once', async () => {
-      const dir = `rc-suspend-${Date.now()}`;
+    // Under a strategy that asks, a sub-call the decision would park is held:
+    // the item goes back to pending carrying that call's own approval, while
+    // the program waits on the call, and approving it runs the call in the
+    // same run.
+    await test('a parked call is held; approving it runs that call in the same run, each call once', async () => {
+      const dir = `rc-hold-${Date.now()}`;
       await writeFileOp({ path: `${dir}/c.txt`, content: 'hello world\n' });
       const log = `${dir}/log.txt`;
       const command = heldCommand(log);
       const code = `
+        const startedAt = Date.now();
         const c = await fs.readFile("${dir}/c.txt");
         await tools.edit({ file_path: "${dir}/c.txt", old_string: "world", new_string: "there" });
         const r = await tools.bash({ command: ${JSON.stringify(command)} });
-        return c.trim() + "|" + String(r).trim();`;
+        return c.trim() + "|" + String(r).trim() + "|" + startedAt;`;
       const { conversation, mt, item } = await setup(code, { strategy: 'default' });
       const id = item.toolUseId;
       await assertParks(conversation, mt, command);
 
-      const parked = await runAsAction(conversation, mt, id);
-      assert(parked.state === 'pending', `the item must go back to pending, is ${parked.state}`);
-      assert(parked.result === undefined, `a suspended item has no result: ${JSON.stringify(parked.result)}`);
-      assert(parked.suspendedCall?.name === 'bash', `the held call is named: ${JSON.stringify(parked.suspendedCall)}`);
-      assert(parked.suspendedCall?.input?.command === command, `with its input: ${JSON.stringify(parked.suspendedCall)}`);
+      const finished = startAsAction(conversation, mt, id);
+      const parked = await waitHeld(mt, id, 'bash');
+      assert(parked.result === undefined, `a held item has no result: ${JSON.stringify(parked.result)}`);
+      assert(parked.heldCall?.input?.command === command, `with its input: ${JSON.stringify(parked.heldCall)}`);
+      assert(actionExecutor.runningActionFor(id, conversation.id), 'the program is still running while it waits');
       const options = parked.approvalOptions?.options || [];
       assert(options.some((/** @type {any} */ o) => o.value === 'yes') && options.some((/** @type {any} */ o) => o.value === 'no'), `yes and no: ${JSON.stringify(options)}`);
       const always = options.filter((/** @type {any} */ o) => String(o.value).startsWith('yes-always'));
       assert(always.length > 0, `bash's own "don't ask again" buttons: ${JSON.stringify(options)}`);
       assert(always.every((/** @type {any} */ o) => o.rules && o.itemType && o.itemType !== 'run-code'), `each carries its rule, for the sub-tool: ${JSON.stringify(always)}`);
       const edited = await readFileLoad({ path: `${dir}/c.txt` });
-      assert(String(edited.content).includes('hello there'), 'the edit before the stop ran');
-      assert((await readFileLoad({ path: log }).catch(() => null))?.exists !== true, 'the held call did not run');
-      assert(programJournals.has(item), 'a suspended program keeps its journal');
-      const before = rowsOf(mt, id).map((r) => `${r.name}:${r.status}`).join(',');
-      assert(before === 'edit:ok', `the rows hold what ran: ${before}`);
+      assert(String(edited.content).includes('hello there'), 'the edit before the hold ran');
+      assert(await absent(log), 'the held call did not run');
+      const before = rowBrief(mt, id);
+      assert(before === 'edit:ok,bash:held', `the rows show what ran and what waits: ${before}`);
+      assert(programChangeReport(displayOf(mt, id)) === `\n\nChanges the program made:\n- edit: ${dir}/c.txt`,
+        `the waiting call has changed nothing: ${JSON.stringify(programChangeReport(displayOf(mt, id)))}`);
 
-      // The card is drawn by run_code's class; while suspended it shows the
+      // The card is drawn by run_code's class; while it waits it shows the
       // held call as bash itself would, in the transcript and in the panel.
       const ui = item.getStatusUI({ pending: true, state: 'pending' }, { code }, { conversation, messageThread: mt, toolUseId: id });
       const bashUi = new (/** @type {any} */ (contextItemRegistry.getByToolName('bash')))({ id: 'execute', session, conversation, messageThread: mt })
@@ -565,21 +753,19 @@ export async function runTests(_ctx) {
       assert(sections.some(([, s]) => s.startsWith('Command:') && s.includes(log)), `the panel shows the held command: ${JSON.stringify(sections)}`);
 
       const button = always[0];
-      let written = false;
-      const done = await runAsAction(conversation, mt, id, () => {
-        written = mt.resolveApproval(id, 'yes-always', {
-          approvalRules: button.rules, approvalItemType: button.itemType, source: 'user'
-        });
-      });
-      assert(written, 'the approval is written');
+      const answeredAt = Date.now();
+      answerHeld(conversation, mt, id, 'yes-always', { extra: { approvalRules: button.rules, approvalItemType: button.itemType } });
+      const done = await finished;
       assert(done.state === 'completed' && !done.result?.isError, `the program finishes: ${JSON.stringify(done.result)}`);
-      assert(done.result?.content === 'hello world|ran', `it saw the journal's read and the real run: ${done.result?.content}`);
-      const ran = await readFileLoad({ path: log });
-      assert(String(ran.content) === 'x', `bash ran exactly once: ${JSON.stringify(ran.content)}`);
-      const after = rowsOf(mt, id).map((r) => `${r.name}:${r.status}`).join(',');
-      assert(after === 'edit:ok,bash:ok', `one row per call, across passes: ${after}`);
-      assert(!programJournals.has(item), 'a finished program leaves no journal');
-      assert(!done.suspendedCall, 'nor a held call');
+      const [seen, ran, startedAt] = String(done.result?.content).split('|');
+      assert(seen === 'hello world' && ran === 'ran', `it saw its own read and the real run: ${done.result?.content}`);
+      assert(Number(startedAt) < answeredAt, `one run, started before the answer — not run again after it: ${startedAt} vs ${answeredAt}`);
+      const logged = await readFileLoad({ path: log });
+      assert(String(logged.content) === 'x', `bash ran exactly once: ${JSON.stringify(logged.content)}`);
+      const after = rowBrief(mt, id);
+      assert(after === 'edit:ok,bash:ok', `one row per call: ${after}`);
+      assert(!(await snapshotOf(item)), 'a finished program leaves no snapshot');
+      assert(!done.heldCall && !done.approvalOptions, 'nor a held call');
       const again = await decideToolCall({
         messageThread: mt, conversation, toolName: 'bash',
         toolInput: { command }, toolUseId: `${id}_again`
@@ -587,12 +773,97 @@ export async function runTests(_ctx) {
       assert(again.verdict === 'approve', `"don't ask again" saved a bash rule: ${again.verdict}`);
     });
 
-    // The journal a real pass leaves, not one written by hand: concurrent
-    // reads, searches and edits, then a call that waits. Every answer it holds
-    // carries its place in the order the program got them, so the replay can
-    // give them back in it; the edits ran once, before the stop, and are
-    // answered from the journal after it.
-    await test('a real pass with concurrent calls leaves a journal its replay finishes from', async () => {
+    await test('denying the held call cancels the program, and the denial stands', async () => {
+      const log = `rc-deny-held-${Date.now()}.txt`;
+      const command = heldCommand(log);
+      const code = `await tools.bash({ command: ${JSON.stringify(command)} }); await tools.bash({ command: "printf after >> ${log}" }); return "done";`;
+      const { conversation, mt, item } = await setup(code, { strategy: 'default' });
+      const id = item.toolUseId;
+      await assertParks(conversation, mt, command);
+      const finished = startAsAction(conversation, mt, id);
+      await waitHeld(mt, id, 'bash');
+      assert(mt.resolveApproval(id, 'no'), 'the denial is written');
+      const done = await finished;
+      assert(done.state === 'cancelled' && done.result?.content === 'Action was cancelled.',
+        `the denial is the item's result, not overwritten by the program's: ${done.state} ${JSON.stringify(done.result)}`);
+      assert(await absent(log), 'neither the held call nor anything after it ran');
+      await waitUntil(() => !actionExecutor.runningActionFor(id, conversation.id), 'the program to end');
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      const later = mt.getToolAction(id).toJSON();
+      assert(later.state === 'cancelled' && later.result?.content === 'Action was cancelled.', `and it stays so: ${JSON.stringify(later.result)}`);
+      await waitSnapshotGone(item, 'the worker to drop the denied program\'s snapshot');
+    });
+
+    await test('a held call refused on the user\'s behalf ends the program with that refusal', async () => {
+      const log = `rc-refuse-held-${Date.now()}.txt`;
+      const command = heldCommand(log);
+      const code = `await tools.bash({ command: ${JSON.stringify(command)} }); return "done";`;
+      const { conversation, mt, item } = await setup(code, { strategy: 'default' });
+      const id = item.toolUseId;
+      await assertParks(conversation, mt, command);
+      const finished = startAsAction(conversation, mt, id);
+      await waitHeld(mt, id, 'bash');
+      assert(mt.refuseApproval(id, 'Refused: nobody here to ask.'), 'the refusal is written');
+      const done = await finished;
+      assert(done.state === 'completed' && done.result?.isError && done.result?.content === 'Refused: nobody here to ask.',
+        `the refusal stands: ${done.state} ${JSON.stringify(done.result)}`);
+      assert(await absent(log), 'the held call did not run');
+    });
+
+    await test('time spent waiting on the user is not counted against the program', async () => {
+      const log = `rc-clock-${Date.now()}.txt`;
+      const command = heldCommand(log);
+      const code = `await tools.bash({ command: ${JSON.stringify(command)} }); return "done";`;
+      // Generous enough that everything before the hold fits in it on a busy
+      // machine; the wait outlasts it.
+      const { conversation, mt, item } = await setup(code, { strategy: 'default', timeout: 4000 });
+      const id = item.toolUseId;
+      await assertParks(conversation, mt, command);
+      const finished = startAsAction(conversation, mt, id);
+      await waitHeld(mt, id, 'bash');
+      await new Promise((resolve) => setTimeout(resolve, 4500));
+      answerHeld(conversation, mt, id, 'yes');
+      const done = await finished;
+      assert(done.state === 'completed' && done.result?.content === 'done',
+        `a program that waited past its timeout for the user still finishes: ${JSON.stringify(done.result)}`);
+    });
+
+    await test('a program that ends with a call still held completes, and leaves nothing waiting', async () => {
+      const dir = `rc-left-${Date.now()}`;
+      const log = `${dir}/log.txt`;
+      const flag = `${dir}/flag.txt`;
+      const command = heldCommand(log);
+      // fs is not scheduled behind the held write, so the program can watch
+      // for the test's word that the call is held, and then end without it.
+      const code = `
+        tools.bash({ command: ${JSON.stringify(command)} }).catch(() => {});
+        for (;;) {
+          try { await fs.readFile("${flag}"); break; } catch { await new Promise((r) => setTimeout(r, 50)); }
+        }
+        return "left";`;
+      const { conversation, mt, item } = await setup(code, { strategy: 'default' });
+      const id = item.toolUseId;
+      await assertParks(conversation, mt, command);
+      const finished = startAsAction(conversation, mt, id);
+      await waitHeld(mt, id, 'bash');
+      await writeFileOp({ path: flag, content: 'go' });
+      const done = await finished;
+      assert(done.state === 'completed' && done.result?.content === 'left', `it completes: ${done.state} ${JSON.stringify(done.result)}`);
+      assert(!done.heldCall && !done.approvalOptions, `with no card left on it: ${JSON.stringify(done)}`);
+      assert(await absent(log), 'the held call never ran');
+      assert(!programChangeReport(displayOf(mt, id)).includes('bash'), `and is not reported as a change: ${programChangeReport(displayOf(mt, id))}`);
+      assert(!(await snapshotOf(item)), 'and its snapshot is dropped');
+    });
+
+    // A real run's snapshot, not one written by hand: concurrent reads and
+    // searches, edits, then a call that waits. (Calls whose follow-ups depend
+    // on which of them answered first may resume in another order, and then
+    // diverge: program-journal-replay-test holds that to never making a change
+    // twice.) Every call before the hold
+    // is in it, answered, and the held call is pending at the step the
+    // snapshot names; the edits ran once, before the hold, and are answered
+    // from the snapshot after the engine is lost.
+    await test('a real run with concurrent calls leaves a snapshot it resumes from after the engine is lost', async () => {
       const dir = `rc-real-${Date.now()}`;
       const names = ['a', 'b', 'c'];
       for (const [i, n] of names.entries()) await writeFileOp({ path: `${dir}/${n}.txt`, content: `hello ${i}\n` });
@@ -602,77 +873,85 @@ export async function runTests(_ctx) {
         const files = ${JSON.stringify(names.map((n) => `${dir}/${n}.txt`))};
         const texts = await Promise.all(files.map((f) => fs.readFile(f)));
         const [hits, listed] = await Promise.all([grep("hello", { cwd: "${dir}" }), glob("*.txt", { cwd: "${dir}" })]);
-        await Promise.all(files.map(async (f) => {
-          await fs.readFile(f);
-          await tools.edit({ file_path: f, old_string: "hello", new_string: "there" });
-        }));
+        await Promise.all(files.map((f) => fs.readFile(f)));
+        for (const f of files) await tools.edit({ file_path: f, old_string: "hello", new_string: "there" });
         const r = await tools.bash({ command: ${JSON.stringify(command)} });
         const after = await Promise.all(files.map((f) => fs.readFile(f)));
         return JSON.stringify({ texts, hits: hits.length, listed: listed.length, r: String(r).trim(), after });`;
       const { conversation, mt, item } = await setup(code, { strategy: 'default' });
       const id = item.toolUseId;
       await assertParks(conversation, mt, command);
-      const parked = await runAsAction(conversation, mt, id);
-      assert(parked.state === 'pending' && parked.suspendedCall?.name === 'bash', `suspended on bash: ${parked.state} ${JSON.stringify(parked.suspendedCall)}`);
-      const journal = /** @type {any[]} */ (programJournals.get(item)?.journal ?? []);
+      const finished = startAsAction(conversation, mt, id);
+      await waitHeld(mt, id, 'bash');
+      // Kept beside the conversation, not in the engine: the engine is what
+      // is lost.
+      const kept = /** @type {any} */ (await loadProgramSnapshot(conversation.id, id));
+      assert(kept?.held?.name === 'bash' && kept.held.input?.command === command,
+        `the snapshot is on disk, naming the held call: ${JSON.stringify(kept?.held)}`);
+      const journal = /** @type {any[]} */ (kept.journal);
       const keys = Array.from(journal, (e) => e?.key ?? '<gap>');
       assert(JSON.stringify(keys.slice(0, 3)) === JSON.stringify(['fs.readFile', 'fs.readFile', 'fs.readFile'])
         && keys.at(-1) === 'tools.bash' && keys.length === 12 && !keys.includes('<gap>'),
-      `every call before the stop is journalled, the held one last: ${JSON.stringify(keys)}`);
-      const answered = journal.slice(0, -1);
-      assert(answered.every((e) => typeof e.seq === 'number' && !e.held) && journal.at(-1).held,
-        `each answer has its place in the order, the held call none: ${JSON.stringify(journal.map((e) => [e.key, e.seq, e.held]))}`);
-      assert(new Set(answered.map((e) => e.seq)).size === answered.length, 'no two answers share a place');
+      `every call before the hold is in the snapshot, the held one last: ${JSON.stringify(keys)}`);
+      assert(journal.slice(0, -1).every((e) => !e.pending) && journal.at(-1).pending && kept.heldStep === 11,
+        `every call before it answered, the held call pending at the step named: ${JSON.stringify(journal.map((e) => [e.key, e.pending]))} ${kept.heldStep}`);
       for (const n of names) {
         const now = await readFileLoad({ path: `${dir}/${n}.txt` });
-        assert(String(now.content).startsWith('there'), `${n} was edited before the stop: ${now.content}`);
+        assert(String(now.content).startsWith('there'), `${n} was edited before the hold: ${now.content}`);
       }
 
+      await loseEngine(conversation, id, finished);
+      assert(mt.getToolAction(id).toJSON().state === 'pending', 'the item still waits on the user');
       const done = await runAsAction(conversation, mt, id, () => mt.resolveApproval(id, 'yes', { source: 'user' }));
       assert(done.state === 'completed' && !done.result?.isError, `the replay finishes: ${JSON.stringify(done.result)}`);
       const value = JSON.parse(String(done.result?.content));
-      assert(JSON.stringify(value.texts) === JSON.stringify(['hello 0\n', 'hello 1\n', 'hello 2\n']), `it saw what it read before the stop: ${JSON.stringify(value.texts)}`);
+      assert(JSON.stringify(value.texts) === JSON.stringify(['hello 0\n', 'hello 1\n', 'hello 2\n']), `it saw what it read before the hold: ${JSON.stringify(value.texts)}`);
       assert(value.hits === 3 && value.listed === 3 && value.r === 'ran', `and its searches and the command: ${JSON.stringify(value)}`);
       assert(JSON.stringify(value.after) === JSON.stringify(['there 0\n', 'there 1\n', 'there 2\n']), `each edit applied once: ${JSON.stringify(value.after)}`);
       assert(String((await readFileLoad({ path: log })).content) === 'x', 'the command ran once');
-      const rows = rowsOf(mt, id).map((r) => `${r.name}:${r.status}`).join(',');
-      assert(rows === 'edit:ok,edit:ok,edit:ok,bash:ok', `one row per call, across passes: ${rows}`);
+      const rows = rowBrief(mt, id);
+      assert(rows === 'edit:ok,edit:ok,edit:ok,bash:ok', `one row per call, across runs: ${rows}`);
     });
 
-    // Two calls that wait, fired together: the program stops on one, its
-    // replay is handed that one and stops on the other, and the third pass
-    // finishes. Each command runs once, whichever the invoker reached first.
-    await test('two waiting calls fired together suspend in turn, and each runs once', async () => {
+    // Two calls that wait, fired together: the item asks about one, then the
+    // other, in one run. Each command runs once, whichever the invoker reached
+    // first.
+    await test('two waiting calls fired together are held in turn, and each runs once', async () => {
       const dir = `rc-twice-${Date.now()}`;
       await writeFileOp({ path: `${dir}/c.txt`, content: 'seed\n' });
       const commands = [1, 2].map((n) => heldCommand(`${dir}/log${n}.txt`));
       const code = `
+        const startedAt = Date.now();
         const out = await Promise.all(${JSON.stringify(commands)}.map(async (command) => {
           await fs.readFile("${dir}/c.txt");
           return String(await tools.bash({ command })).trim();
         }));
-        return out.join("|");`;
+        return out.join("|") + "|" + startedAt;`;
       const { conversation, mt, item } = await setup(code, { strategy: 'default' });
       const id = item.toolUseId;
       for (const c of commands) await assertParks(conversation, mt, c);
-      const first = await runAsAction(conversation, mt, id);
-      assert(first.state === 'pending', `the first stop: ${first.state} ${JSON.stringify(first.result)}`);
-      const second = await runAsAction(conversation, mt, id, () => mt.resolveApproval(id, 'yes', { source: 'user' }));
-      assert(second.state === 'pending', `the second stop: ${second.state} ${JSON.stringify(second.result)}`);
-      const held = [first, second].map((p) => p.suspendedCall?.input?.command);
-      assert(held.every((c) => commands.includes(c)) && held[0] !== held[1], `it stops once on each command: ${JSON.stringify(held)}`);
-      const done = await runAsAction(conversation, mt, id, () => mt.resolveApproval(id, 'yes', { source: 'user' }));
-      assert(done.state === 'completed' && done.result?.content === 'ran|ran', `the third pass finishes: ${JSON.stringify(done.result)}`);
+      const finished = startAsAction(conversation, mt, id);
+      const first = await waitHeld(mt, id, 'bash');
+      const answeredAt = Date.now();
+      answerHeld(conversation, mt, id, 'yes');
+      const second = await waitHeld(mt, id, 'bash', (t) => t.heldCall.input.command !== first.heldCall.input.command);
+      answerHeld(conversation, mt, id, 'yes');
+      const done = await finished;
+      const held = [first, second].map((p) => p.heldCall?.input?.command);
+      assert(held.every((c) => commands.includes(c)) && held[0] !== held[1], `it asks once about each command: ${JSON.stringify(held)}`);
+      const [a, b, startedAt] = String(done.result?.content).split('|');
+      assert(done.state === 'completed' && a === 'ran' && b === 'ran', `it finishes: ${JSON.stringify(done.result)}`);
+      assert(Number(startedAt) < answeredAt, 'in one run');
       for (const n of [1, 2]) {
         const ran = await readFileLoad({ path: `${dir}/log${n}.txt` });
         assert(String(ran.content) === 'x', `command ${n} ran once: ${JSON.stringify(ran.content)}`);
       }
-      const rows = rowsOf(mt, id).map((r) => `${r.name}:${r.status}`).join(',');
+      const rows = rowBrief(mt, id);
       assert(rows === 'bash:ok,bash:ok', `one row per command: ${rows}`);
-      assert(!programJournals.has(item) && !done.suspendedCall, 'nothing left behind');
+      assert(!(await snapshotOf(item)) && !done.heldCall, 'nothing left behind');
     });
 
-    await test('a suspended program with no journal fails and runs nothing', async () => {
+    await test('a program lost with no snapshot fails and runs nothing', async () => {
       const dir = `rc-lost-${Date.now()}`;
       await writeFileOp({ path: `${dir}/c.txt`, content: 'hello world\n' });
       const log = `${dir}/log.txt`;
@@ -685,46 +964,201 @@ export async function runTests(_ctx) {
       const { conversation, mt, item } = await setup(code, { strategy: 'default' });
       const id = item.toolUseId;
       await assertParks(conversation, mt, command);
-      const parked = await runAsAction(conversation, mt, id);
-      assert(parked.state === 'pending', `suspended first: ${parked.state}`);
-      // What a restart leaves: the item as it was, the journal gone.
-      programJournals.delete(item);
+      const finished = startAsAction(conversation, mt, id);
+      await waitHeld(mt, id, 'bash');
+      // What a restart leaves: the item as it was, the snapshot gone with the engine.
+      await loseEngine(conversation, id, finished);
+      await dropSnapshot(item);
       const done = await runAsAction(conversation, mt, id, () => mt.resolveApproval(id, 'yes', { source: 'user' }));
       assert(done.result?.isError, `it fails: ${JSON.stringify(done.result)}`);
       assert(String(done.result?.content).includes("Couldn't resume the program"), `and says why: ${done.result?.content}`);
       const report = programChangeReport(displayOf(mt, id));
-      assert(report.includes(`- edit: ${dir}/c.txt`), `the change before the stop is still reported: ${JSON.stringify(report)}`);
-      assert((await readFileLoad({ path: log }).catch(() => null))?.exists !== true, 'nothing ran again');
+      assert(report.includes(`- edit: ${dir}/c.txt`), `the change before the hold is still reported: ${JSON.stringify(report)}`);
+      assert(await absent(log), 'nothing ran again');
       const content = await readFileLoad({ path: `${dir}/c.txt` });
       assert(String(content.content) === 'hello there\n', `the edit is not redone: ${content.content}`);
     });
 
-    // The worker resets a parked item to "" when its thread's strategy changes.
-    // The journal outlives that, so the replay re-decides the held call under
-    // the new strategy.
-    await test('a strategy switch re-decides the held call on replay', async () => {
+    // Two holds in turn, the engine lost at the second: the replay answers
+    // the first call from the snapshot, runs the second once, and nothing
+    // that ran between them runs again.
+    await test('a program lost at its second hold resumes from it, each call once', async () => {
+      const dir = `rc-second-${Date.now()}`;
+      await writeFileOp({ path: `${dir}/seed.txt`, content: '' });
+      const [first, second] = [1, 2].map((n) => heldCommand(`${dir}/log${n}.txt`));
+      const code = `
+        const a = await tools.bash({ command: ${JSON.stringify(first)} });
+        await tools.bash({ command: "printf x >> ${dir}/between.txt" });
+        const b = await tools.bash({ command: ${JSON.stringify(second)} });
+        return String(a).trim() + "|" + String(b).trim();`;
+      const { conversation, mt, item } = await setup(code, { strategy: 'default' });
+      const id = item.toolUseId;
+      await assertParks(conversation, mt, first);
+      const finished = startAsAction(conversation, mt, id);
+      await waitHeld(mt, id, 'bash');
+      answerHeld(conversation, mt, id, 'yes');
+      await waitHeld(mt, id, 'bash', (t) => t.heldCall.input.command === second);
+      const kept = await snapshotOf(item);
+      assert(kept?.held?.input?.command === second && kept.heldStep === 2 && kept.journal[2]?.pending
+        && kept.journal[0]?.ok && kept.journal[1]?.ok, `the snapshot is the second hold's: ${JSON.stringify(kept)}`);
+      await loseEngine(conversation, id, finished);
+      const done = await runAsAction(conversation, mt, id, () => mt.resolveApproval(id, 'yes', { source: 'user' }));
+      assert(done.state === 'completed' && done.result?.content === 'ran|ran', `the replay finishes: ${JSON.stringify(done.result)}`);
+      for (const f of ['log1', 'between', 'log2']) {
+        const ran = await readFileLoad({ path: `${dir}/${f}.txt` });
+        assert(String(ran.content) === 'x', `${f} ran once: ${JSON.stringify(ran.content)}`);
+      }
+      assert(rowBrief(mt, id) === 'bash:ok,bash:ok,bash:ok', `one row per call, across runs: ${rowBrief(mt, id)}`);
+      assert(!(await snapshotOf(item)), 'and the snapshot is dropped');
+    });
+
+    // A save that fails at the second hold must not leave the first hold's
+    // snapshot to be resumed from: that replay would ask about the first call
+    // again, and make again everything that ran since.
+    await test('a snapshot that cannot be kept at a later hold leaves none from an earlier one', async () => {
+      const dir = `rc-failsave-${Date.now()}`;
+      await writeFileOp({ path: `${dir}/seed.txt`, content: '' });
+      const [first, second] = [1, 2].map((n) => heldCommand(`${dir}/log${n}.txt`));
+      const code = `
+        await tools.bash({ command: ${JSON.stringify(first)} });
+        await tools.bash({ command: "printf x >> ${dir}/between.txt" });
+        await tools.bash({ command: ${JSON.stringify(second)} });
+        return "done";`;
+      const { conversation, mt, item } = await setup(code, { strategy: 'default' });
+      const id = item.toolUseId;
+      await assertParks(conversation, mt, first);
+      await failingSaves((n) => n === 2, 500, async () => {
+        const finished = startAsAction(conversation, mt, id);
+        await waitHeld(mt, id, 'bash');
+        assert((await snapshotOf(item))?.held?.input?.command === first, 'the first hold has its snapshot');
+        answerHeld(conversation, mt, id, 'yes');
+        await waitHeld(mt, id, 'bash', (t) => t.heldCall.input.command === second);
+        await waitSnapshotGone(item, 'the first hold\'s snapshot to go with the second\'s failed save');
+        await loseEngine(conversation, id, finished);
+      });
+      const done = await runAsAction(conversation, mt, id, () => mt.resolveApproval(id, 'yes', { source: 'user' }));
+      assert(done.result?.isError && String(done.result?.content).includes("Couldn't resume the program"),
+        `it cannot resume, and says so: ${JSON.stringify(done.result)}`);
+      for (const f of ['log1', 'between']) {
+        const ran = await readFileLoad({ path: `${dir}/${f}.txt` });
+        assert(String(ran.content) === 'x', `${f} ran once, not again: ${JSON.stringify(ran.content)}`);
+      }
+      assert(await absent(`${dir}/log2.txt`), 'the call it held never ran');
+    });
+
+    // The item names the call it holds, and a snapshot names the call it was
+    // taken for; one kept for another call is from another hold.
+    await test('a snapshot taken for another call is not resumed from', async () => {
+      const file = `rc-mismatch-${Date.now()}.txt`;
+      const code = `return await tools.bash({ command: "printf x > ${file}; printf ran" });`;
+      const { mt, item } = await setup(code);
+      const held = { name: 'bash', input: { command: `printf x > ${file}; printf ran` } };
+      await seedSnapshot(item, {
+        held: { name: 'bash', input: { command: 'printf other' } },
+        heldStep: 0,
+        journal: [{ key: 'tools.bash', args: JSON.stringify([held.input]), ok: false, pending: true }]
+      });
+      seedHeld(mt, item.toolUseId, held);
+      const { out, text } = await run(item, code);
+      assert(out?.success === false && text.includes("Couldn't resume the program"), `it does not resume: ${text}`);
+      assert(await absent(file), 'and nothing runs');
+      assert(!(await snapshotOf(item)), 'the stray snapshot is dropped');
+    });
+
+    await test('a program whose snapshot cannot be kept still waits, and finishes once answered', async () => {
+      const log = `rc-nosave-${Date.now()}.txt`;
+      const command = heldCommand(log);
+      const code = `return String(await tools.bash({ command: ${JSON.stringify(command)} })).trim();`;
+      const { conversation, mt, item } = await setup(code, { strategy: 'default' });
+      const id = item.toolUseId;
+      await assertParks(conversation, mt, command);
+      const done = await failingSaves(() => true, 413, async () => {
+        const finished = startAsAction(conversation, mt, id);
+        await waitHeld(mt, id, 'bash');
+        assert(!(await snapshotOf(item)), 'no snapshot was kept');
+        answerHeld(conversation, mt, id, 'yes');
+        return finished;
+      });
+      assert(done.state === 'completed' && done.result?.content === 'ran', `it finishes: ${JSON.stringify(done.result)}`);
+      assert(String((await readFileLoad({ path: log })).content) === 'x', 'the call ran once');
+    });
+
+    await test('cancelling a program while it holds a call ends it, unrun', async () => {
+      const log = `rc-cancel-held-${Date.now()}.txt`;
+      const command = heldCommand(log);
+      const code = `await tools.bash({ command: ${JSON.stringify(command)} }); return "done";`;
+      const { conversation, mt, item } = await setup(code, { strategy: 'default' });
+      const id = item.toolUseId;
+      await assertParks(conversation, mt, command);
+      const finished = startAsAction(conversation, mt, id);
+      await waitHeld(mt, id, 'bash');
+      mt.transact(() => mt.updateToolActionState(id, 'cancelled'));
+      const done = await finished;
+      assert(done.state === 'cancelled', `the cancel stands: ${done.state} ${JSON.stringify(done.result)}`);
+      await waitUntil(() => !actionExecutor.runningActionFor(id, conversation.id), 'the program to end');
+      assert(await absent(log), 'the held call never ran');
+      assert(rowsOf(mt, id).every((r) => r.status !== 'ok'), `no call ran: ${rowBrief(mt, id)}`);
+      await waitSnapshotGone(item, 'the worker to drop the cancelled program\'s snapshot');
+    });
+
+    // The worker resets a parked item to "" when its thread's strategy
+    // changes, clearing its card, and the new strategy then approves the item
+    // itself. That is no answer to the held call, which is decided again
+    // under the new strategy.
+    await test('a strategy switch re-decides the held call', async () => {
       const log = `rc-switch-${Date.now()}.txt`;
       const command = heldCommand(log);
       const code = `await tools.bash({ command: ${JSON.stringify(command)} }); return "done";`;
       const { conversation, mt, item } = await setup(code, { strategy: 'default' });
       const id = item.toolUseId;
       await assertParks(conversation, mt, command);
-      const parked = await runAsAction(conversation, mt, id);
-      assert(parked.state === 'pending', `suspended first: ${parked.state}`);
+      const finished = startAsAction(conversation, mt, id);
+      await waitHeld(mt, id, 'bash');
       mt.strategy = { getApprovalPolicy: YoloStrategyType.prototype.getApprovalPolicy };
       const ymap = mt.getToolAction(id);
-      const done = await runAsAction(conversation, mt, id, () => {
-        ymap.set('state', '');
-        for (const field of ['approvalResponse', 'approvalOptions', 'displayData', 'hooks']) ymap.delete(field);
+      answerHeld(conversation, mt, id, undefined, {
+        first: () => {
+          ymap.set('state', '');
+          for (const field of ['approvalResponse', 'approvalOptions', 'displayData', 'hooks']) ymap.delete(field);
+        }
       });
+      const done = await finished;
       assert(done.state === 'completed' && done.result?.content === 'done', `it runs under the new strategy: ${JSON.stringify(done.result)}`);
       const ran = await readFileLoad({ path: log });
       assert(String(ran.content) === 'x', `once: ${JSON.stringify(ran.content)}`);
     });
 
-    // The user approves the call they were shown. A replay that makes another
-    // call at that step — here a command built from Math.random — must not be
-    // handed the approval: it diverges, and neither command runs.
+    // The item reset and parked on its own account asks about the program,
+    // not the held call: approving it is no answer to that call, which is put
+    // to the decision again — and here waits on the user again.
+    await test('an approval of the program itself never passes to the held call', async () => {
+      const log = `rc-own-card-${Date.now()}.txt`;
+      const command = heldCommand(log);
+      const code = `await tools.bash({ command: ${JSON.stringify(command)} }); return "done";`;
+      const { conversation, mt, item } = await setup(code, { strategy: 'default' });
+      const id = item.toolUseId;
+      await assertParks(conversation, mt, command);
+      const finished = startAsAction(conversation, mt, id);
+      await waitHeld(mt, id, 'bash');
+      const ymap = mt.getToolAction(id);
+      mt.transact(() => {
+        for (const field of ['approvalResponse', 'approvalOptions', 'displayData', 'hooks']) ymap.delete(field);
+        ymap.set('approvalOptions', { options: [{ label: 'Yes', value: 'yes' }, { label: 'No', value: 'no' }] });
+      });
+      answerHeld(conversation, mt, id, 'yes');
+      const again = await waitHeld(mt, id, 'bash', (t) => t.approvalOptions?.held === true);
+      assert(again.heldCall.input.command === command, `the same call waits again: ${JSON.stringify(again.heldCall)}`);
+      assert(await absent(log), 'it did not run on the program\'s approval');
+      assert(mt.resolveApproval(id, 'no'), 'the denial is written');
+      const done = await finished;
+      assert(done.state === 'cancelled', `denied, it ends: ${done.state}`);
+      assert(await absent(log), 'and never ran');
+    });
+
+    // The user approves the call they were shown. A program resuming after
+    // its engine was lost that makes another call at that step — here a
+    // command built from Math.random — must not be handed the approval: it
+    // diverges, and neither command runs.
     await test('an approval never passes to a different call made in the held one\'s place', async () => {
       const dir = `rc-transfer-${Date.now()}`;
       const log = `${dir}/log.txt`;
@@ -733,20 +1167,22 @@ export async function runTests(_ctx) {
       const { conversation, mt, item } = await setup(code, { strategy: 'default' });
       const id = item.toolUseId;
       await assertParks(conversation, mt, `${prefix}0.5`);
-      const parked = await runAsAction(conversation, mt, id);
-      const shown = parked.suspendedCall?.input?.command;
-      assert(parked.state === 'pending' && String(shown).startsWith(prefix), `suspended on the command: ${JSON.stringify(parked.suspendedCall)}`);
+      const finished = startAsAction(conversation, mt, id);
+      const parked = await waitHeld(mt, id, 'bash');
+      const shown = parked.heldCall?.input?.command;
+      assert(String(shown).startsWith(prefix), `held on the command: ${JSON.stringify(parked.heldCall)}`);
+      await loseEngine(conversation, id, finished);
       const done = await runAsAction(conversation, mt, id, () => mt.resolveApproval(id, 'yes', { source: 'user' }));
       const text = String(done.result?.content);
       assert(done.result?.isError, `the replay must fail: ${JSON.stringify(done.result)}`);
       assert(text.includes("Couldn't resume the program") && text.includes('step 1') && text.includes(String(shown).slice(prefix.length)),
         `it says the call differed from the one approved: ${text}`);
-      assert((await readFileLoad({ path: log }).catch(() => null))?.exists !== true, 'neither command ran');
+      assert(await absent(log), 'neither command ran');
       assert(rowsOf(mt, id).every((r) => r.status !== 'ok'), `no call ran: ${JSON.stringify(rowsOf(mt, id))}`);
-      assert(!programJournals.has(item) && !done.suspendedCall, 'the program is over: no journal, no held call');
+      assert(!(await snapshotOf(item)) && !done.heldCall, 'the program is over: no snapshot, no held call');
     });
 
-    await test('a question suspends the program, and its answer is the call\'s result', async () => {
+    await test('a question is held, and its answer is the call\'s result', async () => {
       const file = `rc-ask-${Date.now()}.txt`;
       const code = `
         await tools.bash({ command: "printf x >> ${file}" });
@@ -756,21 +1192,19 @@ export async function runTests(_ctx) {
       // Under YOLO: a question always reaches the user.
       const { conversation, mt, item } = await setup(code);
       const id = item.toolUseId;
-      const parked = await runAsAction(conversation, mt, id);
-      assert(parked.state === 'pending', `a question suspends: ${parked.state} ${JSON.stringify(parked.result)}`);
-      assert(parked.suspendedCall?.name === 'AskUserQuestion', `held: ${JSON.stringify(parked.suspendedCall)}`);
-      const done = await runAsAction(conversation, mt, id, () => mt.resolveApproval(id, 'B', { source: 'user' }));
+      const finished = startAsAction(conversation, mt, id);
+      await waitHeld(mt, id, 'AskUserQuestion');
+      answerHeld(conversation, mt, id, 'B');
+      const done = await finished;
       assert(done.result?.content === 'answer: Pick: B', `the answer reaches the program: ${JSON.stringify(done.result)}`);
       const ran = await readFileLoad({ path: file });
       assert(String(ran.content) === 'x', `bash ran once: ${JSON.stringify(ran.content)}`);
     });
 
-    // A suspension stops the program and cancels its running calls, and a
-    // cancelled call is not journalled, so the replay runs it again. That is
-    // safe only because nothing starts past a write still running — not even
-    // a read, as a question is — so a call that suspends never cuts a write
-    // off: the write has finished, and its answer is journalled, first.
-    await test('a call fired beside a running write waits for it, so suspending never cuts it off', async () => {
+    // Nothing starts past a write still running — not even a read, as a
+    // question is — so a call that waits on the user never waits beside a
+    // write half-done: the write has finished, and is in the snapshot, first.
+    await test('a call fired beside a running write waits for it before it is held', async () => {
       const file = `rc-alongside-${Date.now()}.txt`;
       const code = `
         const [, answer] = await Promise.all([
@@ -782,14 +1216,18 @@ export async function runTests(_ctx) {
       // Under YOLO the bash runs unasked and the question always reaches the user.
       const { conversation, mt, item } = await setup(code);
       const id = item.toolUseId;
-      const parked = await runAsAction(conversation, mt, id);
-      assert(parked.state === 'pending' && parked.suspendedCall?.name === 'AskUserQuestion',
-        `the question suspends: ${parked.state} ${JSON.stringify(parked.suspendedCall)} ${JSON.stringify(parked.result)}`);
+      const finished = startAsAction(conversation, mt, id);
+      await waitHeld(mt, id, 'AskUserQuestion');
       const stopped = await readFileLoad({ path: file });
-      assert(String(stopped.content) === 'startend', `the write finished before the program stopped: ${JSON.stringify(stopped.content)}`);
-      const before = rowsOf(mt, id).map((r) => `${r.name}:${r.status}`).join(',');
-      assert(before === 'bash:ok', `its row is kept as it ended: ${before}`);
-      const done = await runAsAction(conversation, mt, id, () => mt.resolveApproval(id, 'B', { source: 'user' }));
+      assert(String(stopped.content) === 'startend', `the write finished before the question was put: ${JSON.stringify(stopped.content)}`);
+      const before = rowBrief(mt, id);
+      assert(before === 'bash:ok,AskUserQuestion:held', `its row is kept as it ended: ${before}`);
+      const kept = await snapshotOf(item);
+      const journal = /** @type {any[]} */ (kept?.journal ?? []);
+      assert(journal[0]?.key === 'tools.bash' && journal[0]?.ok && journal[1]?.pending && kept.heldStep === 1,
+        `the write is in the snapshot, answered: ${JSON.stringify(kept)}`);
+      answerHeld(conversation, mt, id, 'B');
+      const done = await finished;
       assert(done.result?.content === 'answer: Pick: B', `the program finishes: ${JSON.stringify(done.result)}`);
       const ran = await readFileLoad({ path: file });
       assert(String(ran.content) === 'startend', `the write ran once: ${JSON.stringify(ran.content)}`);
@@ -837,7 +1275,7 @@ export async function runTests(_ctx) {
 
     // A strategy with a reviewer is handed a parked call before the user is;
     // a call held inside a program is no different.
-    await test('a suspended call is offered to the strategy\'s reviewer', async () => {
+    await test('a held call is offered to the strategy\'s reviewer', async () => {
       const log = `rc-review-${Date.now()}.txt`;
       const command = heldCommand(log);
       const code = `await tools.bash({ command: ${JSON.stringify(command)} }); return "done";`;
@@ -855,8 +1293,9 @@ export async function runTests(_ctx) {
         }
       };
       await assertParks(conversation, mt, command);
-      const parked = await runAsAction(conversation, mt, id);
-      assert(parked.state === 'pending', `suspended: ${parked.state}`);
+      const finished = startAsAction(conversation, mt, id);
+      const parked = await waitHeld(mt, id, 'bash');
+      await waitUntil(() => offered.length > 0, 'the reviewer to be offered the call');
       assert(offered.length === 1, `the reviewer is offered the held call once, got ${offered.length}`);
       const call = offered[0];
       assert(call.toolUseId === id, `under the program's id, which is what it resolves: ${call.toolUseId}`);
@@ -866,7 +1305,8 @@ export async function runTests(_ctx) {
       finishReview({ note: 'declined: writes outside the project' });
       await waitUntil(() => mt.getToolAction(id)?.toJSON().reviewStatus?.busy === false, 'the review to close');
       assert(mt.getToolAction(id).toJSON().reviewStatus.label === 'declined: writes outside the project', 'its note stays in the card');
-      const done = await runAsAction(conversation, mt, id, () => mt.resolveApproval(id, 'yes', { source: 'user' }));
+      answerHeld(conversation, mt, id, 'yes');
+      const done = await finished;
       assert(done.state === 'completed' && done.result?.content === 'done', `approving finishes it: ${JSON.stringify(done.result)}`);
     });
 
@@ -920,7 +1360,7 @@ export async function runTests(_ctx) {
         `fs.readFile on an image says so, and points at image(): ${errs.read}`);
     });
 
-    await test('an image held across a suspension is attached once approved', async () => {
+    await test('an image the program holds while it waits is attached once approved', async () => {
       const dir = `rc-image-held-${Date.now()}`;
       await writeFileOp({ path: `${dir}/shot.png`, content: 'held png' });
       const log = `${dir}/log.txt`;
@@ -933,11 +1373,12 @@ export async function runTests(_ctx) {
       const { conversation, mt, item } = await setup(code, { strategy: 'default' });
       const id = item.toolUseId;
       await assertParks(conversation, mt, command);
-      const parked = await runAsAction(conversation, mt, id);
-      assert(parked.state === 'pending', `suspended first: ${parked.state}`);
+      const finished = startAsAction(conversation, mt, id);
+      await waitHeld(mt, id, 'bash');
       const held = heldOf(mt, id);
       assert(held.length === 1 && /^[0-9a-f]{64}$/.test(held[0]), `while it waits, the item holds the image: ${JSON.stringify(held)}`);
-      const done = await runAsAction(conversation, mt, id, () => mt.resolveApproval(id, 'yes', { source: 'user' }));
+      answerHeld(conversation, mt, id, 'yes');
+      const done = await finished;
       assert(done.state === 'completed' && done.result?.content?.startsWith('shown'), `it finishes: ${JSON.stringify(done.result)}`);
       const attachments = mt.getToolAction(id).get('attachments');
       const refs = attachments?.toJSON ? attachments.toJSON() : attachments;
@@ -945,10 +1386,10 @@ export async function runTests(_ctx) {
         `the image from before the stop is attached: ${JSON.stringify(refs)}`);
     });
 
-    // image(path) reads a file, so it is journalled like fs: the replay
-    // attaches what the program saw before the stop, not what the file holds
-    // by the time the user answers.
-    await test('image(path) before a suspension is replayed, not read again', async () => {
+    // image(path) reads a file, so it is journalled like fs: a program
+    // resuming after its engine was lost attaches what it saw before the stop,
+    // not what the file holds by the time the user answers.
+    await test('image(path) before a lost engine is replayed, not read again', async () => {
       const dir = `rc-image-replay-${Date.now()}`;
       await writeFileOp({ path: `${dir}/shot.png`, content: 'before the stop' });
       const log = `${dir}/log.txt`;
@@ -960,10 +1401,11 @@ export async function runTests(_ctx) {
       const { conversation, mt, item } = await setup(code, { strategy: 'default' });
       const id = item.toolUseId;
       await assertParks(conversation, mt, command);
-      const parked = await runAsAction(conversation, mt, id);
-      assert(parked.state === 'pending', `suspended first: ${parked.state}`);
+      const finished = startAsAction(conversation, mt, id);
+      await waitHeld(mt, id, 'bash');
       const held = heldOf(mt, id);
       assert(held.length === 1, `while it waits, the item holds the image: ${JSON.stringify(held)}`);
+      await loseEngine(conversation, id, finished);
       await writeFileOp({ path: `${dir}/shot.png`, content: 'changed while it waited' });
       const done = await runAsAction(conversation, mt, id, () => mt.resolveApproval(id, 'yes', { source: 'user' }));
       assert(done.state === 'completed', `it finishes: ${JSON.stringify(done.result)}`);

@@ -339,15 +339,17 @@ function runCodeImageTest() {
 
 /**
  * A program under the Default strategy, where its calls ask. It reads three
- * files through `fs`, edits one and runs a command: the edit suspends it, the
- * user approves, the program replays and the command suspends it, and the user
- * approves that with "don't ask again". The program then finishes, each call
- * having run exactly once. A second program making the identical command runs
- * unprompted on the saved bash rule.
+ * files through `fs`, edits one and runs a command: the edit is held while
+ * the program waits, the user approves, the program goes on and the command is
+ * held, and the user approves that with "don't ask again". The program then
+ * finishes in the one run it started in, each call having run exactly once —
+ * its search for a random pattern would diverge were it ever run again. A
+ * second program making the identical command runs unprompted on the saved
+ * bash rule.
  * @returns {import('../../../../js-tests/utilities/integration-test-runner.js').IntegrationTestDefinition} Test definition
  */
-function runCodeSuspendsAndResumesTest() {
-  const TD = testDirFor('run-code-suspend');
+function runCodeHoldsAndResumesTest() {
+  const TD = testDirFor('run-code-hold');
   const [a, b, c] = ['a', 'b', 'c'].map((n) => `${TD}/${n}.txt`);
   const log = `${TD}/log.txt`;
   // Wrapped in a shell so no standing grant covers it: it asks.
@@ -356,6 +358,7 @@ function runCodeSuspendsAndResumesTest() {
     `const a = await fs.readFile(${JSON.stringify(a)});`,
     `const b = await fs.readFile(${JSON.stringify(b)});`,
     `const c = await fs.readFile(${JSON.stringify(c)});`,
+    `await grep(String(Math.random()), { cwd: ${JSON.stringify(TD)} });`,
     `await tools.edit({ file_path: ${JSON.stringify(c)}, old_string: "hello", new_string: "there" });`,
     `const r = await tools.bash({ command: ${JSON.stringify(command)} });`,
     'return [a.trim(), b.trim(), c.trim(), String(r).trim()].join("|");'
@@ -363,8 +366,8 @@ function runCodeSuspendsAndResumesTest() {
   const second = `return String(await tools.bash({ command: ${JSON.stringify(command)} })).trim();`;
 
   return {
-    name: 'run-code-suspend',
-    description: 'A run_code program under Default suspends on each call that asks and resumes once approved',
+    name: 'run-code-hold',
+    description: 'A run_code program under Default waits on each call that asks and goes on once approved',
     fixture: 'unit-test-fixture',
     approvalFlow: true,
     setupFiles: {
@@ -383,9 +386,9 @@ function runCodeSuspendsAndResumesTest() {
       // The approval-flow conversation permits file writes; the edit must ask.
       { type: 'clear-rules', itemType: 'write-file' },
       { type: 'send-message-no-wait', message: 'Swap the greeting with a program' },
-      { type: 'wait-for-suspended-call', toolUseId: 'call_1', callName: 'edit' },
+      { type: 'wait-for-held-call', toolUseId: 'call_1', callName: 'edit' },
       { type: 'approve-no-wait', toolUseId: 'call_1' },
-      { type: 'wait-for-suspended-call', toolUseId: 'call_1', callName: 'bash' },
+      { type: 'wait-for-held-call', toolUseId: 'call_1', callName: 'bash' },
       { type: 'approve-no-wait', toolUseId: 'call_1', response: 'yes-always:0' },
       // call_2 makes the same command. Were it to ask again, the turn would
       // rest on its prompt and never reach idle.
@@ -420,7 +423,7 @@ function runCodeSuspendsAndResumesTest() {
 
     fileAssertions: [
       { path: c, content: 'greeting: there\n' },
-      // One x per program: neither replay ran the command a second time.
+      // One x per program: nothing ran the command a second time.
       { path: log, content: 'xx' }
     ],
 
@@ -442,7 +445,7 @@ function runCodeSuspendsAndResumesTest() {
         throw new Error('"don\'t ask again" on the held bash call must save a bash rule');
       }
       for (const id of ['call_1', 'call_2']) {
-        if (conversation.rootMessageThread.getToolAction(id)?.get('suspendedCall') !== undefined) {
+        if (conversation.rootMessageThread.getToolAction(id)?.get('heldCall') !== undefined) {
           throw new Error(`${id} must hold no call once finished`);
         }
       }
@@ -451,7 +454,104 @@ function runCodeSuspendsAndResumesTest() {
 }
 
 /**
- * Denying the call a program is suspended on cancels the program, and the turn
+ * The engine is lost while a program holds a call. Under Default the program
+ * reads a file, searches the directory, makes an edit that runs unasked,
+ * then makes a command that asks; while that command is held the engine page
+ * is reloaded, so the program running it is gone. The user then approves, and
+ * the new engine has no program to hand the answer to: it replays the program
+ * from its snapshot, every earlier call answered from the journal and only the
+ * held command made for real. Were anything replayed live, the edit would run
+ * twice, the read would see the edited file, or the command would append to
+ * its log twice. A replay runs the program's own code again, so nothing in it
+ * may differ between runs (a random value would diverge from the journal).
+ * @returns {import('../../../../js-tests/utilities/integration-test-runner.js').IntegrationTestDefinition} Test definition
+ */
+function runCodeEngineLostTest() {
+  const TD = testDirFor('run-code-engine-lost');
+  const target = `${TD}/seed.txt`;
+  const log = `${TD}/log.txt`;
+  // Wrapped in a shell so no standing grant covers it: it asks.
+  const command = `sh -c 'printf x >> ${log}'; printf ran`;
+  const code = [
+    `const before = await fs.readFile(${JSON.stringify(target)});`,
+    `await grep("greeting", { cwd: ${JSON.stringify(TD)} });`,
+    `await tools.edit({ file_path: ${JSON.stringify(target)}, old_string: "hello", new_string: "hello!" });`,
+    `const r = await tools.bash({ command: ${JSON.stringify(command)} });`,
+    'return [before.trim(), String(r).trim()].join("|");'
+  ].join('\n');
+
+  return {
+    name: 'run-code-engine-lost',
+    description: 'A run_code program whose engine is lost while it holds a call resumes from its snapshot once approved',
+    fixture: 'unit-test-fixture',
+    approvalFlow: true,
+    // Restarting the engine takes down every lane's executions with it.
+    needsExclusiveRun: true,
+    setupFiles: {
+      [target]: 'greeting: hello\n'
+    },
+
+    llmResponses: [
+      toolUseResponse('call_1', 'run_code', { code }, 'Running a program.'),
+      textResponse('Done.')
+    ],
+
+    operations: [
+      { type: 'send-message-no-wait', message: 'Mark the greeting with a program' },
+      // The approval-flow conversation permits file writes, so the edit ran
+      // unasked; the command is the first call to ask.
+      { type: 'wait-for-held-call', toolUseId: 'call_1', callName: 'bash' },
+      { type: 'assert-program-snapshot', toolUseId: 'call_1', exists: true, callName: 'bash' },
+      { type: 'restart-engine' },
+      // Still held after the engine change: nothing re-ran or failed it.
+      { type: 'wait-for-held-call', toolUseId: 'call_1', callName: 'bash' },
+      { type: 'approve-no-wait', toolUseId: 'call_1' },
+      { type: 'wait-for-idle', timeoutMs: 30000 },
+      { type: 'assert-program-snapshot', toolUseId: 'call_1', exists: false }
+    ],
+
+    expectedDocument: {
+      items: [
+        { type: 'system-prompt', itemId: '$ITEM_1' },
+        { type: 'user', content: 'Mark the greeting with a program' },
+        { type: 'assistant', content: 'Running a program.' },
+        {
+          type: 'tool-action',
+          toolUseId: '$TOOL_1',
+          toolName: 'run_code',
+          toolInput: { code },
+          state: 'completed',
+          result: { content: 'greeting: hello|ran', isError: false }
+        },
+        { type: 'assistant', content: 'Done.' }
+      ]
+    },
+
+    fileAssertions: [
+      // One "!": the edit made before the hold was not made again.
+      { path: target, content: 'greeting: hello!\n' },
+      // One x: the held command ran once, on the new engine.
+      { path: log, content: 'x' }
+    ],
+
+    customAssertions: (conversation) => {
+      const action = conversation.rootMessageThread.getToolAction('call_1');
+      const display = action?.get('displayData');
+      const data = display?.toJSON ? display.toJSON() : display;
+      const rows = (Array.isArray(data?.nestedCalls) ? data.nestedCalls : [])
+        .map((/** @type {any} */ r) => `${r.name}:${r.status}`).join(',');
+      if (rows !== 'edit:ok,bash:ok') {
+        throw new Error(`call_1 rows: expected edit:ok,bash:ok, got ${rows}`);
+      }
+      if (action?.get('heldCall') !== undefined) {
+        throw new Error('call_1 must hold no call once finished');
+      }
+    }
+  };
+}
+
+/**
+ * Denying the call a program is waiting on cancels the program, and the turn
  * stops there, as denying any call does. Nothing from the held call ran.
  * @returns {import('../../../../js-tests/utilities/integration-test-runner.js').IntegrationTestDefinition} Test definition
  */
@@ -466,7 +566,7 @@ function runCodeDenialCancelsTest() {
 
   return {
     name: 'run-code-deny',
-    description: 'Denying the call a run_code program is suspended on cancels the program and the turn',
+    description: 'Denying the call a run_code program is waiting on cancels the program and the turn',
     fixture: 'unit-test-fixture',
     approvalFlow: true,
     setupFiles: {
@@ -480,7 +580,7 @@ function runCodeDenialCancelsTest() {
     operations: [
       { type: 'clear-rules', itemType: 'write-file' },
       { type: 'send-message-no-wait', message: 'Swap the greeting with a program' },
-      { type: 'wait-for-suspended-call', toolUseId: 'call_1', callName: 'edit' },
+      { type: 'wait-for-held-call', toolUseId: 'call_1', callName: 'edit' },
       { type: 'deny', toolUseId: 'call_1' }
     ],
 
@@ -505,6 +605,7 @@ export const tests = [
   runCodeCancelSpinningTest(),
   runCodeTimeoutSpinningTest(),
   runCodeImageTest(),
-  runCodeSuspendsAndResumesTest(),
+  runCodeHoldsAndResumesTest(),
+  runCodeEngineLostTest(),
   runCodeDenialCancelsTest()
 ];

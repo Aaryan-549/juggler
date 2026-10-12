@@ -656,10 +656,10 @@ function offerToReviewer(messageThread, toolUseId, call, markedUnderReview) {
 }
 
 /**
- * A suspended program's held call as its strategy's reviewer would be handed
+ * A program's held call as its strategy's reviewer would be handed
  * it, were the model to have made the call itself: only a gate call no hook
  * asked about, as at an ordinary park. `label` is the review indicator the
- * suspension is written with when the strategy has a reviewer (so the park
+ * hold is written with when the strategy has a reviewer (so the park
  * does not announce that it wants the user while a review may yet resolve
  * it), and null when it has none.
  * @param {any} messageThread - The program's thread
@@ -668,7 +668,7 @@ function offerToReviewer(messageThread, toolUseId, call, markedUnderReview) {
  * @param {Record<string, unknown>} toolInput - Its arguments
  * @returns {(ReviewableCall & {label: string|null})|null} The review, or null when none may be had
  */
-export function reviewForSuspension(messageThread, decision, toolName, toolInput) {
+export function reviewForHold(messageThread, decision, toolName, toolInput) {
   const action = decision.action;
   if (decision.hookAsks || !action || action.interactionKind() !== INTERACTION_KIND.GATE) return null;
   return {
@@ -682,14 +682,14 @@ export function reviewForSuspension(messageThread, decision, toolName, toolInput
 }
 
 /**
- * Hand a suspended program's held call to its strategy's reviewer, under the
+ * Hand a program's held call to its strategy's reviewer, under the
  * program's own tool-use id: the program's item is what waits on the user,
- * so it is what a reviewer resolves. Called once the suspension is written.
+ * so it is what a reviewer resolves. Called once the hold is written.
  * @param {any} messageThread - The program's thread
  * @param {string} toolUseId - The program's tool-action
- * @param {ReviewableCall & {label: string|null}} review - From reviewForSuspension
+ * @param {ReviewableCall & {label: string|null}} review - From reviewForHold
  */
-export function offerSuspensionToReviewer(messageThread, toolUseId, review) {
+export function offerHoldToReviewer(messageThread, toolUseId, review) {
   const { label, ...call } = review;
   offerToReviewer(messageThread, toolUseId, call, label !== null);
 }

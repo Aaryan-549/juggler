@@ -7,13 +7,14 @@
  * worker_threads sandbox.
  *
  * sandbox-runner.js (web/sdk/lib) calls `globalThis.__hostSandboxDelegate(code,
- * capabilities, timeoutMs, callerRoot)` when it has no `document`. In the webview
- * worker that delegate forwards to the main-thread iframe host; here — the Node
- * engine runs on this very thread, where the real fs/grep/glob closures live —
- * it spawns an isolated worker_threads Worker (engine-sandbox-worker.mjs) to run
- * the untrusted code, services each capability call the worker RPCs back, and
- * terminates the worker on timeout or when the caller's signal aborts. The
- * untrusted code never runs on this thread.
+ * capabilities, timeoutMs, callerRoot, hooks)` when it has no `document`. In the
+ * webview worker that delegate forwards to the main-thread iframe host; here —
+ * the Node engine runs on this very thread, where the real fs/grep/glob closures
+ * live — it spawns an isolated worker_threads Worker (engine-sandbox-worker.mjs)
+ * to run the untrusted code, services each capability call the worker RPCs back,
+ * and terminates the worker on timeout, if the run has one, or when the caller's
+ * signal aborts — for a run with no deadline (timeoutMs 0), the signal is the
+ * only end. The untrusted code never runs on this thread.
  */
 
 /**
@@ -27,7 +28,8 @@ export function installNodeSandboxDelegate({ origin, projectRoot }) {
   /**
    * @param {string} code - Untrusted JavaScript to run
    * @param {Record<string, any>} capabilities - Named fs/grep/glob closures
-   * @param {number} timeoutMs - Wall-clock budget
+   * @param {number} timeoutMs - Wall-clock budget, or 0 for none (the run then
+   *   ends only through `hooks.signal`)
    * @param {string} [callerRoot] - The root the caller works in, POSIX-form
    * @param {RunHooks} [hooks] - The caller's abort signal and console sink
    * @returns {Promise<unknown>} The script's return value
@@ -47,7 +49,7 @@ export function installNodeSandboxDelegate({ origin, projectRoot }) {
  * Run one query_code script in an isolated worker_threads Worker.
  * @param {string} code
  * @param {Record<string, any>} capabilities
- * @param {number} timeoutMs
+ * @param {number} timeoutMs - Wall-clock budget, or 0 for none
  * @param {{ origin: string, projectRoot: string }} env
  * @param {string} [callerRoot]
  * @param {RunHooks} [hooks]
@@ -87,9 +89,10 @@ async function runInWorkerSandbox(code, capabilities, timeoutMs, env, callerRoot
     // Backstop timeout: a synchronously-hanging script never lets the worker's
     // own timer fire, so terminate it from here. The +250ms grace lets the
     // worker's in-band timeout win (a cleaner message) when the hang is async.
-    const killTimer = setTimeout(() => {
+    // None when the run has no deadline (timeoutMs 0): the signal ends it.
+    const killTimer = timeoutMs > 0 ? setTimeout(() => {
       finish(reject, new Error(`Script timed out after ${timeoutMs}ms`));
-    }, timeoutMs + 250);
+    }, timeoutMs + 250) : undefined;
 
     /**
      * Settle once, tearing the worker down.
@@ -105,7 +108,8 @@ async function runInWorkerSandbox(code, capabilities, timeoutMs, env, callerRoot
     }
 
     // Escape: kill the script, not just the wait for it. A run left alive
-    // would go on servicing capability calls until its own timeout.
+    // would go on servicing capability calls until its own timeout — and a run
+    // with no deadline, for good.
     function onAbort() {
       finish(reject, abortError());
     }

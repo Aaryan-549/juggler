@@ -137,7 +137,8 @@ func (r *run) writeStateToDisk() (bool, error) {
 
 // saveStateToDisk writes the document, then sweeps the transaction blob store:
 // any blob whose id is no longer referenced by either the live items tree OR any
-// undoLog entry is deleted, and unreferenced assets go the same way.
+// undoLog entry is deleted, and unreferenced assets go the same way, as do the
+// snapshots of programs whose items have settled.
 // Piggy-backing GC on the debounced save keeps it off the hot path while
 // ensuring it runs whenever the doc actually changes.
 func (r *run) saveStateToDisk() error {
@@ -152,6 +153,10 @@ func (r *run) saveStateToDisk() error {
 
 	if err := r.sweepAssets(); err != nil {
 		r.log.Error("Failed to sweep assets: %v", err)
+	}
+
+	if err := r.sweepPrograms(); err != nil {
+		r.log.Error("Failed to sweep program snapshots: %v", err)
 	}
 
 	return nil

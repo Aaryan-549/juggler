@@ -247,6 +247,11 @@ func (s *Server) setupSessionRoutes(sessionAPI *handlers.SessionAPI) {
 	// Upload raw image bytes (mime in Content-Type) → content-addressed store;
 	// returns the AssetRef.
 	api.HandleFunc("/session/conversations/{convId}/assets", sessionAPI.HandleUploadAsset).Methods("POST")
+	// A program tool's snapshot while one of its calls waits on the user, kept
+	// in <convDir>/programs/<toolUseId>.json (worker.ProgramStore).
+	api.HandleFunc("/session/conversations/{convId}/programs/{toolUseId}", sessionAPI.HandlePutProgram).Methods("PUT")
+	api.HandleFunc("/session/conversations/{convId}/programs/{toolUseId}", sessionAPI.HandleGetProgram).Methods("GET")
+	api.HandleFunc("/session/conversations/{convId}/programs/{toolUseId}", sessionAPI.HandleDeleteProgram).Methods("DELETE")
 	api.HandleFunc("/session/conversations/{convId}/bin", sessionAPI.HandleBinConversation).Methods("POST")
 	api.HandleFunc("/session/binned-conversations", sessionAPI.HandleListBinnedConversations).Methods("GET")
 	api.HandleFunc("/session/binned-conversations", sessionAPI.HandleEmptyBin).Methods("DELETE")
@@ -437,6 +442,11 @@ func (s *Server) RegisterTestRoutes(testAPI any) {
 	// Engine connection status — used by the JS test executor to wait for engine.
 	s.router.HandleFunc("/api/engine/status", s.handleEngineStatus).Methods("GET")
 
+	// Engine restart: the realm is replaced through the engine recovery hook,
+	// as the supervisor replaces a dead one. The engine is shared by every lane
+	// of this server, so only a test scheduled alone may call it.
+	api.HandleFunc("/restart-engine", s.handleTestRestartEngine).Methods("POST")
+
 	// Browser-side diagnostic logger — POST a JSON body and the message lands
 	// in the subprocess stderr (captured per-fixture by main_test.go). Lets
 	// integration tests trace what the browser is actually doing without
@@ -453,6 +463,40 @@ func (s *Server) RegisterTestRoutes(testAPI any) {
 	// Test-pool host page: tiles N iframes of /headless-test for the
 	// "one window, N iframes" stress topology.
 	s.router.HandleFunc("/test-pool", s.serveTestPool).Methods("GET")
+}
+
+// testEngineRestartTimeout bounds how long handleTestRestartEngine waits for
+// the replacement engine to connect. A page reload boots the engine in a few
+// seconds; this leaves room for a loaded machine.
+const testEngineRestartTimeout = 60 * time.Second
+
+// handleTestRestartEngine replaces the engine's realm the way a crash and the
+// server's own recovery would: the recovery hook reloads the engine host, which
+// drops every execution in flight without a word to any document, and a fresh
+// engine connects as a new client. It answers once that new engine is attached
+// and live, so the worker has already been told of the change.
+func (s *Server) handleTestRestartEngine(w http.ResponseWriter, r *http.Request) {
+	reload := s.engineRecovery.Load()
+	if reload == nil {
+		http.Error(w, "no engine recovery hook is installed", http.StatusNotImplemented)
+		return
+	}
+	previous := s.engineClient.Load()
+	(*reload)()
+	deadline := time.Now().Add(testEngineRestartTimeout)
+	for time.Now().Before(deadline) {
+		if c := s.engineClient.Load(); c != nil && c != previous && s.IsEngineConnected() {
+			handlers.WriteJSON(w, r, 0, map[string]any{"clientId": c.ClientID()})
+			return
+		}
+		select {
+		case <-r.Context().Done():
+			return
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+	http.Error(w, fmt.Sprintf("no new engine connected within %v of the reload", testEngineRestartTimeout),
+		http.StatusGatewayTimeout)
 }
 
 // SetTestLLMCaller sets a custom LLM caller for integration testing.

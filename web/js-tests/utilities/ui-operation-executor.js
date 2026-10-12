@@ -208,14 +208,14 @@ function waitForElementGone(selector, timeoutMs = 3000) {
  */
 const OBSERVE_ONLY_OPS = new Set([
   'wait-for-idle', 'wait-for-state', 'wait-for-approval', 'wait-for-thread-approval',
-  'wait-for-progress', 'wait-for-action-output', 'wait-for-execution', 'wait-for-nested-call', 'wait-for-suspended-call',
+  'wait-for-progress', 'wait-for-action-output', 'wait-for-execution', 'wait-for-nested-call', 'wait-for-held-call',
   'wait-for-mock-paused', 'wait-ms',
   'assert-document', 'assert-dom', 'assert-no-result', 'assert-tool-field', 'assert-input-warning',
   'assert-streaming-chunks', 'assert-transaction-markers', 'assert-thread-item-count',
   'assert-tool-exec-count', 'assert-spinner-was-visible', 'assert-tool-result-changed',
   'validate-context-snapshot', 'validate-thread-context',
   'start-capture-progress', 'start-tool-exec-counter', 'start-spinner-capture',
-  'capture-tool-result'
+  'capture-tool-result', 'assert-program-snapshot'
 ]);
 
 /**
@@ -578,6 +578,45 @@ export async function executeUIOperation(harness, op) {
       break;
     }
 
+    // Replaces the engine's realm as a crash followed by the server's recovery
+    // would: the engine page is reloaded, every execution in flight is lost
+    // without a word to any document, and a fresh engine attaches as a new
+    // client. Resolves once the server has that new engine live. The engine
+    // is shared by every lane of the server: only a needsExclusiveRun test may
+    // use it.
+    case 'restart-engine': {
+      const response = await fetch(apiUrl('/test/restart-engine'), { method: 'POST' });
+      if (!response.ok) {
+        throw new Error(`restart-engine: HTTP ${response.status}: ${(await response.text()).trim()}`);
+      }
+      break;
+    }
+
+    // A program tool keeps a snapshot of its journal while it holds a call.
+    // Asserts there is one (holding a call to `callName`, when given), or, with
+    // `exists: false`, that there is none.
+    case 'assert-program-snapshot': {
+      if (!op.toolUseId || typeof op.exists !== 'boolean') {
+        throw new Error('assert-program-snapshot operation requires toolUseId and exists');
+      }
+      const { loadProgramSnapshot } = await import('../../js/services/ops-api.js');
+      const snapshot = /** @type {any} */ (await loadProgramSnapshot(harness.conversation.id, op.toolUseId));
+      if (!op.exists) {
+        if (snapshot !== null) {
+          throw new Error(`assert-program-snapshot(${op.toolUseId}): expected none, found ${JSON.stringify(snapshot)}`);
+        }
+        break;
+      }
+      if (snapshot === null) {
+        throw new Error(`assert-program-snapshot(${op.toolUseId}): expected a snapshot, found none`);
+      }
+      if (op.callName && snapshot.held?.name !== op.callName) {
+        throw new Error(`assert-program-snapshot(${op.toolUseId}): expected it to hold ${op.callName}, `
+          + `it holds ${JSON.stringify(snapshot.held)}`);
+      }
+      break;
+    }
+
     case 'wait-for-state': {
       if (!op.condition) {
         throw new Error('wait-for-state operation requires condition');
@@ -804,13 +843,13 @@ export async function executeUIOperation(harness, op) {
       break;
     }
 
-    // A program tool suspended on one of its calls is pending with that
-    // call in `suspendedCall`. This waits for it to be suspended on `callName`.
-    case 'wait-for-suspended-call': {
+    // A program tool holding one of its calls is pending with that
+    // call in `heldCall`. This waits for it to hold a call to `callName`.
+    case 'wait-for-held-call': {
       if (!op.toolUseId || !op.callName) {
-        throw new Error('wait-for-suspended-call operation requires toolUseId and callName');
+        throw new Error('wait-for-held-call operation requires toolUseId and callName');
       }
-      await waitForSuspendedCall(harness, op.toolUseId, op.callName, op.timeoutMs);
+      await waitForHeldCall(harness, op.toolUseId, op.callName, op.timeoutMs);
       break;
     }
 
@@ -1598,7 +1637,7 @@ export async function executeUIOperation(harness, op) {
 }
 
 /**
- * Wait until a program tool is pending, suspended on a call to `callName`.
+ * Wait until a program tool is pending, holding a call to `callName`.
  * Rides the per-test deadline, and on giving up names the state and the held
  * call it last saw.
  * @param {any} harness - UI test harness (only `rootThread` is read)
@@ -1607,18 +1646,18 @@ export async function executeUIOperation(harness, op) {
  * @param {number} [timeoutMs=10000] - Nominal timeout, stretched to the deadline
  * @returns {Promise<void>}
  */
-export async function waitForSuspendedCall(harness, toolUseId, callName, timeoutMs = 10000) {
+export async function waitForHeldCall(harness, toolUseId, callName, timeoutMs = 10000) {
   const held = () => {
     const action = harness?.rootThread?.getToolAction?.(toolUseId);
     if (action?.get('state') !== 'pending') return null;
-    const call = action.get('suspendedCall');
+    const call = action.get('heldCall');
     return call?.toJSON ? call.toJSON() : call;
   };
   try {
     await waitFor(() => held()?.name === callName, { timeoutMs: budgetFor(timeoutMs), intervalMs: 25, description: `the program to wait on ${callName}` });
   } catch (e) {
     const action = harness?.rootThread?.getToolAction?.(toolUseId);
-    throw new Error(`wait-for-suspended-call(${toolUseId}): ${e instanceof Error ? e.message : String(e)}; `
+    throw new Error(`wait-for-held-call(${toolUseId}): ${e instanceof Error ? e.message : String(e)}; `
       + `state ${action?.get('state')}, held ${JSON.stringify(held())}`);
   }
 }

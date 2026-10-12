@@ -13,9 +13,10 @@ import { extractErrorMessage } from '../sdk/lib/error-utils.js';
  * capability calls (fs/grep/glob) back here, where their closures live. The
  * untrusted code never runs in the worker — only the capability servicing does.
  *
- * Split out from the worker bootstrap so the timeout below can be exercised: it
- * is the only thing standing between a host that never answers and a query_code
- * tool that sits at `running` for the rest of the session.
+ * Split out from the worker bootstrap so its backstops can be exercised. A run
+ * with a deadline has the timeout below; a run with none (timeoutMs 0) has only
+ * its caller's signal. One or the other is all that stands between a host that
+ * never answers and a tool that sits at `running` for the rest of the session.
  * @module engine-worker-sandbox
  */
 
@@ -35,7 +36,9 @@ import { extractErrorMessage } from '../sdk/lib/error-utils.js';
  * wide. It only has to be finite: without it, a host that never posts
  * `sandbox-result` (a wedged main thread, an iframe that never signals ready)
  * leaves the delegate's promise pending forever, with a live heartbeat and no
- * record anywhere that anything is wrong.
+ * record anywhere that anything is wrong. A run with no deadline gets no grace
+ * timer at all; its caller's signal is the backstop instead, and settles the run
+ * here without waiting for the host.
  */
 export const SANDBOX_DELEGATE_GRACE_MS = 30000;
 
@@ -52,12 +55,14 @@ export const SANDBOX_DELEGATE_GRACE_MS = 30000;
  * @param {object} opts - Bridge options
  * @param {(message: any) => void} opts.post - Post a message to the main-thread host
  * @param {number} [opts.graceMs] - Override for {@link SANDBOX_DELEGATE_GRACE_MS} (tests)
+ * @param {(fn: () => void, ms: number) => any} [opts.setTimer] - Arms the
+ *   backstop timer; `setTimeout` unless a test needs to see what is armed
  * @returns {{delegate: (code: string, capabilities: Record<string, any>, timeoutMs: number, callerRoot?: string, hooks?: RunHooks) => Promise<unknown>,
  *   handleResult: (data: any) => void, handleCap: (data: any) => Promise<void>, handleConsole: (data: any) => void,
  *   pendingCount: () => number}}
  *   The delegate to install on globalThis, and the inbound message handlers.
  */
-export function createSandboxBridge({ post, graceMs = SANDBOX_DELEGATE_GRACE_MS }) {
+export function createSandboxBridge({ post, graceMs = SANDBOX_DELEGATE_GRACE_MS, setTimer = (fn, ms) => setTimeout(fn, ms) }) {
   let sandboxSeq = 0;
   /** @type {Map<string, {resolve: Function, reject: Function, capabilities: Record<string, any>, timer: any, detach: () => void, onConsole?: (line: string) => void}>} */
   const pending = new Map();
@@ -85,7 +90,8 @@ export function createSandboxBridge({ post, graceMs = SANDBOX_DELEGATE_GRACE_MS 
      * Run one query_code script on the host's iframe sandbox.
      * @param {string} code - Untrusted JavaScript
      * @param {Record<string, any>} capabilities - Named fs/grep/glob closures
-     * @param {number} timeoutMs - The script's own wall-clock budget
+     * @param {number} timeoutMs - The script's own wall-clock budget, or 0 for
+     *   none (the run then ends only through `hooks.signal`)
      * @param {string} [callerRoot] - The root the caller works in, POSIX-form
      * @param {RunHooks} [hooks] - The caller's abort signal and console sink
      * @returns {Promise<unknown>} The script's return value
@@ -107,11 +113,13 @@ export function createSandboxBridge({ post, graceMs = SANDBOX_DELEGATE_GRACE_MS 
       // main-thread iframe host can't read this worker's global, so pass it across.
       const projectRoot = callerRoot || /** @type {any} */ (globalThis).__jugglerProjectRoot;
       return new Promise((resolve, reject) => {
-        const timer = setTimeout(
+        // A run with no deadline (timeoutMs 0) has no answer to give up on: its
+        // caller ends it through the signal.
+        const timer = timeoutMs > 0 ? setTimer(
           () => settle(id, false, new Error(
             `query_code: the sandbox host never answered within ${timeoutMs + graceMs}ms`)),
           timeoutMs + graceMs
-        );
+        ) : undefined;
         // The run's Worker lives on the host, so stopping it takes a message.
         // Settle here without waiting for the host's reply: the caller asked to
         // stop, and a host that never answers must not hold it.

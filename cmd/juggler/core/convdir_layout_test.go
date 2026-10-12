@@ -34,9 +34,10 @@ import (
 // layoutNames maps each entry of a conversation folder to the accessor that
 // returns it, so a violation names its own fix.
 var layoutNames = map[string]string{
-	"doc.yjs": "ConvDocPath",
-	"txns":    "ConvTxnsDir",
-	"assets":  "ConvAssetsDir",
+	"doc.yjs":  "ConvDocPath",
+	"txns":     "ConvTxnsDir",
+	"assets":   "ConvAssetsDir",
+	"programs": "ConvProgramsDir",
 }
 
 // dirNameCodec is the folder-name encoding. Reading a conversation's name out

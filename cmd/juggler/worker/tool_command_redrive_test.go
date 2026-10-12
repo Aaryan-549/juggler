@@ -209,15 +209,15 @@ func TestToolCommandHeldSaysSo(t *testing.T) {
 	}
 }
 
-// TestToolCommandRedrive_SuspensionStartsAFreshPhase: a tool-action that stops
-// to wait on the user part-way through (a program tool suspended on one of
-// its calls) goes running → pending, and the user's approval brings it back to
-// approved. Each approval is a new delivery, not a re-drive of the last one: it
+// TestToolCommandRedrive_HoldStartsAFreshPhase: a tool-action that stops to
+// wait on the user part-way through (a program tool holding one of its calls)
+// goes running → pending, and the user's approval brings it back to approved.
+// Each approval is a new delivery, not a re-drive of the last one: it
 // is commanded at once, however recently the last execute-tool went out, and
 // it never counts towards the attempts cap — or a program approved a few times
 // would be escalated to an error while the user was answering it.
-func TestToolCommandRedrive_SuspensionStartsAFreshPhase(t *testing.T) {
-	h := newReattachHarness(t, "conv-redrive-suspend")
+func TestToolCommandRedrive_HoldStartsAFreshPhase(t *testing.T) {
+	h := newReattachHarness(t, "conv-redrive-hold")
 	w := h.w
 	w.tools.redriveAfter = time.Hour // an age-based re-drive cannot explain a dispatch
 
@@ -231,15 +231,15 @@ func TestToolCommandRedrive_SuspensionStartsAFreshPhase(t *testing.T) {
 		w.driveToolActions()
 		h.flush(t)
 		if got := h.executeCount("tu-1"); got != i {
-			t.Fatalf("approval %d: execute-tool count = %d, want %d — an approval after a suspension must be commanded at once", i, got, i)
+			t.Fatalf("approval %d: execute-tool count = %d, want %d — an approval after a hold must be commanded at once", i, got, i)
 		}
 		if s := w.tools.byID["tu-1"]; s == nil || s.attempts != 1 {
-			t.Fatalf("approval %d: attempts = %+v, want 1 — a suspension starts a fresh delivery phase", i, s)
+			t.Fatalf("approval %d: attempts = %+v, want 1 — a hold starts a fresh delivery phase", i, s)
 		}
 		setToolState(w, "tu-1", StateRunning)
 		w.driveToolActions()
 		h.flush(t)
-		setToolState(w, "tu-1", StatePending) // suspended
+		setToolState(w, "tu-1", StatePending) // held
 		w.driveToolActions()
 		h.flush(t)
 		setToolState(w, "tu-1", StateApproved) // the user approves the held call

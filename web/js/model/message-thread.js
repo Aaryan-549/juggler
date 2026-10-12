@@ -996,17 +996,17 @@ export default class MessageThread {
   }
 
   /**
-   * Put a running tool-action back in front of the user: it stopped to wait on
-   * one call of its own (a program tool's parked sub-call), and is
-   * executed again once they answer. Written as a parked call is written —
+   * Put a running tool-action back in front of the user: it waits on one call
+   * of its own (a program tool's parked sub-call), still running, until they
+   * answer (services/held-calls.js). Written as a parked call is written —
    * state `pending`, the held call's approval form — with the held call itself
-   * in `suspendedCall` for the card, and no result. The previous answer and
+   * in `heldCall` for the card, and no result. The previous answer and
    * its grant are cleared, so this question is answered afresh.
    * @param {string} toolUseId - The running tool-action
-   * @param {import('../services/tool-invoker.js').Suspension} suspension - The call it waits on
+   * @param {import('../services/tool-invoker.js').HoldRequest} request - The call it waits on
    * @returns {boolean} True when written; false unless it was still running
    */
-  suspendToolAction(toolUseId, suspension) {
+  holdToolAction(toolUseId, request) {
     const yarray = this.ensureYarray();
     const index = this.items.findIndex(item => item.get('toolUseId') === toolUseId);
     if (index < 0 || index >= yarray.length) return false;
@@ -1015,22 +1015,22 @@ export default class MessageThread {
       const toolAction = yarray.get(index);
       if (!(toolAction instanceof Y.Map) || toolAction.get('state') !== TOOL_STATES.RUNNING) return;
       toolAction.set('state', TOOL_STATES.PENDING);
-      // `suspended` marks the form as the held call's, not the item's own.
-      toolAction.set('approvalOptions', convertToYType({ ...suspension.approvalOptions, suspended: true }));
-      toolAction.set('suspendedCall', convertToYType({
-        name: suspension.name,
-        input: suspension.input,
-        ...(suspension.displayData ? { displayData: suspension.displayData } : {})
+      // `held` marks the form as the held call's, not the item's own.
+      toolAction.set('approvalOptions', convertToYType({ ...request.approvalOptions, held: true }));
+      toolAction.set('heldCall', convertToYType({
+        name: request.name,
+        input: request.input,
+        ...(request.displayData ? { displayData: request.displayData } : {})
       }));
       for (const field of ['approvalResponse', 'approvalRules', 'approvalItemType', 'approvalAllowedPaths', 'approvalSource', 'reviewStatus']) {
         toolAction.delete(field);
       }
       // Under review when the strategy's reviewer will be handed the call
-      // (offerSuspensionToReviewer), so it does not yet read as awaiting the user.
-      if (suspension.review?.label) {
-        toolAction.set('reviewStatus', convertToYType({ busy: true, label: suspension.review.label }));
-      } else if (suspension.note) {
-        toolAction.set('reviewStatus', convertToYType({ busy: false, label: suspension.note }));
+      // (offerHoldToReviewer), so it does not yet read as awaiting the user.
+      if (request.review?.label) {
+        toolAction.set('reviewStatus', convertToYType({ busy: true, label: request.review.label }));
+      } else if (request.note) {
+        toolAction.set('reviewStatus', convertToYType({ busy: false, label: request.note }));
       }
       written = true;
     });

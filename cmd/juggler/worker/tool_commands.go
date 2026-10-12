@@ -118,12 +118,13 @@ func (w *ConversationWorker) driveToolActionsExcept(liveThreads map[string]bool)
 	// rule (tool_ordering.go). Keyed by thread and transaction: a turn's calls
 	// share both. A call with no transaction belongs to no turn and is never held.
 	turns := map[[2]string][]turnCall{}
-	// Calls parked after their execute-tool went out: they ran and stopped to
-	// wait on the user (a program tool suspended on one of its calls). The
-	// approval that follows is a fresh delivery, so their bookkeeping goes, as
-	// at every reset site — otherwise it would be suppressed as a re-drive and
-	// counted towards the attempts cap.
-	var suspended []string
+	// Calls parked after their execute-tool went out: they are running and wait
+	// on the user part-way (a program tool holding one of its calls). The
+	// approval that follows is a fresh delivery — the engine hands it to the
+	// waiting call — so their bookkeeping goes, as at every reset site;
+	// otherwise it would be suppressed as a re-drive and counted towards the
+	// attempts cap.
+	var holding []string
 
 	ycrdtMu.Lock()
 	walkAllItems(w.doc.getItems(), "", func(m *ycrdt.YMap, threadID string) bool {
@@ -151,7 +152,7 @@ func (w *ConversationWorker) driveToolActionsExcept(liveThreads map[string]bool)
 			action = "execute-tool"
 		case StatePending:
 			if w.tools.commandedAt(id, StateApproved) {
-				suspended = append(suspended, id)
+				holding = append(holding, id)
 			}
 			return false
 		default:
@@ -166,7 +167,7 @@ func (w *ConversationWorker) driveToolActionsExcept(liveThreads map[string]bool)
 	})
 	ycrdtMu.Unlock()
 
-	for _, id := range suspended {
+	for _, id := range holding {
 		w.tools.clear(id)
 	}
 

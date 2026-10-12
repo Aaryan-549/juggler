@@ -33,7 +33,7 @@ export function createItem(json, session, conversation, messageThread) {
 /**
  * The registered context-item class that provides a tool, by the tool's name
  * (aliases resolved). For an item that presents another tool's call as that
- * tool would — a program tool showing the call it is suspended on.
+ * tool would — a program tool showing the call it holds.
  * @param {string} toolName - The tool's name, as the model calls it
  * @returns {typeof import('juggler/context-item').default|undefined} The class, if one is registered
  */

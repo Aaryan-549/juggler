@@ -34,7 +34,7 @@ import {
   createTestConversation,
   assert
 } from '../../../js-tests/utilities/test-helpers.js';
-import RunCodeContextItem from '../context-items/run-code-context-item.js';
+import RunCodeContextItem, { pausableTimer } from '../context-items/run-code-context-item.js';
 import { renderProgramSdk, describeProgramTool } from '../context-items/code/render-sdk.js';
 import { journalCapabilities, ProgramDiverged } from '../context-items/code/program-journal.js';
 import { createProgramImages, attachedImagesNote } from '../context-items/code/program-images.js';
@@ -198,11 +198,11 @@ export async function runTests(_ctx) {
   await test('failure: the error and console, and no change list', () => {
     const s = item.getSummary({
       success: false,
-      error: "Couldn't run bash: it needs your approval, so call it directly.",
+      error: "Couldn't run bash: you declined it.",
       result: { errorCode: 'program-failed', console: ['step 1'], effects: ['edit: a.js'] }
     });
     const text = String(s.summary);
-    assert(text.includes("Couldn't run bash: it needs your approval"), `error missing:\n${text}`);
+    assert(text.includes("Couldn't run bash: you declined it."), `error missing:\n${text}`);
     assert(text.includes('step 1'), `console missing:\n${text}`);
     assert(!text.includes('Changes the program made'), `the summary must not list changes:\n${text}`);
   });
@@ -250,7 +250,7 @@ export async function runTests(_ctx) {
   };
 
   /**
-   * One program's calls, made the same way on every pass.
+   * One program's calls, made the same way every time it runs.
    * @param {Record<string, any>} c - The (wrapped) capabilities
    * @returns {Promise<unknown[]>} What each call gave back
    */
@@ -270,7 +270,7 @@ export async function runTests(_ctx) {
     const firstLedger = new Map();
     const first = counting(firstLedger);
     const firstOut = await program(journalCapabilities(first.caps, { journal, ledger: firstLedger, onDiverge: () => {} }));
-    assert(first.calls.length === 5, `the first pass calls through: ${JSON.stringify(first.calls)}`);
+    assert(first.calls.length === 5, `the first run calls through: ${JSON.stringify(first.calls)}`);
     assert(journal.length === 5, `every call is recorded: ${journal.length}`);
 
     const ledger = new Map();
@@ -279,7 +279,7 @@ export async function runTests(_ctx) {
     const diverged = [];
     const secondOut = await program(journalCapabilities(second.caps, { journal, ledger, onDiverge: (e) => diverged.push(e) }));
     assert(second.calls.length === 0, `a replay calls nothing: ${JSON.stringify(second.calls)}`);
-    assert(JSON.stringify(secondOut) === JSON.stringify(firstOut), `a replay sees what the first pass saw:\n${JSON.stringify(firstOut)}\n${JSON.stringify(secondOut)}`);
+    assert(JSON.stringify(secondOut) === JSON.stringify(firstOut), `a replay sees what the first run saw:\n${JSON.stringify(firstOut)}\n${JSON.stringify(secondOut)}`);
     assert(ledger.get('a.txt') === 'hash-a.txt', `a replayed read still earns its credit: ${JSON.stringify([...ledger])}`);
     assert(diverged.length === 0, 'the same calls do not diverge');
   });
@@ -341,7 +341,7 @@ export async function runTests(_ctx) {
     assert(JSON.stringify(second.calls) === JSON.stringify(['tools.refused {}']), `the refused call is asked again: ${JSON.stringify(second.calls)}`);
   });
 
-  await test('a call still unsettled when a pass ends leaves a gap a replay calls through', async () => {
+  await test('a step with no answer recorded is called through by a replay', async () => {
     const journal = [{ key: 'fs.readFile', args: '["a.txt"]', ok: true, value: 'content of a.txt' }];
     journal[2] = { key: 'tools.bash', args: '[{"command":"x"}]', ok: true, value: 'bash done' };
     const ledger = new Map();
@@ -353,33 +353,45 @@ export async function runTests(_ctx) {
     assert(JSON.stringify(second.calls) === JSON.stringify(['grep needle']), `only the gap called through: ${JSON.stringify(second.calls)}`);
   });
 
+  await test('a replay checks a pending step, calls it through, and records its answer', async () => {
+    /** @type {any[]} */
+    const journal = [
+      { key: 'fs.readFile', args: '["a.txt"]', ok: true, value: 'content of a.txt' },
+      { key: 'tools.edit', args: '[{"file_path":"a.txt"}]', ok: false, pending: true }
+    ];
+    const second = counting(new Map());
+    const replay = journalCapabilities(second.caps, { journal, ledger: new Map(), onDiverge: () => {} });
+    await replay.fs.readFile('a.txt');
+    assert(await replay.tools.edit({ file_path: 'a.txt' }) === 'edit done', 'the held call runs');
+    assert(JSON.stringify(second.calls) === JSON.stringify(['tools.edit {"file_path":"a.txt"}']), `only it calls through: ${JSON.stringify(second.calls)}`);
+    assert(journal[1].ok && !journal[1].pending && journal[1].value === 'edit done', `recorded: ${JSON.stringify(journal[1])}`);
+    let thrown = null;
+    const other = journalCapabilities(counting(new Map()).caps, {
+      journal: [{ key: 'tools.edit', args: '[{"file_path":"a.txt"}]', ok: false, pending: true }], ledger: new Map(), onDiverge: () => {}
+    });
+    try { await other.tools.write({ file_path: 'a.txt' }); } catch (e) { thrown = e; }
+    assert(thrown instanceof ProgramDiverged, `another call at a pending step diverges: ${/** @type {any} */ (thrown)?.name}`);
+  });
+
   /**
-   * A first pass whose reads come back in the opposite order to the one they
-   * were made in, and whose first tool call waits on the user: b.txt's read
-   * answers first, so b.txt's edit is the call it stops on.
-   * @param {any[]} journal - The journal to fill
-   * @param {(c: Record<string, any>) => Promise<unknown>} prog - The program
-   * @returns {Promise<void>}
+   * Reads whose answers the test releases, in the order it chooses.
+   * @returns {{caps: Record<string, any>, release: (p: string) => void, made: string[]}} The capabilities
    */
-  const firstPassOutOfOrder = async (journal, prog) => {
-    const delays = /** @type {Record<string, number>} */ ({ 'a.txt': 40, 'b.txt': 5 });
-    let stopped = false;
+  const releasedReads = () => {
+    /** @type {Map<string, (v: string) => void>} */
+    const waiting = new Map();
+    /** @type {string[]} */
+    const made = [];
     const caps = {
-      fs: {
-        readFile: (/** @type {string} */ p) => new Promise((resolve) => setTimeout(() => resolve(`content of ${p}`), delays[p])),
-      },
+      fs: { readFile: (/** @type {string} */ p) => new Promise((resolve) => waiting.set(p, resolve)) },
       tools: new Proxy({}, {
-        get: () => async () => {
-          // The first call waits on the user; the program stops, and every
-          // call after it is refused, as the invoker does.
-          const err = new Error(stopped ? 'The program stopped to wait for you.' : 'edit is waiting for you');
-          err.name = stopped ? 'ToolRefused' : 'ToolSuspended';
-          stopped = true;
-          throw err;
-        },
+        get: (_t, name) => async (/** @type {any} */ args) => {
+          made.push(`tools.${String(name)} ${JSON.stringify(args)}`);
+          return new Promise(() => {});
+        }
       }),
     };
-    await prog(journalCapabilities(caps, { journal, ledger: new Map(), onDiverge: () => {} })).catch(() => {});
+    return { caps, release: (p) => waiting.get(p)?.(`content of ${p}`), made };
   };
 
   /**
@@ -393,46 +405,112 @@ export async function runTests(_ctx) {
   }));
 
   // Concurrent calls take their steps in the order the answers before them
-  // arrive. A replay answers from memory, so unless it gives those answers in
-  // the order the first pass got them, the same program takes its steps in
-  // another order and is wrongly found to have diverged.
-  await test('a replay answers concurrent calls in the order they were first answered', async () => {
+  // arrive. A replay gives recorded answers as they are asked for, not in the
+  // order they first came, so a program whose next call depends on that order
+  // can take its steps in another order: it diverges, and nothing from that
+  // step on runs, rather than a call being made twice.
+  await test('a replay whose concurrent calls come in another order diverges, and runs nothing', async () => {
+    const first = releasedReads();
     /** @type {any[]} */
     const journal = [];
-    await firstPassOutOfOrder(journal, readThenEditEach);
-    assert(journal[2]?.held && journal[2].args === '[{"file_path":"b.txt"}]',
-      `the first pass stops on b.txt's edit: ${JSON.stringify(journal)}`);
+    const wrapped = journalCapabilities(first.caps, { journal, ledger: new Map(), onDiverge: () => {} });
+    void readThenEditEach(wrapped);
+    await Promise.resolve();
+    first.release('b.txt');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    first.release('a.txt');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert(JSON.stringify(first.made) === JSON.stringify(['tools.edit {"file_path":"b.txt"}', 'tools.edit {"file_path":"a.txt"}']),
+      `b.txt answered first, so its edit came first: ${JSON.stringify(first.made)}`);
+    const snap = wrapped.snapshot();
+    assert(snap[2]?.pending && snap[2].args === '[{"file_path":"b.txt"}]' && snap[3]?.pending,
+      `both edits wait, b.txt's first: ${JSON.stringify(snap)}`);
 
     const second = counting(new Map());
     /** @type {any[]} */
     const diverged = [];
-    /** @type {string[]} */
-    const held = [];
-    const replay = journalCapabilities(second.caps, {
-      journal, ledger: new Map(), onDiverge: (e) => diverged.push(e), onHeld: (e) => held.push(e.args)
-    });
-    const outcomes = /** @type {any[]} */ (await readThenEditEach(replay));
-    assert(diverged.length === 0, `the same program must not diverge: ${diverged.map((e) => e.message)}`);
-    assert(JSON.stringify(held) === JSON.stringify(['[{"file_path":"b.txt"}]']), `the held call is reached: ${JSON.stringify(held)}`);
-    assert(outcomes.every((o) => o.status === 'fulfilled'), `both edits run: ${JSON.stringify(outcomes)}`);
-    assert(JSON.stringify(second.calls) === JSON.stringify(['tools.edit {"file_path":"b.txt"}', 'tools.edit {"file_path":"a.txt"}']),
-      `only the edits call through, the held one first: ${JSON.stringify(second.calls)}`);
+    const replay = journalCapabilities(second.caps, { journal: snap, ledger: new Map(), onDiverge: (e) => diverged.push(e) });
+    await readThenEditEach(replay);
+    assert(diverged.length >= 1 && /step 3/.test(diverged[0].message), `it diverges at the held step: ${diverged.map((e) => e.message)}`);
+    assert(second.calls.length === 0, `and calls nothing: ${JSON.stringify(second.calls)}`);
   });
 
-  await test('a replay that never makes a call it made before names that call', async () => {
+  await test('stepNow names the step of the call being made, while it is made', async () => {
+    /** @type {any} */
+    let wrapped = null;
+    /** @type {Array<number|null>} */
+    const seen = [];
+    const caps = {
+      fs: { readFile: async () => 'x' },
+      tools: new Proxy({}, { get: () => async () => { seen.push(wrapped.stepNow()); return 'done'; } }),
+    };
+    wrapped = journalCapabilities(caps, { journal: [], ledger: new Map(), onDiverge: () => {} });
+    await wrapped.fs.readFile('a');
+    await Promise.all([wrapped.tools.edit({}), wrapped.tools.bash({})]);
+    assert(JSON.stringify(seen) === '[1,2]', `each call sees its own step: ${JSON.stringify(seen)}`);
+    assert(wrapped.stepNow() === null, 'and none outside a call');
+    assert(!Object.keys(wrapped).includes('stepNow') && !Object.keys(wrapped).includes('snapshot'), 'the program sees neither');
+  });
+
+  await test('a snapshot keeps what answered and marks what has not as pending', async () => {
+    const reads = releasedReads();
     /** @type {any[]} */
     const journal = [];
-    await firstPassOutOfOrder(journal, readThenEditEach);
-    const replay = journalCapabilities(counting(new Map()).caps, { journal, ledger: new Map(), onDiverge: () => {} });
-    assert(replay.stalledOn() === null, 'nothing waits before anything is called');
-    // Only a.txt is read this time: its answer came second, so it waits for
-    // b.txt's, which never comes.
-    const waiting = replay.fs.readFile('a.txt');
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    const stall = replay.stalledOn();
-    assert(typeof stall === 'string' && stall.includes('fs.readFile("b.txt")'), `the missing call is named: ${stall}`);
-    assert(!Object.keys(replay).includes('stalledOn'), 'the program never sees it among its capabilities');
-    void waiting;
+    const wrapped = journalCapabilities({ ...reads.caps, grep: async () => [] }, { journal, ledger: new Map(), onDiverge: () => {} });
+    await wrapped.grep('x');
+    void wrapped.fs.readFile('still-running');
+    void wrapped.tools.edit({ file_path: 'held' });
+    const snap = wrapped.snapshot();
+    assert(snap[0]?.key === 'grep' && snap[0].ok && !snap[0].pending, `what answered is kept: ${JSON.stringify(snap[0])}`);
+    assert(snap[1]?.key === 'fs.readFile' && snap[1].pending, `a read still running is pending: ${JSON.stringify(snap[1])}`);
+    assert(snap[2]?.key === 'tools.edit' && snap[2].pending, `the held call is pending: ${JSON.stringify(snap[2])}`);
+    assert(journal.length === 1, 'the journal itself is not changed');
+    reads.release('still-running');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert(wrapped.snapshot()[1]?.ok, 'once answered, the read is kept as done');
+  });
+
+  // A replay whose calls come in another order must not make a call that ran
+  // before the snapshot at a step it did not take: the pending steps are
+  // checked too, so it diverges instead.
+  await test('a write that ran cannot be made again at a pending read\'s step', async () => {
+    const journal = [
+      { key: 'fs.readFile', args: '["r"]', ok: false, pending: true },
+      { key: 'tools.write', args: '[{"path":"w"}]', ok: true, value: 'write done' },
+    ];
+    const second = counting(new Map());
+    /** @type {any[]} */
+    const diverged = [];
+    const replay = journalCapabilities(second.caps, { journal, ledger: new Map(), onDiverge: (e) => diverged.push(e) });
+    await replay.tools.write({ path: 'w' }).catch(() => {});
+    await replay.fs.readFile('r').catch(() => {});
+    assert(diverged.length === 1, `it diverges: ${diverged.length}`);
+    assert(second.calls.length === 0, `and the write is not made again: ${JSON.stringify(second.calls)}`);
+  });
+
+  // The program's clock stops while a call waits on the user. Only what must
+  // not happen is checked against time (the timer is cleared while paused);
+  // what must happen is waited for, so a busy machine only makes it slower.
+  await test('a pausable timer counts only the time it runs', async () => {
+    let fired = 0;
+    const timer = pausableTimer(150, () => { fired++; });
+    timer.pause();
+    timer.pause();
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    assert(fired === 0, 'it does not fire while paused, however long');
+    timer.resume();
+    timer.resume();
+    const until = Date.now() + 10000;
+    while (fired === 0 && Date.now() < until) await new Promise((resolve) => setTimeout(resolve, 20));
+    assert(fired === 1, `it fires once resumed, once: ${fired}`);
+
+    let stoppedFired = 0;
+    const stopped = pausableTimer(50, () => { stoppedFired++; });
+    stopped.pause();
+    stopped.stop();
+    stopped.resume();
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    assert(stoppedFired === 0, 'a stopped timer never fires, even resumed');
   });
 
   await test('the tool declares its gates', () => {
@@ -458,7 +536,7 @@ export async function runTests(_ctx) {
     assert(def.input_schema.properties.timeout.description.includes(String(MAX_EXEC_TIMEOUT_MS)), 'the schema says so');
   });
 
-  await test('a program\'s images: handles, checked, capped, carried between passes', async () => {
+  await test('a program\'s images: handles, checked, capped, carried into a replay', async () => {
     const ref = (/** @type {string} */ id) => ({ id: id.repeat(64).slice(0, 64), mime: 'image/png', bytes: 3, width: 4, height: 5 });
     /** @type {string[][]} */
     const heldCalls = [];
@@ -480,11 +558,11 @@ export async function runTests(_ctx) {
     let capped = '';
     try { await images.show(c); } catch (e) { capped = /** @type {Error} */ (e).message; }
     assert(capped.includes('at most 2 images'), `capped: ${capped}`);
-    // The next pass starts from what this one was given: a replayed call's
+    // A replay starts from what the run before it was given: a replayed call's
     // handle comes back from the journal, not from the call.
     const next = createProgramImages({ received: images.received });
     await next.show(h);
-    assert(next.shown()[0]?.id === ref('a').id, 'a handle from an earlier pass still attaches');
+    assert(next.shown()[0]?.id === ref('a').id, 'a handle from the run before still attaches');
     assert(attachedImagesNote(next.shown(), next.labelOf) === '\n\nImages attached below:\n- shot.png (4×5)', `the note: ${attachedImagesNote(next.shown(), next.labelOf)}`);
     assert(attachedImagesNote([]) === '', 'no images, no note');
   });

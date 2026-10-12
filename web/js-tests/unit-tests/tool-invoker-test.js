@@ -15,7 +15,16 @@
  *   2. A call the gate would park or deny ends the program: ToolRefused, the
  *      onRefused callback, and every later call refused unrun — never put to
  *      the decision, so no hook of the user's runs for it.
- *   2a. approveNext approves only the call it names, by tool and arguments.
+ *   2a. A call made with the user's answer (`how.answer`) runs on it without
+ *      being decided, an elicitation's answer folded into its input.
+ *   2b. With waitForUser, a parked call waits for the user instead: it is held
+ *      (`hold`) while the program lives on, and runs once they answer, or is
+ *      decided again when the answer was not theirs to give. A held write
+ *      holds back every later call; a held read lets reads by. Holds take
+ *      turns, one card at a time. `beforeHold` sees each before it is shown,
+ *      with its call's tag, and `afterHold` after. A hold that is refused
+ *      ends the program, as does a `beforeHold` that throws; `end()` releases
+ *      every hold and, if one was ever held, the item with them.
  *   3. A failed call is a catchable ToolError carrying the tool's own text.
  *   4. No more than `limit` calls run at once; the rest queue.
  *   5. Calls keep the program's order: reads overlap, anything else waits for
@@ -39,6 +48,7 @@ import { createToolInvoker, ToolError, ToolRefused } from '../../js/services/too
 
 const OFFERED = [
   { name: 'read', category: 'read' },
+  { name: 'ask', category: 'meta' },
   { name: 'grep', category: 'read' },
   { name: 'edit', category: 'write' },
   { name: 'bash', category: 'write' },
@@ -58,9 +68,19 @@ const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
  * @param {number} [opts.limit]
  * @param {number} [opts.maxRecords]
  * @param {(call: any) => any} [opts.decide] - Decision per call; approve by default
+ * @param {boolean} [opts.waitForUser] - Hold a parked call instead of refusing it
+ * @param {(request: any) => Promise<void>} [opts.beforeHold] - Run before each hold, after it is logged
  * @returns {any} The invoker plus its controls
  */
 function harness(opts = {}) {
+  /**
+   * The calls held for the user, each with the controls that answer it.
+   * @type {Array<{request: any, answer: (a: any) => void, refuse: (e: Error) => void, signal: AbortSignal}>}
+   */
+  const holds = [];
+  /** @type {string[]} */
+  const events = [];
+  let released = 0;
   /** @type {Array<{toolName: string, toolUseId: string, input: any, settle: (r: any) => void}>} */
   const started = [];
   /** @type {any[]} */
@@ -74,6 +94,12 @@ function harness(opts = {}) {
     parentToolUseId: 'parent-1',
     signal: controller.signal,
     onRefused: (/** @type {any} */ err) => refusals.push(err),
+    waitForUser: opts.waitForUser,
+    beforeHold: async (/** @type {any} */ request, /** @type {unknown} */ tag) => {
+      events.push(`before:${request.name}:${String(tag)}`);
+      await opts.beforeHold?.(request);
+    },
+    afterHold: () => { events.push('after'); },
     limit: opts.limit,
     maxRecords: opts.maxRecords,
     deps: {
@@ -90,6 +116,18 @@ function harness(opts = {}) {
         const s = started.find((c) => c.toolUseId === toolUseId);
         s?.settle({ success: false, cancelled: true, content: 'Action was cancelled.' });
       },
+      holdRequest: async (/** @type {any} */ call, /** @type {any} */ decision) => ({
+        name: call.name, input: call.args, reason: decision.reason, approvalOptions: { options: [] }
+      }),
+      hold: (/** @type {any} */ request, /** @type {AbortSignal} */ signal) => new Promise((resolve, reject) => {
+        events.push(`hold:${request.name}`);
+        const entry = { request, answer: resolve, refuse: reject, signal };
+        holds.push(entry);
+        signal.addEventListener('abort', () => reject(new ToolRefused('The program ended.')), { once: true });
+      }),
+      release: () => { released++; },
+      answer: (/** @type {string} */ name, /** @type {any} */ input, /** @type {string} */ response) => (
+        name === 'ask' ? { ...input, answer: response } : input),
     },
   });
   /** @returns {string[]} The names of the calls started so far, in order */
@@ -104,7 +142,10 @@ function harness(opts = {}) {
     /** @type {any} */ (s).done = true;
     /** @type {any} */ (s).settle(result);
   };
-  return { invoker, started, decided, startedNames, finish, cancelled, refusals, controller };
+  return {
+    invoker, started, decided, startedNames, finish, cancelled, refusals, controller, holds, events,
+    released: () => released
+  };
 }
 
 /**
@@ -184,7 +225,7 @@ export async function runTests(_ctx) {
       `a prefix does not admit a native tool: ${err?.message}`);
   });
 
-  await test('a parked call ends the program', async () => {
+  await test('without waitForUser, a parked call ends the program', async () => {
     const h = harness({ decide: () => ({ verdict: 'park', reason: 'it needs your approval' }) });
     const err = await rejection(h.invoker.invoke('bash', { command: 'rm x' }));
     assert(err instanceof ToolRefused, `expected ToolRefused, got ${err?.name}`);
@@ -233,20 +274,199 @@ export async function runTests(_ctx) {
     assert(rec.status === 'cancelled' && rec.effect === undefined, `no effect for a call that never ran: ${JSON.stringify(rec)}`);
   });
 
-  await test('approveNext hands over only the call it names, args and all', async () => {
+  await test('a call made with the user\'s answer runs on it, undecided', async () => {
     const h = harness({ decide: () => ({ verdict: 'park', reason: 'it needs your approval' }) });
-    h.invoker.approveNext('bash', { command: 'rm a' }, 'yes');
-    const other = await rejection(h.invoker.invoke('bash', { command: 'rm b' }));
-    assert(other instanceof ToolRefused, `a call with other args is decided afresh, and parks: ${other?.name}`);
-    assert(h.started.length === 0, 'the approval for one call never runs another');
-
-    const g = harness({ decide: () => ({ verdict: 'park', reason: 'it needs your approval' }) });
-    g.invoker.approveNext('edit', { new_string: 'n', file_path: 'f', old_string: 'o' }, 'yes');
-    const p = g.invoker.invoke('edit', { file_path: 'f', old_string: 'o', new_string: 'n' });
+    const p = h.invoker.invoke('bash', { command: 'rm a' }, { answer: 'yes' });
     await tick();
-    assert(g.decided.length === 0, 'the approved call is not decided again, whatever its key order');
-    g.finish('edit');
-    assert(await p === 'edit done', 'and runs');
+    assert(h.decided.length === 0, `it is not put to the decision: ${h.decided.length}`);
+    h.finish('bash');
+    assert(await p === 'bash done', 'and runs');
+    const other = await rejection(h.invoker.invoke('bash', { command: 'rm b' }));
+    assert(other instanceof ToolRefused, `a call made without one is decided, and parks: ${other?.name}`);
+
+    const q = harness({ decide: () => ({ verdict: 'park', reason: 'it needs your answer' }) });
+    const asked = q.invoker.invoke('ask', { question: 'which?' }, { answer: 'B' });
+    await tick();
+    assert(q.started[0]?.input?.answer === 'B', `an elicitation's answer is folded in: ${JSON.stringify(q.started[0]?.input)}`);
+    q.finish('ask');
+    await asked;
+  });
+
+  /**
+   * A decision that parks the named tools until told otherwise, and approves
+   * everything else.
+   * @param {string[]} parked - Tools that park
+   * @returns {(call: any) => {verdict: string, reason: string}} The decision
+   */
+  const parks = (parked) => (call) => (parked.includes(call.toolName)
+    ? { verdict: 'park', reason: 'it needs your approval' } : { verdict: 'approve', reason: '' });
+
+  await test('a parked call waits for the user, and runs once they answer', async () => {
+    const h = harness({ waitForUser: true, decide: parks(['bash']) });
+    const p = h.invoker.invoke('bash', { command: 'rm x' }, { tag: 7 });
+    await tick();
+    assert(h.holds.length === 1 && h.holds[0].request.name === 'bash', `held: ${h.holds.length}`);
+    assert(h.started.length === 0, 'it does not run while held');
+    assert(h.refusals.length === 0, 'and the program is not ended');
+    const rec = h.invoker.record.calls[0];
+    assert(rec.status === 'held' && rec.effect === undefined,
+      `recorded as waiting, with no effect until it runs: ${JSON.stringify(rec)}`);
+    assert(h.events.join(',') === 'before:bash:7,hold:bash', `beforeHold first, with the call's tag: ${h.events}`);
+    h.holds[0].answer({ response: 'yes' });
+    await tick();
+    assert(h.startedNames().join(',') === 'bash', `it runs once answered: ${h.startedNames()}`);
+    assert(h.events.at(-1) === 'after', `afterHold once answered: ${h.events}`);
+    h.finish('bash');
+    assert(await p === 'bash done', 'and answers the program');
+    assert(h.invoker.record.calls[0].status === 'ok' && h.invoker.record.calls[0].effect === 'bash: rm x',
+      `its effect is back once it ran: ${JSON.stringify(h.invoker.record.calls[0])}`);
+    assert(h.decided.length === 1, 'it is decided once');
+  });
+
+  await test('a held write holds back every later call; a held read lets reads by', async () => {
+    const w = harness({ waitForUser: true, decide: parks(['edit']) });
+    const edit = w.invoker.invoke('edit', { file_path: 'a' });
+    const read = w.invoker.invoke('read', { file_path: 'b' });
+    await tick();
+    assert(w.startedNames().length === 0, `nothing starts past a held write: ${w.startedNames()}`);
+    w.holds[0].answer({ response: 'yes' });
+    await tick();
+    w.finish('edit');
+    await tick();
+    assert(w.startedNames().join(',') === 'edit,read', `the read follows it: ${w.startedNames()}`);
+    w.finish('read');
+    await Promise.all([edit, read]);
+
+    const r = harness({ waitForUser: true, decide: parks(['ask']) });
+    const ask = r.invoker.invoke('ask', {});
+    const next = r.invoker.invoke('read', { file_path: 'b' });
+    const write = r.invoker.invoke('edit', { file_path: 'c' });
+    await tick();
+    assert(r.startedNames().join(',') === 'read', `a read passes a held question, a write does not: ${r.startedNames()}`);
+    r.finish('read');
+    assert(await next === 'read done', 'the read answers while the question waits');
+    r.holds[0].answer({ response: 'B' });
+    await tick();
+    assert(r.started.find((c) => c.toolName === 'ask')?.input?.answer === 'B', 'the answer is folded into the question');
+    r.finish('ask');
+    await tick();
+    r.finish('edit');
+    await Promise.all([ask, write]);
+  });
+
+  await test('a hold answered with redecide puts the call to the decision again', async () => {
+    let parked = true;
+    const h = harness({ waitForUser: true, decide: (/** @type {any} */ call) => (parked && call.toolName === 'bash'
+      ? { verdict: 'park', reason: 'it needs your approval' } : { verdict: 'approve', reason: '' }) });
+    const p = h.invoker.invoke('bash', { command: 'x' });
+    await tick();
+    parked = false;
+    h.holds[0].answer({ redecide: true });
+    await tick();
+    assert(h.decided.length === 2, `decided again: ${h.decided.length}`);
+    assert(h.startedNames().join(',') === 'bash', 'and run on the new verdict');
+    h.finish('bash');
+    await p;
+
+    const again = harness({ waitForUser: true, decide: parks(['bash']) });
+    const q = again.invoker.invoke('bash', { command: 'x' });
+    await tick();
+    again.holds[0].answer({ redecide: true });
+    await tick();
+    assert(again.holds.length === 2 && again.started.length === 0, 'a call that parks again is held again, unrun');
+    again.holds[1].answer({ response: 'yes' });
+    await tick();
+    again.finish('bash');
+    await q;
+  });
+
+  await test('a refused hold ends the program', async () => {
+    const h = harness({ waitForUser: true, decide: parks(['bash']) });
+    const p = h.invoker.invoke('bash', { command: 'x' });
+    const behind = h.invoker.invoke('edit', { file_path: 'a' });
+    await tick();
+    h.holds[0].refuse(new ToolRefused('Couldn\'t run bash: you declined it.'));
+    const errs = await Promise.all([rejection(p), rejection(behind)]);
+    assert(errs.every((e) => e instanceof ToolRefused), `both refused: ${errs.map((e) => e?.name)}`);
+    assert(h.refusals.length === 1 && h.refusals[0].message === 'Couldn\'t run bash: you declined it.', `onRefused once: ${h.refusals.map((/** @type {any} */ e) => e.message)}`);
+    assert(h.started.length === 0, 'nothing ran');
+    const rec = h.invoker.record.calls.map((/** @type {any} */ c) => `${c.name}:${c.status}:${c.effect ?? '-'}`).join(',');
+    assert(rec === 'bash:refused:-,edit:refused:-', `neither changed anything: ${rec}`);
+  });
+
+  await test('holds take turns', async () => {
+    const h = harness({ waitForUser: true, decide: parks(['read']) });
+    const a = h.invoker.invoke('read', { file_path: 'a' });
+    const b = h.invoker.invoke('read', { file_path: 'b' });
+    await tick();
+    assert(h.holds.length === 1, `one card at a time: ${h.holds.length}`);
+    h.holds[0].answer({ response: 'yes' });
+    await tick();
+    assert(h.holds.length === 2 && h.holds[1].request.input.file_path !== h.holds[0].request.input.file_path,
+      'the other is held once the first is answered');
+    h.holds[1].answer({ response: 'yes' });
+    await tick();
+    h.finish('read');
+    h.finish('read');
+    await Promise.all([a, b]);
+    assert(h.events.filter((e) => e === 'after').length === 2, `afterHold for each: ${h.events}`);
+  });
+
+  await test('end() releases every hold and the item', async () => {
+    const h = harness({ waitForUser: true, decide: parks(['bash']) });
+    const p = h.invoker.invoke('bash', { command: 'x' });
+    await tick();
+    h.invoker.end();
+    const err = await rejection(p);
+    assert(err instanceof ToolRefused, `the held call is refused: ${err?.name}`);
+    assert(h.started.length === 0, 'and never runs');
+    assert(h.released() === 1, `the item is released: ${h.released()}`);
+  });
+
+  await test('a beforeHold that throws ends the program, and nothing is held or run', async () => {
+    const h = harness({
+      waitForUser: true, decide: parks(['bash']),
+      beforeHold: async () => { throw new Error('snapshot failed'); }
+    });
+    const p = h.invoker.invoke('bash', { command: 'x' });
+    const err = await rejection(p);
+    assert(err instanceof ToolRefused && err.message === 'snapshot failed', `refused with its reason: ${err?.name} ${err?.message}`);
+    assert(h.holds.length === 0 && h.started.length === 0, 'never held, never run');
+    assert(h.refusals.length === 1, 'onRefused once');
+    assert(h.events.at(-1) === 'after', `afterHold still told: ${h.events}`);
+  });
+
+  await test('an abort refuses a hold still waiting its turn, which is never shown', async () => {
+    const h = harness({ waitForUser: true, decide: parks(['read']) });
+    const a = h.invoker.invoke('read', { file_path: 'a' });
+    const b = h.invoker.invoke('read', { file_path: 'b' });
+    await tick();
+    assert(h.holds.length === 1, `one shown: ${h.holds.length}`);
+    h.controller.abort();
+    const errs = await Promise.all([rejection(a), rejection(b)]);
+    await tick();
+    assert(errs.every((e) => e instanceof ToolRefused), `both refused: ${errs.map((e) => e?.name)}`);
+    assert(h.holds.length === 1 && h.started.length === 0, `the waiting one never shown, neither run: ${h.holds.length}`);
+  });
+
+  await test('end() with nothing ever held releases nothing', async () => {
+    const h = harness({ waitForUser: true });
+    const p = h.invoker.invoke('read', { file_path: 'a' });
+    await tick();
+    h.finish('read');
+    await p;
+    h.invoker.end();
+    assert(h.released() === 0, `the item was never held, so is not touched: ${h.released()}`);
+  });
+
+  await test('an abort refuses a held call', async () => {
+    const h = harness({ waitForUser: true, decide: parks(['bash']) });
+    const p = h.invoker.invoke('bash', { command: 'x' });
+    await tick();
+    h.controller.abort();
+    const err = await rejection(p);
+    assert(err instanceof ToolRefused && h.started.length === 0, `refused unrun: ${err?.name}`);
+    assert(h.invoker.record.calls[0].status === 'cancelled', `recorded as cancelled: ${JSON.stringify(h.invoker.record.calls[0])}`);
   });
 
   await test('an invalid call is a catchable ToolError', async () => {

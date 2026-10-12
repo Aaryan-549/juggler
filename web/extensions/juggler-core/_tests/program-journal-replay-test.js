@@ -16,26 +16,31 @@
  *
  * The program sits behind a stand-in for the sandbox boundary: each answer
  * reaches it as a task of its own, through one port, as the sandbox iframe's
- * replies do. The journal's order rests on that: it may give two answers
- * together, and only the boundary lets the program act on the first before it
- * sees the second.
+ * replies do.
  *
  * Each case runs the program once uninterrupted, for reference. Then it runs
- * it in passes over one journal, as run_code does: a pass may stop on a tool
- * call that waits for the user, and the next replays it with that call
- * approved, until a pass finishes. A stopped pass is dead as a sandbox is: the
- * program makes no more calls, while calls already under way still answer and
- * a tool call under way is refused, as the invoker refuses it.
+ * it as run_code does: its tool calls go through the real invoker, whose
+ * order keeps every call behind a running write, and some are parked for the
+ * user. A parked call is held while the program lives on, and the journal's
+ * snapshot is taken as run_code takes it (beforeHold, after a turn of the
+ * event loop). Then either the user answers and the program goes on in the
+ * same run, or the engine dies: the run ends where it stands, answering
+ * nothing more, and the next run replays from the snapshot, making the held
+ * call with the user's answer — until a run finishes, or a replay diverges.
  *
  * Contract under test, for every case:
- *   1. No replay diverges or stalls: the same program makes the same calls.
- *   2. Every change (tools.write) happens exactly once across all passes.
- *   3. The last pass returns what the uninterrupted run returned.
+ *   1. No change (tools.write) ever happens twice, across all runs, and none
+ *      happens that the uninterrupted run did not make.
+ *   2. A run either finishes, returning what the uninterrupted run returned
+ *      with every change made exactly once, or its replay diverges and stops.
+ *      A replay never stalls.
+ *   3. A program that makes one call at a time never diverges.
  * @module unit-tests/program-journal-replay-test
  */
 
 import { assert } from '../../../js-tests/utilities/test-helpers.js';
 import { journalCapabilities } from '../context-items/code/program-journal.js';
+import { createToolInvoker } from '../../../js/services/tool-invoker.js';
 
 /**
  * @typedef {object} TestResult
@@ -47,12 +52,18 @@ import { journalCapabilities } from '../context-items/code/program-journal.js';
 /** Random programs tried. */
 const CASES = 400;
 
-/** Passes a case may take; the last never stops. */
-const MAX_PASSES = 5;
+/** Runs a case may take; in the last, the engine never dies. */
+const MAX_RUNS = 6;
+
+/** How often a tool call is parked for the user. */
+const PARK = 0.3;
+
+/** How often the engine dies while a call is held, rather than the user answering. */
+const DIE = 0.6;
 
 /**
  * The capabilities a program calls, weighted towards tool calls: only a tool
- * call stops a pass.
+ * call waits on the user.
  */
 const CAPS = ['fs.readFile', 'fs.readFile', 'grep', 'tools.read', 'tools.read', 'tools.write', 'tools.write', 'tools.write'];
 
@@ -174,15 +185,18 @@ function named(name, message) {
 }
 
 /**
- * The world one pass runs against: capabilities whose calls wait to be
- * answered by the scheduler, a write log shared across passes, and the
- * stop a waiting tool call causes.
+ * The world one run runs against: capabilities whose calls wait to be
+ * answered by the scheduler, behind the sandbox boundary; tool calls made
+ * through the real invoker, as run_code makes them, some parked for the user;
+ * and a write log shared across runs.
  * @param {object} opts
- * @param {string[]} opts.writes - Every change made, across passes
- * @param {number} opts.stopAt - Stop on the nth tool call that reaches through (from 0); -1 never
- * @returns {{caps: Record<string, any>, pending: Array<() => void>, stopped: () => boolean, approveNext: () => void, gate: (c: Record<string, any>) => Record<string, any>, delivering: () => boolean, close: () => void}} The pass's world
+ * @param {string[]} opts.writes - Every change made, across runs
+ * @param {{journal: any[], heldStep: number}|null} opts.saved - The snapshot this run resumes from
+ * @param {() => number} opts.rng - The case's generator
+ * @param {boolean} opts.last - The last run: the engine never dies
+ * @returns {{wrapped: Record<string, any>, program: (c: Record<string, any>) => Record<string, any>, pending: Array<() => void>, delivering: () => boolean, dead: () => boolean, snapshot: () => {journal: any[], heldStep: number}|null, held: () => number, diverged: Error[], close: () => void}} The run's world
  */
-function worldOf({ writes, stopAt }) {
+function worldOf({ writes, saved, rng, last }) {
   /** @type {Array<() => void>} */
   const pending = [];
   /** Answers on their way to the program, in the order they were sent. */
@@ -198,50 +212,83 @@ function worldOf({ writes, stopAt }) {
     inbox.push(hand);
     port.port2.postMessage(0);
   };
-  let stopped = false;
-  let approved = false;
-  let toolCalls = 0;
+  let dead = false;
+  let held = 0;
+  /** Snapshots being taken, each waiting a turn of the event loop first. */
+  let snapshotting = 0;
+  /** @type {{journal: any[], heldStep: number}|null} */
+  let lastSnapshot = null;
+  /** @type {Error[]} */
+  const diverged = [];
 
   /**
-   * One call: it waits its turn, then answers, or throws NotFound for some
-   * arguments — the same for the same arguments on every pass.
+   * One fs or grep call: it waits its turn, then answers, or throws NotFound
+   * for some arguments — the same for the same arguments on every run.
    * @param {string} key - The capability
    * @param {string} arg - Its argument
    * @returns {Promise<string>} Its answer
    */
   const answer = (key, arg) => new Promise((resolve, reject) => {
     pending.push(() => {
-      if (key !== 'tools.write' && parseInt(hash(arg), 16) % 5 === 0) reject(named('NotFound', 'no ' + arg));
+      if (parseInt(hash(arg), 16) % 5 === 0) reject(named('NotFound', 'no ' + arg));
       else resolve(key + ':' + hash(arg));
     });
   });
 
+  /** @type {any} */
+  let wrapped = null;
+  const invoker = createToolInvoker({
+    parentToolUseId: 'fuzz',
+    waitForUser: true,
+    beforeHold: async (_request, step) => {
+      snapshotting++;
+      try {
+        await settleMicrotasks();
+        lastSnapshot = { journal: wrapped.snapshot(), heldStep: /** @type {number} */ (step) };
+      } finally {
+        snapshotting--;
+      }
+    },
+    deps: {
+      offeredTools: async () => [{ name: 'read', category: 'read' }, { name: 'write', category: 'write' }],
+      decide: async () => (rng() < PARK ? { verdict: 'park', reason: 'it needs your approval' } : { verdict: 'approve', reason: '' }),
+      holdRequest: async (call) => ({ name: call.name, input: call.args, reason: '', approvalOptions: { options: [] } }),
+      hold: () => new Promise((resolve) => {
+        held++;
+        pending.push(() => {
+          if (!last && rng() < DIE) {
+            // The engine dies: nothing it was running answers again.
+            dead = true;
+            pending.length = 0;
+            return;
+          }
+          resolve({ response: 'yes' });
+        });
+      }),
+      run: ({ toolName, input }) => new Promise((resolve) => {
+        pending.push(() => {
+          if (toolName === 'write') writes.push(String(input.path));
+          resolve({ success: true, content: 'tools.' + toolName + ':' + hash(String(input.path)) });
+        });
+      }),
+      cancel: () => {},
+      release: () => {},
+      answer: (_name, input) => input,
+    },
+  });
+
   /**
-   * A tool call, refused once the pass has stopped, as the invoker refuses
-   * every call still under way when the program stops.
+   * A tool call as run_code makes it: tagged with its journal step, and made
+   * with the user's answer at the step the snapshot held.
    * @param {string} name - The tool
-   * @param {{path: string}} args - Its arguments
+   * @param {{path: string}} a - Its arguments
    * @returns {Promise<string>} Its answer
    */
-  const tool = (name, args) => {
-    const isApproved = approved;
-    approved = false;
-    const suspends = !isApproved && toolCalls++ === stopAt;
-    return new Promise((resolve, reject) => {
-      pending.push(() => {
-        if (stopped) {
-          reject(named('ToolRefused', 'The program stopped to wait for you.'));
-        } else if (suspends) {
-          stopped = true;
-          reject(named('ToolSuspended', name + ' is waiting for you'));
-        } else {
-          if (name === 'write') writes.push(args.path);
-          resolve('tools.' + name + ':' + hash(args.path));
-        }
-      });
-    });
+  const tool = (name, a) => {
+    const step = wrapped.stepNow();
+    return invoker.invoke(name, a, { tag: step, answer: saved && step === saved.heldStep ? 'yes' : undefined });
   };
-
+  /** @type {Record<string, any>} */
   const caps = {
     fs: { readFile: (/** @type {string} */ p) => answer('fs.readFile', p) },
     grep: (/** @type {string} */ p) => answer('grep', p),
@@ -250,21 +297,23 @@ function worldOf({ writes, stopAt }) {
       write: (/** @type {{path: string}} */ a) => tool('write', a),
     },
   };
+  wrapped = journalCapabilities(caps, { journal: saved ? [...saved.journal] : [], onDiverge: (e) => diverged.push(e) });
 
   /**
-   * The program's side of a stopped pass: a dead sandbox makes no more calls.
+   * The program's side of the boundary: every answer reaches it as a task of
+   * its own, and a dead engine's program makes no more calls.
    * @param {Record<string, any>} c - The capabilities the program is given
-   * @returns {Record<string, any>} The same, refusing every call once stopped
+   * @returns {Record<string, any>} The same, across the boundary
    */
-  const gate = (c) => {
+  const program = (c) => {
     /**
      * @param {(...args: any[]) => Promise<any>} fn - A capability
-     * @returns {(...args: any[]) => Promise<any>} It, gated, answering across the boundary
+     * @returns {(...args: any[]) => Promise<any>} It, answering across the boundary
      */
-    const g = (fn) => (...args) => (stopped
-      ? Promise.reject(named('AbortError', 'stopped'))
+    const g = (fn) => (...args) => (dead
+      ? new Promise(() => {})
       : new Promise((resolve, reject) => {
-        fn(...args).then((v) => deliver(() => resolve(v)), (e) => deliver(() => reject(e)));
+        fn(...args).then((v) => { if (!dead) deliver(() => resolve(v)); }, (e) => { if (!dead) deliver(() => reject(e)); });
       }));
     return {
       fs: { readFile: g((p) => c.fs.readFile(p)) },
@@ -274,32 +323,86 @@ function worldOf({ writes, stopAt }) {
   };
 
   return {
-    caps, pending, stopped: () => stopped, approveNext: () => { approved = true; }, gate,
+    wrapped, program, pending, diverged,
+    delivering: () => inbox.length > 0 || snapshotting > 0,
+    dead: () => dead,
+    snapshot: () => lastSnapshot,
+    held: () => held,
+    close: () => port.port1.close(),
+  };
+}
+
+/**
+ * The world the reference run runs against: every call answers, nothing waits
+ * on the user.
+ * @param {string[]} writes - Every change made
+ * @returns {{caps: Record<string, any>, pending: Array<() => void>, delivering: () => boolean, close: () => void}} The world
+ */
+function referenceWorldOf(writes) {
+  /** @type {Array<() => void>} */
+  const pending = [];
+  /** @type {Array<() => void>} */
+  const inbox = [];
+  const port = new MessageChannel();
+  port.port1.onmessage = () => { /** @type {() => void} */ (inbox.shift())(); };
+  /**
+   * @param {string} key - The capability
+   * @param {string} arg - Its argument
+   * @param {boolean} [tool] - A tool call, which never throws NotFound
+   * @returns {Promise<string>} Its answer, across the boundary
+   */
+  const call = (key, arg, tool = false) => new Promise((resolve, reject) => {
+    pending.push(() => {
+      /** @type {() => void} */
+      let hand;
+      if (!tool && parseInt(hash(arg), 16) % 5 === 0) {
+        const e = named('NotFound', 'no ' + arg);
+        hand = () => reject(e);
+      } else {
+        if (key === 'tools.write') writes.push(arg);
+        const v = key + ':' + hash(arg);
+        hand = () => resolve(v);
+      }
+      inbox.push(hand);
+      port.port2.postMessage(0);
+    });
+  });
+  return {
+    caps: {
+      fs: { readFile: (/** @type {string} */ p) => call('fs.readFile', p) },
+      grep: (/** @type {string} */ p) => call('grep', p),
+      tools: {
+        read: (/** @type {{path: string}} */ a) => call('tools.read', a.path, true),
+        write: (/** @type {{path: string}} */ a) => call('tools.write', a.path, true),
+      },
+    },
+    pending,
     delivering: () => inbox.length > 0,
     close: () => port.port1.close(),
   };
 }
 
 /**
- * Drive one pass: answer pending calls in the order the generator picks until
- * the program has ended and nothing is under way.
+ * Drive one run: answer pending calls in the order the generator picks until
+ * the program has ended and nothing is under way, or the engine has died.
  * @param {Promise<unknown>} program - The running program
  * @param {Array<() => void>} pending - Calls waiting to answer
  * @param {() => number} rng - Picks which answers next
- * @param {() => boolean} delivering - Whether answers are still crossing the boundary
- * @param {() => string|null} [stalledOn] - The journal's report of a stall
- * @returns {Promise<{ok: boolean, value?: unknown, error?: Error, stall?: string}>} How it ended
+ * @param {() => boolean} delivering - Whether answers are still crossing the boundary, or a snapshot is being taken
+ * @param {() => boolean} dead - Whether the engine has died
+ * @returns {Promise<{ok: boolean, value?: unknown, error?: Error, stall?: string, died?: boolean}>} How it ended
  */
-async function drive(program, pending, rng, delivering, stalledOn) {
+async function drive(program, pending, rng, delivering, dead) {
   /** @type {{ok: boolean, value?: unknown, error?: Error}|null} */
   let outcome = null;
   program.then((value) => { outcome = { ok: true, value }; }, (error) => { outcome = { ok: false, error }; });
   for (;;) {
     await settleMicrotasks();
+    if (dead()) return { ok: false, died: true };
     if (delivering()) continue;
     if (pending.length === 0) {
       if (outcome) return outcome;
-      return { ok: false, stall: stalledOn?.() ?? 'nothing pending, and the program has not ended' };
+      return { ok: false, stall: 'nothing pending, and the program has not ended' };
     }
     const [next] = pending.splice(Math.floor(rng() * pending.length), 1);
     /** @type {() => void} */ (next)();
@@ -332,9 +435,20 @@ export async function runTests(_ctx) {
   };
 
   /**
-   * One case: the reference run, then the passes.
+   * Whether a program makes one call at a time: no concurrent node with more
+   * than one child.
+   * @param {Node} n - The program
+   * @returns {boolean} It is sequential
+   */
+  const sequential = (n) => n.kind === 'call'
+    || ((n.kind === 'seq' || n.children.length < 2) && n.children.every(sequential));
+
+  /**
+   * One case: the reference run, then the runs.
    * @param {number} seed - The case
-   * @returns {Promise<{passes: number, stops: number}>} How many passes it took and how many stopped
+   * @returns {Promise<{deaths: number, answered: number, resumed: boolean, diverged: boolean}>} How often the
+   *   engine died while a call was held, how often the user answered one, whether a replay finished, and whether
+   *   one diverged
    */
   const runCase = async (seed) => {
     const rng = rngOf(seed);
@@ -343,63 +457,77 @@ export async function runTests(_ctx) {
 
     /** @type {string[]} */
     const refWrites = [];
-    const ref = worldOf({ writes: refWrites, stopAt: -1 });
-    const expected = await drive(runProgram(tree, ref.gate(ref.caps)), ref.pending, rng, ref.delivering);
+    const ref = referenceWorldOf(refWrites);
+    const expected = await drive(runProgram(tree, ref.caps), ref.pending, rng, ref.delivering, () => false);
     ref.close();
     assert(expected.ok, where + ': the reference run must finish: ' + (expected.error?.message ?? expected.stall));
+    const want = [...refWrites].sort();
 
-    /** @type {any[]} */
-    const journal = [];
+    /** @type {{journal: any[], heldStep: number}|null} */
+    let saved = null;
     /** @type {string[]} */
     const writes = [];
-    let stops = 0;
-    for (let pass = 0; pass < MAX_PASSES; pass++) {
-      const last = pass === MAX_PASSES - 1;
-      const stopAt = !last && rng() < 0.8 ? Math.floor(rng() * 3) : -1;
-      const world = worldOf({ writes, stopAt });
-      /** @type {Error[]} */
-      const diverged = [];
-      const wrapped = journalCapabilities(world.caps, {
-        journal,
-        onDiverge: (e) => diverged.push(e),
-        onHeld: () => world.approveNext(),
-      });
-      const result = await drive(runProgram(tree, world.gate(wrapped)), world.pending, rng, world.delivering, wrapped.stalledOn);
+    let deaths = 0;
+    let answered = 0;
+    for (let run = 0; run < MAX_RUNS; run++) {
+      const at = where + ', run ' + (run + 1);
+      const world = worldOf({ writes, saved, rng, last: run === MAX_RUNS - 1 });
+      const result = await drive(runProgram(tree, world.program(world.wrapped)), world.pending, rng, world.delivering,
+        world.dead);
       world.close();
-      assert(diverged.length === 0, where + ', pass ' + (pass + 1) + ': diverged: ' + diverged[0]?.message);
-      assert(!result.stall, where + ', pass ' + (pass + 1) + ': stalled on ' + result.stall);
-      if (world.stopped()) {
-        stops++;
+      const done = [...writes].sort();
+      assert(new Set(done).size === done.length, at + ': a change was made twice: ' + JSON.stringify(done));
+      assert(done.every((w) => want.includes(w)), at + ': a change the uninterrupted run never made: ' + JSON.stringify(done));
+      assert(!result.stall, at + ': stalled: ' + result.stall);
+      if (world.diverged.length > 0) {
+        assert(!sequential(tree), at + ': a program that makes one call at a time diverged: ' + world.diverged[0]?.message);
+        assert(!result.ok, at + ': a replay that diverged still finished');
+        return { deaths, answered, resumed: false, diverged: true };
+      }
+      if (result.died) {
+        deaths++;
+        answered += world.held() - 1;
+        saved = world.snapshot();
+        assert(saved, at + ': the engine died holding a call, with no snapshot');
         continue;
       }
-      assert(result.ok, where + ', pass ' + (pass + 1) + ': failed: ' + result.error?.message);
-      assert(result.value === expected.value, where + ': returned ' + String(result.value) + ', uninterrupted ' + String(expected.value));
-      const done = [...writes].sort();
-      const want = [...refWrites].sort();
+      answered += world.held();
+      assert(result.ok, at + ': failed: ' + result.error?.message);
+      assert(result.value === expected.value, at + ': returned ' + String(result.value) + ', uninterrupted ' + String(expected.value));
       assert(JSON.stringify(done) === JSON.stringify(want),
-        where + ': each change once — made ' + JSON.stringify(done) + ', uninterrupted ' + JSON.stringify(want));
-      return { passes: pass + 1, stops };
+        at + ': each change once — made ' + JSON.stringify(done) + ', uninterrupted ' + JSON.stringify(want));
+      return { deaths, answered, resumed: deaths > 0, diverged: false };
     }
-    throw new Error(where + ': never finished in ' + MAX_PASSES + ' passes');
+    throw new Error(where + ': never finished in ' + MAX_RUNS + ' runs');
   };
 
-  await test('random programs replay to the uninterrupted result, each change once', async () => {
+  await test('random programs held live or lost and replayed never make a change twice, and finish or stop', async () => {
     /** @type {string[]} */
     const failures = [];
-    let stops = 0;
+    let deaths = 0;
     let multi = 0;
+    let answered = 0;
+    let resumed = 0;
+    let diverged = 0;
     for (let seed = 1; seed <= CASES; seed++) {
       try {
         const r = await runCase(seed);
-        stops += r.stops;
-        if (r.stops > 1) multi++;
+        deaths += r.deaths;
+        answered += r.answered;
+        if (r.resumed) resumed++;
+        if (r.resumed && r.deaths > 1) multi++;
+        if (r.diverged) diverged++;
       } catch (e) {
         failures.push(e instanceof Error ? e.message : String(e));
       }
     }
     assert(failures.length === 0, failures.length + ' of ' + CASES + ' cases failed; first:\n' + failures.slice(0, 3).join('\n'));
-    // Guard against a generator that stops making the cases worth having.
-    assert(stops > CASES / 2 && multi > CASES / 10, 'too few stops to test replay: ' + stops + ' stops, ' + multi + ' cases with several');
+    // Guard against a generator that stops making the cases worth having:
+    // replays that finish, some through several deaths, holds answered live,
+    // and divergence the exception rather than the rule.
+    assert(deaths > CASES / 2 && resumed > CASES / 4 && multi > CASES / 20 && answered > CASES / 2 && diverged < resumed,
+      'too few holds to test both paths: ' + deaths + ' deaths, ' + resumed + ' resumed, ' + multi
+      + ' through several, ' + answered + ' answered live, ' + diverged + ' diverged');
   });
 
   return { passed, failed, errors };

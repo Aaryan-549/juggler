@@ -94,6 +94,7 @@ func (r *run) handleInit(payload json.RawMessage) {
 	r.projectPath = msg.Config.ProjectPath
 	r.txnStore = NewTransactionStore(r.pathProvider)
 	r.assetStore = NewAssetStore(r.pathProvider)
+	r.programStore = NewProgramStore(r.pathProvider)
 
 	// Open this conversation's own log file (in addition to the process-wide
 	// server.log) so a conversation's worker activity can be read in isolation.

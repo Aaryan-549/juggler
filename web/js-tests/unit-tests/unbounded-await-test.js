@@ -393,5 +393,102 @@ export async function runTests(_ctx) {
     }
   }
 
+  // Test 8: `timeoutMs: 0` asks for no deadline. run_code keeps its own clock,
+  // which stops while the program waits on the user, so the sandbox must set
+  // none of its own: not the host's, not the frame's, not the bridge's. The
+  // real iframe sandbox: a run with no deadline finishes when it finishes.
+  {
+    try {
+      const controller = new AbortController();
+      const value = await within(
+        runInSandbox('await new Promise((r) => setTimeout(r, 600)); return "finished";',
+          { timeoutMs: 0, signal: controller.signal }),
+        8000, 'a run with no deadline never settled');
+      assert(value === 'finished', `a run with no deadline must finish however long it takes, got ${value}`);
+
+      passed++;
+    } catch (e) {
+      failed++;
+      errors.push(`timeoutMs 0 lets a run finish: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  // Test 9: the engine worker's bridge arms no timer of its own for a run with
+  // no deadline — not merely a longer one — and its signal still ends the run:
+  // the host is told to stop it and the caller gets an AbortError. The timer is
+  // injected so "none armed" is observed directly rather than inferred from a
+  // run that has not settled yet.
+  {
+    try {
+      /** @type {any[]} */
+      const posted = [];
+      /** @type {number[]} */
+      const armed = [];
+      const setTimer = (/** @type {() => void} */ fn, /** @type {number} */ ms) => { armed.push(ms); return setTimeout(fn, ms); };
+      const bridge = createSandboxBridge({ post: (m) => { posted.push(m); }, graceMs: 50, setTimer });
+
+      // The control: a run with a deadline arms its backstop through setTimer,
+      // so an empty `armed` below means none was armed, not that it went elsewhere.
+      const bounded = bridge.delegate('return 1', {}, 1000);
+      assert(armed.length === 1 && armed[0] === 1050,
+        `a run with a deadline must arm the bridge's backstop at timeoutMs + grace, armed: ${JSON.stringify(armed)}`);
+      bridge.handleResult({ id: posted[0].id, ok: true, result: 1 });
+      await within(bounded, 4000, 'an answered bounded run never settled');
+      posted.length = 0;
+      armed.length = 0;
+
+      const controller = new AbortController();
+      const run = bridge.delegate('return 1', {}, 0, undefined, { signal: controller.signal });
+      const outcome = run.then(() => 'resolved', (e) => (e && e.name) || String(e));
+      assert(posted.length === 1 && posted[0].type === 'sandbox-run' && posted[0].timeoutMs === 0,
+        `the host must be asked to run with timeoutMs 0, posted: ${JSON.stringify(posted.map((m) => [m.type, m.timeoutMs]))}`);
+      assert(armed.length === 0,
+        `the bridge must arm no timer for a run with no deadline, armed: ${JSON.stringify(armed)}`);
+      const runId = posted[0].id;
+
+      controller.abort();
+      const settled = await within(outcome, 4000, 'an aborted run with no deadline never settled');
+      assert(settled === 'AbortError', `the abort must surface as an AbortError, got ${settled}`);
+      assert(posted.some((m) => m.type === 'sandbox-abort' && m.id === runId),
+        `the bridge must ask the host to stop the run, posted: ${JSON.stringify(posted.map((m) => m.type))}`);
+      assert(bridge.pendingCount() === 0, 'an aborted run with no deadline must leave no bookkeeping behind');
+
+      passed++;
+    } catch (e) {
+      failed++;
+      errors.push(`the bridge sets no deadline for timeoutMs 0: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  // Test 10: only exactly 0 means "no deadline", and only with a signal to end
+  // the run. Every host decides whether to arm a timer with `timeoutMs > 0`, so
+  // a NaN, null or negative that got through would quietly mean "run forever".
+  {
+    try {
+      const signal = new AbortController().signal;
+      /**
+       * @param {any} timeoutMs - The value under test
+       * @param {AbortSignal} [sig] - Signal to pass
+       * @returns {Promise<string>} The rejection's name and message, or 'accepted'
+       */
+      const refusal = (timeoutMs, sig) => within(
+        runInSandbox('return 1', { timeoutMs, signal: sig }).then(() => 'accepted', (e) => `${e.name}: ${e.message}`),
+        8000, `runInSandbox(timeoutMs: ${String(timeoutMs)}) never settled`);
+      for (const bad of [NaN, -1, null, Infinity, '1000']) {
+        const got = await refusal(bad, signal);
+        assert(/^RangeError: .*timeoutMs must be a positive number of milliseconds, or 0 with a signal/.test(got),
+          `timeoutMs ${String(bad)} must be refused with a RangeError, got ${got}`);
+      }
+      const noSignal = await refusal(0, undefined);
+      assert(/^TypeError: .*signal is required/.test(noSignal),
+        `timeoutMs 0 without a signal must be refused with a TypeError, got ${noSignal}`);
+
+      passed++;
+    } catch (e) {
+      failed++;
+      errors.push(`runInSandbox refuses a timeoutMs that is not a deadline: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
   return { passed, failed, errors };
 }
