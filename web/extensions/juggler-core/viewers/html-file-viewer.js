@@ -4,6 +4,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import FileViewer from 'juggler/file-viewer';
+import { extensionOf } from 'juggler/file-source';
 import { createFileContentBlock, formatFileContentForLLM } from 'juggler/item-utils';
 import { injectStylesOnce } from 'juggler/ui';
 
@@ -48,6 +49,18 @@ const STYLES = `
   background: #fff;
 }
 `;
+
+/**
+ * What kind of document a source is, which decides how its source is
+ * highlighted and what the toggle calls it. SVG is framed exactly as HTML is: a
+ * framed SVG document runs its scripts too, so it needs the same sandbox.
+ * @param {import('juggler/file-source').FileSource} source - The file
+ * @returns {{label: string, language: string}} Display name and source language
+ */
+function documentKind(source) {
+  const svg = source.mime === 'image/svg+xml' || extensionOf(source.path || '') === 'svg';
+  return svg ? { label: 'SVG', language: 'xml' } : { label: 'HTML', language: 'html' };
+}
 
 /**
  * The URL a preview can load, or why there isn't one. Decided from what the
@@ -95,8 +108,8 @@ async function probe(url, signal) {
 }
 
 /**
- * HtmlFileViewer — shows an HTML file as the page it describes, with its source
- * a click away. The model still reads the source: `extract()` is the text
+ * HtmlFileViewer — shows an HTML or SVG file as the page or picture it
+ * describes, with its source a click away. The model still reads the source: `extract()` is the text
  * viewer's, and only what the user sees differs.
  *
  * The page is loaded from the file tree route into a sandboxed frame, so its
@@ -111,9 +124,9 @@ class HtmlFileViewer extends FileViewer {
     id: 'html',
     name: 'HTML',
     version: '1.0.0',
-    description: 'Renders HTML files as a live page, with the source a click away',
-    mimeTypes: ['text/html'],
-    extensions: ['html', 'htm'],
+    description: 'Renders HTML and SVG files live, with the source a click away',
+    mimeTypes: ['text/html', 'image/svg+xml'],
+    extensions: ['html', 'htm', 'svg'],
     priority: 50,
   };
 
@@ -133,6 +146,7 @@ class HtmlFileViewer extends FileViewer {
    */
   async render(source, host, ctx = {}) {
     injectStylesOnce('html-file-viewer-styles', STYLES);
+    const kind = documentKind(source);
 
     /** @type {Promise<string>|null} */
     let textPromise = null;
@@ -169,7 +183,7 @@ class HtmlFileViewer extends FileViewer {
       }
       const block = createFileContentBlock({
         content: text,
-        language: 'html',
+        language: kind.language,
         lineNumberStart: source.lineOffset || 1,
       });
       host.appendChild(block);
@@ -186,7 +200,7 @@ class HtmlFileViewer extends FileViewer {
       frame.setAttribute('referrerpolicy', 'no-referrer');
       // aria-label, not title: the pointer spends its time inside the page, where
       // a title would hover as a tooltip over whatever the user is doing.
-      frame.setAttribute('aria-label', source.path || 'HTML preview');
+      frame.setAttribute('aria-label', source.path || `${kind.label} preview`);
       frame.src = url;
       host.appendChild(frame);
     };
@@ -206,11 +220,11 @@ class HtmlFileViewer extends FileViewer {
         toggle.type = 'button';
         toggle.className = 'html-view-toggle';
         toggle.textContent = 'Source';
-        toggle.setAttribute('aria-label', 'Show HTML source');
+        toggle.setAttribute('aria-label', `Show ${kind.label} source`);
         toggle.addEventListener('click', () => {
           previewing = !previewing;
           toggle.textContent = previewing ? 'Source' : 'Preview';
-          toggle.setAttribute('aria-label', previewing ? 'Show HTML source' : 'Show rendered page');
+          toggle.setAttribute('aria-label', previewing ? `Show ${kind.label} source` : 'Show rendered preview');
           if (previewing) showPreview(url);
           else void showSource();
         });

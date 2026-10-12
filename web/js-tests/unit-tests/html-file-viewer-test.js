@@ -146,6 +146,28 @@ export async function runTests() {
   tally(check(/** @type {any} */ (winner)?.MANIFEST?.id === 'html',
     `an .html file should resolve to the html viewer, got ${/** @type {any} */ (winner)?.MANIFEST?.id}`, errors));
 
+  // An .svg is claimed by the same viewer, previews in the same sandboxed frame,
+  // and toggles to its markup — not shown as text, and not as an inert <img>.
+  const svgSource = servedSource({ path: 'chart.svg', absPath: '/project/chart.svg', text: SVG, size: SVG.length });
+  const svgWinner = fileViewerRegistry.resolve(toDescriptor(svgSource));
+  tally(check(/** @type {any} */ (svgWinner)?.MANIFEST?.id === 'html',
+    `an .svg file should resolve to the html viewer, got ${/** @type {any} */ (svgWinner)?.MANIFEST?.id}`, errors));
+  const svg = await render(svgSource);
+  try {
+    const frame = svg.host.querySelector('iframe');
+    tally(check(!!frame && frame.hasAttribute('sandbox') && ![...frame.sandbox].includes('allow-same-origin'),
+      'an .svg should preview in the sandboxed frame', errors));
+    const toggle = /** @type {HTMLButtonElement|null} */ (svg.header.querySelector('button'));
+    tally(check(toggle?.getAttribute('aria-label') === 'Show SVG source',
+      `the toggle should name SVG source, got ${toggle?.getAttribute('aria-label')}`, errors));
+    toggle?.click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    tally(check(!svg.host.querySelector('iframe') && svg.host.textContent?.includes('<rect') === true,
+      'Source should replace the SVG preview with its markup', errors));
+  } finally {
+    dispose(svg);
+  }
+
   // A whole file with a URL previews in a frame that cannot reach the app.
   const served = await render(servedSource());
   try {
