@@ -11,6 +11,7 @@ of changes; this project follows semantic versioning.
 - Denying a tool call also stops approved calls still waiting their turn
 - Fixed Claude Code cutting long tool descriptions short; the model now sees them whole
 - query_code says what is already in scope when a script reaches for Node's modules
+- Fixed query_code rewriting the text "import(" inside a script's strings
 
 ## [0.7.6] - 2026-10-09
 

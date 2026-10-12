@@ -175,6 +175,81 @@ function returnValueErrMsg(e, value) {
   return 'Return value could not be serialised: ' + errMsg(e);
 }
 
+// Rewrite import(...) to sandboxImport(...) outside strings, comments and
+// template literals, as the Node sandbox does (engine-sandbox-worker.mjs
+// rewriteDynamicImports). Text that merely says "import(" — code a program
+// writes through a tool — is the program's data, and passes through as written.
+// \`import\` may be separated from \`(\` by whitespace or comments.
+function rewriteDynamicImports(source) {
+  let out = '';
+  for (let i = 0; i < source.length;) {
+    const c = source[i];
+    if (c === "'" || c === '"' || c === '\\x60') {
+      const end = skipString(source, i, c);
+      out += source.slice(i, end);
+      i = end;
+      continue;
+    }
+    if (c === '/' && source[i + 1] === '/') {
+      const end = source.indexOf('\\n', i + 2);
+      const next = end < 0 ? source.length : end;
+      out += source.slice(i, next);
+      i = next;
+      continue;
+    }
+    if (c === '/' && source[i + 1] === '*') {
+      const end = source.indexOf('*/', i + 2);
+      const next = end < 0 ? source.length : end + 2;
+      out += source.slice(i, next);
+      i = next;
+      continue;
+    }
+    if (source.startsWith('import', i) && !isIdentifierPart(source[i - 1])) {
+      const after = i + 'import'.length;
+      if (source[skipTrivia(source, after)] === '(') {
+        out += 'sandboxImport';
+        i = after;
+        continue;
+      }
+    }
+    out += c;
+    i++;
+  }
+  return out;
+}
+
+function isIdentifierPart(c) { return !!c && /[A-Za-z0-9_$]/.test(c); }
+
+// Skip whitespace and line/block comments.
+function skipTrivia(s, i) {
+  while (i < s.length) {
+    if (/\\s/.test(s[i])) { i++; continue; }
+    if (s[i] === '/' && s[i + 1] === '/') {
+      const end = s.indexOf('\\n', i + 2);
+      i = end < 0 ? s.length : end + 1;
+      continue;
+    }
+    if (s[i] === '/' && s[i + 1] === '*') {
+      const end = s.indexOf('*/', i + 2);
+      i = end < 0 ? s.length : end + 2;
+      continue;
+    }
+    break;
+  }
+  return i;
+}
+
+// Skip a quoted string or template literal, honouring escapes.
+function skipString(s, i, quote) {
+  i++;
+  while (i < s.length) {
+    if (s[i] === '\\\\') { i += 2; continue; }
+    if (s[i] === quote) return i + 1;
+    i++;
+  }
+  return i;
+}
+
 // The iframe posts {type:'init', code, timeoutMs, capabilities, projectRoot,
 // origin} plus a MessagePort on the worker's first 'message'. All further
 // traffic is on the port: capability calls go out as {kind, method, args, id};
@@ -312,7 +387,7 @@ self.addEventListener('message', (event) => {
   // Route user import() through the resolver. Workers have no import map, so
   // this is the runtime analog of the static import rewrite the server already
   // does for module workers (worker_module.go).
-  const code = String(rawCode).replace(/\\bimport\\s*\\(/g, 'sandboxImport(');
+  const code = rewriteDynamicImports(String(rawCode));
 
   // Compile up front to surface SyntaxErrors synchronously instead of hanging
   // until the timeout (e.g. an LLM redeclaring an injected binding).
