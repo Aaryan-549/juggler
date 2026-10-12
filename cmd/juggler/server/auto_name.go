@@ -295,15 +295,24 @@ func (s *Server) isProvisionalName(convID string) bool {
 // There is deliberately no heuristic fallback: a dumb text-derived name is worse
 // than none.
 func (s *Server) autoNameConversation(convID, firstMessage, customSystem string, force bool, primary core.ModelRef) {
-	sm := s.SessionManager()
-	if sm == nil {
-		return
-	}
-
 	// Fire guard: the automatic namer only ever renames a conversation whose name
 	// is still provisional. A manual force request renames regardless (the user
 	// explicitly asked for a fresh name).
 	if !force && !s.isProvisionalName(convID) {
+		return
+	}
+
+	// Past the guard the naming has begun, and every viewer is told so — the tab
+	// reads "Auto-naming…" until it is told the naming has ended. The end is
+	// deferred so that every way out says it, and it follows the "renamed"
+	// broadcast on success, so the label gives way to the new name rather than
+	// briefly to the old one.
+	b := serverBroadcaster{srv: s}
+	b.BroadcastConversationsChanged("naming-started", convID, "")
+	defer b.BroadcastConversationsChanged("naming-ended", convID, "")
+
+	sm := s.SessionManager()
+	if sm == nil {
 		return
 	}
 

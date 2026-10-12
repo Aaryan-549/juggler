@@ -59,6 +59,14 @@ import './bin-modal.js';
 import './info-rail.js';
 import './workspace-box-header.js';
 
+// What a tab says while the model is naming it, in place of its name.
+const AUTO_NAMING_LABEL = 'Auto-naming…';
+
+// How long a press of Auto-name shows the label on its own say-so. The server's
+// `naming-started` replaces the mark with one of its own within a moment; this
+// only bounds a request the worker quietly declined (Session.setAutoNaming).
+const AUTO_NAME_PRESS_TIMEOUT_MS = 15_000;
+
 // Leading-edge debounce window for new-conversation creation. Guards against
 // accidental double-activation — most commonly a double-click on the "+"
 // button, where the second click lands before the async create resolves and
@@ -726,6 +734,7 @@ class ConversationBar extends JugglerElement {
       if (event.type === 'conversation:created' ||
           event.type === 'conversation:deleted' ||
           event.type === 'conversation:renamed' ||
+          event.type === 'conversation:auto-naming' ||
           event.type === 'conversation:switched' ||
           event.type === 'conversation:reordered' ||
           event.type === 'workspace:selected' ||
@@ -1630,6 +1639,10 @@ class ConversationBar extends JugglerElement {
   _renderOrUpdateTab(conv, visibleId, container) {
     const name = conv.name || UNTITLED_BASE;
     const isActive = conv.id === visibleId;
+    // While the model is naming the tab, the tab says so in place of the name it
+    // is about to lose (shimmering: .is-auto-naming in conversation-bar.css).
+    const autoNaming = this._session?.isAutoNaming?.(conv.id) ?? false;
+    const label = autoNaming ? AUTO_NAMING_LABEL : name;
 
     // Get existing tab element or create new one
     let tab = /** @type {HTMLElement|null} */ (this._cachedElements.get(conv.id));
@@ -1661,7 +1674,7 @@ class ConversationBar extends JugglerElement {
       // the tooltip manager offer it in full when it is cut, measured at hover
       // so renames and resizes need nothing from here.
       const newName = tab.querySelector('.conversation-tab-name');
-      if (newName) newName.textContent = name;
+      if (newName) newName.textContent = label;
 
       this._cachedElements.set(conv.id, tab);
 
@@ -1680,10 +1693,11 @@ class ConversationBar extends JugglerElement {
       // removes .is-renaming, and a subsequent render() paints the name.
       // Compare before writing: assigning textContent replaces the text node
       // even when the string is identical, and this runs on every render.
-      if (tabName && !tab.classList.contains('is-renaming') && tabName.textContent !== name) {
-        tabName.textContent = name;
+      if (tabName && !tab.classList.contains('is-renaming') && tabName.textContent !== label) {
+        tabName.textContent = label;
       }
     }
+    tab.querySelector('.conversation-tab-name')?.classList.toggle('is-auto-naming', autoNaming);
 
     // Update classes (toggle rather than overwrite — overwriting .className
     // would clear .is-running and restart the CSS pulse animation).
@@ -2334,7 +2348,8 @@ class ConversationBar extends JugglerElement {
       // button is omitted entirely (the empty actions row then collapses).
       // pointerdown preventDefault keeps focus on the input so the button press
       // doesn't trigger a blur→commit of the current (unchanged) value first. The
-      // server renames + broadcasts, which updates the tab; we just close the editor.
+      // server renames + broadcasts, which updates the tab; we mark the tab as
+      // being named and close the editor.
       actions: ({ close }) => {
         if (!conv.hasAutoNameSource()) return null;
         const autoNameBtn = document.createElement('button');
@@ -2351,6 +2366,10 @@ class ConversationBar extends JugglerElement {
           // provisional again — mark it before requesting, so a later /handoff of
           // this conversation stays eligible for a derived title.
           session.setNameIsProvisional(conv.id, true);
+          // Say so before the server does: its round trip is long enough for the
+          // press to look like it did nothing. Marked ahead of close(), whose
+          // render is the one that paints it.
+          session.setAutoNaming(conv.id, true, { timeoutMs: AUTO_NAME_PRESS_TIMEOUT_MS });
           session.requestAutoName(conv.id);
           close();
         });

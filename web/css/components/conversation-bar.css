@@ -750,13 +750,52 @@ conversation-bar .conversation-add-labelled:hover {
 }
 
 /* As wide as the words and no wider, so a click past the end of a short name
-   is a click on the row, not on the name (which renames the open tab). */
+   is a click on the row, not on the name (which renames the open tab) — but
+   never narrower than a target a click can find. A name of a letter or two
+   would otherwise be a few pixels of the row that rename, and the only way to
+   fix it would be one nobody could see. The floor is still well short of the
+   row, which leaves the blank stretch beyond it a click on the row. */
 conversation-bar .conversation-tab-name {
     flex: 0 1 auto;
-    min-width: 0;
+    min-width: 3rem;
     overflow: hidden;
     text-overflow: ellipsis;
     text-align: left;
+}
+
+/* "Auto-naming…" in place of the name while the model is naming the tab: set in
+   the dimmer text colour, with a band of the full one sweeping through it, so it
+   reads as work in progress rather than as a name somebody chose. The band is a
+   gradient painted through the letters (background-clip: text), twice the width
+   of the words so it can travel from wholly before them to wholly after.
+   Reduced motion keeps the words and drops the sweep. */
+conversation-bar .conversation-tab-name.is-auto-naming {
+    font-style: italic;
+    color: transparent;
+    background-image: linear-gradient(
+        90deg,
+        var(--text-secondary) 0%,
+        var(--text-secondary) 35%,
+        var(--text-primary) 50%,
+        var(--text-secondary) 65%,
+        var(--text-secondary) 100%
+    );
+    background-size: 200% 100%;
+    background-clip: text;
+    animation: tab-auto-naming-shimmer 1.6s linear infinite;
+}
+
+@keyframes tab-auto-naming-shimmer {
+    from { background-position: 100% 0; }
+    to { background-position: -100% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    conversation-bar .conversation-tab-name.is-auto-naming {
+        animation: none;
+        color: var(--text-secondary);
+        background-image: none;
+    }
 }
 
 /* Resize handle sits at the right edge of the sidebar (reuses col-resize-handle styles) */

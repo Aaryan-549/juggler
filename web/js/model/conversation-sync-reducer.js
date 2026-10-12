@@ -45,6 +45,7 @@ import { reportFault } from '../utils/fault-report.js';
  * @property {(ids: string[]) => void} reorder - Rebuild the active map in this order
  * @property {(id: string) => void} follow - Switch this viewer to a conversation
  * @property {(from: string) => boolean} shouldFollow - Whether a request from this conversation may move the viewer (`Session.shouldFollowRequest`)
+ * @property {(id: string, active: boolean) => void} setAutoNaming - Mark a conversation as being auto-named, or not (`Session.setAutoNaming`)
  * @property {import('./conversation-bin.js').default} bin - The project's bin
  */
 
@@ -52,7 +53,7 @@ import { reportFault } from '../utils/fault-report.js';
  * One `conversations-changed` broadcast, as the server sends it. Which fields
  * are set depends on `op`.
  * @typedef {object} ConversationChange
- * @property {string} op - created | focus | deleted | renamed | binned | restored | binned-deleted | reordered
+ * @property {string} op - created | focus | deleted | renamed | binned | restored | binned-deleted | reordered | naming-started | naming-ended
  * @property {string} [id] - The conversation the op is about
  * @property {string} [name] - Its canonical folder name (created, renamed, restored)
  * @property {string[]} [order] - The ids the server re-slotted (reordered)
@@ -110,6 +111,10 @@ export default class ConversationSyncReducer {
         case 'restored':       await this.restored(id, name); break;
         case 'binned-deleted': this._host.bin.noteLeft(id); break;
         case 'reordered':      this.reordered(order ?? []); break;
+        // The server's auto-namer working on a tab, bracketed so the tab can say
+        // so; the end is sent however the naming stops (server/auto_name.go).
+        case 'naming-started': this._host.setAutoNaming(id, true); break;
+        case 'naming-ended':   this._host.setAutoNaming(id, false); break;
         default: console.warn('[ConversationSync] unknown conversations-changed op:', op);
       }
     } catch (error) {

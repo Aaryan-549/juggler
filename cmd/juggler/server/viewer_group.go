@@ -382,7 +382,8 @@ func (b serverBroadcaster) BroadcastPinboardReveal(board, pin, from string) {
 
 // BroadcastConversationsChanged publishes a single op-tagged
 // conversation-list diff. `op` is one of "created", "deleted",
-// "renamed", "binned", "restored", "binned-deleted", "bin-emptied".
+// "renamed", "binned", "restored", "binned-deleted", "bin-emptied",
+// "naming-started", "naming-ended" (the auto-namer working on a tab).
 // `name` is the canonical folder name; included on the wire only when
 // non-empty (created / renamed / restored).
 func (b serverBroadcaster) BroadcastConversationsChanged(op, id, name string) {

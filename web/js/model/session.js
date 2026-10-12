@@ -372,6 +372,14 @@ class Session {
     this._loadQueue = null;
 
     /**
+     * Conversations the auto-namer is working on, each with the timer that
+     * expires its mark (see setAutoNaming). Created on first use.
+     * @type {Map<string, ReturnType<typeof setTimeout>>|undefined}
+     * @private
+     */
+    this._autoNaming = undefined;
+
+    /**
      * The project's bin: its count and size, and the requests that list,
      * restore and permanently delete what is in it.
      * @type {ConversationBin}
@@ -397,6 +405,7 @@ class Session {
       reorder: (ids) => this.registry.arrange(ids),
       follow: (id) => { this.switchConversation(id); },
       shouldFollow: (from) => this.shouldFollowRequest(from),
+      setAutoNaming: (id, active) => this.setAutoNaming(id, active),
       get bin() { return session.bin; }
     });
   }
@@ -2421,6 +2430,46 @@ class Session {
   }
 
   /**
+   * Whether the auto-namer is working on a conversation's name — the tab then
+   * reads "Auto-naming…" in place of it.
+   * @param {string} conversationId - Conversation to ask about.
+   * @returns {boolean} True between a naming's start and its end.
+   */
+  isAutoNaming(conversationId) {
+    return this._autoNaming?.has(conversationId) ?? false;
+  }
+
+  /**
+   * Mark a conversation as being auto-named, or as no longer being. Set by the
+   * server's `naming-started` / `naming-ended` broadcasts, and ahead of them by
+   * the Auto-name button, so the press shows at once.
+   *
+   * Every mark expires: the end travels on a socket that can drop, and a tab
+   * that says "Auto-naming…" for good is worse than one that stops early. The
+   * default outlasts the server's whole naming budget (autoNameTimeout, 90s); a
+   * caller marking ahead of the server passes something shorter, which the
+   * server's own `naming-started` then replaces.
+   * @param {string} conversationId - Conversation to mark.
+   * @param {boolean} active - True while it is being named.
+   * @param {{timeoutMs?: number}} [opts]
+   * @returns {void}
+   */
+  setAutoNaming(conversationId, active, { timeoutMs = 120_000 } = {}) {
+    if (!conversationId) return;
+    const marks = this._autoNaming ??= new Map();
+    const was = marks.has(conversationId);
+    clearTimeout(marks.get(conversationId));
+    if (active) {
+      marks.set(conversationId, setTimeout(() => this.setAutoNaming(conversationId, false), timeoutMs));
+    } else {
+      marks.delete(conversationId);
+    }
+    if (was !== active) {
+      this._notify('conversation:auto-naming', { conversationId, active });
+    }
+  }
+
+  /**
    * Record whether a conversation's name is still provisional — the single write
    * seam for the `isProvisionalName` doc-metadata marker the server's auto-namer
    * reads. Set it true when a name is generated on the user's behalf (the
@@ -2735,6 +2784,11 @@ class Session {
     if (this._saveTimer) {
       clearTimeout(this._saveTimer);
       this._saveTimer = null;
+    }
+
+    if (this._autoNaming) {
+      for (const timer of this._autoNaming.values()) clearTimeout(timer);
+      this._autoNaming.clear();
     }
 
     // Stop background hydration before anything else. The queue holds this

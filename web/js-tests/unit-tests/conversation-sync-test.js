@@ -144,6 +144,33 @@ export async function runTests(_ctx) {
     assert(got === want, `got "${got}", want "${want}"`);
   });
 
+  await run('naming-started and naming-ended bracket a conversation being auto-named', async () => {
+    const session = /** @type {any} */ (trackTestSession(new Session(/** @type {any} */ ({}))));
+    /** @type {string[]} */
+    const seen = [];
+    session.subscribe((/** @type {any} */ e) => {
+      if (e.type === 'conversation:auto-naming') seen.push(`${e.data.conversationId}:${e.data.active}`);
+    });
+    await session.sync.apply({ op: 'naming-started', id: 'c1' });
+    assert(session.isAutoNaming('c1') === true, 'naming-started did not mark c1 as being named');
+    assert(session.isAutoNaming('c2') === false, 'naming-started marked a conversation it did not name');
+    await session.sync.apply({ op: 'naming-ended', id: 'c1' });
+    assert(session.isAutoNaming('c1') === false, 'naming-ended left c1 marked as being named');
+    // A second end (a reconnect, a duplicated echo) is not a change, so says nothing.
+    await session.sync.apply({ op: 'naming-ended', id: 'c1' });
+    assert(seen.join(' ') === 'c1:true c1:false', `announced "${seen.join(' ')}", want "c1:true c1:false"`);
+  });
+
+  await run('a naming mark nobody ends clears itself', async () => {
+    const session = /** @type {any} */ (trackTestSession(new Session(/** @type {any} */ ({}))));
+    // The end can be lost with the socket that would have carried it; the tab
+    // must not say "Auto-naming…" for ever.
+    session.setAutoNaming('c1', true, { timeoutMs: 20 });
+    assert(session.isAutoNaming('c1') === true, 'the mark was not set');
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    assert(session.isAutoNaming('c1') === false, 'the mark outlived its timeout');
+  });
+
   await run('an unknown op is reported and changes nothing', async () => {
     const { sync, calls } = reducerOverStub();
     const logged = await captureConsole(() => sync.apply({ op: 'exploded', id: 'x' }));

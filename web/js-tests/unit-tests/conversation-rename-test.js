@@ -224,5 +224,74 @@ export async function runTests() {
     }
   });
 
+  await check('a tab being auto-named says so, and says its name again afterwards', async () => {
+    const session = makeSession('Untitled 3');
+    const { bar, teardown } = mountBar(session);
+    try {
+      const nameEl = () => /** @type {HTMLElement} */ (
+        bar.querySelector('.conversation-tab[data-conversation-id="c1"] .conversation-tab-name'));
+      session.setAutoNaming('c1', true);
+      bar.render();
+      assert(shownName(bar) === 'Auto-naming…', `while being named the tab shows "${shownName(bar)}"`);
+      assert(nameEl().classList.contains('is-auto-naming'), 'the "Auto-naming…" label does not shimmer');
+      assert(getComputedStyle(nameEl()).animationName !== 'none',
+        'the is-auto-naming name has no animation running');
+
+      session.conversations.get('c1').name = 'Tunnel rendezvous';
+      session.setAutoNaming('c1', false);
+      bar.render();
+      assert(shownName(bar) === 'Tunnel rendezvous', `once named the tab shows "${shownName(bar)}"`);
+      assert(!nameEl().classList.contains('is-auto-naming'), 'the shimmer outlived the naming');
+    } finally {
+      teardown();
+    }
+  });
+
+  await check('pressing Auto-name shows "Auto-naming…" at once, before the server answers', async () => {
+    const session = makeSession('Untitled 3');
+    session.registry.get('c1').hasAutoNameSource = () => true;
+    /** @type {string[]} */
+    const requested = [];
+    session.requestAutoName = (/** @type {string} */ id) => { requested.push(id); };
+    session.setNameIsProvisional = () => {};
+    const { bar, teardown } = mountBar(session);
+    try {
+      bar._enterRenameMode('c1');
+      const button = /** @type {HTMLElement|null} */ (document.querySelector('.conversation-tab-auto-name'));
+      assert(!!button, 'the rename editor offers no Auto-name button');
+      /** @type {HTMLElement} */ (button).click();
+      assert(requested.join() === 'c1', `auto-name requested for "${requested.join()}"`);
+      assert(!field(), 'the editor stayed open');
+      assert(shownName(bar) === 'Auto-naming…',
+        `straight after the press the tab shows "${shownName(bar)}" — nothing says the click did anything`);
+    } finally {
+      session.setAutoNaming('c1', false);
+      teardown();
+    }
+  });
+
+  await check('a one-letter name is still a target a click can find', async () => {
+    const session = makeSession('x');
+    session.registry.select({ kind: 'conversation', id: 'c1' });
+    const { bar, teardown } = mountBar(session);
+    try {
+      const tab = /** @type {HTMLElement} */ (bar.querySelector('.conversation-tab[data-conversation-id="c1"]'));
+      const name = /** @type {HTMLElement} */ (tab.querySelector('.conversation-tab-name'));
+      const box = name.getBoundingClientRect();
+      // Two rem in from where the name starts: past the end of the letter, but
+      // within reach of anyone aiming at it.
+      const rem = parseFloat(getComputedStyle(document.documentElement).fontSize);
+      const near = document.elementFromPoint(box.left + 2 * rem, box.top + box.height / 2);
+      assert(!!near && tab.contains(near), `the probe point is not on the tab, got ${near?.className}`);
+      /** @type {HTMLElement} */ (near).click();
+      assert(!!field(),
+        `a click just past a one-letter name (on ${/** @type {HTMLElement} */ (near).className}, `
+        + `the name being ${Math.round(box.width)}px wide) did not open the rename editor`);
+      await typeAnd(/** @type {HTMLInputElement} */ (field()), 'x', 'Escape');
+    } finally {
+      teardown();
+    }
+  });
+
   return { passed, failed, errors };
 }
