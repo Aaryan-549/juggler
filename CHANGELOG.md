@@ -5,14 +5,15 @@ of changes; this project follows semantic versioning.
 
 ## [Unreleased]
 
+- New run_code tool: a mutating version of query_code, to give full "code mode" features
 - Git pin reviews any scope: staged, unstaged, branch, last commit, or a git diff range
 - Fixed a turn started while a conversation loaded getting the wrong strategy's tools
 - Fixed tools briefly "unavailable" after toggling a plugin or reloading an extension
 - Denying a tool call also stops approved calls still waiting their turn
 - Fixed Claude Code cutting long tool descriptions short; the model now sees them whole
 - query_code says what is already in scope when a script reaches for Node's modules
+- LAN servers answer to local names like `juggler` or `mymac.local`, not just IPs
 - Fixed query_code rewriting the text "import(" inside a script's strings
-- run_code: the model can run a program of tool calls, each approved as usual
 - run_code and query_code programs can show the model images with `image()`
 - MCP tools' images now reach the model instead of an `[image]` placeholder
 - WebFetch on an image URL returns the image itself, not garbled text

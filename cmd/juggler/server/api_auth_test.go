@@ -282,12 +282,12 @@ func TestAPIAuthAllowsDotLocalhostHost(t *testing.T) {
 
 // TestAPIAuthRejectsLocalhostLookalikeHosts pins the boundary of that
 // relaxation: only a label *under* .localhost is admitted. serveIndex embeds the
-// API token in the page for any host that can load it, so a name merely
+// API token in the page for any host that can load it, so a public name merely
 // containing or ending near "localhost" must stay refused.
 func TestAPIAuthRejectsLocalhostLookalikeHosts(t *testing.T) {
 	s, reached := newAuthTestServer(t)
 
-	for _, host := range []string{"notlocalhost:8317", "evil-localhost:8317", "localhost.attacker.com:8317", "attacker.com:8317"} {
+	for _, host := range []string{"notlocalhost.com:8317", "evil-localhost.com:8317", "localhost.attacker.com:8317", "attacker.com:8317"} {
 		*reached = false
 		req := httptest.NewRequest(http.MethodPost, "/api/ops/call", nil)
 		req.Host = host
@@ -582,7 +582,7 @@ func TestPageHostMiddlewareRefusesRebindingHosts(t *testing.T) {
 		}
 
 		for _, p := range gated {
-			for _, host := range []string{"attacker.com:8317", "localhost.attacker.com:8317", "notlocalhost:8317"} {
+			for _, host := range []string{"attacker.com:8317", "localhost.attacker.com:8317", "notlocalhost.com:8317"} {
 				if code, ran := serve(p, host, false); code != http.StatusForbidden || ran {
 					t.Errorf("testMode=%v GET %s Host %s: got %d reached=%v, want 403 unreached", testMode, p, host, code, ran)
 				}

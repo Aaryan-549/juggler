@@ -204,7 +204,7 @@ func TestHostGuardRejectsRebindingHosts(t *testing.T) {
 	paths := []string{"/api/server/status", "/api/server/sessions", "/s/" + sess.ID + "/", "/s/" + sess.ID + "/api/ws"}
 	for _, caller := range []string{"127.0.0.1:5000", "192.168.1.20:54321"} {
 		front := httptest.NewServer(asCaller(caller, s.routes()))
-		for _, host := range []string{"attacker.com", "attacker.com:8080", "localhost.attacker.com", "notlocalhost:8080"} {
+		for _, host := range []string{"attacker.com", "attacker.com:8080", "localhost.attacker.com", "notlocalhost.com:8080"} {
 			for _, p := range paths {
 				before := reached.Load()
 				req, err := http.NewRequest("GET", front.URL+p, nil)

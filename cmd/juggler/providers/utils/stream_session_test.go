@@ -61,17 +61,19 @@ func TestStreamSessionStallErrorIgnoresCallerCancel(t *testing.T) {
 
 // TestStreamSessionResetHoldsOffTheWatchdog proves Reset really re-arms the
 // idle window: a stream that keeps producing events past the timeout is not a
-// stall, however long it runs in total.
+// stall, however long it runs in total. The run lasts well past the timeout,
+// so without the Resets the watchdog would fire; each gap is a fifteenth of
+// it, so a scheduler stall has to swallow most of a timeout to fail the test.
 func TestStreamSessionResetHoldsOffTheWatchdog(t *testing.T) {
 	orig := StreamIdleTimeout
-	StreamIdleTimeout = 60 * time.Millisecond
+	StreamIdleTimeout = 300 * time.Millisecond
 	t.Cleanup(func() { StreamIdleTimeout = orig })
 
 	sess, streamCtx := NewStreamSession(context.Background(), "anthropic", nil)
 	defer sess.Close()
 
-	for range 8 {
-		time.Sleep(15 * time.Millisecond)
+	for range 25 {
+		time.Sleep(20 * time.Millisecond)
 		sess.Reset()
 	}
 
