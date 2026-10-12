@@ -37,6 +37,13 @@ type webrtcICEConfig struct {
 	Servers []webrtc.ICEServer
 }
 
+// defaultICEServers is the one source of the ICE servers both ends of a direct
+// WebRTC link use: the server answers offers with it, and serveIndex hands it to
+// the viewer page as window.__jugglerIceServers for the offers it makes. A WAN
+// mode that names its own (the rendezvous Worker's STUN_URL) overrides it per
+// connection through TunnelHost.AcceptWebRTCOffer.
+var defaultICEServers = []webrtc.ICEServer{{URLs: []string{"stun:stun.l.google.com:19302"}}}
+
 const (
 	webRTCChunkType = "__juggler_dc_chunk"
 	webRTCChunkSize = 16 * 1024
@@ -120,9 +127,7 @@ func (e *badOfferError) Unwrap() error { return e.err }
 // bounds the synchronous setup/ICE-gathering phase only; the established
 // connection outlives ctx on its own pcCtx.
 func (s *Server) acceptWebRTCOffer(ctx context.Context, offer webrtc.SessionDescription) (*webrtc.SessionDescription, error) {
-	return s.acceptWebRTCOfferWithICEConfig(ctx, offer, webrtcICEConfig{
-		Servers: []webrtc.ICEServer{{URLs: []string{"stun:stun.l.google.com:19302"}}},
-	})
+	return s.acceptWebRTCOfferWithICEConfig(ctx, offer, webrtcICEConfig{Servers: defaultICEServers})
 }
 
 func (s *Server) acceptWebRTCOfferWithICEConfig(ctx context.Context, offer webrtc.SessionDescription, iceConfig webrtcICEConfig) (*webrtc.SessionDescription, error) {

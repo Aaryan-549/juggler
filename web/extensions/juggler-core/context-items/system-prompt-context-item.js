@@ -25,7 +25,7 @@ const SYSTEM_PROMPT_STYLES = `
   padding: 0.375rem 0.75rem;
   font-size: 0.75rem;
   background-color: var(--accent-blue);
-  color: white;
+  color: var(--text-on-accent);
   border: none;
   border-radius: 0.25rem;
   cursor: pointer;
@@ -159,17 +159,17 @@ const SYSTEM_PROMPT_STYLES = `
   margin-top: 0.5rem;
   font-family: var(--font-mono);
   font-size: 0.6875rem;
-  color: var(--warning, var(--text-tertiary));
+  color: var(--accent-yellow);
 }
 .system-prompt-tools-drift {
   margin-bottom: 0.35rem;
-  color: var(--warning, var(--text-tertiary));
+  color: var(--accent-yellow);
 }
 .system-prompt-tools-notice {
   margin-bottom: 0.35rem;
   line-height: 1.4;
   white-space: normal;
-  color: var(--warning, var(--text-tertiary));
+  color: var(--accent-yellow);
 }
 /* Preset browser + manage-presets dropdowns -------------------------------
    Self-contained rows (no shared .menu-item dependency) so the layout reads

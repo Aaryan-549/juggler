@@ -595,7 +595,7 @@ properties-panel-controls:empty {
 .properties-panel-btn.danger:hover {
     background: var(--accent-red);
     border-color: var(--accent-red);
-    color: white;
+    color: var(--text-on-accent);
 }
 
 /* Copyable text container */

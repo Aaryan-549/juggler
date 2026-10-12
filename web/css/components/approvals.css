@@ -201,7 +201,7 @@
 .permissions-popup .pattern-save-btn:hover {
     background: var(--accent-green);
     border-color: var(--accent-green);
-    color: white;
+    color: var(--text-on-accent);
 }
 
 .permissions-popup .pattern-cancel-btn:hover {
@@ -522,7 +522,7 @@ action-confirmation:focus {
 
 .action-confirmation-button.primary {
     background: var(--accent-green-muted);
-    color: #fff;
+    color: var(--text-on-accent);
     border-color: var(--accent-green-muted);
 }
 
@@ -571,7 +571,7 @@ action-confirmation:focus {
    holds the muted-green background (beating the tint above) with white text. */
 .action-confirmation-button.primary.focused {
     background: var(--accent-green-muted);
-    color: #fff;
+    color: var(--text-on-accent);
 }
 
 /* Pattern highlight in approval buttons */
@@ -834,7 +834,7 @@ action-confirmation:focus {
 }
 
 .question-custom-option.selected .question-custom-field {
-    color: #fff;
+    color: var(--text-on-accent);
 }
 
 .question-custom-option.selected .question-custom-field::placeholder {
@@ -1077,7 +1077,7 @@ action-confirmation:focus {
 }
 
 .ask-user-question-details .option-tick .icon-check {
-    color: #fff;
+    color: var(--text-on-accent);
     visibility: hidden;
 }
 

@@ -28,7 +28,7 @@
 .btn-primary {
     background: var(--accent-blue);
     border-color: var(--accent-blue);
-    color: #fff;
+    color: var(--text-on-accent);
 }
 
 /* Hover states are held to one class (state in :where), so they never outrank
@@ -51,7 +51,7 @@
 .btn-danger {
     background: var(--accent-red);
     border-color: var(--accent-red);
-    color: #fff;
+    color: var(--text-on-accent);
 }
 
 .btn-danger:where(:hover:not(:disabled)) {

@@ -249,7 +249,7 @@ pinboard-tabbar {
 .pinboard-tab.active {
     background: color-mix(in srgb, var(--accent-purple) 70%, var(--bg-raised));
     border-color: color-mix(in srgb, var(--accent-purple) 70%, var(--bg-raised));
-    color: #fff;
+    color: var(--text-on-accent);
 }
 
 /* Drag to reorder, on the shared gesture (utils/reorder-drag.js). The dragged

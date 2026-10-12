@@ -395,8 +395,10 @@ class WebSocketService {
    * @private
    */
   async _connectWebRTC(role, generation) {
+    // The server's own ICE servers, handed to the page by serveIndex
+    // (cmd/juggler/server/webrtc.go defaultICEServers), so both ends agree.
     const pc = new window.RTCPeerConnection({
-      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+      iceServers: /** @type {{__jugglerIceServers?: RTCIceServer[]}} */ (globalThis).__jugglerIceServers || []
     });
     /** @type {RTCDataChannel|null} */
     let channel = null;

@@ -530,8 +530,7 @@ class ConversationArea extends HTMLElement {
       // Hold the reader's place across this mutation (see _holdReaderAnchorOver).
       // Near the end we don't: native column-reverse anchoring keeps the newest
       // text in view, and the height glide below smooths it. Auto-follow of new
-      // items / approvals / busy-status comes from onItemsInserted and showBusy,
-      // never from here.
+      // items / approvals comes from onItemsInserted, never from here.
       this._holdReaderAnchorOver(() => {
         this._notifyChangedElements(events, conversation, changed);
 
@@ -2260,19 +2259,6 @@ class ConversationArea extends HTMLElement {
       if (state) lastBusy = { ...state, messageId: el.getAttribute('message-id') || undefined };
     }
     return lastBusy;
-  }
-
-  /**
-   * Trigger footer update (called by LLMState when status changes)
-   */
-  showBusy() {
-    // Rule 10: scroll follow target into view, if this column is still
-    // following its end rather than holding a reader's place (isFollowingEnd).
-    const wasFollowing = scroll.isFollowingEnd(this);
-    this.updateFooter();
-    if (wasFollowing) {
-      scroll.scrollToFollowIfNeeded(this);
-    }
   }
 
   /**

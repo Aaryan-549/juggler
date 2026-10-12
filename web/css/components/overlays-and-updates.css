@@ -399,7 +399,7 @@ path-input .path-input-field {
 
 .pp-btn-open {
     background: var(--accent-blue);
-    color: #fff;
+    color: var(--text-on-accent);
 }
 
 .pp-btn-open:hover:not(:disabled) {
@@ -616,7 +616,7 @@ update-button .update-btn {
     border: none;
     border-radius: 999px;
     background: var(--accent-blue);
-    color: #fff;
+    color: var(--text-on-accent);
     font-family: var(--font-ui);
     font-size: 13px;
     font-weight: 600;

@@ -737,7 +737,7 @@ composer-box .schedule-send-btn .schedule-send-countdown {
     flex: 1;
     padding: 0.375rem 0.75rem;
     font-size: 0.8125rem;
-    color: #fff;
+    color: var(--text-on-accent);
     background: var(--accent-blue);
     border: none;
     border-radius: var(--radius-md);
@@ -843,7 +843,7 @@ composer-box .send-btn {
     border: none;
     border-radius: 50%;
     background: var(--accent-blue);
-    color: #fff;
+    color: var(--text-on-accent);
     cursor: pointer;
     flex-shrink: 0;
 }
@@ -884,7 +884,7 @@ composer-box .context-cache-warning-btn {
     border: none;
     border-radius: 50%;
     background: var(--accent-yellow);
-    color: #fff;
+    color: var(--text-on-accent);
     cursor: pointer;
     flex-shrink: 0;
 }
@@ -938,6 +938,17 @@ composer-box .context-cache-warning-btn .icon-warning {
 }
 
 .actions-sheet .actions-sheet-label {
+    color: var(--text-secondary);
+}
+
+/* Skill rows are the `$` picker's shared row: one ellipsised line of
+   description, as on the picker, filling what the `$name` leaves. */
+.actions-sheet .skill-mention-item .menu-item-desc {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     color: var(--text-secondary);
 }
 

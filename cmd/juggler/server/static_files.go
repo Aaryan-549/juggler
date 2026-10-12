@@ -23,6 +23,8 @@ import (
 	"juggler/internal/jlog"
 	"juggler/internal/srcroot"
 	"juggler/web"
+
+	"github.com/pion/webrtc/v4"
 )
 
 // generateCSPNonce returns a fresh per-response base64 nonce for inline scripts.
@@ -495,6 +497,7 @@ func (s *Server) serveIndex(w http.ResponseWriter, r *http.Request) {
 		InitialZoom      int
 		InitialThemeMode string
 		ProjectKey       string
+		ICEServers       []webrtc.ICEServer
 	}{
 		StaticVersion: s.staticVersion,
 		IsTestMode:    s.testMode,
@@ -508,6 +511,8 @@ func (s *Server) serveIndex(w http.ResponseWriter, r *http.Request) {
 		// Namespaces the viewer's localStorage so a cached zoom/theme belongs to
 		// the project it was set in, whichever origin the viewer arrived on.
 		ProjectKey: projectStorageKey(s.ProjectPath()),
+		// Rendered as JSON by the template's script context.
+		ICEServers: defaultICEServers,
 		// The desktop app opens the page with ?window=1; remote browsers never
 		// have it. Mirrors the client-side check in index.html and gates the
 		// Wails runtime <script>, which only does anything in a native window.

@@ -2573,7 +2573,8 @@ class Composer extends HTMLElement {
     // the inline `$` picker on touch. Selecting one splices `$name ` into the
     // composer via the same path as the picker/autocomplete, and the section is
     // led by the same "Manage skills…" row the picker ends with, so it is there
-    // to be found when the thread advertises no skills at all.
+    // to be found when the thread advertises no skills at all. Each row is the
+    // picker's own ({@link renderSkillMenuItem}), at the sheet's tap height.
     /** @type {import('../services/skills.js').SkillMeta[]} */
     let skills = [];
     try {
@@ -2585,16 +2586,8 @@ class Composer extends HTMLElement {
       .slice()
       .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
       .map((skill) => {
-        const row = document.createElement('li');
-        row.className = 'menu-item actions-sheet-item';
-        row.dataset.skill = skill.name;
-        const code = document.createElement('code');
-        code.textContent = '$' + skill.name;
-        row.appendChild(code);
-        const desc = document.createElement('span');
-        desc.className = 'actions-sheet-label';
-        desc.textContent = skill.description || skill.name;
-        row.appendChild(desc);
+        const row = renderSkillMenuItem(skill);
+        row.classList.add('actions-sheet-item');
         row.addEventListener('click', () => {
           this._closeActionsSheet();
           this._insertSkillMention(skill.name);

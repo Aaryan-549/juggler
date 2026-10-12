@@ -1424,13 +1424,13 @@ bin-modal .bin-action {
 bin-modal .bin-restore:hover {
     background: var(--accent-blue);
     border-color: var(--accent-blue);
-    color: #fff;
+    color: var(--text-on-accent);
 }
 
 bin-modal .bin-delete:hover {
     background: var(--accent-red);
     border-color: var(--accent-red);
-    color: #fff;
+    color: var(--text-on-accent);
 }
 
 /* Header actions cluster (Empty Bin + close). */
@@ -1459,7 +1459,7 @@ bin-modal .bin-empty-now:disabled {
 bin-modal .bin-empty-now:not(:disabled):hover {
     background: var(--accent-red);
     border-color: var(--accent-red);
-    color: #fff;
+    color: var(--text-on-accent);
 }
 
 /* Empty Bin menu — the cutoff choices, anchored to the button above. It is

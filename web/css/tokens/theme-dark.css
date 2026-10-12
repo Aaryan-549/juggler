@@ -16,7 +16,6 @@
     /* Font weights - single source of truth */
     --font-weight-normal: 200;
     --font-weight-medium: 400;
-    --font-weight-semibold: 500;
     --font-weight-bold: 600;
 
     /* Background colors */
@@ -32,6 +31,7 @@
     --text-primary: #e6edf3;
     --text-secondary: #c1cad4;
     --text-tertiary: #acb4be;
+    --text-on-accent: #fff; /* on an accent fill: primary buttons, active segments, badges */
 
     /* Accent colors */
     --accent-blue: #58a6ff;

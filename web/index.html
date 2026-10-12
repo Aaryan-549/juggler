@@ -323,6 +323,9 @@
         // behind the machine server's session proxy. Every /api and WebSocket
         // URL is built on it (utils/api-url.js).
         window.__jugglerBase = '{{.BasePath}}';
+        // The ICE servers this server answers WebRTC offers with, so the
+        // viewer's own offer uses the same ones (services/websocket.js).
+        window.__jugglerIceServers = {{.ICEServers}};
         (function () {
             const token = window.__jugglerToken;
             if (!token || typeof window.fetch !== 'function') return;

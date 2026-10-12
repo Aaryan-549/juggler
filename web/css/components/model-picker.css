@@ -233,7 +233,7 @@ model-tuning:empty {
 .thinking-seg.active,
 .tier-seg.active {
     background: var(--accent-blue);
-    color: #fff;
+    color: var(--text-on-accent);
 }
 
 /* Mini thinking popover — opened from the button chip. Just the segmented
@@ -591,7 +591,7 @@ model-tuning:empty {
 .model-picker-rows .menu-item.active,
 .recent-model.active {
     background: var(--accent-blue);
-    color: #fff;
+    color: var(--text-on-accent);
 }
 
 .model-picker-rows .menu-item.active:hover,
@@ -608,7 +608,7 @@ model-tuning:empty {
 
 .model-picker .menu-item.active .recent-model-chip {
     background: rgb(255 255 255 / 22%);
-    color: #fff;
+    color: var(--text-on-accent);
 }
 
 /* The cursor cannot be a background on a filled row, so on the selected row it

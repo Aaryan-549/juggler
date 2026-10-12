@@ -228,7 +228,7 @@ build-windows: app-icon-embed wails-runtime-embed
 		CGO_ENABLED=0 GOOS=windows GOARCH=amd64 $(GOBUILD) -ldflags "$(LDFLAGS_BASE)" -o $(WIN_BUILD_DIR)/$(BINARY_NAME).exe ./cmd/juggler; \
 	fi && \
 	echo "Building juggler-app.exe (windowsgui) $(VERSION_STAMP)..." && \
-	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 $(GOBUILD) -ldflags "$(LDFLAGS_BASE) -H windowsgui" -o $(WIN_BUILD_DIR)/juggler-app.exe ./cmd/juggler-app
+	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 $(GOBUILD_RELEASE) -ldflags "$(LDFLAGS_BASE) -H windowsgui" -o $(WIN_BUILD_DIR)/juggler-app.exe ./cmd/juggler-app
 	@echo "→ $(WIN_BUILD_DIR)/$(BINARY_NAME).exe (console), $(WIN_BUILD_DIR)/juggler-app.exe (GUI)"
 
 # ── Distribution: one indivisible unit per platform ─────────────────────────

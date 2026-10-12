@@ -81,7 +81,6 @@
  *   onItemsInserted     → rules 2-4, 8
  *   selectItem          → rules 1, 5-7
  *   streaming observer  → rules 9, 11
- *   showBusy            → rule 10
  *
  * Note: _rebuildColumns (conversation-tab) applies selections via
  *   _localSelectedItemId + applySelectedClass, bypassing selectItem

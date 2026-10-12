@@ -106,7 +106,7 @@ diff-viewer .diff-view-btn:hover:not(:disabled, [aria-pressed="true"]) {
 
 diff-viewer .diff-view-btn[aria-pressed="true"] {
     background: var(--accent-blue);
-    color: #fff;
+    color: var(--text-on-accent);
 }
 
 /* The chosen button keeps its accent under the pointer and lifts, rather than
@@ -261,7 +261,7 @@ diff-viewer .diff-comment-btn {
     border: 0;
     border-radius: var(--radius-md);
     background: var(--accent-blue);
-    color: #fff;
+    color: var(--text-on-accent);
     font-family: inherit;
     font-size: 0.8125rem;
     line-height: 1;
@@ -771,7 +771,7 @@ diff-viewer .diff-file-comment-list.stale .diff-comment {
 .review-panel__compose {
     background: var(--accent-blue);
     border-color: var(--accent-blue);
-    color: #fff;
+    color: var(--text-on-accent);
 }
 
 /* Both buttons act on the draft, not on the Pinboard item, so they live with the

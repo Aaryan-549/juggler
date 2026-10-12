@@ -31,8 +31,8 @@
  *      veto: sending is an explicit request to see the result.
  *   9. Streaming content grows → keep follow target visible, but only while the
  *      user was already near bottom.
- *  10. LLM busy indicator appears → scroll follow target into view (same
- *      conditions as rule 9).
+ *  10. LLM busy indicator appears → no code: it lands at the end, where native
+ *      column-reverse anchoring keeps it in view for a reader following there.
  *  11. User scrolls far from the bottom (>~20rem) → stop auto-scrolling. No
  *      fighting. Scrolling near the bottom (~20rem) allows auto-scrolling to
  *      continue — unless a row in this column is pinned, which says a reader is

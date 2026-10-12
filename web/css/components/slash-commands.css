@@ -329,7 +329,7 @@
 
 .command-editor-seg.active {
     background: var(--accent-blue);
-    color: #fff;
+    color: var(--text-on-accent);
 }
 
 /* What the selected run mode actually does — information, so it sits directly

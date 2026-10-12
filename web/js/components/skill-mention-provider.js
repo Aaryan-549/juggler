@@ -120,8 +120,8 @@ export function createSkillMentionProvider(getSkills) {
 
 /**
  * Sanity bound on how many characters of a skill description reach a menu row's
- * DOM. This is NOT the visual truncator — both skill surfaces ellipsise the
- * description to the popup width in CSS (`.skill-mention-item .menu-item-desc`).
+ * DOM. This is NOT the visual truncator — every skill surface ellipsises the
+ * description to the popup width in CSS (its own `.menu-item-desc` rule).
  * The cap only guards against a pathologically long description bloating the
  * node; fitting the text to the popup is CSS's job, so it is set generously.
  */
@@ -141,9 +141,10 @@ function oneLineDescription(text) {
 
 /**
  * Build one skill menu row — mono `$name` then a one-line (length-bounded)
- * description — shared by BOTH skill surfaces: the `$` completion menu (this
- * provider's `renderItem`) and the composer's button-anchored skill picker
- * (composer-box's `_createSkillMenu`). The row carries the SAME `menu-item-command`
+ * description — shared by every skill surface: the `$` completion menu (this
+ * provider's `renderItem`), the composer's button-anchored skill picker
+ * (composer-box's `_createSkillMenu`) and the touch actions sheet's Skills
+ * section (`_openActionsSheet`, which adds its tap-height class). The row carries the SAME `menu-item-command`
  * / `menu-item-desc` classes as a slash-command row, so both skill surfaces
  * inherit the slash popup's colour scheme and (in the picker's grid) its
  * justified two-column layout with no bespoke styling. Scope/source is
