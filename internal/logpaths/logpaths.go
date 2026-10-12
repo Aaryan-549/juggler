@@ -158,7 +158,13 @@ func ConversationLogPath(project, convID, name string) string {
 	if prefix := sanitizeSegment(name); prefix != "" {
 		stem = prefix + "--" + stem
 	}
-	return filepath.Join(ProjectLogDir(project), "conversations", stem+".log")
+	return filepath.Join(conversationLogDir(project), stem+".log")
+}
+
+// conversationLogDir is the folder of per-conversation logs inside project's
+// log folder.
+func conversationLogDir(project string) string {
+	return filepath.Join(ProjectLogDir(project), "conversations")
 }
 
 // slug derives a stable, collision-resistant, human-recognisable filename stem

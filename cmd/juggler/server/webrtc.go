@@ -47,7 +47,7 @@ const (
 const dataChannelIngressKind = "datachannel"
 
 // RendezvousProtocolVersion is the http-over-DataChannel / signaling protocol
-// version the binary speaks. It is published by handleVersion so a remote
+// version the binary speaks. It is published by GET /api/version so a remote
 // bootstrap page (e.g. the juggler.studio rendezvous client) can refuse to
 // boot against a mismatched binary.
 const RendezvousProtocolVersion = 2

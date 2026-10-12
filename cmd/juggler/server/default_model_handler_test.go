@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"juggler/cmd/juggler/core"
+	"juggler/cmd/juggler/server/handlers"
 	"juggler/internal/userpaths/userpathstest"
 )
 
@@ -29,12 +30,18 @@ func newDefaultModelServer(t *testing.T) *Server {
 	return &Server{serverStores: serverStores{defaultModelStore: store}}
 }
 
+// modelPrefsFor builds the model-preferences API over s's stores the way New
+// does, with the server's own default-model resolver.
+func modelPrefsFor(s *Server) *handlers.ModelPreferencesAPI {
+	return handlers.NewModelPreferencesAPI(s.defaultModelStore, s.cheapModelStore, s.recentModelsStore, s.resolveDefaultModel)
+}
+
 // putDefaultModel drives the PUT handler with a raw body.
 func putDefaultModel(t *testing.T, s *Server, body string) {
 	t.Helper()
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPut, "/api/default-model", strings.NewReader(body))
-	s.handleSetDefaultModel(rec, req)
+	modelPrefsFor(s).HandleSetDefaultModel(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("PUT status = %d, body = %s", rec.Code, rec.Body.String())
 	}
@@ -46,7 +53,7 @@ func putDefaultModel(t *testing.T, s *Server, body string) {
 func getDefaultModel(t *testing.T, s *Server) map[string]any {
 	t.Helper()
 	rec := httptest.NewRecorder()
-	s.handleDefaultModel(rec, httptest.NewRequest(http.MethodGet, "/api/default-model", nil))
+	modelPrefsFor(s).HandleGetDefaultModel(rec, httptest.NewRequest(http.MethodGet, "/api/default-model", nil))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("GET status = %d, body = %s", rec.Code, rec.Body.String())
 	}

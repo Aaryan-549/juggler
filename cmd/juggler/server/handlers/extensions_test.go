@@ -500,3 +500,38 @@ func TestExtensionsEmbeddedExtensionHasNoFilePaths(t *testing.T) {
 		t.Errorf("embedded Files = %v, want empty", ext.Files)
 	}
 }
+
+// TestExtensionsReloadBumpsEpochBeforeBroadcast pins the order HandleReload
+// depends on: the clients the broadcast reaches refetch the catalog at once, so
+// the epoch must already have moved or they re-import the stale module URLs and
+// the reload appears to do nothing.
+func TestExtensionsReloadBumpsEpochBeforeBroadcast(t *testing.T) {
+	api := NewExtensionsAPI(builtinOnlyFS(), "", "")
+	before := api.UserExtensionURLPrefix()
+	var atBroadcast []string
+	api.SetReloadBroadcast(func() { atBroadcast = append(atBroadcast, api.UserExtensionURLPrefix()) })
+
+	rec := httptest.NewRecorder()
+	api.HandleReload(rec, httptest.NewRequest(http.MethodPost, "/api/extensions/reload", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if len(atBroadcast) != 1 {
+		t.Fatalf("broadcast ran %d times, want 1", len(atBroadcast))
+	}
+	if atBroadcast[0] == before {
+		t.Fatalf("broadcast saw prefix %q, the one from before the reload", atBroadcast[0])
+	}
+}
+
+// TestExtensionsReloadUnwiredRefuses verifies an API with no broadcast wired
+// says so instead of reporting a reload that reached no client.
+func TestExtensionsReloadUnwiredRefuses(t *testing.T) {
+	api := NewExtensionsAPI(builtinOnlyFS(), "", "")
+	rec := httptest.NewRecorder()
+	api.HandleReload(rec, httptest.NewRequest(http.MethodPost, "/api/extensions/reload", nil))
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusServiceUnavailable)
+	}
+}

@@ -2,14 +2,12 @@
 //     ██ ██ ██ ██ ▄▄ ██ ▄▄ ██    ██▄▄  ██▄█▄   Copyright (c) 2026 Julian Storer
 //   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
 
-package server
+package logpaths
 
 import (
 	"os"
 	"path/filepath"
 	"testing"
-
-	"juggler/internal/logpaths"
 )
 
 // writeLog creates path (and any parent dirs) with the given contents, failing
@@ -24,17 +22,17 @@ func writeLog(t *testing.T, path, contents string) {
 	}
 }
 
-// TestResolveLogPath pins the security gate: paths inside the log dir resolve,
+// TestResolve pins the security gate: paths inside the log dir resolve,
 // everything else (traversal, siblings of the log dir, directories, empty) is
 // rejected so the content endpoint can never serve arbitrary files.
-func TestResolveLogPath(t *testing.T) {
+func TestResolve(t *testing.T) {
 	logDir := t.TempDir()
 	t.Setenv("JUGGLER_LOG_DIR", logDir)
 
 	inside := filepath.Join(logDir, "host", "server.log")
 	writeLog(t, inside, "ok")
 
-	if got, ok := resolveLogPath(inside); !ok || got != inside {
+	if got, ok := Resolve(inside); !ok || got != inside {
 		t.Errorf("expected %q to resolve; got (%q, %v)", inside, got, ok)
 	}
 
@@ -42,41 +40,41 @@ func TestResolveLogPath(t *testing.T) {
 	outside := filepath.Join(t.TempDir(), "secret.txt")
 	writeLog(t, outside, "secret")
 	traversal := filepath.Join(logDir, "..", filepath.Base(filepath.Dir(outside)), "secret.txt")
-	if _, ok := resolveLogPath(traversal); ok {
+	if _, ok := Resolve(traversal); ok {
 		t.Errorf("traversal path %q must be rejected", traversal)
 	}
-	if _, ok := resolveLogPath(outside); ok {
+	if _, ok := Resolve(outside); ok {
 		t.Errorf("outside path %q must be rejected", outside)
 	}
 
 	// The log dir itself is not a regular file.
-	if _, ok := resolveLogPath(logDir); ok {
+	if _, ok := Resolve(logDir); ok {
 		t.Error("the log directory must not resolve as a file")
 	}
-	if _, ok := resolveLogPath(""); ok {
+	if _, ok := Resolve(""); ok {
 		t.Error("empty path must be rejected")
 	}
 }
 
-// TestListSessionLogs verifies the list gathers this project's server logs, its
+// TestSessionLogs verifies the list gathers this project's server logs, its
 // per-conversation logs, and the shared app.log — grouped correctly, sorted,
 // and skipping files that don't exist.
-func TestListSessionLogs(t *testing.T) {
+func TestSessionLogs(t *testing.T) {
 	logDir := t.TempDir()
 	t.Setenv("JUGGLER_LOG_DIR", logDir)
 
 	project := "/Users/someone/code/myproj"
-	projDir := logpaths.ProjectLogDir(project)
+	projDir := ProjectLogDir(project)
 
 	// server.log exists; server.stderr.log intentionally does not (skipped).
 	writeLog(t, filepath.Join(projDir, "server.log"), "srv")
 	writeLog(t, filepath.Join(projDir, "conversations", "conv_bbb.log"), "b")
 	writeLog(t, filepath.Join(projDir, "conversations", "conv_aaa.log"), "aa")
-	writeLog(t, logpaths.AppLogPath(), "app-log")
+	writeLog(t, AppLogPath(), "app-log")
 
-	files := listSessionLogs(project)
+	files := SessionLogs(project)
 
-	byName := map[string]logFileInfo{}
+	byName := map[string]FileInfo{}
 	for _, f := range files {
 		byName[f.Name] = f
 	}
@@ -108,15 +106,15 @@ func TestListSessionLogs(t *testing.T) {
 	}
 }
 
-// TestReadLogWindow covers the four tailing cases: whole-file first read, capped
+// TestReadWindow covers the four tailing cases: whole-file first read, capped
 // first read, incremental append, and post-rotation reset.
-func TestReadLogWindow(t *testing.T) {
+func TestReadWindow(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "server.log")
 
 	// Whole small file on the first read (offset 0, no cap hit).
 	writeLog(t, path, "hello")
-	win, err := readLogWindow(path, 0, 100)
+	win, err := ReadWindow(path, 0, 100)
 	if err != nil {
 		t.Fatalf("initial read: %v", err)
 	}
@@ -126,7 +124,7 @@ func TestReadLogWindow(t *testing.T) {
 
 	// Capped first read returns only the trailing maxInitial bytes, replacing.
 	writeLog(t, path, "0123456789ABCDE") // 15 bytes
-	win, err = readLogWindow(path, 0, 10)
+	win, err = ReadWindow(path, 0, 10)
 	if err != nil {
 		t.Fatalf("capped read: %v", err)
 	}
@@ -136,7 +134,7 @@ func TestReadLogWindow(t *testing.T) {
 
 	// Incremental append: from the last seen offset, only new bytes, appended.
 	writeLog(t, path, "helloworld")
-	win, err = readLogWindow(path, 5, 100)
+	win, err = ReadWindow(path, 5, 100)
 	if err != nil {
 		t.Fatalf("incremental read: %v", err)
 	}
@@ -145,7 +143,7 @@ func TestReadLogWindow(t *testing.T) {
 	}
 
 	// Rotation: a stale offset past EOF resets to a fresh window, replacing.
-	win, err = readLogWindow(path, 999, 100)
+	win, err = ReadWindow(path, 999, 100)
 	if err != nil {
 		t.Fatalf("rotation read: %v", err)
 	}

@@ -97,6 +97,7 @@ type serverAPIs struct {
 	skillsAPI         *handlers.SkillsAPI
 	skillsRegistryAPI *handlers.SkillsRegistryAPI
 	configAPI         *handlers.ConfigAPI
+	modelPrefsAPI     *handlers.ModelPreferencesAPI
 	sessionAPI        *handlers.SessionAPI // Kept so RegisterTestRoutes can wire test-mode hooks
 	// systemPromptPresetsAPI serves user-saved system-prompt presets and the
 	// chosen session-default preset id (~/.juggler/system-prompt-presets.json).
@@ -426,6 +427,7 @@ func New(cfg Config) (*Server, error) {
 		skillsAPI:         skillsAPI,
 		skillsRegistryAPI: handlers.NewSkillsRegistryAPI(s.ProjectPath, skillsAPI),
 		configAPI:         configAPI,
+		modelPrefsAPI:     handlers.NewModelPreferencesAPI(defaultModelStore, cheapModelStore, recentModels, s.resolveDefaultModel),
 		sessionAPI:        sessionAPI,
 
 		systemPromptPresetsAPI: handlers.NewSystemPromptPresetsAPI(systemPromptPresetStore),

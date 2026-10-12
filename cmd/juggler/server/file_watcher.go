@@ -5,14 +5,12 @@
 package server
 
 import (
-	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"juggler/cmd/juggler/core"
-	"juggler/cmd/juggler/server/handlers"
 	"juggler/internal/jlog"
 
 	"github.com/fsnotify/fsnotify"
@@ -200,18 +198,6 @@ func (s *Server) broadcastPluginChanged(path string, bustCache bool) {
 		"type": "plugin-changed",
 		"path": path,
 	})
-}
-
-// handleReloadExtensions serves POST /api/extensions/reload — the Extensions
-// page's explicit Reload. It routes through the server rather than reloading in
-// the clicking viewer alone because the engine worker, where tools actually run,
-// holds its own copy of every capability module: a local-only reload would leave
-// it running the old code. Broadcasting also keeps every connected client on one
-// epoch, so no two of them load the same file under different URLs.
-func (s *Server) handleReloadExtensions(w http.ResponseWriter, r *http.Request) {
-	jlog.Info("[PluginWatcher] Reload requested")
-	s.broadcastPluginChanged("api/extensions/reload", true)
-	handlers.WriteSuccess(w, r, nil)
 }
 
 // isExtensionEvent reports whether a filesystem event happened inside the

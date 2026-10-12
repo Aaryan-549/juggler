@@ -16,6 +16,7 @@ import (
 	"sync/atomic"
 
 	"juggler/cmd/juggler/extmanifest"
+	"juggler/internal/jlog"
 )
 
 // extensionManifestFile is the well-known manifest filename at an extension root.
@@ -100,6 +101,10 @@ type ExtensionsAPI struct {
 	// the catalog hands out fresh URLs and the JS module cache, which is keyed by
 	// URL, is forced to re-fetch the edited file from disk.
 	reloadEpoch atomic.Uint64
+	// broadcastReload tells every connected client to reload its capability
+	// registries. Set once by the server, which owns the clients, before routes
+	// are served; nil leaves HandleReload refusing.
+	broadcastReload func()
 }
 
 // NewExtensionsAPI creates an ExtensionsAPI. The host SDK version is read from
@@ -140,6 +145,28 @@ func (api *ExtensionsAPI) UserExtensionURLPrefix() string {
 // broadcasting plugin-changed, so the catalog refetch that the broadcast
 // triggers already sees the new URLs.
 func (api *ExtensionsAPI) BumpEpoch() { api.reloadEpoch.Add(1) }
+
+// SetReloadBroadcast wires the callback HandleReload uses to tell every
+// connected client to reload. It must not bump the epoch itself: HandleReload
+// does that first.
+func (api *ExtensionsAPI) SetReloadBroadcast(fn func()) { api.broadcastReload = fn }
+
+// HandleReload serves POST /api/extensions/reload — the Extensions page's
+// explicit Reload. It goes through the server rather than reloading in the
+// clicking viewer alone because the engine worker, where tools actually run,
+// holds its own copy of every capability module: a local-only reload would
+// leave it running the old code. Broadcasting also keeps every connected client
+// on one epoch, so no two of them load the same file under different URLs.
+func (api *ExtensionsAPI) HandleReload(w http.ResponseWriter, r *http.Request) {
+	if api.broadcastReload == nil {
+		WriteError(w, r, http.StatusServiceUnavailable, "Extension reload is not available")
+		return
+	}
+	jlog.Info("[PluginWatcher] Reload requested")
+	api.BumpEpoch()
+	api.broadcastReload()
+	WriteSuccess(w, r, nil)
+}
 
 // ExtensionLocations reports the on-disk directories Juggler scans for
 // extensions, so the catalog can show a developer exactly where to install new

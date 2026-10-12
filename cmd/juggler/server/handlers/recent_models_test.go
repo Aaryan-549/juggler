@@ -2,7 +2,7 @@
 //     ██ ██ ██ ██ ▄▄ ██ ▄▄ ██    ██▄▄  ██▄█▄   Copyright (c) 2026 Julian Storer
 //   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
 
-package server
+package handlers
 
 import (
 	"encoding/json"
@@ -16,10 +16,10 @@ import (
 )
 
 // getRecentModels drives the GET handler and returns the decoded list.
-func getRecentModels(t *testing.T, s *Server) []core.ModelRef {
+func getRecentModels(t *testing.T, api *ModelPreferencesAPI) []core.ModelRef {
 	t.Helper()
 	rec := httptest.NewRecorder()
-	s.handleRecentModels(rec, httptest.NewRequest(http.MethodGet, "/api/recent-models", nil))
+	api.HandleRecentModels(rec, httptest.NewRequest(http.MethodGet, "/api/recent-models", nil))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("GET status = %d, body = %s", rec.Code, rec.Body.String())
 	}
@@ -33,12 +33,12 @@ func getRecentModels(t *testing.T, s *Server) []core.ModelRef {
 }
 
 // postRecentModel drives the POST handler for one pick.
-func postRecentModel(t *testing.T, s *Server, providerName, model string) {
+func postRecentModel(t *testing.T, api *ModelPreferencesAPI, providerName, model string) {
 	t.Helper()
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/recent-models",
 		strings.NewReader(`{"provider":"`+providerName+`","model":"`+model+`"}`))
-	s.handleRecentModels(rec, req)
+	api.HandleRecentModels(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("POST status = %d, body = %s", rec.Code, rec.Body.String())
 	}
@@ -46,7 +46,7 @@ func postRecentModel(t *testing.T, s *Server, providerName, model string) {
 
 // TestRecentModelsHandlerRoundTrip locks the HTTP contract: GET is empty
 // initially, POST records most-recent-first, and a repeat pick dedups to the
-// front. The server has no concept of provider availability, so recording is
+// front. The API has no concept of provider availability, so recording is
 // inherently decoupled from whether the model currently works.
 func TestRecentModelsHandlerRoundTrip(t *testing.T) {
 	userpathstest.Isolate(t)
@@ -54,16 +54,16 @@ func TestRecentModelsHandlerRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewRecentModelsStore: %v", err)
 	}
-	s := &Server{serverStores: serverStores{recentModelsStore: store}}
+	api := NewModelPreferencesAPI(nil, nil, store, nil)
 
-	if got := getRecentModels(t, s); len(got) != 0 {
+	if got := getRecentModels(t, api); len(got) != 0 {
 		t.Fatalf("expected empty list initially, got %v", got)
 	}
 
-	postRecentModel(t, s, "anthropic", "claude")
-	postRecentModel(t, s, "openaicodex", "gpt-5")
+	postRecentModel(t, api, "anthropic", "claude")
+	postRecentModel(t, api, "openaicodex", "gpt-5")
 
-	got := getRecentModels(t, s)
+	got := getRecentModels(t, api)
 	want := []core.ModelRef{
 		{Provider: "openaicodex", Model: "gpt-5"},
 		{Provider: "anthropic", Model: "claude"},
@@ -73,8 +73,8 @@ func TestRecentModelsHandlerRoundTrip(t *testing.T) {
 	}
 
 	// Re-pick the older model — it should jump to the front, not duplicate.
-	postRecentModel(t, s, "anthropic", "claude")
-	got = getRecentModels(t, s)
+	postRecentModel(t, api, "anthropic", "claude")
+	got = getRecentModels(t, api)
 	want = []core.ModelRef{
 		{Provider: "anthropic", Model: "claude"},
 		{Provider: "openaicodex", Model: "gpt-5"},
@@ -94,13 +94,13 @@ func TestRecentModelsHandlerThinkingTriple(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewRecentModelsStore: %v", err)
 	}
-	s := &Server{serverStores: serverStores{recentModelsStore: store}}
+	api := NewModelPreferencesAPI(nil, nil, store, nil)
 
 	post := func(body string) {
 		t.Helper()
 		rec := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodPost, "/api/recent-models", strings.NewReader(body))
-		s.handleRecentModels(rec, req)
+		api.HandleRecentModels(rec, req)
 		if rec.Code != http.StatusOK {
 			t.Fatalf("POST status = %d, body = %s", rec.Code, rec.Body.String())
 		}
@@ -109,7 +109,7 @@ func TestRecentModelsHandlerThinkingTriple(t *testing.T) {
 	post(`{"provider":"anthropic","model":"claude"}`)
 	post(`{"provider":"anthropic","model":"claude","thinking":"high"}`)
 
-	got := getRecentModels(t, s)
+	got := getRecentModels(t, api)
 	want := []core.ModelRef{
 		{Provider: "anthropic", Model: "claude", Thinking: "high"},
 		{Provider: "anthropic", Model: "claude"},
@@ -120,7 +120,7 @@ func TestRecentModelsHandlerThinkingTriple(t *testing.T) {
 
 	// Re-picking the exact triple moves it to the front without duplicating.
 	post(`{"provider":"anthropic","model":"claude"}`)
-	got = getRecentModels(t, s)
+	got = getRecentModels(t, api)
 	want = []core.ModelRef{
 		{Provider: "anthropic", Model: "claude"},
 		{Provider: "anthropic", Model: "claude", Thinking: "high"},
@@ -140,28 +140,28 @@ func TestRecentModelsHandlerServiceTierRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewRecentModelsStore: %v", err)
 	}
-	s := &Server{serverStores: serverStores{recentModelsStore: store}}
+	api := NewModelPreferencesAPI(nil, nil, store, nil)
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/recent-models",
 		strings.NewReader(`{"provider":"openaicodex","model":"gpt-5","thinking":"high","serviceTier":"priority"}`))
-	s.handleRecentModels(rec, req)
+	api.HandleRecentModels(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("POST status = %d, body = %s", rec.Code, rec.Body.String())
 	}
 
-	got := getRecentModels(t, s)
+	got := getRecentModels(t, api)
 	want := core.ModelRef{Provider: "openaicodex", Model: "gpt-5", Thinking: "high", ServiceTier: "priority"}
 	if len(got) != 1 || got[0] != want {
 		t.Fatalf("recent models = %v, want [%v]", got, want)
 	}
 }
 
-// TestRecentModelsHandlerNilStore tolerates a server with no store wired,
+// TestRecentModelsHandlerNilStore tolerates an API with no store wired,
 // returning an empty list rather than erroring.
 func TestRecentModelsHandlerNilStore(t *testing.T) {
-	s := &Server{}
-	if got := getRecentModels(t, s); len(got) != 0 {
+	api := NewModelPreferencesAPI(nil, nil, nil, nil)
+	if got := getRecentModels(t, api); len(got) != 0 {
 		t.Fatalf("expected empty list from nil store, got %v", got)
 	}
 }

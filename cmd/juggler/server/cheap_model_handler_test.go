@@ -34,7 +34,7 @@ func putCheapModel(t *testing.T, s *Server, body string) {
 	t.Helper()
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPut, "/api/cheap-model", strings.NewReader(body))
-	s.handleSetCheapModel(rec, req)
+	modelPrefsFor(s).HandleSetCheapModel(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("PUT status = %d, body = %s", rec.Code, rec.Body.String())
 	}

@@ -287,6 +287,15 @@ func (s *Server) setupProjectRoutes() {
 	api.HandleFunc("/recents", projectAPI.HandleDeleteRecent).Methods("DELETE")
 }
 
+// setupLogsRoutes registers the read-only /api/logs endpoints that back the
+// Logs settings page.
+func (s *Server) setupLogsRoutes() {
+	api := s.router.PathPrefix("/api").Subrouter()
+	logsAPI := handlers.NewLogsAPI(s.ProjectPath)
+	api.HandleFunc("/logs", logsAPI.HandleList).Methods("GET")
+	api.HandleFunc("/logs/content", logsAPI.HandleContent).Methods("GET")
+}
+
 // setupConfigRoutes configures configuration-related routes
 func (s *Server) setupConfigRoutes(configAPI *handlers.ConfigAPI) {
 	api := s.router.PathPrefix("/api").Subrouter()
@@ -302,15 +311,15 @@ func (s *Server) setupConfigRoutes(configAPI *handlers.ConfigAPI) {
 	// value (or the computed preferred model when unset); PUT persists the
 	// user's choice. Captured onto each conversation at creation time so a
 	// later change never retargets an existing conversation.
-	api.HandleFunc("/default-model", s.handleDefaultModel).Methods("GET")
-	api.HandleFunc("/default-model", s.handleSetDefaultModel).Methods("PUT")
+	api.HandleFunc("/default-model", s.modelPrefsAPI.HandleGetDefaultModel).Methods("GET")
+	api.HandleFunc("/default-model", s.modelPrefsAPI.HandleSetDefaultModel).Methods("PUT")
 
 	// Cheap model used for out-of-band micro-tasks (auto-naming a tab, plugin
 	// generateText). GET returns the pinned value or, when unset, the
 	// auto-derived cheap sibling of the current default; PUT persists the user's
 	// choice (empty clears back to Auto).
 	api.HandleFunc("/cheap-model", s.handleCheapModel).Methods("GET")
-	api.HandleFunc("/cheap-model", s.handleSetCheapModel).Methods("PUT")
+	api.HandleFunc("/cheap-model", s.modelPrefsAPI.HandleSetCheapModel).Methods("PUT")
 
 	// Out-of-band single-turn completion (no tools, no persistence, bounded
 	// output + timeout + concurrency). Backs the plugin generateText op and the
@@ -332,7 +341,7 @@ func (s *Server) setupConfigRoutes(configAPI *handlers.ConfigAPI) {
 	// Recently-selected concrete models, persisted server-side so the list
 	// survives an app relaunch / a port change (browser localStorage is
 	// origin-scoped). GET reads the MRU list; POST records a pick.
-	api.HandleFunc("/recent-models", s.handleRecentModels).Methods("GET", "POST")
+	api.HandleFunc("/recent-models", s.modelPrefsAPI.HandleRecentModels).Methods("GET", "POST")
 }
 
 // RegisterTestRoutes registers test-specific API routes (called by testing wrapper)
@@ -559,7 +568,10 @@ func (s *Server) setupRoutes() {
 
 	api.HandleFunc("/extensions", s.extensionsAPI.HandleListExtensions).Methods("GET")
 	api.HandleFunc("/extensions/locations", s.extensionsAPI.HandleListLocations).Methods("GET")
-	api.HandleFunc("/extensions/reload", s.handleReloadExtensions).Methods("POST")
+	// The epoch is the API's and is bumped by HandleReload; the clients to tell
+	// are the server's.
+	s.extensionsAPI.SetReloadBroadcast(func() { s.broadcastPluginChanged("api/extensions/reload", false) })
+	api.HandleFunc("/extensions/reload", s.extensionsAPI.HandleReload).Methods("POST")
 
 	api.HandleFunc("/user-commands", s.userCommandsAPI.HandleList).Methods("GET")
 	api.HandleFunc("/user-commands/{scope}/{name}", s.userCommandsAPI.HandlePut).Methods("PUT")
@@ -585,7 +597,7 @@ func (s *Server) setupRoutes() {
 	api.HandleFunc("/skills/{scope:project|user}/{source}/{name}", s.skillsAPI.HandleGet).Methods("GET")
 	api.HandleFunc("/skills/{scope:project|user}/{source}/{name}", s.skillsRegistryAPI.HandleUninstall).Methods("DELETE")
 
-	api.HandleFunc("/version", s.handleVersion).Methods("GET")
+	api.HandleFunc("/version", handlers.NewVersionAPI(RendezvousProtocolVersion).HandleVersion).Methods("GET")
 	api.HandleFunc("/update-status", s.handleUpdateStatus).Methods("GET")
 	api.HandleFunc("/update-status/check", s.handleManualUpdateCheck).Methods("POST")
 

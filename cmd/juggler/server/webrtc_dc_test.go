@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"juggler/cmd/juggler/server/handlers"
+
 	"github.com/gorilla/mux"
 	"github.com/pion/webrtc/v4"
 )
@@ -33,7 +35,7 @@ func TestHTTPOverDataChannelEndToEnd(t *testing.T) {
 	s.router = mux.NewRouter()
 	s.router.Use(s.lanGateMiddleware)
 	api := s.router.PathPrefix("/api").Subrouter()
-	api.HandleFunc("/version", s.handleVersion).Methods(http.MethodGet)
+	api.HandleFunc("/version", handlers.NewVersionAPI(RendezvousProtocolVersion).HandleVersion).Methods(http.MethodGet)
 
 	// --- GUEST side: real pion peer connection. ---
 	// Empty ICE servers -> prefer loopback/LAN host candidates, no STUN round

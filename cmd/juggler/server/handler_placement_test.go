@@ -21,23 +21,6 @@ var pageServingHandlers = map[string]string{
 	"handleWailsRuntime": "the embedded @wailsio/runtime bundle",
 }
 
-// handlerPlacementExceptions are the *Server route handlers that read no server
-// state and have not yet moved to package handlers. Entries may be removed,
-// never added: a new handler that reads nothing the server owns is written in
-// handlers from the start.
-var handlerPlacementExceptions = map[string]string{
-	"handleListLogs":   "lays out the log directory itself; the listing belongs in internal/logpaths first",
-	"handleLogContent": "resolves and windows log files itself; that belongs in internal/logpaths first",
-	"handleVersion":    "needs RendezvousProtocolVersion injected",
-	"handleDefaultModel": "needs only resolveDefaultModel, which SessionAPI already receives; " +
-		"wants a model-preferences API together with the four below",
-	"handleSetDefaultModel":  "reads only defaultModelStore",
-	"handleSetCheapModel":    "reads only cheapModelStore",
-	"handleRecentModels":     "reads only recentModelsStore",
-	"handleRecentModelsGet":  "reads only recentModelsStore",
-	"handleRecentModelsPost": "reads only recentModelsStore",
-}
-
 // TestServerHandlersReadServerState is the structural guard on the placement
 // rule in handlers/doc.go: a route handler is a method on *Server only when it
 // reads the server's own running state. A handler whose every use of the
@@ -152,14 +135,9 @@ func TestServerHandlersReadServerState(t *testing.T) {
 	}
 
 	var violations []string
-	exceptionsSeen := map[string]bool{}
 	for _, fn := range decls {
 		name := fn.Name.Name
 		if _, ok := pageServingHandlers[name]; ok || readsState(name, map[string]bool{}) {
-			continue
-		}
-		if _, ok := handlerPlacementExceptions[name]; ok {
-			exceptionsSeen[name] = true
 			continue
 		}
 		violations = append(violations, fset.Position(fn.Pos()).String()+" "+name+
@@ -169,11 +147,6 @@ func TestServerHandlersReadServerState(t *testing.T) {
 	for _, v := range violations {
 		t.Error(v)
 	}
-	for name, why := range handlerPlacementExceptions {
-		if !exceptionsSeen[name] {
-			t.Errorf("exception %s (%s) no longer matches a handler that reads no server state — delete it", name, why)
-		}
-	}
 	for name, what := range pageServingHandlers {
 		if !handlerNames[name] {
 			t.Errorf("page-serving entry %s (%s) names no *Server handler — delete it", name, what)
@@ -182,7 +155,7 @@ func TestServerHandlersReadServerState(t *testing.T) {
 
 	// Every assertion above is a scan finding nothing, so prove the scan sees
 	// the package, the two derived sets, and a handler that does read state.
-	if files < 30 || len(decls) < 30 {
+	if files < 30 || len(decls) < 20 {
 		t.Fatalf("parsed %d files and %d *Server handlers — the scan has stopped seeing the package", files, len(decls))
 	}
 	if !stores["defaultModelStore"] {
