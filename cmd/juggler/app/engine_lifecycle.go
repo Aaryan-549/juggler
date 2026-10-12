@@ -29,6 +29,21 @@ import (
 // startup window or a watchdog re-exec, since the engine otherwise stays up).
 const engineConnectTimeout = 30 * time.Second
 
+// engineURL is the engine page served at addr.
+func engineURL(addr string) string { return "http://" + addr + "/engine" }
+
+// reloadEngineWindow replaces the engine window's realm with a fresh one by
+// navigating it to the engine page again. It does not use win.Reload(), because
+// on Linux Wails implements that as a load of "wails://" instead of the current
+// page. That would take the engine off /engine for good, and no engine would
+// ever reconnect. A navigation to the page's own URL reloads it on every
+// platform, and the navigation is driven from outside the page, so it works
+// even when the page's own script has wedged. SetURL marshals itself to the
+// main thread.
+func reloadEngineWindow(win *application.WebviewWindow, addr string) {
+	win.SetURL(engineURL(addr))
+}
+
 // newEngineWindow builds (but does not run) the hidden engine WebviewWindow. The
 // engine page boots the worker-backed runtime (web/js/engine-worker-main.js):
 // the engine's WebSocket and tool execution run in a module worker, off the
@@ -64,7 +79,7 @@ func newEngineWindow(app *application.App, addr string) *application.WebviewWind
 	return app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name:   "juggler-engine",
 		Title:  "Juggler Engine",
-		URL:    "http://" + addr + "/engine",
+		URL:    engineURL(addr),
 		Width:  200,
 		Height: 150,
 		Hidden: true,
@@ -113,10 +128,13 @@ type engineHost interface {
 //
 // The window handle is kept, not discarded, because it is the only lever that
 // can revive a realm that has stopped: the page must be reloaded to get a fresh
-// worker. It is read from the supervisor goroutine, hence the atomic.
+// worker. It is read from the supervisor goroutine, hence the atomic. addr is
+// written before win is stored and read only after win is loaded, so the atomic
+// covers it too.
 type webviewHost struct {
-	app *application.App
-	win atomic.Pointer[application.WebviewWindow]
+	app  *application.App
+	addr string
+	win  atomic.Pointer[application.WebviewWindow]
 }
 
 // Describe implements engineHost.
@@ -136,6 +154,7 @@ func (h *webviewHost) Start(addr string) error {
 		jlog.Error("[engine] the engine's renderer process died; WebKit is reloading the page")
 	})
 
+	h.addr = addr
 	h.win.Store(win)
 	win.Run()
 	return nil
@@ -143,8 +162,7 @@ func (h *webviewHost) Start(addr string) error {
 
 // Recover reloads the engine page, which is what replaces a stopped realm: the
 // reload re-runs engine-worker-main.js, spawning a fresh module worker that
-// opens a new WebSocket. Reload marshals itself to the main thread and no-ops on
-// a window that was never run or is already destroyed.
+// opens a new WebSocket. See reloadEngineWindow for how it reloads.
 func (h *webviewHost) Recover() {
 	win := h.win.Load()
 	if win == nil {
@@ -152,7 +170,7 @@ func (h *webviewHost) Recover() {
 		return
 	}
 	jlog.Info("[engine] reloading the engine WebView")
-	win.Reload()
+	reloadEngineWindow(win, h.addr)
 }
 
 // Stop is nothing to do for this host: the engine is a window in this process

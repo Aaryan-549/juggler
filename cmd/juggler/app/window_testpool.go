@@ -83,8 +83,8 @@ func (a *windowApp) startup() {
 		a.engineWin.Run()
 		// The same recovery lever production's engine host hands the server:
 		// reloading the page replaces the engine's realm with a fresh one.
-		engineWin := a.engineWin
-		a.srv.SetEngineRecovery(func() { engineWin.Reload() })
+		engineWin, addr := a.engineWin, a.srv.GetAddr()
+		a.srv.SetEngineRecovery(func() { reloadEngineWindow(engineWin, addr) })
 		// Engine stays Hidden:true. macOS would normally throttle a hidden
 		// WKWebView's JS event loop to 0 Hz, but our patched Wails fork
 		// sets `WKInactiveSchedulingPolicyNone` on the WKWebViewConfiguration
@@ -500,7 +500,7 @@ func runTestPoolWindowApp(srv *server.Server, devMode bool, headless bool, testI
 	wa.engineWin = app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name:   "juggler-engine",
 		Title:  "Juggler Engine",
-		URL:    "http://" + srv.GetAddr() + "/engine",
+		URL:    engineURL(srv.GetAddr()),
 		Width:  200,
 		Height: 150,
 		Hidden: true,

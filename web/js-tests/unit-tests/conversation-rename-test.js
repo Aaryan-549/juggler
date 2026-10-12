@@ -56,6 +56,16 @@ function makeSession(name) {
 }
 
 /**
+ * Whether this machine asks for reduced motion. The auto-naming shimmer is
+ * dropped under the preference, and CI machines report it, so the shimmer case
+ * asserts whichever behaviour this machine is entitled to.
+ * @returns {boolean} True when the reduce preference is set.
+ */
+function reducedMotion() {
+  return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true;
+}
+
+/**
  * Mount a bar over a session, without setSession()'s panel and worker per
  * conversation, which the strip needs none of — and, deliberately, without its
  * subscription, so nothing but the rename itself can repaint the tab.
@@ -234,8 +244,15 @@ export async function runTests() {
       bar.render();
       assert(shownName(bar) === 'Auto-naming…', `while being named the tab shows "${shownName(bar)}"`);
       assert(nameEl().classList.contains('is-auto-naming'), 'the "Auto-naming…" label does not shimmer');
-      assert(getComputedStyle(nameEl()).animationName !== 'none',
-        'the is-auto-naming name has no animation running');
+      const shimmer = getComputedStyle(nameEl()).animationName;
+      if (reducedMotion()) {
+        assert(shimmer === 'none', `under reduced motion the "Auto-naming…" label holds still, got ${shimmer}`);
+        const { color } = getComputedStyle(nameEl());
+        assert(color !== 'rgba(0, 0, 0, 0)' && color !== 'transparent',
+          `under reduced motion the still label must be painted, got color ${color}`);
+      } else {
+        assert(shimmer === 'tab-auto-naming-shimmer', `the is-auto-naming name runs the shimmer, got ${shimmer}`);
+      }
 
       session.conversations.get('c1').name = 'Tunnel rendezvous';
       session.setAutoNaming('c1', false);
