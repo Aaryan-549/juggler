@@ -295,7 +295,6 @@ export async function runTests() {
     });
 
     await run('a folder the project does not have is refused before anything is registered', async () => {
-      const before = (await listWorkspaces()).length;
       const tag = uniqueTag();
       let refusal = '';
       try {
@@ -309,8 +308,11 @@ export async function runTests() {
       }
       assert(refusal.includes('no such folder'),
         `the provision says what is wrong in its own words, got ${JSON.stringify(refusal)}`);
-      assert((await listWorkspaces()).length === before,
-        'and leaves no row behind for a place that is not there');
+      // Looked for by this case's own tag: the rows are the project's, and
+      // other lanes register and remove workspaces of their own meanwhile.
+      const left = (await listWorkspaces()).filter((/** @type {any} */ row) => JSON.stringify(row).includes(tag));
+      assert(left.length === 0,
+        `and leaves no row behind for a place that is not there, found ${JSON.stringify(left)}`);
     });
 
     await run('a path that climbs out of the project is refused, however it is spelled', async () => {
