@@ -564,9 +564,19 @@ export async function runTests(_ctx) {
       `an unclassified failure must keep its cause, got ${JSON.stringify(dead)}`);
   });
 
+  await run('reviewFailureNote: keeps a long provider error whole', () => {
+    // The card is the only place this message is shown, so a real server error
+    // — remedy and all — must survive in full rather than end mid-instruction.
+    const cause = 'quick complete: provider "openaicodex" unavailable: codex access token is expired; '
+      + 'sign in with the Codex app or run `codex login` in a terminal, then try again';
+    const note = reviewFailureNote(new Error(`HTTP 400: ${cause}`));
+    assert(note === `Auto-approve couldn't run — ${cause}`,
+      `the whole cause should be shown, got ${JSON.stringify(note)}`);
+  });
+
   await run('describeReviewFailure: caps a runaway body (e.g. an HTML error page)', () => {
     const out = describeReviewFailure(new Error('<html>' + 'x'.repeat(5000)));
-    assert(out.length <= 120, `expected a capped description, got length ${out.length}`);
+    assert(out.length <= 600, `expected a capped description, got length ${out.length}`);
     assert(out.endsWith('…'), 'a truncated description should be elided');
   });
 

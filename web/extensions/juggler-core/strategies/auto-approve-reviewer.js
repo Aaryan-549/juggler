@@ -537,11 +537,14 @@ export function timeoutRetryDelay(attempt, random = Math.random) {
 }
 
 /**
- * Cap on a rendered failure cause. Shorter than a deny reason: this is a
- * diagnostic tail on an already-labelled line, not the message itself.
+ * Cap on a rendered failure cause. The approval card is the only place this
+ * message is ever shown, and a provider error usually ends in its remedy ("sign
+ * in … then try again"), so the cap is set to keep any real server message whole
+ * and only bound a runaway body such as an HTML error page. Kept, with the lead,
+ * under the framework's `MAX_REVIEW_NOTE_CHARS` so nothing clips it twice.
  * @type {number}
  */
-const MAX_FAILURE_CHARS = 120;
+const MAX_FAILURE_CHARS = 600;
 
 /**
  * Render why a review could not be completed, for display in the approval card.

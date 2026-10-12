@@ -49,10 +49,13 @@ function reviewLabelFor(strategy) {
 /**
  * Cap on a strategy-authored review note. The note is arbitrary text from a
  * strategy (typically an LLM reviewer's own words), so the framework bounds what
- * it will write into the doc rather than trusting the caller.
+ * it will write into the doc rather than trusting the caller. The bound is
+ * generous: the approval card is the only place a note is shown, so a cap that
+ * fits a slogan but not a sentence (an error and its remedy) loses the very part
+ * the user needs.
  * @type {number}
  */
-const MAX_REVIEW_NOTE_CHARS = 240;
+const MAX_REVIEW_NOTE_CHARS = 1000;
 
 /**
  * Write the transient `reviewStatus` field of a parked tool-action — the state

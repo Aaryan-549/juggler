@@ -435,6 +435,25 @@ export async function runTests(_ctx) {
       assert(label === 'Auto-approve declined: force-pushes over shared history',
         `expected the flattened note, got ${JSON.stringify(label)}`);
 
+      // A long note lands whole: the card is the only place it is ever shown.
+      const longNote = `Auto-approve couldn't run — ${'the provider said something long. '.repeat(14).trim()}`;
+      const longId = insertUnstartedBash(conversation, 'review-note-long', 'echo long');
+      /** @type {(v: any) => void} */
+      let releaseLong = () => {};
+      const longGate = new Promise((res) => { releaseLong = res; });
+      mt.strategy = {
+        getApprovalPolicy: () => 'require-approval',
+        onToolPending: () => longGate
+      };
+      await handleNewToolAction(mt, longId, conversation);
+      releaseLong({ note: longNote });
+      await longGate;
+      await new Promise((r) => setTimeout(r, 0));
+      const longRs = mt.getToolAction(longId)?.get('reviewStatus');
+      const longLabel = longRs && (longRs.get ? longRs.get('label') : longRs.label);
+      assert(longLabel === longNote,
+        `a ${longNote.length}-char note should land whole, got ${JSON.stringify(longLabel)}`);
+
       // A rejecting hook reports nothing: the indicator clears.
       const failId = insertUnstartedBash(conversation, 'review-note-2', 'echo fail');
       /** @type {(e: any) => void} */
