@@ -6,7 +6,6 @@ import { withMcpToolMissReason } from './mcp-availability.js';
 import { extractErrorInfo, extractErrorMessage } from '../../sdk/lib/error-utils.js';
 import { createContextWriter } from './context-writer.js';
 import { RESULT_TYPES } from '../../sdk/lib/message.js';
-import { hashString } from '../utils/hash.js';
 import { FormattingHelpers } from '../../sdk/lib/formatting-helpers.js';
 import * as actions from './response-handler-actions.js';
 
@@ -168,11 +167,8 @@ class ResponseHandler {
         // Update existing tool-action created by worker
         const itemId = result.metadata?.itemId;
 
-        // For context item tools, render full content and compute hash for cache optimization
-        // This enables OpenAI prefix caching by keeping context items at stable positions
+        // For context item tools, the result content is the item's rendered text
         let toolResultContent = content;
-        /** @type {number|undefined} */
-        let contentHash;
         if (itemId) {
           const contextItem = messageThread.getContextItem(itemId);
           if (!contextItem) {
@@ -188,7 +184,6 @@ class ResponseHandler {
           toolResultContent = typeof renderedContent === 'string'
             ? renderedContent
             : JSON.stringify(renderedContent);
-          contentHash = hashString(toolResultContent);
         }
 
         // Update existing tool-action with result. The tool-action keeps the
@@ -198,8 +193,7 @@ class ResponseHandler {
           content: toolResultContent,
           isError: !result.success,
           resultType: resultType,
-          fullResult: /** @type {import('../../sdk/lib/message.js').ActionFullResult|undefined} */ (result.metadata?.fullResult),
-          lastContentHash: contentHash
+          fullResult: /** @type {import('../../sdk/lib/message.js').ActionFullResult|undefined} */ (result.metadata?.fullResult)
         });
       }
 

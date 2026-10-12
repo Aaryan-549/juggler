@@ -20,7 +20,7 @@
  * @property {string} [toolName] - Tool name
  * @property {Record<string, any>} [toolInput] - Tool input parameters
  * @property {string} [state] - Tool lifecycle state
- * @property {{content: string, isError: boolean, contextItemId?: string}|string} [result] - Tool result (normalized) or thread result string
+ * @property {{content: string, isError: boolean}|string} [result] - Tool result (normalized) or thread result string
  * @property {string} [itemId] - Normalized item ID ($ITEM_1, etc.)
  * @property {string} [message] - Error message text (for error items)
  */
@@ -33,7 +33,7 @@
 
 /**
  * Raw item from conversation (Y.Map)
- * @typedef {import('../../model/message.js').YMapItem & {type: string, content?: string, toolUseId?: string, toolName?: string, toolInput?: object|string, state?: string, result?: object|string|null, itemId?: string, contextItemId?: string, data?: object, message?: string}} RawItem
+ * @typedef {import('../../model/message.js').YMapItem & {type: string, content?: string, toolUseId?: string, toolName?: string, toolInput?: object|string, state?: string, result?: object|string|null, itemId?: string, data?: object, message?: string}} RawItem
  */
 
 /**
@@ -196,10 +196,6 @@ export function normalizeDocumentSnapshot(conversation) {
     if (itemId) {
       normalizer.normalizeItemId(itemId);
     }
-    const contextItemId = item.get('contextItemId');
-    if (contextItemId) {
-      normalizer.normalizeItemId(contextItemId);
-    }
   }
 
   // Second pass: normalize items for golden comparison.
@@ -283,7 +279,7 @@ function normalizeItem(item, normalizer) {
       normalized.result = normalizer.normalizeContent(resultStr);
     } else {
       // Tool result (may be a Y.Map or JSON string encoding {content, isError})
-      /** @type {{content?: string, isError?: boolean, contextItemId?: string}} */
+      /** @type {{content?: string, isError?: boolean}} */
       let resultObj;
       if (typeof result === 'string') {
         try {
@@ -296,21 +292,16 @@ function normalizeItem(item, normalizer) {
         // Y.Map - extract fields via .get()
         resultObj = {
           content: result.get('content'),
-          isError: result.get('isError'),
-          contextItemId: result.get('contextItemId')
+          isError: result.get('isError')
         };
       } else {
-        resultObj = /** @type {{content?: string, isError?: boolean, contextItemId?: string}} */ (result);
+        resultObj = /** @type {{content?: string, isError?: boolean}} */ (result);
       }
       if (typeof resultObj === 'object' && resultObj !== null) {
         normalized.result = {
           content: normalizer.normalizeContent(resultObj.content || ''),
           isError: resultObj.isError || false
         };
-        // Include contextItemId in result if present
-        if (resultObj.contextItemId) {
-          normalized.result.contextItemId = normalizer.normalizeItemId(resultObj.contextItemId);
-        }
       }
     }
   }

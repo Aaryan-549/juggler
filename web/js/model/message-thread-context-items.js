@@ -17,8 +17,7 @@ import workerManager from '../services/worker-manager.js';
 /**
  * Derive the `{id, type, data}` descriptor for a context item from a thread
  * item Y.Map, or null if the item is not a context item. Context items live
- * either as standalone item Y.Maps (`itemId`, no `toolUseId`) or as the result
- * of a context-producing tool-action (`contextItemId` + `resultType==='context'`).
+ * as standalone item Y.Maps (`itemId`, no `toolUseId`).
  * @param {any} item - Thread item Y.Map
  * @param {string} [wantId] - If set, only match a context item with this id
  * @returns {{id: string, type: string, data: any}|null} Descriptor, or null if not a context item
@@ -32,19 +31,6 @@ function contextItemDescriptor(item, wantId) {
       type: item.get('type') || 'unknown',
       data: yGet(item, 'data') || {}
     };
-  }
-  if (item.get('type') === 'tool-action' && item.get('contextItemId')) {
-    const id = item.get('contextItemId');
-    if (wantId !== undefined && id !== wantId) return null;
-    const result = item.get('result');
-    if (result?.get?.('resultType') === 'context') {
-      const fullResult = result.get?.('fullResult');
-      return {
-        id,
-        type: result.get?.('itemType') || 'unknown',
-        data: yGet(fullResult, 'data') || {}
-      };
-    }
   }
   return null;
 }

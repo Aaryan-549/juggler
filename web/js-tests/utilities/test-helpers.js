@@ -446,19 +446,6 @@ export function findContextItemMessage(messages, itemId) {
 }
 
 /**
- * Find a tool-result message that contains context item content (by contextItemId)
- * With the new architecture, context item content is rendered in tool-results.
- * @param {Message[]} messages - Context messages
- * @param {string} itemId - Context item ID to find
- * @returns {import('../../model/message.js').ToolResultMessage|undefined} The tool-result or undefined
- */
-export function findContextItemToolResult(messages, itemId) {
-  return /** @type {import('../../model/message.js').ToolResultMessage|undefined} */ (
-    messages.find(m => isToolResultMessage(m) && m.contextItemId === itemId)
-  );
-}
-
-/**
  * Create a mock tool call (simulating what LLM would send)
  * @param {string} toolName - Tool name (e.g., 'write_file', 'read_file')
  * @param {Record<string, unknown>} input - Tool input parameters
@@ -627,20 +614,17 @@ export function extractGoldenMessages(messages, toolCalls) {
   /**
    * Normalize toolUseId, handling both regular tool IDs and synthetic UI-added context item IDs
    * @param {string} toolUseId - Original toolUseId
-   * @param {string|undefined} contextItemId - Associated contextItemId if any
    * @returns {string} Normalized toolUseId
    */
-  const getNormalizedToolUseId = (toolUseId, contextItemId) => {
+  const getNormalizedToolUseId = (toolUseId) => {
     // Check regular tool ID map first
     if (idMap.has(toolUseId)) {
       return /** @type {string} */ (idMap.get(toolUseId));
     }
 
     // Handle synthetic UI-added context item IDs (format: "ui-ci-{contextItemId}")
-    // Extract contextItemId from toolUseId if not provided (context-builder doesn't include contextItemId)
     if (toolUseId.startsWith('ui-ci-')) {
-      const extractedContextItemId = contextItemId || toolUseId.replace('ui-ci-', '');
-      return `ui-ci-${getNormalizedContextItemId(extractedContextItemId)}`;
+      return `ui-ci-${getNormalizedContextItemId(toolUseId.replace('ui-ci-', ''))}`;
     }
 
     return toolUseId;
@@ -666,15 +650,8 @@ export function extractGoldenMessages(messages, toolCalls) {
 
   // First pass: build the contextItemIdMap by processing all messages
   for (const msg of messages) {
-    if (isToolUseMessage(msg)) {
-      if (msg.toolUseId.startsWith('ui-ci-')) {
-        const contextItemId = msg.toolUseId.replace('ui-ci-', '');
-        getNormalizedContextItemId(contextItemId);
-      }
-    } else if (isToolResultMessage(msg)) {
-      if (msg.contextItemId) {
-        getNormalizedContextItemId(msg.contextItemId);
-      }
+    if (isToolUseMessage(msg) && msg.toolUseId.startsWith('ui-ci-')) {
+      getNormalizedContextItemId(msg.toolUseId.replace('ui-ci-', ''));
     }
   }
 
@@ -698,18 +675,12 @@ export function extractGoldenMessages(messages, toolCalls) {
       }
       case 'tool-result': {
         const m = /** @type {import('../../model/message.js').ToolResultMessage} */ (msg);
-        const normalizedContextItemId = m.contextItemId ? getNormalizedContextItemId(m.contextItemId) : undefined;
-        /** @type {Record<string, unknown>} */
-        const result = {
+        return {
           type: 'tool-result',
-          toolUseId: getNormalizedToolUseId(m.toolUseId, m.contextItemId),
+          toolUseId: getNormalizedToolUseId(m.toolUseId),
           content: normalizeContentContextItemIds(m.content || ''),
           isError: m.isError || false
         };
-        if (normalizedContextItemId) {
-          result.contextItemId = normalizedContextItemId;
-        }
-        return result;
       }
       case 'user':
       case 'assistant': {

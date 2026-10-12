@@ -210,7 +210,7 @@ export const ACTION_STATES = Object.freeze({
 /**
  * LLM API output type: Result of tool execution.
  * NOTE: This type is used for LLM API output only (context-builder splits tool-action into these).
- * @typedef {YMapItem & {type: 'tool-result', toolUseId: string, content?: string, isError?: boolean, contextItemId?: string}} ToolResultMessage
+ * @typedef {YMapItem & {type: 'tool-result', toolUseId: string, content?: string, isError?: boolean}} ToolResultMessage
  */
 
 /**
@@ -243,7 +243,6 @@ export const ACTION_STATES = Object.freeze({
  * @property {object[]} [hooks] - The call's tool-hook record (see services/hook-runtime.js HookRecord); split out and stored at the tool-action item level, where the worker reads each record's note into the tool_result
  * @property {boolean} [cancelled] - Whether cancelled/rejected by user
  * @property {boolean} [interrupted] - Whether interrupted by page reload
- * @property {number} [lastContentHash] - Hash of context content for cache optimization
  * @property {string} [task_id] - Background task ID for reconnection
  * @property {number} [exit_code] - Process exit code for shell commands
  * @property {boolean} [reconnectable] - Whether this is a reconnectable background task
@@ -255,7 +254,7 @@ export const ACTION_STATES = Object.freeze({
  * Unified tool execution lifecycle message.
  * Combines tool-use (request) and tool-result (response) into a single event.
  * state tracks lifecycle: undefined→pending→running→completed/cancelled.
- * @typedef {YMapItem & {type: 'tool-action', toolUseId: string, toolName: string, toolInput: Record<string, unknown>, contextItemId?: string, state?: ToolState, approvalResponse?: string, approvalOptions?: object, displayData?: object, result: ToolActionResult|null, itemId?: string, transactionId?: string, _pendingReconnection?: {taskId: string}}} ToolActionMessage
+ * @typedef {YMapItem & {type: 'tool-action', toolUseId: string, toolName: string, toolInput: Record<string, unknown>, state?: ToolState, approvalResponse?: string, approvalOptions?: object, displayData?: object, result: ToolActionResult|null, itemId?: string, transactionId?: string, _pendingReconnection?: {taskId: string}}} ToolActionMessage
  */
 
 /**
@@ -466,14 +465,13 @@ export function createAssistantMessage(content) {
  * @param {string} params.toolUseId - Unique ID for this tool action
  * @param {string} params.toolName - Name of the tool being called
  * @param {Record<string, unknown>} [params.toolInput] - Input parameters for the tool
- * @param {string} [params.contextItemId] - Context item ID if this tool creates/updates a context item
  * @param {ToolState} [params.state] - Tool lifecycle state
  * @param {object} [params.approvalOptions] - Approval options for UI rendering
  * @param {object} [params.displayData] - Display data for UI rendering
  * @param {ToolActionResult|null} [params.result] - Result (null = pending/running)
  * @returns {ToolActionMessage} The created tool-action message
  */
-export function createToolActionMessage({ toolUseId, toolName, toolInput, contextItemId, state, approvalOptions, displayData, result }) {
+export function createToolActionMessage({ toolUseId, toolName, toolInput, state, approvalOptions, displayData, result }) {
   /** @type {any} */
   const msg = {
     type: MESSAGE_TYPES.TOOL_ACTION,
@@ -482,7 +480,6 @@ export function createToolActionMessage({ toolUseId, toolName, toolInput, contex
     toolInput: toolInput || {},
     result: result ?? null
   };
-  if (contextItemId) msg.contextItemId = contextItemId;
   if (state) msg.state = state;
   if (approvalOptions) msg.approvalOptions = approvalOptions;
   if (displayData) msg.displayData = displayData;

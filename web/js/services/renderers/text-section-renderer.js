@@ -97,40 +97,17 @@ export class TextSectionRenderer {
     // Skip validation for UI preview - show what we can even with pending actions
     const { messages } = await builder.prepare({ skipPendingValidation: true });
 
-    // 3. Separate context item tool-results from other messages
-    // Context item content is now in tool-result messages with contextItemId
-    const contextItemToolResults = messages.filter(msg => {
-      if (!isToolResultMessage(msg)) return false;
-      return !!msg.contextItemId;
-    });
+    // 3. Messages that reach the model as conversation history
     const conversationMessages = messages.filter(msg =>
       isUserMessage(msg) || isAssistantMessage(msg) || isToolResultMessage(msg) ||
 			isThinkingMessage(msg) || isToolUseMessage(msg)
     );
 
-    // 4. Context Items Section
+    // 4. Context Items Section. prepare() emits no per-item messages, so it is
+    // always empty.
     const itemsHeader = '\n' + this._heading('Current Context Items', 2) + '\n';
     addSection('context-items-header', 'Current Context Items', itemsHeader);
-
-    if (contextItemToolResults.length === 0) {
-      addSection('context-items-empty', '(No active context items)', '(No active context items)');
-    } else {
-      let itemIndex = 0;
-      for (const ciMsg of contextItemToolResults) {
-        const typedMsg = /** @type {import('../../../sdk/lib/message.js').ToolResultMessage} */ (ciMsg);
-        const itemId = typedMsg.contextItemId;
-        if (!itemId) continue;
-
-        const contextItem = builder.messageThread.getContextItem(itemId);
-        if (contextItem) {
-          // Get rendered content from the tool-result (already rendered by prepare())
-          const itemContent = typedMsg.content || '';
-          const itemLabel = contextItem.getTitle ? contextItem.getTitle() : itemId;
-          addSection('context-item', itemLabel, `\n${itemContent}\n`, undefined, itemIndex);
-        }
-        itemIndex++;
-      }
-    }
+    addSection('context-items-empty', '(No active context items)', '(No active context items)');
 
     // 5. Conversation History
     if (conversationMessages.length > 0) {

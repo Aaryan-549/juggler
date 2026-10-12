@@ -921,7 +921,6 @@ export default class MessageThread {
    * @param {string} data.toolUseId - Unique ID for this tool action
    * @param {string} data.toolName - Name of the tool being called
    * @param {Record<string, unknown>} [data.toolInput] - Input parameters
-   * @param {string} [data.contextItemId] - Context item ID
    * @param {import('../../sdk/lib/message.js').ToolState} [data.state] - Tool lifecycle state
    * @param {object} [data.approvalOptions] - Approval options for UI
    * @param {object} [data.displayData] - Display data for UI

@@ -38,8 +38,7 @@ function countOccurrences(haystack, needle) {
 /**
  * Compact dump of every memory-relevant root item — used in the failure
  * message so a double-render is diagnosable from one scrollback (which item
- * carries `contextItemId`, which carries a standing `itemId`, the result's
- * `resultType`).
+ * carries a standing `itemId`, the result's `resultType`).
  * @param {import('../../model/conversation.js').default} conversation
  * @returns {string} A newline-joined dump of memory-relevant items, or a fallback message.
  */
@@ -48,11 +47,10 @@ function dumpMemoryItems(conversation) {
   for (const item of conversation.rootMessageThread.items) {
     const type = item.get('type');
     const itemId = item.get('itemId');
-    const ctxId = item.get('contextItemId');
-    if (type !== 'memory' && type !== 'tool-action' && !ctxId) continue;
+    if (type !== 'memory' && type !== 'tool-action') continue;
     const result = item.get('result');
     const resultType = result?.get?.('resultType') ?? (result?.toJSON ? result.toJSON()?.resultType : undefined);
-    rows.push(`type=${type} itemId=${itemId ?? '∅'} contextItemId=${ctxId ?? '∅'} resultType=${resultType ?? '∅'}`);
+    rows.push(`type=${type} itemId=${itemId ?? '∅'} resultType=${resultType ?? '∅'}`);
   }
   return rows.join('\n      ') || '(no memory-relevant items)';
 }
@@ -101,15 +99,13 @@ export const memorySeededWhenFileExistsTest = {
  * new fact. A conversation seeded earlier would keep its own snapshot instead;
  * that freeze is pinned by the unit tests in `_tests/memory-item-test.js`.
  *
- * This guards against the hypothesised double-render vector — `getContextItems`
- * materialising a system-position item from BOTH the standing item AND a
- * context-result tool-action (`resultType==='context'` + `contextItemId`). It
- * cannot happen for `memory`: the item defines `execute()`, so the tool is
- * dispatched through the ACTION path (`_runActionAndComplete`), whose result is
- * always stamped `resultType:'action'` and never carries a `contextItemId`. The
- * assertions below pin exactly that shape, so a future change that re-routed
- * memory through the context-item path (and thus could double-render) trips this
- * test rather than silently regressing cache stability.
+ * This guards against a double render — the system-position memory item
+ * materialising more than once. The memory item defines `execute()`, so the
+ * tool is dispatched through the ACTION path (`_runActionAndComplete`), whose
+ * result is stamped `resultType:'action'`; the assertions below pin that
+ * shape and the single standing item, so a change that re-routed memory
+ * through the context-item path trips this test rather than silently
+ * regressing cache stability.
  *
  * Touches the fixed `.juggler/MEMORY.md` at the project root, so it is
  * scheduled alone via needsExclusiveRun.
@@ -160,10 +156,7 @@ export const memorySystemPromptStableAcrossRememberTest = {
       );
     }
 
-    // Root cause pin: the memory tool-action is ACTION-dispatched, so it can
-    // never be picked up by getContextItems' context-result branch (which
-    // keys on resultType==='context' + a contextItemId). If either of these
-    // changed, the tool-action would double-materialise as a 2nd memory item.
+    // The memory tool-action is ACTION-dispatched, not a context result.
     const memToolAction = root.items.find(
       (/** @type {any} */ it) => it.get('type') === 'tool-action' && it.get('toolName') === 'memory'
     );
@@ -172,11 +165,10 @@ export const memorySystemPromptStableAcrossRememberTest = {
     }
     const result = memToolAction.get('result');
     const resultType = result?.get?.('resultType') ?? (result?.toJSON ? result.toJSON()?.resultType : undefined);
-    const contextItemId = memToolAction.get('contextItemId');
-    if (resultType !== 'action' || contextItemId) {
+    if (resultType !== 'action') {
       throw new Error(
-        `memory tool-action must be action-dispatched (resultType='action', no contextItemId); ` +
-				`got resultType=${resultType ?? '∅'} contextItemId=${contextItemId ?? '∅'}.\n` +
+        `memory tool-action must be action-dispatched (resultType='action'); ` +
+				`got resultType=${resultType ?? '∅'}.\n` +
 				`      ${dumpMemoryItems(conversation)}`
       );
     }
