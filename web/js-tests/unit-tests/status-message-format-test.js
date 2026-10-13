@@ -114,5 +114,43 @@ export async function runTests(_ctx) {
     }
   });
 
+  /**
+   * The lead clause of a streaming status built from a provider activity snapshot.
+   * @param {string} description - Provider activity snapshot
+   * @returns {string} The status message up to its first clause separator
+   */
+  const activityLead = (description) =>
+    StatusMessageBuilder.buildStreamingStatus({ description }).split(`${NBSP}· `)[0];
+
+  test('a reasoning summary shows its heading, not its body', () => {
+    const lead = activityLead('**Inspecting the footer**\n\nI am reading how the status line is rendered.');
+    assert(lead === 'Inspecting the footer', `lead = ${JSON.stringify(lead)}`);
+  });
+
+  test('a heading still streaming in shows no dangling marker', () => {
+    const lead = activityLead('**Inspecting the fo');
+    assert(lead === 'Inspecting the fo', `lead = ${JSON.stringify(lead)}`);
+  });
+
+  test('inline markdown inside an activity label is rendered as plain text', () => {
+    const lead = activityLead('Checking `status.js` and **footer** [rendering](https://example.com) ~~now~~ *here*');
+    assert(lead === 'Checking status.js and footer rendering now here', `lead = ${JSON.stringify(lead)}`);
+  });
+
+  test('a markdown heading or bullet prefix is dropped', () => {
+    assert(activityLead('## Planning the fix') === 'Planning the fix', `lead = ${JSON.stringify(activityLead('## Planning the fix'))}`);
+    assert(activityLead('- Planning the fix') === 'Planning the fix', `lead = ${JSON.stringify(activityLead('- Planning the fix'))}`);
+  });
+
+  test('underscores and asterisks inside words are left alone', () => {
+    const lead = activityLead('Reading my_var_name and a*b*c');
+    assert(lead === 'Reading my_var_name and a*b*c', `lead = ${JSON.stringify(lead)}`);
+  });
+
+  test('a label wrapped whole in emphasis is unwrapped', () => {
+    const lead = activityLead('**Thinking**');
+    assert(lead === 'Thinking', `lead = ${JSON.stringify(lead)}`);
+  });
+
   return { passed, failed, errors };
 }

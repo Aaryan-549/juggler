@@ -130,28 +130,35 @@ export class StatusMessageBuilder {
   }
 
   /**
-   * Remove matched Markdown wrappers from a provider-authored activity label.
-   * Footer status is deliberately plain text, but models often send a whole
-   * summary wrapped in emphasis or code markers.
+   * Reduce a provider-authored activity snapshot to a plain one-line label.
+   *
+   * Footer status is plain text, but providers write Markdown: a GPT reasoning
+   * summary is a bold heading over a paragraph ("**Inspecting the footer**\n\n
+   * I am reading…"), re-sent whole as it grows. The first non-empty line is the
+   * label — for a summary, its heading — and its Markdown is reduced to the
+   * text it marks up. An emphasis opener whose closer has not streamed in yet
+   * is dropped too, so a heading arriving a few characters at a time never
+   * shows a stray marker.
    * @param {string} description - Provider activity snapshot
    * @returns {string} Plain status label
    * @private
    */
   static _plainActivity(description) {
-    let text = description.trim();
-    const wrappers = ['**', '__', '~~', '`', '*', '_'];
-    let changed = true;
-    while (changed) {
-      changed = false;
-      for (const wrapper of wrappers) {
-        if (text.length > wrapper.length * 2 && text.startsWith(wrapper) && text.endsWith(wrapper)) {
-          text = text.slice(wrapper.length, -wrapper.length).trim();
-          changed = true;
-          break;
-        }
-      }
-    }
-    return text;
+    const line = description.split('\n').map((l) => l.trim()).find((l) => l) ?? '';
+    return line
+      // Block prefixes: heading, blockquote, list bullet or number.
+      .replace(/^(?:#{1,6}\s+|>\s*|[-*+]\s+|\d+[.)]\s+)/, '')
+      // Links and images keep their text.
+      .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
+      .replace(/`+([^`]+)`+/g, '$1')
+      // Paired emphasis. Single `*`/`_` only at word edges, so snake_case and
+      // a*b*c are left as written.
+      .replace(/(\*\*|__|~~)(?=\S)(.+?)(?<=\S)\1/g, '$2')
+      .replace(/(^|[^\w*])\*(?=\S)(.+?)(?<=\S)\*(?![\w*])/g, '$1$2')
+      .replace(/(^|[^\w_])_(?=\S)(.+?)(?<=\S)_(?![\w_])/g, '$1$2')
+      // An opener still waiting for its closer.
+      .replace(/^(?:\*\*|__|~~|\*|_|`)(?=\S)/, '')
+      .trim();
   }
 
   /**
