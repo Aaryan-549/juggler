@@ -13,6 +13,8 @@ import { getMode, setMode, MODES, THEME_MODE_EVENT } from '../../utils/theme-man
 import { t, markForTranslation } from '../../../sdk/lib/i18n.js';
 import { isDevMode } from '../../services/context-menu-service.js';
 import { getUserPref } from '../../services/prefs.js';
+import { areTipsShown, setTipsShown } from '../../services/tips-manager.js';
+import { buildToggleRow } from './notifications-tab.js';
 import {
   LANGUAGE_PICKER_PREF, UI_LOCALE_CHOICES, chooseUILocale, pageUILocale,
 } from '../../services/ui-locale.js';
@@ -29,7 +31,8 @@ const THEME_OPTIONS = [
 ];
 
 /**
- * Appearance tab: the explicit theme mode, and the UI language.
+ * Appearance tab: the explicit theme mode, whether new conversations show the
+ * rolling tip (services/tips-manager.js), and the UI language.
  *
  * The header button is a two-state light switch and never says the word
  * "system" — it picks the mode for you, following the OS unless you ask for the
@@ -76,7 +79,8 @@ export class AppearanceTab {
   }
 
   /**
-   * Render the Appearance tab: the theme mode menu and the language menu.
+   * Render the Appearance tab: the theme mode menu, the tips switch, and the
+   * language menu.
    * @private
    */
   renderAppearanceForm() {
@@ -87,6 +91,13 @@ export class AppearanceTab {
 
     const themeRow = this._buildThemeRow(getMode());
     container.appendChild(themeRow.row);
+    container.appendChild(buildToggleRow(
+      t('Show tips in new conversations'),
+      t('A rolling tip about a feature you might not have found yet, under the ' +
+      'composer hints in a conversation with nothing in it.'),
+      areTipsShown(),
+      (on) => setTipsShown(on),
+    ).row);
     container.appendChild(this._buildLanguageRow());
 
     // Keep the menu in step with the header button, which changes the same

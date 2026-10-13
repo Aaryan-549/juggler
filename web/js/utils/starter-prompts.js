@@ -13,6 +13,10 @@
  * They are chosen to still make sense on the ten-thousandth reading, which
  * rules out anything conversational: each is a question with a useful answer in
  * an empty folder and in a large codebase alike, and none of them is a joke.
+ *
+ * The "Suggest prompts" switch in Settings › Defaults
+ * (services/reply-suggestions-setting.js) turns them off along with the
+ * suggested replies.
  * @module utils/starter-prompts
  */
 

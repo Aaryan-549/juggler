@@ -20,6 +20,10 @@
  * so only the feature tips rotate — keyed off the same `(hover: none) and
  * (pointer: coarse)` query the rest of the hint hides its keyboard rows by.
  *
+ * Settings › Defaults can switch the strip off (tips-manager's areTipsShown);
+ * it then stays in the stack empty and hidden, and comes back on the switch's
+ * event.
+ *
  * Not an ARIA live region — rotating text would spam a screen reader; the same
  * content is available on demand in Settings › Keyboard shortcuts.
  * @module components/empty-hint-tips
@@ -27,7 +31,7 @@
 
 import JugglerElement from './juggler-element.js';
 import keyShortcutManager from '../services/key-shortcut-manager.js';
-import { allTips, isSeen } from '../services/tips-manager.js';
+import { allTips, isSeen, areTipsShown, TIPS_CHANGED_EVENT } from '../services/tips-manager.js';
 
 /** @typedef {import('../services/tips-manager.js').Tip} Tip */
 
@@ -79,6 +83,39 @@ class EmptyHintTips extends JugglerElement {
   }
 
   connectedCallback() {
+    const onPrefChanged = () => this._sync();
+    window.addEventListener(TIPS_CHANGED_EVENT, onPrefChanged);
+    this.addCleanup(() => window.removeEventListener(TIPS_CHANGED_EVENT, onPrefChanged));
+    this.addCleanup(() => this._stopRotation());
+    // Every mount starts afresh: a re-attached strip opens on the next tip, and
+    // the rotation its last disconnect stopped is started again by the build.
+    this.replaceChildren();
+    this._sync();
+  }
+
+  /**
+   * Build the strip, or take it down, to match the Settings › Defaults switch.
+   * Switched off, the element stays in the stack but empty and `hidden`, with
+   * no rotation running — a strip that is not there has nothing to tick.
+   * @private
+   */
+  _sync() {
+    const shown = areTipsShown();
+    this.hidden = !shown;
+    if (!shown) {
+      this._stopRotation();
+      this.replaceChildren();
+      return;
+    }
+    if (this.childElementCount > 0) return;
+    this._build();
+  }
+
+  /**
+   * Fill the strip and start it rotating.
+   * @private
+   */
+  _build() {
     this._tips = rotation();
     if (this._tips.length === 0) return;
     this._index = this._startIndex();
@@ -99,7 +136,6 @@ class EmptyHintTips extends JugglerElement {
     this.replaceChildren(badge, row);
     this._render(0);
     this._restartRotation();
-    this.addCleanup(() => this._stopRotation());
   }
 
   /**

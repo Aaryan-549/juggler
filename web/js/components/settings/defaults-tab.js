@@ -180,9 +180,10 @@ export class DefaultsTab {
   }
 
   /**
-   * Render the reply-suggestions row inside the cheap-model card: the global
+   * Render the "Suggest prompts" row inside the cheap-model card: the global
    * on/off switch for the few things you might say next, offered under a
-   * finished turn. Persists to credentials.json via PUT /api/config like the
+   * finished turn, and for the starter prompts an empty conversation offers in
+   * the same row. Persists to credentials.json via PUT /api/config like the
    * auto-naming switch, but only the browser reads it back — the suggestions
    * are generated client-side through /api/llm/complete, so the cached mirror
    * is what actually gates them.
@@ -196,9 +197,10 @@ export class DefaultsTab {
     // Checked = enabled; the stored key is the *disabled* bool, so it is absent
     // by default and the feature ships on.
     const { row, input: toggleInput } = buildToggleRow(
-      t('Suggest replies'),
-      t('Offers a few things you might say next when a turn finishes. Clicking one ' +
-      'puts it in the message box to edit — it is never sent for you.'),
+      t('Suggest prompts'),
+      t('Offers a few things you might say next when a turn finishes, and a few ' +
+      'ways to begin in a new conversation. Clicking one puts it in the message ' +
+      'box to edit — it is never sent for you.'),
       !(/** @type {any} */ (this.config).replySuggestionsDisabled),
       async (on) => {
         const previous = toggleInput.checked;

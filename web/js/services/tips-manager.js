@@ -21,11 +21,11 @@
 import keyShortcutManager from './key-shortcut-manager.js';
 import { cachedUserPref, setUserPref, notifyPrefChanged, reconcilePref } from './prefs.js';
 
-/** The user preference holding `{ seen: string[] }`. */
+/** The user preference holding `{ seen: string[], off?: true }`. */
 const PREF_NAME = 'juggler-tips';
 
-/** Fired on `window` whenever the seen set changes. */
-const TIPS_CHANGED_EVENT = 'juggler:tips-changed';
+/** Fired on `window` whenever the seen set or the on/off switch changes. */
+export const TIPS_CHANGED_EVENT = 'juggler:tips-changed';
 
 /**
  * A materialized tip ready for display.
@@ -86,19 +86,20 @@ const TIPS = [
 
 /**
  * Read the persisted state, tolerant of a missing/corrupt blob.
- * @returns {{seen: string[]}} The merged state.
+ * @returns {{seen: string[], off?: boolean}} The merged state.
  * @private
  */
 function readState() {
   const raw = cachedUserPref(PREF_NAME, {});
   return {
     seen: Array.isArray(raw.seen) ? raw.seen.filter((/** @type {any} */ x) => typeof x === 'string') : [],
+    ...(raw.off === true ? { off: true } : {}),
   };
 }
 
 /**
  * Persist state, best-effort (a failed write just re-shows the tip next session).
- * @param {{seen: string[]}} state
+ * @param {{seen: string[], off?: boolean}} state
  * @private
  */
 function writeState(state) {
@@ -150,6 +151,25 @@ export function markSeen(id) {
     writeState(state);
     notifyPrefChanged(TIPS_CHANGED_EVENT);
   }
+}
+
+/**
+ * @returns {boolean} Whether new conversations show the rolling tip — unless
+ *   switched off in Settings › Defaults.
+ */
+export function areTipsShown() {
+  return readState().off !== true;
+}
+
+/**
+ * Switch the rolling tip on or off, keeping the seen set.
+ * @param {boolean} shown
+ * @returns {void}
+ */
+export function setTipsShown(shown) {
+  const { seen } = readState();
+  writeState(shown ? { seen } : { seen, off: true });
+  notifyPrefChanged(TIPS_CHANGED_EVENT);
 }
 
 // Ask for this person's seen set at boot. Reads are synchronous by design — a

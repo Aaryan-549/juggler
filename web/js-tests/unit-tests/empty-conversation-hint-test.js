@@ -28,6 +28,10 @@
  * rest of the hint passes them through to the background. It is also the first
  * thing to go when room is short: a band that holds the hint only without it
  * sheds the tip and keeps the composer gestures, rather than losing both.
+ *
+ * The tip can be switched off (Settings › Appearance), and the starter prompts
+ * go with "Suggest prompts" (Settings › Defaults); each switch must reach the
+ * conversation already on screen and take only its own half.
  * @module unit-tests/empty-conversation-hint-test
  */
 
@@ -40,6 +44,8 @@ import {
 } from '../utilities/test-helpers.js';
 import { createUserMessage } from '../../sdk/lib/message.js';
 import '../../js/components/conversation-tab.js';
+import { setTipsShown } from '../../js/services/tips-manager.js';
+import { setReplySuggestionsEnabledCached } from '../../js/services/reply-suggestions-setting.js';
 
 /**
  * @returns {Promise<{passed: number, failed: number, errors: string[]}>} Aggregated test results.
@@ -274,6 +280,34 @@ export async function runTests() {
     rootCol._positionEmptyHint();
     assert(hint.classList.contains('no-room') === false && !hint.classList.contains('no-room-for-tips'),
       'the hint, tip and all, should come back when the viewport has room for it again');
+
+    // --- The tip and the starter prompts can each be switched off ---
+
+    // Each switch takes effect in the conversation already on screen, and takes
+    // only its own half: the composer gestures stay whatever either says. The
+    // starters wait on the "Suggest prompts" setting, which the column's
+    // suggestions controller reads from the server when it attaches.
+    const row = /** @type {HTMLElement|null} */ (rootCol.suggestionsRow);
+    await waitFor(() => !!row && row.hidden === false && row.querySelectorAll('.reply-suggestion').length > 0,
+      { description: 'a fresh conversation to offer starter prompts above its composer' });
+
+    setTipsShown(false);
+    assert(getComputedStyle(/** @type {HTMLElement} */ (tips)).display === 'none',
+      'with tips switched off the tip strip should not be displayed');
+    assert(hint.classList.contains('hidden') === false && !!hint.querySelector('.empty-hint-keys'),
+      'switching tips off should leave the rest of the starting hint in place');
+    assert(row?.hidden === false, 'switching tips off should not take the starter prompts with it');
+
+    setReplySuggestionsEnabledCached(false);
+    assert(row?.hidden === true,
+      'with "Suggest prompts" off the row should offer nothing in a fresh conversation');
+
+    setTipsShown(true);
+    setReplySuggestionsEnabledCached(true);
+    const tipsBack = getComputedStyle(/** @type {HTMLElement} */ (tips)).display !== 'none'
+      && !!tips.querySelector('.empty-hint-tips__tip');
+    assert(tipsBack, 'switching tips back on should bring the strip back, showing a tip');
+    assert(row?.hidden === false, 'switching starter prompts back on should bring them back');
 
     // --- The first real message retires it ---
 

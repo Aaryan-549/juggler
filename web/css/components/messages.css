@@ -210,6 +210,12 @@ conversation-empty-hint.no-room-for-tips .empty-hint-tips {
     display: none;
 }
 
+/* Switched off in Settings › Defaults: the element's own display:flex would
+   otherwise beat the `hidden` attribute. */
+.empty-hint-tips[hidden] {
+    display: none;
+}
+
 .empty-hint-tips__tip {
     display: flex;
     flex-direction: column;

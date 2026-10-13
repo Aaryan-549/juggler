@@ -21,6 +21,7 @@ of changes; this project follows semantic versioning.
 - Fixed a message queued while busy rarely losing its image or vanishing
 - Screen readers announce the composer's command, skill and actions menus as menus
 - Fixed busy conversations jumping down the list when an agent started a new one
+- New conversations' tips can be turned off; "Suggest prompts" now covers starter prompts too
 
 ## [0.7.6] - 2026-10-09
 

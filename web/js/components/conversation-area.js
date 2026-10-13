@@ -56,6 +56,8 @@ import { emptyHintStackMarkup } from './empty-hint-stack.js';
 import { isFileDrag, installFileDropGuard, markFileDropAccepted } from '../utils/file-drop.js';
 import { ReplySuggestionsController } from '../services/reply-suggestions-controller.js';
 import { STARTER_PROMPTS } from '../utils/starter-prompts.js';
+import { areReplySuggestionsEnabled, REPLY_SUGGESTIONS_SETTING_EVENT } from '../services/reply-suggestions-setting.js';
+import { TIPS_CHANGED_EVENT } from '../services/tips-manager.js';
 
 /**
  * Duration of the insert/relayout FLIP glide — the eased motion that replaces
@@ -157,6 +159,8 @@ const INTERACTIVE_SELECTOR =
 class ConversationArea extends HTMLElement {
   constructor() {
     super();
+    /** @type {() => void} @private - See _handleNewConversationHintChanged */
+    this._onNewConversationHintChanged = () => this._handleNewConversationHintChanged();
     /** @type {import('../model/conversation.js').default|null} @private */
     this._conversation = null;
     /** @type {number|null} @private */
@@ -775,9 +779,27 @@ class ConversationArea extends HTMLElement {
   connectedCallback() {
     this.render();
     this.setupEventListeners();
+    window.addEventListener(REPLY_SUGGESTIONS_SETTING_EVENT, this._onNewConversationHintChanged);
+    window.addEventListener(TIPS_CHANGED_EVENT, this._onNewConversationHintChanged);
+  }
+
+  /**
+   * The tip or starter-prompt switch in Settings › Defaults moved: re-offer
+   * the suggestions row, and re-fit a starting hint that is on show, whose
+   * stack just changed height. Bound in the constructor, so it can be removed
+   * on disconnect.
+   * @private
+   */
+  _handleNewConversationHintChanged() {
+    if (!this._messageThread) return;
+    this.updateFooter();
+    const hint = this.querySelector('conversation-empty-hint');
+    if (hint && !hint.classList.contains('hidden')) this._positionEmptyHint();
   }
 
   disconnectedCallback() {
+    window.removeEventListener(REPLY_SUGGESTIONS_SETTING_EVENT, this._onNewConversationHintChanged);
+    window.removeEventListener(TIPS_CHANGED_EVENT, this._onNewConversationHintChanged);
     // Tear down all observers attached via setters. The Yjs observers hold
     // strong references back to `this`, so leaving them attached prevents
     // the element (and its captured Conversation) from being collected.
@@ -1947,7 +1969,7 @@ class ConversationArea extends HTMLElement {
     // the tip back.
     hint.classList.remove('no-room-for-tips');
     let fits = bandHeight - stack.offsetHeight >= EMPTY_HINT_CLEARANCE_PX;
-    if (!fits && stack.querySelector('.empty-hint-tips')) {
+    if (!fits && stack.querySelector('.empty-hint-tips:not([hidden])')) {
       hint.classList.add('no-room-for-tips');
       fits = bandHeight - stack.offsetHeight >= EMPTY_HINT_CLEARANCE_PX;
     }
@@ -2200,7 +2222,10 @@ class ConversationArea extends HTMLElement {
     // handler, so it is read back in the composer rather than sent.
     const canSuggest = !isProcessing && !this._isGroupColumn;
     const started = this._hasConversationalHistory();
-    const offered = started ? this._replySuggestions : [...STARTER_PROMPTS];
+    // One switch ("Suggest prompts") governs both: the controller obeys it for
+    // the replies, and this for the starters.
+    const starters = areReplySuggestionsEnabled() ? [...STARTER_PROMPTS] : [];
+    const offered = started ? this._replySuggestions : starters;
     this.suggestionsRow?.update(
       canSuggest ? offered : [],
       started ? 'Suggested replies' : 'Things to ask',
