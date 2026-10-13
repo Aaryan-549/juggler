@@ -2160,9 +2160,18 @@ class Session {
    *   moved one. The server re-anchors any box placed behind it, so that a box
    *   keeps the place it is drawn in — the same rule applied here for the redraw,
    *   applied there for every other viewer and for the next load.
+   *
+   * Never from the engine. Its registry holds only the conversations it has
+   * loaded, in the order they arrived, which is not the tab order; merged, it
+   * re-slots those conversations into one another's places — a send from the
+   * new_conversation tool would carry any busy conversation the engine has
+   * loaded down to the slot of whichever one it loaded first. The order is the
+   * viewers' to write, as
+   * the rest of session state is (see saveImmediately).
    * @private
    */
   _persistOrder(label, moved = '') {
+    if (isEngine()) return;
     this._apiService.reorderConversations(this.registry.ids(), moved)
       .catch((/** @type {any} */ err) => console.error(`[Session] ${label} persist failed:`, err));
   }

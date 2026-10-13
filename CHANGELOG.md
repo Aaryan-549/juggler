@@ -20,6 +20,7 @@ of changes; this project follows semantic versioning.
 - WebFetch on an image URL returns the image itself, not garbled text
 - Fixed a message queued while busy rarely losing its image or vanishing
 - Screen readers announce the composer's command, skill and actions menus as menus
+- Fixed busy conversations jumping down the list when an agent started a new one
 
 ## [0.7.6] - 2026-10-09
 

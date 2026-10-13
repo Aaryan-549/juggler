@@ -303,6 +303,36 @@ export async function runTests() {
       assert(self.persists === 0, 'a gated forceTop bump must not POST a reorder');
     });
 
+    // The engine holds only the conversations it has loaded, in the order they
+    // arrived, so its order is not the tab order. Posted, the server re-slots
+    // those ids into each other's places: the new_conversation tool's send would
+    // drop any busy conversation the engine had loaded to an older one's slot.
+    await run('engine: a bump writes no order for the viewers to follow', () => {
+      setTabReorderEnabled(true);
+      const self = fakeSession(['p', 'n1']);
+      /** @type {string[][]} */
+      const posted = [];
+      self._persistOrder = Session.prototype._persistOrder;
+      self._apiService = {
+        reorderConversations(/** @type {string[]} */ order) {
+          posted.push(order);
+          return Promise.resolve();
+        },
+      };
+      const g = /** @type {any} */ (globalThis);
+      const wasEngine = g.JUGGLER_ENGINE;
+      g.JUGGLER_ENGINE = true;
+      try {
+        Session.prototype.bumpConversation.call(self, 'n1', { forceTop: true });
+      } finally {
+        g.JUGGLER_ENGINE = wasEngine;
+      }
+      assert(posted.length === 0, `the engine must not POST its partial order — posted [${posted.map(o => o.join()).join('] [')}]`);
+
+      Session.prototype.bumpConversation.call(self, 'p', { forceTop: true });
+      assert(posted.length === 1, `a viewer's bump must still persist — got ${posted.length} posts`);
+    });
+
     // ── What a bump is FOR: the edges, not the churn ──────────────────────
     await run('a running turn’s own writes move nothing; coming to rest floats the tab once', () => {
       const convId = 'conv_bump_stream';
