@@ -31,6 +31,11 @@ func TestTransientMessage(t *testing.T) {
 		{name: "gateway timeout", msg: "504 Gateway Timeout", want: true},
 		{name: "temporarily unavailable", msg: "The model is temporarily unavailable", want: true},
 		{name: "stall", msg: StallError("anthropic", 90*time.Second).Error(), want: true},
+		// net/http's HTTP/2 transport, when the server aborts one stream
+		// (RST_STREAM) or the whole connection (GOAWAY) mid-response.
+		{name: "h2 reset by server", msg: "stream error: stream ID 5; INTERNAL_ERROR; received from peer", want: true},
+		{name: "h2 refused by server", msg: "stream error: stream ID 7; REFUSED_STREAM; received from peer", want: true},
+		{name: "h2 goaway", msg: `http2: server sent GOAWAY and closed the connection; LastStreamID=9, ErrCode=NO_ERROR, debug=""`, want: true},
 
 		// Not transient: a fresh attempt cannot help, and retrying is harmful.
 		{name: "auth", msg: "401 invalid x-api-key", want: false},
@@ -38,6 +43,10 @@ func TestTransientMessage(t *testing.T) {
 		{name: "quota", msg: "credit balance is too low", want: false},
 		{name: "cli exit", msg: "claude exited unexpectedly", want: false},
 		{name: "status digits alone", msg: "read 503 bytes from tool output", want: false},
+		// The same h2 error raised by our own side — the client cancelling its
+		// stream, which is how an interrupt reaches the transport — carries no
+		// "received from peer" and must not be retried.
+		{name: "h2 reset by us", msg: "stream error: stream ID 5; CANCEL", want: false},
 		{name: "empty", msg: "", want: false},
 	}
 

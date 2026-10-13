@@ -484,7 +484,7 @@ func (c *Client) streamOnce(ctx context.Context, model string, contents []*genai
 			if stall := sess.StallError(); stall != nil {
 				return nil, stall
 			}
-			return nil, classifyStreamError(err)
+			return nil, sess.Annotate(classifyStreamError(err))
 		}
 		sess.Reset()
 

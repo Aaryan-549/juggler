@@ -10,7 +10,13 @@ import "strings"
 // fresh attempt usually clears, in two families:
 //
 //   - Transport — the stream stalled or the connection dropped mid-response
-//     (StallError builds these, so the text is a contract, not a guess).
+//     (StallError builds these, so the text is a contract, not a guess), or the
+//     server aborted the HTTP/2 stream (RST_STREAM) or connection (GOAWAY)
+//     under it. Those two are net/http's own wording: its bundled HTTP/2 error
+//     types are unexported, so the text is all a caller can match. "received
+//     from peer" is what separates a server's reset from our own — a cancel we
+//     issued reads "stream error: stream ID N; CANCEL" with no suffix, and must
+//     never be retried, because that is how an interrupt reaches the transport.
 //   - Upstream capacity — the provider is momentarily overloaded or
 //     unavailable: Anthropic's service_unavailable_error / server_is_overloaded
 //     (HTTP 503/529), and the equivalent gateway errors other providers return.
@@ -25,6 +31,8 @@ import "strings"
 var transientMarkers = []string{
 	StallMarker,
 	StallDroppedMarker,
+	"; received from peer",
+	"server sent goaway",
 	"overloaded",
 	"service unavailable",
 	"service_unavailable",

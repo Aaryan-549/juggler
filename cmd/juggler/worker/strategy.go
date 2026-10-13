@@ -687,8 +687,12 @@ func (r *run) callLLMWithRetry(req json.RawMessage) (*LLMResponse, error) {
 		}
 
 		// Only time spent FAILING is charged to the budget, so a long healthy
-		// turn followed by a single blip still gets its full allowance.
-		r.t.retrySpent += time.Since(attemptStart)
+		// turn followed by a single blip still gets its full allowance. That
+		// holds within an attempt too: one that streamed output for fifteen
+		// minutes before the server cut it off was failing only from its last
+		// output onwards, and charging the whole attempt would let that single
+		// cut-off spend the budget and never be retried.
+		r.t.retrySpent += time.Since(r.failingSince(attemptStart))
 
 		var rErr retryableError
 		if !errors.As(err, &rErr) || attempt == MaxLLMRetries-1 {
@@ -764,6 +768,26 @@ func (r *run) callLLMWithRetry(req json.RawMessage) (*LLMResponse, error) {
 		r.t.delegatingTools = nil
 	}
 	return nil, errors.New("unexpected retry loop exit")
+}
+
+// failingSince returns when the attempt that began at attemptStart started
+// failing: its last streamed model output, or its start if it produced none.
+func (r *run) failingSince(attemptStart time.Time) time.Time {
+	if ns := r.t.lastOutputAt.Load(); ns != 0 {
+		if last := time.Unix(0, ns); last.After(attemptStart) {
+			return last
+		}
+	}
+	return attemptStart
+}
+
+// isModelOutputChunk reports whether a stream chunk is something the model
+// produced, as opposed to liveness or accounting. A status label ("Waiting for
+// response", a provider's own backoff notice) and a usage anchor arrive whether
+// or not the model is generating anything, so neither proves the attempt was
+// healthy.
+func isModelOutputChunk(t provider.ContentBlockType) bool {
+	return t != provider.ContentBlockTypeStatus && t != provider.ContentBlockTypeUsage
 }
 
 // resetLLMRetryBudget ends the current retry sequence's wall-clock accounting.
@@ -907,7 +931,11 @@ func (r *run) callLLM(request json.RawMessage) (*LLMResponse, error) {
 func (r *run) callLLMWithSink(request json.RawMessage, sink func(StreamChunk)) (*LLMResponse, error) {
 	turnID := generateRequestID()
 	r.t.llmTurnID = turnID
+	r.t.lastOutputAt.Store(0)
 	correlatedSink := func(chunk StreamChunk) {
+		if isModelOutputChunk(chunk.Type) {
+			r.t.lastOutputAt.Store(time.Now().UnixNano())
+		}
 		if sink != nil {
 			chunk.TurnID = turnID
 			sink(chunk)

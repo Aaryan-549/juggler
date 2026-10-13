@@ -880,7 +880,7 @@ func (c *Client) sendMessageStreaming(ctx context.Context, req provider.MessageR
 		if stall := sess.StallError(); stall != nil {
 			return nil, stall
 		}
-		return nil, fmt.Errorf("anthropic streaming error: %w", err)
+		return nil, fmt.Errorf("anthropic streaming error: %w", sess.Annotate(err))
 	}
 
 	// Finalize any remaining block

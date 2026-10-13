@@ -44,6 +44,18 @@ func TestResolveRunOutcome(t *testing.T) {
 			wantResult: "invalid request: bad model",
 		},
 		{
+			// A sub-thread's provider failing under it says nothing about the
+			// task. Without the note a caller reads the bare transport error as
+			// the answer and carries on without one.
+			name: "trailing transient error says a fresh attempt may succeed",
+			items: []ConversationItem{
+				user,
+				{Type: ItemTypeError, Content: "LLM error: stream error: stream ID 5; INTERNAL_ERROR; received from peer"},
+			},
+			wantStatus: runStatusError,
+			wantResult: "LLM error: stream error: stream ID 5; INTERNAL_ERROR; received from peer\n\n" + runTransientErrorNote,
+		},
+		{
 			name:       "cancelled with nothing produced",
 			items:      []ConversationItem{user},
 			cancelled:  true,

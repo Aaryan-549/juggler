@@ -126,7 +126,9 @@ func (r *run) handleTurnFailure(st *strategyRunState, err error, llmRequest json
 		return verdict
 	}
 
-	r.log.Error("❌ LLM error: %s", err.Error())
+	// classifyLLMError already labels a provider failure "LLM error: ", so the
+	// line adds only its marker; the error text carries its own kind.
+	r.log.Error("❌ %s", err.Error())
 	errorData := r.turnErrorData(duration)
 	// A failed bounded compaction / context recovery still leaves its
 	// partial accounting on the durable error item.

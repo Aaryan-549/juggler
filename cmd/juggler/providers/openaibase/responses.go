@@ -491,7 +491,7 @@ func (c *Client) streamMessageResponses(ctx context.Context, req provider.Messag
 		if stall := sess.StallError(); stall != nil {
 			return nil, stall
 		}
-		return nil, err // Don't enhance - let retry wrapper handle it
+		return nil, sess.Annotate(err) // Don't enhance - let retry wrapper handle it
 	}
 
 	// Log the response summary

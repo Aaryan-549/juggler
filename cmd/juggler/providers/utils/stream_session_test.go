@@ -6,6 +6,7 @@ package utils
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -84,6 +85,52 @@ func TestStreamSessionResetHoldsOffTheWatchdog(t *testing.T) {
 	}
 	if stall := sess.StallError(); stall != nil {
 		t.Fatalf("a progressing stream reported a stall: %v", stall)
+	}
+}
+
+// TestStreamSessionAnnotateRecordsHowTheStreamWent: a stream that dies on a
+// server-side error says how it had gone until then, so a reset after minutes of
+// healthy streaming can be told from one into a stream that never produced
+// anything. The provider's own text and identity survive the wrapping, since the
+// worker's transient classifier reads the text and callers unwrap the cause.
+func TestStreamSessionAnnotateRecordsHowTheStreamWent(t *testing.T) {
+	cause := errors.New("stream error: stream ID 5; INTERNAL_ERROR; received from peer")
+
+	sess, _ := NewStreamSession(context.Background(), "openai", nil)
+	defer sess.Close()
+	sess.Reset()
+	sess.Reset()
+	sess.Reset()
+
+	got := sess.Annotate(cause)
+	if !errors.Is(got, cause) {
+		t.Fatalf("Annotate(%v) = %v, which no longer wraps the cause", cause, got)
+	}
+	for _, want := range []string{cause.Error(), "its last event came"} {
+		if !strings.Contains(got.Error(), want) {
+			t.Errorf("annotated error %q is missing %q", got, want)
+		}
+	}
+
+	silent, _ := NewStreamSession(context.Background(), "openai", nil)
+	defer silent.Close()
+	if got := silent.Annotate(cause); !strings.Contains(got.Error(), "no event arrived") {
+		t.Errorf("annotated error %q does not say the stream never produced an event", got)
+	}
+}
+
+// TestStreamSessionAnnotateLeavesCallerCancelAlone: a cancel the caller asked
+// for is not a stream failure, and its error must stay exactly as the SDK
+// returned it.
+func TestStreamSessionAnnotateLeavesCallerCancelAlone(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	sess, _ := NewStreamSession(ctx, "openai", nil)
+	defer sess.Close()
+	sess.Reset()
+	cancel()
+
+	if got := sess.Annotate(context.Canceled); got != context.Canceled {
+		t.Fatalf("Annotate on a caller cancel = %v, want context.Canceled unchanged", got)
 	}
 }
 

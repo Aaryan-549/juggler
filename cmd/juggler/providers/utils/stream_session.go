@@ -6,6 +6,7 @@ package utils
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"juggler/cmd/juggler/providers/provider"
@@ -36,7 +37,7 @@ import (
 //	    if stall := sess.StallError(); stall != nil {
 //	        return nil, stall
 //	    }
-//	    return nil, err
+//	    return nil, sess.Annotate(err)
 //	}
 //
 // A session belongs to one goroutine for the life of one stream attempt, and
@@ -50,6 +51,13 @@ type StreamSession struct {
 	idle     *IdleWatchdog
 	timeout  time.Duration
 	progress *provider.ProgressEmitter
+
+	// started and lastEvent are the stream's history, kept so a failure can say
+	// how the stream had gone (Annotate). lastEvent is zero until the first
+	// event. Only the owning goroutine touches them — Reset and Annotate — so
+	// they need no synchronisation.
+	started   time.Time
+	lastEvent time.Time
 }
 
 // NewStreamSession arms a session for one stream and returns it alongside the
@@ -69,12 +77,14 @@ func NewStreamSession(ctx context.Context, providerName string, callback provide
 		idle:     NewIdleWatchdog(timeout, cancel),
 		timeout:  timeout,
 		progress: provider.NewProgressEmitter(callback),
+		started:  time.Now(),
 	}, streamCtx
 }
 
 // Reset restarts the idle window. Call it on every received stream event.
 func (s *StreamSession) Reset() {
 	s.idle.Reset()
+	s.lastEvent = time.Now()
 }
 
 // Progress feeds streamed content (text deltas, thinking deltas, tool-input
@@ -96,6 +106,35 @@ func (s *StreamSession) StallError() error {
 		return StallError(s.name, s.timeout)
 	}
 	return nil
+}
+
+// Annotate wraps a stream's terminal error with how the stream had gone until
+// then — how long it ran, and how long before the failure its last event came.
+// The provider's error text cannot say this, and it is the one fact that tells a
+// server cutting off a long, healthy response from one that never produced
+// anything; providers trace only the event types they ignore, so without it
+// neither the log nor the error item records which it was. The cause stays
+// wrapped (%w), so errors.As/Is are unaffected.
+//
+// The worker classifies errors by their text, and this suffix becomes part of
+// it, so its wording is constrained: no counts (isRateLimitMsg matches any
+// "429"), only durations rounded to 100ms (which cannot spell one), and neither
+// "in " nor "after " (parseRetryWaitFromMsg reads a number of seconds following
+// either as a server-stated wait).
+//
+// A caller's own cancel is returned untouched: it is not a stream failure, and
+// callers compare it against context.Canceled. So is a watchdog stall, which
+// StallError reports in its own words.
+func (s *StreamSession) Annotate(err error) error {
+	if err == nil || s.parent.Err() != nil || s.idle.Fired() {
+		return err
+	}
+	elapsed := time.Since(s.started).Round(100 * time.Millisecond)
+	if s.lastEvent.IsZero() {
+		return fmt.Errorf("%w (no event arrived; the stream ran for %s)", err, elapsed)
+	}
+	gap := time.Since(s.lastEvent).Round(100 * time.Millisecond)
+	return fmt.Errorf("%w (the stream ran for %s; its last event came %s before the failure)", err, elapsed, gap)
 }
 
 // Close stops the watchdog and releases the derived context, in that order.

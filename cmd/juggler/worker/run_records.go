@@ -62,6 +62,11 @@ const (
 	runCancelledNote = "[The run was cancelled before it finished.]"
 	// runBarrenNote is the run result for a run that settled without a reply.
 	runBarrenNote = "The run ended without producing a reply."
+	// runTransientErrorNote is appended to a run that stopped on a provider
+	// failure a fresh attempt usually clears (isTransientMsg) — one that says
+	// nothing about the task itself, which the caller would otherwise have no
+	// way to tell from the bare transport error.
+	runTransientErrorNote = "[The model provider failed during this run; this is not an answer to the task. The worker's own retries were used up. Calling the tool again may well succeed.]"
 )
 
 // The cap on what one run hands back to whoever called it is a share of the
@@ -761,6 +766,11 @@ func resolveRunOutcome(items []ConversationItem, cancelled bool, resultLimit int
 	if last, ok := lastSettlingItem(items); ok && last.Type == ItemTypeError {
 		if last.Content != "" {
 			capped, full := capRunResult(last.Content, resultLimit)
+			// Appended after the cap, like runCancelledNote, so a trim can never
+			// take it off the end.
+			if isTransientMsg(last.Content) {
+				capped += "\n\n" + runTransientErrorNote
+			}
 			return runStatusError, capped, full
 		}
 		return runStatusError, "The run stopped on an error.", 0

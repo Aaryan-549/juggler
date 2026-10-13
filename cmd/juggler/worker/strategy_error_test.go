@@ -156,6 +156,64 @@ func TestCallLLMWithRetryStopsWhenRetryBudgetSpent(t *testing.T) {
 	}
 }
 
+// TestCallLLMWithRetryChargesOnlyTheSilentTail: an attempt that streamed real
+// content for a long time and was then cut off by the server failed only from
+// its last content onwards. Charging its whole duration let a single upstream
+// reset after a long productive stream exhaust the budget on its own, so the
+// one error that most deserved a fresh attempt never got one.
+func TestCallLLMWithRetryChargesOnlyTheSilentTail(t *testing.T) {
+	w := NewConversationWorker("test-conv", "user:test")
+	defer w.doc.Destroy()
+
+	// Less budget left than the first attempt spends streaming, but enough to
+	// cover the TransientRetryWait the retry then asks for.
+	const streaming = 2 * time.Second
+	w.turn.retrySpent = MaxLLMRetryWindow - TransientRetryWait - 500*time.Millisecond
+
+	calls := 0
+	w.llmCallFunc = func(_ context.Context, _ json.RawMessage, sink func(StreamChunk)) (*LLMResponse, error) {
+		calls++
+		if calls == 1 {
+			time.Sleep(streaming)
+			sink(StreamChunk{Type: provider.ContentBlockTypeThinking, Content: "still working"})
+			return nil, &TransientError{Wait: time.Nanosecond, Message: "stream error: stream ID 5; INTERNAL_ERROR; received from peer"}
+		}
+		return &LLMResponse{Blocks: []LLMResponseBlock{{Type: provider.ContentBlockTypeText, Content: "recovered"}}}, nil
+	}
+
+	if _, err := w.currentRun().callLLMWithRetry(nil); err != nil {
+		t.Fatalf("callLLMWithRetry: %v — the attempt was charged for the time it spent streaming", err)
+	}
+	if calls != 2 {
+		t.Fatalf("provider calls = %d, want 2", calls)
+	}
+}
+
+// TestCallLLMWithRetryChargesSilentAttemptInFull: the other half — an attempt
+// that produced nothing but status chunks spent its whole duration failing.
+// Liveness is not progress.
+func TestCallLLMWithRetryChargesSilentAttemptInFull(t *testing.T) {
+	w := NewConversationWorker("test-conv", "user:test")
+	defer w.doc.Destroy()
+
+	w.turn.retrySpent = MaxLLMRetryWindow - 50*time.Millisecond
+
+	calls := 0
+	w.llmCallFunc = func(_ context.Context, _ json.RawMessage, sink func(StreamChunk)) (*LLMResponse, error) {
+		calls++
+		time.Sleep(100 * time.Millisecond)
+		sink(StreamChunk{Type: provider.ContentBlockTypeStatus, Content: "Waiting for response"})
+		return nil, &TransientError{Wait: time.Nanosecond, Message: "overloaded"}
+	}
+
+	if _, err := w.currentRun().callLLMWithRetry(nil); err == nil {
+		t.Fatal("expected the transient error to surface once the silent attempt spent the budget")
+	}
+	if calls != 1 {
+		t.Fatalf("provider calls = %d, want 1 — a status chunk must not count as progress", calls)
+	}
+}
+
 // TestRetryingStatusClearedOnlyByContent: the "retrying" spinner must survive
 // into the next attempt and be cleared only by real content. Clearing it on
 // anything weaker is what let the UI report "Receiving" for minutes while the

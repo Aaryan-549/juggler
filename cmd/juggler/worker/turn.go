@@ -144,6 +144,12 @@ type turnState struct {
 	// by resetLLMRetryBudget when the sequence ends.
 	retrySpent time.Duration
 
+	// lastOutputAt is the UnixNano time the current LLM attempt last streamed
+	// model output (isModelOutputChunk), 0 before any. Stamped from the provider
+	// goroutine by callLLMWithSink's sink, read by callLLMWithRetry to charge a
+	// failed attempt only for the silence that ended it.
+	lastOutputAt atomic.Int64
+
 	// retryStatusActive is true while the spinner is showing "retrying" and no
 	// content has arrived since. It keeps the honest label up for the whole of
 	// the next attempt — which may itself spend minutes backing off — until real
