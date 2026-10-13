@@ -25,6 +25,8 @@
 import { fetchJson } from '../../services/http.js';
 import { presentWizard } from './step-modal.js';
 import { apiUrl } from '../../utils/api-url.js';
+import { escapeHtml } from '../../../sdk/lib/html.js';
+import { t, markForTranslation, htmlSlots, withHtml } from '../../../sdk/lib/i18n.js';
 
 /** Where to read the current state of the machine. */
 const DETECT_URL = apiUrl('/onboarding/detect');
@@ -48,27 +50,38 @@ const OPENROUTER_KEYS_URL = 'https://openrouter.ai/keys';
 /**
  * The routes offered to someone with no AI account at all, in the order shown.
  * Ordering is a judgement about which is likeliest to leave them working, so it
- * lives in one list rather than being spelled out in the markup.
+ * lives in one list rather than being spelled out in the markup. Titles and
+ * details are English source text, translated where the cards are drawn.
  */
 const FREE_ROUTES = [
   {
-    title: 'A free ChatGPT account',
-    detail: 'Codex is included in every ChatGPT plan, the free one included. Install the app, sign in, done.',
+    title: markForTranslation('A free ChatGPT account'),
+    detail: markForTranslation('Codex is included in every ChatGPT plan, the free one included. Install the app, sign in, done.'),
     step: 'chatgptAccount',
   },
   {
-    title: 'A GitHub account',
-    detail:
-      'GitHub Copilot has a free plan, and it is the only one Juggler can sign you into without leaving this window. Model choice is limited on it.',
+    title: markForTranslation('A GitHub account'),
+    detail: markForTranslation(
+      'GitHub Copilot has a free plan, and it is the only one Juggler can sign you into without leaving this window. Model choice is limited on it.'),
     step: 'copilotAccount',
   },
   {
-    title: 'Neither, and no card',
-    detail:
-      'OpenRouter serves some models free — no payment method, around 50 requests a day. You paste an API key.',
+    title: markForTranslation('Neither, and no card'),
+    detail: markForTranslation(
+      'OpenRouter serves some models free — no payment method, around 50 requests a day. You paste an API key.'),
     step: 'openrouterAccount',
   },
 ];
+
+/**
+ * An external link for a step body.
+ * @param {string} href - A constant URL.
+ * @param {string} html - The link's content, already escaped.
+ * @returns {string} The markup.
+ */
+function externalLink(href, html) {
+  return `<a href="${href}" target="_blank" rel="noreferrer">${html}</a>`;
+}
 
 /**
  * Decide which screen a machine should land on.
@@ -139,18 +152,45 @@ export async function startSetupWizard({
     ? 'powershell -ExecutionPolicy ByPass -c "irm https://chatgpt.com/codex/install.ps1 | iex"'
     : 'curl -fsSL https://chatgpt.com/codex/install.sh | sh';
 
+  /**
+   * The markup a step's prose refers to by `{name}`. Each paragraph is one
+   * message; a product or command name, or a link, sits in it as a placeholder
+   * so that no message carries a tag (see htmlSlots). Names stay as written; a
+   * link's text is a message of its own.
+   * @type {Record<string, string>}
+   */
+  const markup = {
+    codex: '<strong>Codex</strong>',
+    claude: '<strong>claude</strong>',
+    copilot: '<strong>GitHub Copilot</strong>',
+    free: '<strong>:free</strong>',
+    paidPlan: `<strong>${escapeHtml(t('Claude Code needs a paid Claude plan'))}</strong>`,
+    setupGuide: externalLink(CLAUDE_SETUP_URL, escapeHtml(t('Anthropic\'s setup guide'))),
+    chatgptApp: externalLink(CHATGPT_DOWNLOAD_URL, escapeHtml(t('ChatGPT desktop app'))),
+    codexCLI: externalLink(CODEX_CLI_URL, 'Codex CLI'),
+    openrouterKeys: externalLink(OPENROUTER_KEYS_URL, 'openrouter.ai/keys'),
+  };
+  const slots = htmlSlots(markup);
+
+  /**
+   * One paragraph of a step body.
+   * @param {string} message - Translated with `slots` (or `htmlSlots(markup, …)`) as its params.
+   * @returns {string} The markup.
+   */
+  const para = (message) => `<p>${withHtml(message, markup)}</p>`;
+
   /** @returns {string|undefined} The small print for a check that found nothing. */
   const vainNote = () =>
-    state.checkedInVain ? 'Still nothing. The change may need a new terminal, or a moment.' : undefined;
+    state.checkedInVain ? t('Still nothing. The change may need a new terminal, or a moment.') : undefined;
 
   /**
    * The action every "go and do something" screen ends with.
    * @returns {import('./step-modal.js').StepAction} The check-again button.
    */
   const checkAgainAction = () => ({
-    label: 'Check again',
+    label: t('Check again'),
     kind: 'primary',
-    busyLabel: 'Checking…',
+    busyLabel: t('Checking…'),
     onSelect: async (ctx) => {
       const next = await detect(true);
       state.detection = next;
@@ -172,11 +212,10 @@ export async function startSetupWizard({
   /**
    * Leave for the settings panel, which owns every provider this flow does not
    * walk through by hand.
-   * @param {string} [label] - Button text.
    * @returns {import('./step-modal.js').StepAction} The settings button.
    */
-  const settingsAction = (label = 'Open provider settings') => ({
-    label,
+  const settingsAction = () => ({
+    label: t('Open provider settings'),
     onSelect: (ctx) => {
       ctx.finish('settings');
       openProviderSettings?.('providers');
@@ -190,13 +229,13 @@ export async function startSetupWizard({
    * @returns {import('./step-modal.js').StepAction} The dismissal button.
    */
   const dismissForeverAction = () => ({
-    label: "Don't ask again",
+    label: t('Don\'t ask again'),
     onSelect: (ctx) => ctx.finish('dismissForever'),
   });
 
   /**
    * Render a list of routes as cards.
-   * @param {{title: string, detail: string, step: string}[]} routes - The choices.
+   * @param {{title: string, detail: string, step: string}[]} routes - The choices, in English source text.
    * @returns {string} The markup.
    */
   const choiceList = (routes) =>
@@ -204,8 +243,8 @@ export async function startSetupWizard({
       .map(
         (route, index) =>
           `<button type="button" class="wiz-choice" data-wiz-choice="${index}">
-             <span class="wiz-choice-title">${route.title}</span>
-             <span class="wiz-choice-detail">${route.detail}</span>
+             <span class="wiz-choice-title">${escapeHtml(t(route.title))}</span>
+             <span class="wiz-choice-detail">${escapeHtml(t(route.detail))}</span>
            </button>`
       )
       .join('')}</div>`;
@@ -229,131 +268,131 @@ export async function startSetupWizard({
   /** @type {Record<string, (ctx: any) => import('./step-modal.js').StepView>} */
   const steps = {
     almostThere: () => {
-      const installed = state.detection?.claudeCLI ? 'Claude Code' : 'Codex';
+      const product = state.detection?.claudeCLI ? 'claude' : 'codex';
       return {
-        title: 'Nearly there',
+        title: t('Nearly there'),
         body: `
-          <p>${installed} is installed and signed in, but nothing is serving a model yet. Usually that means the provider is switched off, or the login has lapsed.</p>
-          <p>Provider settings will say which.</p>`,
+          ${para(t('{product, select, claude {Claude Code} other {Codex}} is installed and signed in, but nothing is serving a model yet. Usually that means the provider is switched off, or the login has lapsed.', htmlSlots(markup, { product })))}
+          ${para(t('Provider settings will say which.', slots))}`,
         actions: [settingsAction(), checkAgainAction()],
         note: vainNote(),
       };
     },
 
     chatgptSignIn: () => ({
-      title: 'Sign in to Codex',
+      title: t('Sign in to Codex'),
       body: `
-        <p>The ChatGPT app is on this machine but not signed in to Codex. Open it, switch to <strong>Codex</strong>, and sign in.</p>
-        <p>Nothing else to install — Juggler reads that login directly. Codex is included in every ChatGPT plan, the free one included.</p>`,
-      actions: [checkAgainAction(), { label: 'Use a different provider', onSelect: (ctx) => ctx.go('askAccount') }],
+        ${para(t('The ChatGPT app is on this machine but not signed in to Codex. Open it, switch to {codex}, and sign in.', slots))}
+        ${para(t('Nothing else to install — Juggler reads that login directly. Codex is included in every ChatGPT plan, the free one included.', slots))}`,
+      actions: [checkAgainAction(), { label: t('Use a different provider'), onSelect: (ctx) => ctx.go('askAccount') }],
       note: vainNote(),
     }),
 
     codexSignIn: () => ({
-      title: 'Sign in to Codex',
+      title: t('Sign in to Codex'),
       body: `
-        <p>The Codex CLI is installed but signed out. In a terminal:</p>
+        ${para(t('The Codex CLI is installed but signed out. In a terminal:', slots))}
         <code class="wiz-command">codex login</code>
-        <p>Codex is included in every ChatGPT plan, the free one included.</p>`,
-      actions: [checkAgainAction(), { label: 'Use a different provider', onSelect: (ctx) => ctx.go('askAccount') }],
+        ${para(t('Codex is included in every ChatGPT plan, the free one included.', slots))}`,
+      actions: [checkAgainAction(), { label: t('Use a different provider'), onSelect: (ctx) => ctx.go('askAccount') }],
       note: vainNote(),
     }),
 
     claudeNeedsCLI: () => ({
-      title: 'Claude Code needs its CLI',
+      title: t('Claude Code needs its CLI'),
       body: `
-        <p>The Claude desktop app is installed. It has a Code tab of its own, but Juggler drives the <strong>claude</strong> command-line tool, which is a separate install:</p>
+        ${para(t('The Claude desktop app is installed. It has a Code tab of its own, but Juggler drives the {claude} command-line tool, which is a separate install:', slots))}
         <code class="wiz-command">${claudeInstall}</code>
-        <p><strong>Claude Code needs a paid Claude plan</strong> — Pro, Max, Team or Enterprise. The free claude.ai plan does not include it, and no amount of installing will change that.</p>
-        <p><a href="${CLAUDE_SETUP_URL}" target="_blank" rel="noreferrer">Anthropic's setup guide</a> covers the other install methods.</p>`,
-      actions: [checkAgainAction(), { label: 'Use a different provider', onSelect: (ctx) => ctx.go('askAccount') }],
+        ${para(t('{paidPlan} — Pro, Max, Team or Enterprise. The free claude.ai plan does not include it, and no amount of installing will change that.', slots))}
+        ${para(t('{setupGuide} covers the other install methods.', slots))}`,
+      actions: [checkAgainAction(), { label: t('Use a different provider'), onSelect: (ctx) => ctx.go('askAccount') }],
       note: vainNote(),
     }),
 
     askAccount: (ctx) => {
       const routes = [
         {
-          title: 'A ChatGPT account',
-          detail: 'Any plan, including free. Codex is included with all of them.',
+          title: markForTranslation('A ChatGPT account'),
+          detail: markForTranslation('Any plan, including free. Codex is included with all of them.'),
           step: 'chatgptAccount',
         },
         {
-          title: 'A paid Claude plan',
-          detail: 'Pro, Max, Team or Enterprise. Claude Code is not part of the free plan.',
+          title: markForTranslation('A paid Claude plan'),
+          detail: markForTranslation('Pro, Max, Team or Enterprise. Claude Code is not part of the free plan.'),
           step: 'claudeAccount',
         },
         {
-          title: 'An API key for something else',
-          detail: 'Anthropic, OpenAI, Gemini, Mistral, a local model — settings takes keys for all of them.',
+          title: markForTranslation('An API key for something else'),
+          detail: markForTranslation('Anthropic, OpenAI, Gemini, Mistral, a local model — settings takes keys for all of them.'),
           step: 'otherProvider',
         },
         {
-          title: 'None of these',
-          detail: 'There are a few ways to get running for nothing.',
+          title: markForTranslation('None of these'),
+          detail: markForTranslation('There are a few ways to get running for nothing.'),
           step: 'freeOptions',
         },
       ];
       return {
-        title: 'What do you have?',
-        body: `<p>Juggler needs one model provider before it can do anything.</p>${choiceList(routes)}`,
+        title: t('What do you have?'),
+        body: `${para(t('Juggler needs one model provider before it can do anything.', slots))}${choiceList(routes)}`,
         actions: [dismissForeverAction()],
         onMount: choiceMount(ctx, routes),
       };
     },
 
     chatgptAccount: () => ({
-      title: 'Use your ChatGPT account',
+      title: t('Use your ChatGPT account'),
       body: `
-        <p>Install the <a href="${CHATGPT_DOWNLOAD_URL}" target="_blank" rel="noreferrer">ChatGPT desktop app</a>, sign in, and switch to <strong>Codex</strong>. Juggler picks that login up on its own.</p>
-        <p>If you would rather work from a terminal, the <a href="${CODEX_CLI_URL}" target="_blank" rel="noreferrer">Codex CLI</a> shares the same login:</p>
+        ${para(t('Install the {chatgptApp}, sign in, and switch to {codex}. Juggler picks that login up on its own.', slots))}
+        ${para(t('If you would rather work from a terminal, the {codexCLI} shares the same login:', slots))}
         <code class="wiz-command">${codexInstall}</code>`,
       actions: [checkAgainAction()],
       note: vainNote(),
     }),
 
     claudeAccount: () => ({
-      title: 'Use your Claude plan',
+      title: t('Use your Claude plan'),
       body: `
-        <p>Juggler drives the <strong>claude</strong> command-line tool. Install it with:</p>
+        ${para(t('Juggler drives the {claude} command-line tool. Install it with:', slots))}
         <code class="wiz-command">${claudeInstall}</code>
-        <p>Then run <strong>claude</strong> once in a terminal to sign in. <a href="${CLAUDE_SETUP_URL}" target="_blank" rel="noreferrer">Anthropic's setup guide</a> has the other install methods.</p>
-        <p>This needs a paid plan — Pro, Max, Team or Enterprise. The free claude.ai plan does not include Claude Code.</p>`,
+        ${para(t('Then run {claude} once in a terminal to sign in. {setupGuide} has the other install methods.', slots))}
+        ${para(t('This needs a paid plan — Pro, Max, Team or Enterprise. The free claude.ai plan does not include Claude Code.', slots))}`,
       actions: [checkAgainAction()],
       note: vainNote(),
     }),
 
     otherProvider: () => ({
-      title: 'Add a key',
-      body: `<p>Provider settings takes an API key for Anthropic, OpenAI, Gemini, Mistral, OpenRouter and the rest, and finds local models served by Ollama, LM Studio or llama.cpp.</p>`,
-      actions: [{ ...settingsAction('Open provider settings'), kind: 'primary' }],
+      title: t('Add a key'),
+      body: para(t('Provider settings takes an API key for Anthropic, OpenAI, Gemini, Mistral, OpenRouter and the rest, and finds local models served by Ollama, LM Studio or llama.cpp.', slots)),
+      actions: [{ ...settingsAction(), kind: 'primary' }],
     }),
 
     freeOptions: (ctx) => {
       return {
-        title: 'Free ways to start',
-        body: `<p>None of these costs anything, and none of them needs a card.</p>${choiceList(FREE_ROUTES)}`,
+        title: t('Free ways to start'),
+        body: `${para(t('None of these costs anything, and none of them needs a card.', slots))}${choiceList(FREE_ROUTES)}`,
         actions: [dismissForeverAction()],
         onMount: choiceMount(ctx, FREE_ROUTES),
       };
     },
 
     copilotAccount: () => ({
-      title: 'Use GitHub Copilot',
+      title: t('Use GitHub Copilot'),
       body: `
-        <p>Copilot's free plan costs nothing, and Juggler can sign you in from here — no other app, no key to paste.</p>
-        <p>In provider settings, find <strong>GitHub Copilot</strong> and choose Sign in.</p>
-        <p>Model choice is limited on the free plan.</p>`,
-      actions: [{ ...settingsAction('Open provider settings'), kind: 'primary' }],
+        ${para(t('Copilot\'s free plan costs nothing, and Juggler can sign you in from here — no other app, no key to paste.', slots))}
+        ${para(t('In provider settings, find {copilot} and choose Sign in.', slots))}
+        ${para(t('Model choice is limited on the free plan.', slots))}`,
+      actions: [{ ...settingsAction(), kind: 'primary' }],
     }),
 
     openrouterAccount: () => ({
-      title: 'Use OpenRouter',
+      title: t('Use OpenRouter'),
       body: `
-        <p>OpenRouter serves some models free — no payment method, around 50 requests a day.</p>
-        <p>Create a key at <a href="${OPENROUTER_KEYS_URL}" target="_blank" rel="noreferrer">openrouter.ai/keys</a>, then paste it into provider settings. The free models are the ones whose name ends in <strong>:free</strong>.</p>`,
-      actions: [{ ...settingsAction('Open provider settings'), kind: 'primary' }],
+        ${para(t('OpenRouter serves some models free — no payment method, around 50 requests a day.', slots))}
+        ${para(t('Create a key at {openrouterKeys}, then paste it into provider settings. The free models are the ones whose name ends in {free}.', slots))}`,
+      actions: [{ ...settingsAction(), kind: 'primary' }],
     }),
   };
 
-  return presentWizard({ steps, start: state.route, dismissLabel: 'Close setup' });
+  return presentWizard({ steps, start: state.route, dismissLabel: t('Close setup') });
 }

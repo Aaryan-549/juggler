@@ -22,14 +22,19 @@ import {
   ATTENTION_PREFS_EVENT,
 } from '../../utils/attention-manager.js';
 import { chimePatterns, chimeSounds } from '../../utils/chime-synth.js';
+import { t } from '../../../sdk/lib/i18n.js';
+
+/** Numbers the toggle rows' checkbox ids, which must be unique per document. */
+let toggleRowCount = 0;
 
 /**
  * Build a labelled on/off toggle row matching the keyless-provider toggle markup
  * (`.provider-toggle-wrapper` > checkbox + `.toggle-switch` label). Shared by the
  * Notifications and Info cards tabs, so it lives at module scope rather than on
- * either tab.
- * @param {string} name - Control label.
- * @param {string} description - Sub-label hint.
+ * either tab. The checkbox id is a counter, not derived from the label: a
+ * translated label may have no Latin letters to make one from.
+ * @param {string} name - Control label, already translated.
+ * @param {string} description - Sub-label hint, already translated.
  * @param {boolean} checked - Initial state.
  * @param {(on: boolean) => void} onChange - Called with the new state.
  * @returns {{row: HTMLElement, input: HTMLInputElement}} The row and its checkbox input.
@@ -56,7 +61,7 @@ export function buildToggleRow(name, description, checked, onChange) {
   const input = document.createElement('input');
   input.type = 'checkbox';
   input.className = 'provider-toggle';
-  input.id = `attention-${name.toLowerCase().replace(/[^a-z]+/g, '-')}-toggle`;
+  input.id = `attention-toggle-${++toggleRowCount}`;
   input.checked = checked;
   const label = document.createElement('label');
   label.setAttribute('for', input.id);
@@ -131,16 +136,16 @@ export class NotificationsTab {
     // The sound toggle is the same `sound` pref the header bell drives; flipping
     // either updates the other live via ATTENTION_PREFS_EVENT.
     const soundRow = buildToggleRow(
-      'Play notification sounds',
-      'Chime when a conversation you’re not viewing needs you. Also toggled by the header bell.',
+      t('Play notification sounds'),
+      t('Chime when a conversation you’re not viewing needs you. Also toggled by the header bell.'),
       prefs.sound,
       (on) => setSoundEnabled(on),
     );
     const notifyRow = buildToggleRow(
-      desktopApp ? 'Bounce the Dock icon' : 'Flash the browser tab',
+      desktopApp ? t('Bounce the Dock icon') : t('Flash the browser tab'),
       desktopApp
-        ? 'When a conversation needs attention, bounce the app’s Dock icon.'
-        : 'When a conversation needs attention, mark this browser tab’s title so you can spot it',
+        ? t('When a conversation needs attention, bounce the app’s Dock icon.')
+        : t('When a conversation needs attention, mark this browser tab’s title so you can spot it'),
       prefs.notify,
       (on) => setNotifyEnabled(on),
     );
@@ -191,14 +196,14 @@ export class NotificationsTab {
     container.innerHTML = '';
 
     const highlightRow = buildToggleRow(
-      'Highlight conversations that need attention',
-      'Flash and tint a conversation’s tab when it needs you while you’re elsewhere. With this off the tab stays plain, though its status circle still shows when it’s waiting, and the “Jump to conversation needing attention” shortcut still finds it.',
+      t('Highlight conversations that need attention'),
+      t('Flash and tint a conversation’s tab when it needs you while you’re elsewhere. With this off the tab stays plain, though its status circle still shows when it’s waiting, and the “Jump to conversation needing attention” shortcut still finds it.'),
       prefs.tabHighlight,
       (on) => setTabHighlightEnabled(on),
     );
     const reorderRow = buildToggleRow(
-      'Updated conversations move to the top',
-      'Float a conversation’s tab up the list when you send to it, when it finishes, and when it needs your approval. Output arriving mid-turn leaves the order alone. With this off, tabs only move when you drag them.',
+      t('Updated conversations move to the top'),
+      t('Float a conversation’s tab up the list when you send to it, when it finishes, and when it needs your approval. Output arriving mid-turn leaves the order alone. With this off, tabs only move when you drag them.'),
       prefs.tabReorder,
       (on) => setTabReorderEnabled(on),
     );
@@ -223,10 +228,10 @@ export class NotificationsTab {
     info.className = 'provider-info';
     const name = document.createElement('div');
     name.className = 'provider-name';
-    name.textContent = 'Chime';
+    name.textContent = t('Chime');
     const desc = document.createElement('div');
     desc.className = 'provider-description';
-    desc.textContent = 'Pick a pattern and sound, set the volume, and preview it.';
+    desc.textContent = t('Pick a pattern and sound, set the volume, and preview it.');
     info.appendChild(name);
     info.appendChild(desc);
 
@@ -236,11 +241,11 @@ export class NotificationsTab {
     // The two curated popup menus (tune + timbre).
     const menus = document.createElement('div');
     menus.className = 'chime-menus';
-    const pattern = this._buildChimeSelect('Pattern', chimePatterns(), chime.pattern, (v) => {
+    const pattern = this._buildChimeSelect(t('Pattern'), chimePatterns(), chime.pattern, (v) => {
       setChimeParam('pattern', v);
       previewChime();
     });
-    const sound = this._buildChimeSelect('Sound', chimeSounds(), chime.sound, (v) => {
+    const sound = this._buildChimeSelect(t('Sound'), chimeSounds(), chime.sound, (v) => {
       setChimeParam('sound', v);
       previewChime();
     });
@@ -251,13 +256,13 @@ export class NotificationsTab {
     // The volume rotary sits with the preview/reset buttons on the action row.
     const actions = document.createElement('div');
     actions.className = 'chime-actions';
-    const volume = this._buildChimeRotary('Volume', chime.volume, (v) => setChimeParam('volume', v), () => previewChime());
+    const volume = this._buildChimeRotary(t('Volume'), chime.volume, (v) => setChimeParam('volume', v), () => previewChime());
     actions.appendChild(volume.el);
 
     const previewBtn = document.createElement('button');
     previewBtn.type = 'button';
     previewBtn.className = 'settings-btn btn-primary small chime-preview-btn';
-    previewBtn.textContent = 'Preview';
+    previewBtn.textContent = t('Preview');
     previewBtn.addEventListener('click', () => previewChime());
     actions.appendChild(previewBtn);
 
@@ -266,7 +271,7 @@ export class NotificationsTab {
     const randomBtn = document.createElement('button');
     randomBtn.type = 'button';
     randomBtn.className = 'settings-btn small chime-random-btn';
-    randomBtn.textContent = 'Random';
+    randomBtn.textContent = t('Random');
     randomBtn.addEventListener('click', () => {
       randomizeChimeParams();
       previewChime();
@@ -278,7 +283,7 @@ export class NotificationsTab {
     const resetBtn = document.createElement('button');
     resetBtn.type = 'button';
     resetBtn.className = 'settings-btn small chime-reset-btn';
-    resetBtn.textContent = 'Reset';
+    resetBtn.textContent = t('Reset');
     resetBtn.addEventListener('click', () => {
       resetChimeParams();
       previewChime();
@@ -294,8 +299,8 @@ export class NotificationsTab {
 
   /**
    * Build one labelled popup menu (a native `<select>`) for a curated chime list.
-   * @param {string} name - Control label ('Pattern' | 'Sound').
-   * @param {Array<{id: string, name: string}>} options - The menu entries.
+   * @param {string} name - Control label, already translated.
+   * @param {Array<{id: string, name: string}>} options - The menu entries; names are English source, translated here.
    * @param {string} value - The currently selected id.
    * @param {(v: string) => void} onChange - Called with the new id on selection.
    * @returns {{el: HTMLElement, select: HTMLSelectElement, setValue: (v: string) => void}} The wrapper, select, and setter.
@@ -315,7 +320,7 @@ export class NotificationsTab {
     for (const opt of options) {
       const el = document.createElement('option');
       el.value = opt.id;
-      el.textContent = opt.name;
+      el.textContent = t(opt.name);
       select.appendChild(el);
     }
     const setValue = (/** @type {string} */ v) => {

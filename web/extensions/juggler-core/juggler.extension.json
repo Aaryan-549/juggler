@@ -5,7 +5,7 @@
   "author": "Juggler Team",
   "homepage": "https://juggler.studio",
   "license": "Apache-2.0",
-  "engineApi": "^1.0.0",
+  "engineApi": "^1.1.0",
   "permissions": [
     "filesystem.read",
     "filesystem.write",
@@ -31,6 +31,7 @@
     }
   ],
   "provides": {
+    "i18n": "i18n",
     "contextItems": ["context-items/*-context-item.js"],
     "strategies": ["strategies/*-strategy-type.js"],
     "commands": ["commands/*-command-type.js"],

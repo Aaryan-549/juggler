@@ -486,6 +486,19 @@ func (s *Server) serveIndex(w http.ResponseWriter, r *http.Request) {
 	// Ranked for a remote viewer exactly as the zoom above is.
 	initialThemeMode, _ := s.SessionManager().GetWindowUITheme(role)
 
+	// The UI language, and its catalogue inline, so the first frame is already
+	// in that language (see ui_locale.go). Unlike theme and zoom it is the
+	// person's rather than the window's, so every window and every remote
+	// viewer gets the same one. With none chosen the page is plain English and
+	// carries no catalogue at all.
+	uiLocale := s.uiLocale()
+	htmlLang := uiSourceLocale
+	var uiCatalog map[string]string
+	if uiLocale != "" {
+		htmlLang = uiLocale
+		uiCatalog = s.uiCatalog(uiLocale)
+	}
+
 	data := struct {
 		StaticVersion    string
 		IsTestMode       bool
@@ -496,6 +509,9 @@ func (s *Server) serveIndex(w http.ResponseWriter, r *http.Request) {
 		BasePath         string
 		InitialZoom      int
 		InitialThemeMode string
+		HTMLLang         string
+		UILocale         string
+		UICatalog        map[string]string
 		ProjectKey       string
 		ICEServers       []webrtc.ICEServer
 	}{
@@ -508,6 +524,9 @@ func (s *Server) serveIndex(w http.ResponseWriter, r *http.Request) {
 		BasePath:         requestBasePath(r),
 		InitialZoom:      initialZoom,
 		InitialThemeMode: initialThemeMode,
+		HTMLLang:         htmlLang,
+		UILocale:         uiLocale,
+		UICatalog:        uiCatalog,
 		// Namespaces the viewer's localStorage so a cached zoom/theme belongs to
 		// the project it was set in, whichever origin the viewer arrived on.
 		ProjectKey: projectStorageKey(s.ProjectPath()),

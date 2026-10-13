@@ -27,6 +27,7 @@
  */
 
 import { escapeHtml } from '../../../sdk/lib/html.js';
+import { t } from '../../../sdk/lib/i18n.js';
 import { renderMarkdown } from '../../../sdk/lib/markdown.js';
 import { extractErrorMessage } from '../../../sdk/lib/error-utils.js';
 import { formatBytes } from '../../utils/format.js';
@@ -49,7 +50,7 @@ export function skillPreviewShell(title, bodyHtml, footerHtml = '') {
     <modal-panel class="skills-preview-panel">
       <header class="skills-preview-header">
         <h2 class="skills-preview-title">${title}</h2>
-        <button class="close-button skills-preview-close" data-action="drawer-close" title="Close (Esc)" aria-label="Close"><span class="icon-close"></span></button>
+        <button class="close-button skills-preview-close" data-action="drawer-close" title="${escapeHtml(t('Close (Esc)'))}" aria-label="${escapeHtml(t('Close'))}"><span class="icon-close"></span></button>
       </header>
       <div class="skills-preview-body">${bodyHtml}</div>
       ${footerHtml ? `<footer class="skills-preview-footer">${footerHtml}</footer>` : ''}
@@ -89,13 +90,13 @@ function installedPreviewBody(skill, detail) {
     skill.scope && skill.source
       ? `<span class="skills-scope-badge">${escapeHtml(skill.scope)}-${escapeHtml(skill.source)}</span>`
       : '';
-  const scripts = skill.hasScripts ? `<span class="skills-badge tint-blue">scripts</span>` : '';
+  const scripts = skill.hasScripts ? `<span class="skills-badge tint-blue">${escapeHtml(t('scripts'))}</span>` : '';
   const head = badge || scripts ? `<div class="skills-card-head">${badge}${scripts}</div>` : '';
   const desc = skill.description ? `<div class="skills-preview-desc">${escapeHtml(skill.description)}</div>` : '';
 
   const location = detail.path
     ? `<div class="skills-section surface-card">
-         <div class="skills-section-title">Location</div>
+         <div class="skills-section-title">${escapeHtml(t('Location'))}</div>
          <div class="skills-filepath-mount" data-path="${escapeHtml(detail.path)}"></div>
        </div>`
     : '';
@@ -103,7 +104,7 @@ function installedPreviewBody(skill, detail) {
   const files = detail.files || [];
   const fileList = files.length
     ? `<div class="skills-section surface-card skills-files">
-         <div class="skills-section-title">Files (${files.length})</div>
+         <div class="skills-section-title">${escapeHtml(t('Files ({count})', { count: files.length }))}</div>
          <div class="skills-files-list">
            ${files
               .map(

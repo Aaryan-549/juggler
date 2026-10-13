@@ -17,6 +17,7 @@
 
 import { assert } from '../utilities/test-helpers.js';
 import { renderTransactionDetail } from '../../js/components/transaction-detail-renderer.js';
+import { setLocale } from '../../sdk/lib/i18n.js';
 import { parseMcpToolName, groupToolsByOrigin } from '../../js/services/thread-tool-inventory.js';
 
 /**
@@ -247,15 +248,24 @@ export async function runTests(_ctx) {
   await run('the tool list says when it was sent, and that it is not the live list', () => {
     const host = document.createElement('div');
     const timestamp = new Date(2026, 1, 3, 14, 32, 5).toISOString();
-    renderTransactionDetail(host, {
-      id: 'txn_5',
-      timestamp,
-      input: { systemPrompt: '', messages: [], tools: [tool('bash'), tool('mcp__linear__create_issue')] },
-    });
-    const header = openToolsRow(host).querySelector('.tx-tools-sent')?.textContent || '';
+    // The time follows the UI's formatting locale, which otherwise defaults to
+    // the machine's; pinned so the assertion can name the exact text. Newer ICU
+    // puts a narrow no-break space before "PM", which \s matches.
+    const previousLocale = setLocale('en-US');
+    let header = '';
+    try {
+      renderTransactionDetail(host, {
+        id: 'txn_5',
+        timestamp,
+        input: { systemPrompt: '', messages: [], tools: [tool('bash'), tool('mcp__linear__create_issue')] },
+      });
+      header = openToolsRow(host).querySelector('.tx-tools-sent')?.textContent || '';
+    } finally {
+      setLocale(previousLocale);
+    }
     assert(header.startsWith('2 tools, as sent at '), `header was ${JSON.stringify(header)}`);
     assert(
-      header.includes(new Date(timestamp).toLocaleTimeString()),
+      /as sent at 2:32:05\sPM /u.test(header),
       `header should carry the send time, was ${JSON.stringify(header)}`
     );
     assert(header.endsWith('— not the live list.'), `header was ${JSON.stringify(header)}`);
@@ -269,6 +279,18 @@ export async function runTests(_ctx) {
     });
     const header = openToolsRow(host).querySelector('.tx-tools-sent')?.textContent || '';
     assert(header === '1 tool, as sent — not the live list.', `header was ${JSON.stringify(header)}`);
+  });
+
+  await run('a garbled timestamp drops the clause instead of failing the render', () => {
+    const host = document.createElement('div');
+    renderTransactionDetail(host, {
+      id: 'txn_7',
+      timestamp: 'not a date',
+      input: { systemPrompt: '', messages: [], tools: [tool('bash')] },
+    });
+    const header = openToolsRow(host).querySelector('.tx-tools-sent')?.textContent || '';
+    assert(header === '1 tool, as sent — not the live list.', `header was ${JSON.stringify(header)}`);
+    assert(!host.textContent?.includes('Time:'), 'the metadata bar leaves the time out');
   });
 
   // The drift line: the same statement the System Prompt panel makes, from the

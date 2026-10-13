@@ -16,6 +16,7 @@ import (
 
 	"github.com/gofrs/flock"
 
+	"juggler/cmd/juggler/extmanifest"
 	"juggler/internal/jlog"
 	"juggler/internal/userpaths"
 )
@@ -31,6 +32,13 @@ type GlobalSettings struct {
 	Connectivity ConnectivitySettings `json:"connectivity"`
 	Network      NetworkSettings      `json:"network"`
 	Models       ModelSettings        `json:"models"`
+
+	// UILocale is the language the UI is shown in, as a BCP 47 tag ("fr",
+	// "zh-Hant-TW", or the pseudo-locale "en-XA"), or "" for the default,
+	// English. A typed field rather than one of the opaque UI preferences below
+	// because the server reads it: it is written into the page before first
+	// paint, along with that language's catalogue.
+	UILocale string `json:"uiLocale,omitempty"`
 
 	// UI holds the viewer preferences that belong to the person rather than to
 	// a project or a window — the tips they have seen, what Escape does,
@@ -292,6 +300,22 @@ func IsKnownUpdateMode(mode string) bool {
 	return mode == UpdateModeAutomatic || mode == UpdateModeNotify || mode == UpdateModeOff
 }
 
+// IsValidUILocale reports whether locale is a usable UI language tag, in any
+// letter case — the check extension catalogue names pass too
+// (extmanifest.IsLocaleTag), since a catalogue is found by the UI language.
+// The empty string is NOT valid here (callers that accept "default" check for
+// "" first).
+func IsValidUILocale(locale string) bool {
+	return extmanifest.IsLocaleTag(locale)
+}
+
+// NormalizeUILocale returns locale with canonical case and aliases ("iw" →
+// "he") if it is a usable tag and "" otherwise, so a hand-edited typo
+// falls back to English instead of reaching the page.
+func NormalizeUILocale(locale string) string {
+	return extmanifest.CanonicalLocaleTag(locale)
+}
+
 // defaultGlobalSettings returns the settings a fresh install (no file) uses.
 func defaultGlobalSettings() *GlobalSettings {
 	return &GlobalSettings{
@@ -329,6 +353,7 @@ func LoadGlobalSettings() (*GlobalSettings, error) {
 	}
 	gs.Updates.Mode = NormalizeUpdateMode(gs.Updates.Mode)
 	gs.Network.Proxy.Mode = NormalizeProxyMode(gs.Network.Proxy.Mode)
+	gs.UILocale = NormalizeUILocale(gs.UILocale)
 	normalizeModelSettings(&gs.Models)
 	return gs, nil
 }
@@ -389,6 +414,7 @@ func withFileLock(lockPath, what string, fn func() error) error {
 func writeSettings(gs *GlobalSettings) error {
 	gs.Updates.Mode = NormalizeUpdateMode(gs.Updates.Mode)
 	gs.Network.Proxy.Mode = NormalizeProxyMode(gs.Network.Proxy.Mode)
+	gs.UILocale = NormalizeUILocale(gs.UILocale)
 	normalizeModelSettings(&gs.Models)
 
 	data, err := json.MarshalIndent(gs, "", "  ")

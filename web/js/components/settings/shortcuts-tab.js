@@ -11,6 +11,7 @@
 
 import keyShortcutManager, { isMac } from '../../services/key-shortcut-manager.js';
 import { buildEscapeBehaviourRow } from '../../services/escape-behaviour.js';
+import { t } from '../../../sdk/lib/i18n.js';
 
 /** Category the Escape-behaviour row is appended to (home of the Pause chord). */
 const ESCAPE_ROW_CATEGORY = 'Conversations';
@@ -19,7 +20,9 @@ const ESCAPE_ROW_CATEGORY = 'Conversations';
  * Keyboard shortcuts tab: every command from the KeyShortcutManager, grouped by
  * category, each showing its current binding for this platform. The manager is
  * the single source of truth, so this needs no server fetch — it renders eagerly
- * from the shell's render() and has no pollers or listeners of its own.
+ * from the shell's render() and has no pollers or listeners of its own. The
+ * manager's labels, descriptions and categories are English source text (the
+ * AboutJuggler corpus reads them as they are); they are translated here.
  */
 export class ShortcutsTab {
   /**
@@ -57,7 +60,7 @@ export class ShortcutsTab {
     for (const group of keyShortcutManager.byCategoryForPlatform(isMac())) {
       const heading = document.createElement('h3');
       heading.className = 'settings-section-heading';
-      heading.textContent = group.category;
+      heading.textContent = t(group.category);
       container.appendChild(heading);
 
       for (const def of group.shortcuts) {
@@ -85,10 +88,10 @@ export class ShortcutsTab {
     info.className = 'provider-info';
     const nameEl = document.createElement('div');
     nameEl.className = 'provider-name';
-    nameEl.textContent = def.label;
+    nameEl.textContent = t(def.label);
     const desc = document.createElement('div');
     desc.className = 'provider-description';
-    desc.textContent = def.description;
+    desc.textContent = t(def.description);
     info.appendChild(nameEl);
     info.appendChild(desc);
 

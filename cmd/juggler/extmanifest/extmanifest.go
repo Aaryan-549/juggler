@@ -17,13 +17,16 @@ import (
 	"net/url"
 	"path"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
+
+	"golang.org/x/text/language"
 )
 
 // DefaultEngineAPIVersion is the fallback host SDK version used when it cannot be
 // read from web/sdk/version.js. Keep in lockstep with ENGINE_API_VERSION there.
-const DefaultEngineAPIVersion = "1.0.0"
+const DefaultEngineAPIVersion = "1.1.0"
 
 // ManifestFileName is the well-known manifest filename at an extension root.
 const ManifestFileName = "juggler.extension.json"
@@ -85,6 +88,14 @@ type Provides struct {
 	// mock model, named `integration:<name>` like the shared pool's. Test-only,
 	// like Tests, and conventionally under "_tests/integration/".
 	IntegrationTests []string `json:"integrationTests,omitempty"`
+	// I18n is a single directory (not a glob) holding the extension's UI
+	// translation catalogues, one `<locale>.json` per language — a flat object
+	// mapping each English message to its translation, the format of the core
+	// catalogues in web/i18n. Read by ReadCatalogs. Not a capability: catalogues
+	// translate what an extension provides and never satisfy the "provides
+	// something" check by themselves. A directory whose name starts with "_" is
+	// left out of an embedded build, so built-in extensions use "i18n".
+	I18n string `json:"i18n,omitempty"`
 }
 
 // Setting describes one user-configurable extension value. Settings are global
@@ -321,6 +332,228 @@ func ExpandGlobs(fsys fs.FS, globs []string) ([]string, error) {
 			seen[match] = true
 			out = append(out, match)
 		}
+	}
+	return out, nil
+}
+
+// localeTagRe is a BCP 47 language tag as far as the UI uses one: a 2–3 letter
+// language, then an optional 4-letter script, an optional region (2 letters or
+// 3 digits) and up to two variants (5–8 alphanumerics, or a digit and three).
+// Each subtag has the shape BCP 47 gives it, so a tag that passes is one the
+// browser's Intl accepts too — a looser one would reach the page and make every
+// formatter throw. Not a full parser (no extensions or private use): the value
+// only has to name a catalogue and be safe to write into markup.
+// core.IsValidUILocale is this check, since a catalogue is found by the user's
+// UI language.
+var localeTagRe = regexp.MustCompile(
+	`^([A-Za-z]{2,3})(-[A-Za-z]{4})?(-(?:[A-Za-z]{2}|[0-9]{3}))?((?:-(?:[A-Za-z0-9]{5,8}|[0-9][A-Za-z0-9]{3})){0,2})$`)
+
+// IsLocaleTag reports whether tag can name a UI translation catalogue, in any
+// letter case. Repeated variants are invalid, as they are in Intl.
+func IsLocaleTag(tag string) bool {
+	_, ok := parseLocaleTag(tag)
+	return ok
+}
+
+type localeTag struct {
+	base, script, region string
+	variants             []string
+}
+
+func parseLocaleTag(tag string) (localeTag, bool) {
+	m := localeTagRe.FindStringSubmatch(tag)
+	if m == nil {
+		return localeTag{}, false
+	}
+	t := localeTag{base: strings.ToLower(m[1]), region: strings.ToUpper(strings.TrimPrefix(m[3], "-"))}
+	if m[2] != "" {
+		t.script = strings.ToUpper(m[2][1:2]) + strings.ToLower(m[2][2:])
+	}
+	if m[4] != "" {
+		t.variants = strings.Split(strings.ToLower(m[4][1:]), "-")
+		if len(t.variants) == 2 && t.variants[0] == t.variants[1] {
+			return localeTag{}, false
+		}
+	}
+	return t, true
+}
+
+// CanonicalLocaleTag returns the catalogue key used by Intl.getCanonicalLocales:
+// canonical case, CLDR aliases and sorted variants. Explicit scripts and unknown
+// well-formed subtags are preserved; invalid UI locale shapes return "".
+func CanonicalLocaleTag(tag string) string {
+	t, ok := parseLocaleTag(tag)
+	if !ok {
+		return ""
+	}
+	// Compound aliases precede bare-language aliases; und is a wildcard here.
+	// The table orders more specific rules first (hy-arevmda before und-arevmda).
+	for _, alias := range localeCompoundAliases {
+		from, _ := parseLocaleTag(alias[0])
+		if from.base != "und" && from.base != t.base ||
+			from.script != "" && from.script != t.script ||
+			from.region != "" && from.region != t.region {
+			continue
+		}
+		matches := true
+		for _, v := range from.variants {
+			matches = matches && slices.Contains(t.variants, v)
+		}
+		if !matches {
+			continue
+		}
+		to, _ := parseLocaleTag(alias[1])
+		if to.base != "und" {
+			t.base = to.base
+		}
+		if from.script != "" {
+			t.script = ""
+		}
+		if from.region != "" {
+			t.region = ""
+		}
+		t.applyDefaults(to)
+		t.variants = slices.DeleteFunc(t.variants, func(v string) bool { return slices.Contains(from.variants, v) })
+		t.variants = append(t.variants, to.variants...)
+	}
+	if replacement := localeLanguageAliases[t.base]; replacement != "" {
+		to, _ := parseLocaleTag(replacement)
+		t.base = to.base
+		t.applyDefaults(to)
+	}
+	if t.script == "Qaai" {
+		t.script = "Zinh"
+	}
+	if replacement := localeRegionAliases[t.region]; replacement != "" {
+		regions := strings.Fields(replacement)
+		t.region = regions[0]
+		if len(regions) > 1 {
+			// Split territories use the language/script's likely region when it
+			// is a successor, otherwise CLDR's first successor. x/text is only
+			// used for this inference: its parser discards unknown subtags and
+			// its alias policy differs from Intl (e.g. mo → ro-MD, no → nb).
+			likelyTag := t.base
+			if t.script != "" {
+				likelyTag += "-" + t.script
+			}
+			likely, _ := language.Raw.Make(likelyTag).Region()
+			if slices.Contains(regions, likely.String()) {
+				t.region = likely.String()
+			}
+		}
+	}
+	for i, v := range t.variants {
+		switch v {
+		case "heploc":
+			t.variants[i] = "alalc97"
+		case "polytoni":
+			t.variants[i] = "polyton"
+		}
+	}
+	slices.Sort(t.variants)
+	parts := []string{t.base}
+	if t.script != "" {
+		parts = append(parts, t.script)
+	}
+	if t.region != "" {
+		parts = append(parts, t.region)
+	}
+	parts = append(parts, slices.Compact(t.variants)...)
+	return strings.Join(parts, "-")
+}
+
+func (t *localeTag) applyDefaults(to localeTag) {
+	if t.script == "" {
+		t.script = to.script
+	}
+	if t.region == "" {
+		t.region = to.region
+	}
+}
+
+// sourceLocale is the language every message is written in.
+const sourceLocale = "en"
+
+// LocaleChain is the catalogue names to try for a UI locale, most specific
+// first — "zh-Hant-TW", "zh-Hant", "zh" — stopping before the source language,
+// since English needs no catalogue. Empty for an invalid tag or any English one.
+// The names are in canonical case, whatever case locale is in.
+func LocaleChain(locale string) []string {
+	locale = CanonicalLocaleTag(locale)
+	if locale == "" {
+		return nil
+	}
+	parts := strings.Split(locale, "-")
+	var chain []string
+	for n := len(parts); n > 0; n-- {
+		candidate := strings.Join(parts[:n], "-")
+		if candidate == sourceLocale {
+			break
+		}
+		chain = append(chain, candidate)
+	}
+	return chain
+}
+
+// MergeChain is one catalogue for a locale chain (LocaleChain's order, most
+// specific first): every message any catalogue along it has, each from the
+// most specific one that has it — so a key zh-Hant.json lacks still comes from
+// zh.json. Nil when no catalogue along the chain exists.
+func MergeChain(catalogs map[string]map[string]string, chain []string) map[string]string {
+	var out map[string]string
+	for i := len(chain) - 1; i >= 0; i-- {
+		messages, ok := catalogs[chain[i]]
+		if !ok {
+			continue
+		}
+		if out == nil {
+			out = map[string]string{}
+		}
+		for key, message := range messages {
+			out[key] = message
+		}
+	}
+	return out
+}
+
+// ReadCatalogs reads an extension's translation catalogues: every `<locale>.json`
+// directly under dir (Provides.I18n), relative to root on fsys. Other files are
+// ignored. It fails on a dir that is missing or escapes the extension root, a
+// .json file not named for a locale, or one that is not a flat object of
+// strings — so `juggler ext validate` reports what the server would skip.
+func ReadCatalogs(fsys fs.FS, root, dir string) (map[string]map[string]string, error) {
+	clean := path.Clean(dir)
+	if dir == "" || clean == "." || clean == ".." || strings.HasPrefix(clean, "../") || strings.HasPrefix(clean, "/") {
+		return nil, fmt.Errorf("invalid i18n directory %q: must be a directory inside the extension root", dir)
+	}
+	full := path.Join(root, clean)
+	entries, err := fs.ReadDir(fsys, full)
+	if err != nil {
+		return nil, fmt.Errorf("i18n directory %q: %w", dir, err)
+	}
+	out := map[string]map[string]string{}
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasSuffix(name, ".json") {
+			continue
+		}
+		// Keyed by canonical tag, the form LocaleChain looks up.
+		locale := CanonicalLocaleTag(strings.TrimSuffix(name, ".json"))
+		if locale == "" {
+			return nil, fmt.Errorf("i18n catalogue %q is not named for a locale (e.g. fr.json, zh-Hant.json)", path.Join(clean, name))
+		}
+		data, err := fs.ReadFile(fsys, path.Join(full, name))
+		if err != nil {
+			return nil, fmt.Errorf("i18n catalogue %q: %w", path.Join(clean, name), err)
+		}
+		var messages map[string]string
+		if err := json.Unmarshal(data, &messages); err != nil {
+			return nil, fmt.Errorf("i18n catalogue %q must be a flat JSON object of strings: %w", path.Join(clean, name), err)
+		}
+		if messages == nil {
+			messages = map[string]string{}
+		}
+		out[locale] = messages
 	}
 	return out, nil
 }

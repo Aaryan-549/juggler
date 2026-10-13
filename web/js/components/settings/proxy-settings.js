@@ -12,27 +12,29 @@
 import { extractErrorMessage } from '../../../sdk/lib/error-utils.js';
 import { fetchJson } from '../../services/http.js';
 import { apiUrl } from '../../utils/api-url.js';
+import { t, markForTranslation } from '../../../sdk/lib/i18n.js';
 
 /**
  * The three proxy modes, matching core.ProxyMode* (and httpx.Mode*) on the
- * server. The hint describes the selected mode inline under the picker.
+ * server. The hint describes the selected mode inline under the picker. Labels
+ * and hints are English source text, translated where they are shown.
  * @type {Array<{value: string, label: string, hint: string}>}
  */
 const MODES = [
   {
     value: 'system',
-    label: 'System (recommended)',
-    hint: 'Uses the proxy environment variables and the operating-system proxy, falling back to a direct connection when none is set.',
+    label: markForTranslation('System (recommended)'),
+    hint: markForTranslation('Uses the proxy environment variables and the operating-system proxy, falling back to a direct connection when none is set.'),
   },
   {
     value: 'none',
-    label: 'Direct (no proxy)',
-    hint: 'Always connects directly, ignoring any environment or system proxy.',
+    label: markForTranslation('Direct (no proxy)'),
+    hint: markForTranslation('Always connects directly, ignoring any environment or system proxy.'),
   },
   {
     value: 'manual',
-    label: 'Manual',
-    hint: 'Routes through the proxy URL below.',
+    label: markForTranslation('Manual'),
+    hint: markForTranslation('Routes through the proxy URL below.'),
   },
 ];
 
@@ -92,10 +94,10 @@ export class ProxySettings {
     info.className = 'provider-info';
     const name = document.createElement('div');
     name.className = 'provider-name';
-    name.textContent = 'Outbound proxy';
+    name.textContent = t('Outbound proxy');
     const desc = document.createElement('div');
     desc.className = 'provider-description';
-    desc.textContent = "Route Juggler's outbound connections through a proxy. Local addresses (localhost / 127.0.0.1) always bypass it.";
+    desc.textContent = t('Route Juggler\'s outbound connections through a proxy. Local addresses (localhost / 127.0.0.1) always bypass it.');
     info.appendChild(name);
     info.appendChild(desc);
 
@@ -106,11 +108,11 @@ export class ProxySettings {
     const select = document.createElement('select');
     select.id = 'proxy-mode';
     select.className = 'proxy-mode-select field-input';
-    select.setAttribute('aria-label', 'Proxy mode');
+    select.setAttribute('aria-label', t('Proxy mode'));
     for (const mode of MODES) {
       const opt = document.createElement('option');
       opt.value = mode.value;
-      opt.textContent = mode.label;
+      opt.textContent = t(mode.label);
       select.appendChild(opt);
     }
     select.addEventListener('change', () => void this._onModeChange(select.value));
@@ -132,7 +134,7 @@ export class ProxySettings {
     urlInput.type = 'text';
     urlInput.id = 'proxy-url';
     urlInput.className = 'proxy-url-input field-input';
-    urlInput.placeholder = 'http://host:port or socks5://host:port';
+    urlInput.placeholder = t('http://host:port or socks5://host:port');
     urlInput.autocomplete = 'off';
     urlInput.spellcheck = false;
     // Commit on Enter or blur so a partially-typed URL isn't validated per key.
@@ -199,7 +201,7 @@ export class ProxySettings {
     if (urlRow) urlRow.hidden = selected !== 'manual';
     const hint = this.host.querySelector('#proxy-mode-hint');
     const mode = MODES.find((m) => m.value === selected);
-    if (hint) hint.textContent = mode ? mode.hint : '';
+    if (hint) hint.textContent = mode ? t(mode.hint) : '';
   }
 
   /**
@@ -214,7 +216,7 @@ export class ProxySettings {
     if (mode === 'manual') {
       const url = urlInput ? urlInput.value : this._url;
       if (!isValidProxyURL(url)) {
-        this._setStatus('Enter a proxy URL, e.g. http://127.0.0.1:7890');
+        this._setStatus(t('Enter a proxy URL, e.g. http://127.0.0.1:7890'));
         urlInput?.focus();
         return;
       }
@@ -250,7 +252,7 @@ export class ProxySettings {
     const url = urlInput ? urlInput.value.trim() : '';
     if (url === this._url && this._mode === 'manual') return; // already persisted
     if (!isValidProxyURL(url)) {
-      this._setStatus('That proxy URL looks invalid — include a scheme, e.g. http://host:port');
+      this._setStatus(t('That proxy URL looks invalid — include a scheme, e.g. http://host:port'));
       return;
     }
     await this._save('manual', url);
@@ -280,7 +282,7 @@ export class ProxySettings {
       this._mode = prevMode;
       this._url = prevURL;
       this._reflect();
-      this._setStatus(`Couldn't save the proxy setting (${extractErrorMessage(err)}).`);
+      this._setStatus(t('Couldn\'t save the proxy setting ({error}).', { error: extractErrorMessage(err) }));
     }
   }
 

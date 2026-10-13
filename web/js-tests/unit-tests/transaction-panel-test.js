@@ -27,6 +27,7 @@ import { assert, waitFor } from '../utilities/test-helpers.js';
 import { renderTransactionDetail } from '../../js/components/transaction-detail-renderer.js';
 import { ColumnSelectionState } from '../../js/utils/column-selection.js';
 import '../../js/components/properties-panel.js';
+import { setLocale } from '../../sdk/lib/i18n.js';
 
 /**
  * @typedef {object} TestResult
@@ -352,14 +353,24 @@ export async function runTests(_ctx) {
       [{ type: 'user', content: 'go', transactionId: 'txn-1' }]
     );
     panel._blobOutputTokens.set('txn-1', 1234);
-    const chip = panel._buildTokenChip();
-    // Counts carry the environment's thousands separator, which is a comma in
-    // en-US and nothing at all in the POSIX locale a bare CI machine reports —
-    // what is being pinned here is the number and the missing `~`, not grouping.
-    assert(chip.textContent === (1234).toLocaleString(),
-      `the provider's own number, unmarked, got "${chip.textContent}"`);
-    assert(chip.title.includes('reported by the provider'),
-      `the tooltip must say whose number it is, got "${chip.title}"`);
+    // Counts follow the UI's formatting locale, which otherwise defaults to the
+    // machine's — a comma in en-US, nothing at all in the POSIX locale a bare CI
+    // machine reports. Pinned here so the assertion can name the exact text.
+    const previousLocale = setLocale('en-US');
+    try {
+      const chip = panel._buildTokenChip();
+      assert(chip.textContent === '1,234',
+        `the provider's own number, unmarked, got "${chip.textContent}"`);
+      assert(chip.title.includes('reported by the provider'),
+        `the tooltip must say whose number it is, got "${chip.title}"`);
+      // A locale that groups differently proves the chip follows the setting
+      // rather than happening to agree with the machine.
+      setLocale('de-DE');
+      const german = panel._buildTokenChip();
+      assert(german.textContent === '1.234', `German grouping, got "${german.textContent}"`);
+    } finally {
+      setLocale(previousLocale);
+    }
   });
 
   await run('a round-trip that produced more than one item keeps the estimate', () => {

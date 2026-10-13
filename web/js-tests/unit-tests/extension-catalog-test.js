@@ -41,6 +41,8 @@ import strategyRegistry from '../../js/registries/strategy-registry.js';
 import commandRegistry from '../../js/registries/command-registry.js';
 import fileViewerRegistry from '../../js/registries/file-viewer-registry.js';
 import { isConversationBusy } from '../../js/registries/reload-registries.js';
+import { underPseudoLocale, assertPseudoLocalized } from '../utilities/pseudo-locale.js';
+import { isPseudoLocalized, pseudoLocalize } from '../../sdk/lib/i18n.js';
 
 /**
  * @typedef {object} TestResult
@@ -1092,6 +1094,160 @@ export async function runTests(_ctx) {
     assert(badge, 'the row survives being switched off');
     assert(badge && badge.textContent === 'off' && !badge.disabled,
       `and reads off with a live toggle back on; got ${badge?.textContent}`);
+  });
+
+  // Under en-XA every word the catalog draws must be translated — in every
+  // state it can be in: empty, the tree with each badge state, each kind of
+  // detail page, nothing selected, the install-locations footer, the confirm
+  // before a toggle stops running conversations, and the failure notices.
+  // Extension and capability names are the extension's own text, so each
+  // extension's stand in for its catalogue under its own id — the only
+  // catalogue its names are looked up in besides core's. A name with no
+  // extension id (an anonymous manifest, an orphaned capability) is unscoped,
+  // and any extension's catalogue may supply it. What stays English is data —
+  // ids, paths, versions, error text, and what the model reads (tool text, a
+  // strategy's recommendations) — and is skipped by selector.
+  await run('nothing the catalog draws is plain English under en-XA', async () => {
+    const extensionText = {
+      '@1/2': ['Pack', 'Cap A', 'Cap B', 'Cap C', 'Cap D'],
+      '@3/4': ['Bare', 'Cap A'],
+      '@5/6': ['Broken'],
+      '@test/xa': ['Anon', 'Gone'],
+    };
+    const skip = [
+      'code', '.plugin-version', '.plugin-tree-caret', '.properties-panel-filepath-row',
+      '.recommendation-badge', '.approach-text', '.tool-description', '.tool-param-description',
+      '.tool-param-type', '.catalog-failed-error', '.ext-card-error-msg', '.ext-cap-error',
+    ].join(', ');
+
+    /**
+     * @param {Record<string, any>} over
+     * @returns {any} A capability card
+     */
+    const cap = (over) => ({
+      url: '/1/2.js', itemType: 'context-item', id: null, name: '', description: '', version: '',
+      registered: true, failed: null, disabled: false, inherited: false, path: null, ...over,
+    });
+    const cards = [{
+      manifest: { id: '@1/2', name: 'Pack', version: '1.0.0', permissions: ['filesystem.read', 'x.custom'] },
+      source: 'user', error: null, extId: '@1/2', extDisabled: false, manifestPath: '/1/2.json',
+      caps: [
+        cap({ url: '/1/s.js', itemType: 'strategy', id: 's1', name: 'Cap A', version: '1.0.0' }),
+        cap({ url: '/1/c.js', id: 'c1', name: 'Cap B', description: 'Cap C', disabled: true }),
+        cap({ url: '/1/f.js', itemType: 'command', name: 'Cap C', registered: false, failed: 'SyntaxError: 1' }),
+        cap({ url: '/1/h.js', itemType: 'hook', id: 'h1', name: 'Cap D', path: '/1/h.js' }),
+      ],
+    }, {
+      manifest: { id: '@3/4', name: 'Bare' }, source: 'builtin', error: null, extId: '@3/4', extDisabled: true,
+      manifestPath: null, caps: [cap({ url: '/3/x.js', id: 'x1', name: 'Cap A', disabled: true, inherited: true })],
+    }, {
+      manifest: { id: '@5/6', name: 'Broken' }, source: 'user', error: 'bad manifest', extId: '@5/6',
+      extDisabled: false, manifestPath: null, caps: [],
+    }, {
+      manifest: { name: 'Anon' }, source: 'user', error: null, extId: null, extDisabled: false,
+      manifestPath: null, caps: [],
+    }];
+    class Strategy {
+      static MANIFEST = {
+        id: 's1', name: 'Cap A', permissions: ['shell.exec'],
+        recommendations: { recommendedFor: ['refactors'], approach: 'carefully' },
+      };
+      static getToolDefinitions() {
+        return [{
+          name: 'do_it', category: 'write', description: 'Does it',
+          input_schema: { properties: { a: { type: 'string', description: 'A' }, b: { type: 'number' } }, required: ['a'] },
+        }];
+      }
+    }
+
+    const origFetch = window.fetch;
+    const origModal = /** @type {any} */ (window).showModal;
+    try {
+      await underPseudoLocale('extension-catalog-test', async () => {
+        const empty = /** @type {any} */ (document.createElement('plugin-catalog'));
+        empty._cards = [];
+        empty.render();
+        assertPseudoLocalized(empty, { skip, atLeast: 4, where: 'no extensions' });
+
+        const el = /** @type {any} */ (document.createElement('plugin-catalog'));
+        el._cards = cards;
+        el._failedModules = [{ path: '/1/f.js', error: 'SyntaxError: 1' }];
+        el._orphanedDisabled = ['gone-id'];
+        el._attribution = { 'gone-id': { name: 'Gone', extension: '@7/8' } };
+        el._classFor = (/** @type {any} */ c) => (c.itemType === 'strategy' ? Strategy : undefined);
+        window.fetch = async () => /** @type {any} */ ({ ok: true, json: async () => ({ userExtensions: '/1' }) });
+        el.render();
+        await el._renderLocations();
+        window.fetch = origFetch;
+        assertPseudoLocalized(el, { skip, atLeast: 30, where: 'tree' });
+        const where = /** @type {HTMLElement} */ (el.querySelector('.catalog-plugin-dir-path'));
+        assert(where && where.textContent?.includes(pseudoLocalize('Extensions (global)')),
+          `the install location is labelled; got ${JSON.stringify(where?.textContent)}`);
+
+        for (const key of el._buildEntries().map((/** @type {any} */ e) => e.key)) {
+          el._select(key);
+          assertPseudoLocalized(el, { skip, where: key });
+        }
+        el._selectedKey = 'nothing';
+        el._renderDetailInto(el._buildEntries());
+        assertPseudoLocalized(el, { skip, where: 'nothing selected' });
+
+        // Two conversations running: the confirm, then the error when they won't stop.
+        window.fetch = async () => /** @type {any} */ ({ ok: true, json: async () => ({ active: true, conversationIds: ['1', '2'] }) });
+        /** @type {any[]} */
+        const asked = [];
+        /** @type {any} */ (window).showModal = async (/** @type {any} */ opts) => { asked.push(opts); return asked.length > 1; };
+        assert(await el._quiesceBeforeToggle() === false, 'a declined confirm stops the toggle');
+        let stuck = '';
+        try {
+          await el._quiesceBeforeToggle();
+        } catch (err) {
+          stuck = err instanceof Error ? err.message : String(err);
+        }
+        const shownConfirm = [asked[0]?.title, asked[0]?.message, asked[0]?.confirmText, asked[0]?.cancelText, stuck];
+        const rawConfirm = shownConfirm.filter((s) => !isPseudoLocalized(s));
+        assert(rawConfirm.length === 0, `plain English under en-XA (confirm): ${JSON.stringify(rawConfirm)}`);
+
+        // The failure notices, with a letter-free error so only the message is judged.
+        window.fetch = async () => { throw new Error('1'); };
+        el._quiesceBeforeToggle = async () => { throw new Error('1'); };
+        el._busy = false;
+        const notices = [];
+        await el._toggle(['c1'], true);
+        notices.push(document.querySelector('modal-dialog .modal-message')?.textContent || '');
+        await el._requestReload(document.createElement('button'));
+        notices.push(document.querySelector('modal-dialog .modal-message')?.textContent || '');
+        /** @type {any} */ (document.querySelector('modal-dialog'))?.close?.(null);
+        const rawNotices = notices.filter((s) => !isPseudoLocalized(s));
+        assert(rawNotices.length === 0, `plain English under en-XA (notices): ${JSON.stringify(rawNotices)}`);
+      }, extensionText);
+    } finally {
+      window.fetch = origFetch;
+      /** @type {any} */ (window).showModal = origModal;
+    }
+  });
+
+  // The flip side: an extension's names are looked up in its own catalogue and
+  // core's only. Another extension shipping a translation for the same English
+  // must not re-word them.
+  await run('one extension\'s catalogue does not translate another\'s names', async () => {
+    const cards = [{
+      manifest: { id: '@1/2', name: 'Pack' }, source: 'user', error: null, extId: '@1/2', extDisabled: false,
+      manifestPath: null,
+      caps: [{
+        url: '/1/c.js', itemType: 'context-item', id: 'c1', name: 'Cap A', description: '', version: '',
+        registered: true, failed: null, disabled: false, inherited: false, path: null,
+      }],
+    }];
+    await underPseudoLocale('extension-catalog-test-scope', async () => {
+      const el = /** @type {any} */ (document.createElement('plugin-catalog'));
+      el._cards = cards;
+      el._orphanedDisabled = [];
+      el.render();
+      const labels = [...el.querySelectorAll('.plugin-tree-label')].map((n) => n.textContent);
+      assert(labels.includes('Pack') && labels.includes('Cap A'),
+        `names stay English when only another extension translates them; got ${JSON.stringify(labels)}`);
+    }, { '@9/9': ['Pack', 'Cap A'] });
   });
 
   return { passed, failed, errors };

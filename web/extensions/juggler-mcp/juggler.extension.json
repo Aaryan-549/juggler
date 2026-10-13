@@ -5,9 +5,10 @@
   "author": "Juggler Team",
   "homepage": "https://juggler.studio",
   "license": "Apache-2.0",
-  "engineApi": "^1.0.0",
+  "engineApi": "^1.1.0",
   "permissions": [],
   "provides": {
+    "i18n": "i18n",
     "contextItems": ["context-items/*-context-item.js"],
     "commands": ["commands/*-command-type.js"],
     "tests": ["_tests/*-test.js"]

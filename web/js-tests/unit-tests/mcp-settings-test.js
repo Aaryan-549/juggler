@@ -30,6 +30,10 @@ import {
   mcpFormToConfigExtra,
 } from '../../js/components/settings/subprocess-tabs.js';
 import { mcpToolMissReason, MCP_DISABLED_NOTICE } from '../../js/services/mcp-availability.js';
+import { McpTab } from '../../js/components/settings/subprocess-tabs.js';
+import { resetExtensionsCache } from '../../js/services/extensions.js';
+import { isPseudoLocalized } from '../../sdk/lib/i18n.js';
+import { underPseudoLocale, assertPseudoLocalized } from '../utilities/pseudo-locale.js';
 
 /**
  * @typedef {object} TestResult
@@ -519,6 +523,241 @@ export async function runTests(_ctx) {
     assert(why.includes('"create_issue"'), 'the tool that missed should be named');
     assert(why.includes('tool filter'), `reason was ${JSON.stringify(why)}`);
     assert(why.includes('after the turn was sent'), `reason was ${JSON.stringify(why)}`);
+  });
+
+  // --- en-XA: everything the MCP servers tab draws is a translated message ----
+  // The real tab (its spec's copy, hooks and notice) with the backend stubbed:
+  // ops through the spec, the extension config and listTools through fetch, so
+  // nothing reaches the real server. Server names, tool names and server errors
+  // are digit-only data, skipped where they stand alone.
+
+  await run('en-XA: every state of the MCP servers tab is translated', async () => {
+    await underPseudoLocale('mcp-settings-test', async () => {
+      const originalFetch = window.fetch;
+      const originalModal = /** @type {any} */ (window).showModal;
+      const host = document.createElement('div');
+      const formHost = document.createElement('div');
+      formHost.id = 'mcp-form';
+      host.appendChild(formHost);
+      document.body.appendChild(host);
+      const tab = new McpTab(host);
+      const ctrl = tab.controller;
+      // Data, or example values that are not messages.
+      const skip = [
+        '.mcp-entry-name', '.mcp-impl', '.provider-info > .mcp-error-hint',
+        '.mcp-remove-row', '.mcp-reveal-btn',
+        '.mcp-command-input', '.mcp-arg-input', '.mcp-env-key', '.mcp-url-input', '.mcp-header-key',
+        '.mcp-default-args-input', '.mcp-tool-filter-name',
+      ].join(', ');
+      /** @param {string} where */
+      const check = (where) => { assertPseudoLocalized(formHost, { skip, where }); };
+      /**
+       * @param {() => boolean} cond
+       * @param {string} what
+       */
+      const until = async (cond, what) => {
+        for (let i = 0; i < 400 && !cond(); i++) await new Promise((r) => setTimeout(r, 5));
+        assert(cond(), `timed out waiting for ${what}`);
+      };
+      /**
+       * @param {string} selector
+       * @param {string} what
+       */
+      const translated = (selector, what) => {
+        const el = formHost.querySelector(selector);
+        assert(el, `nothing drawn for ${what}`);
+        assert(isPseudoLocalized(el.textContent || ''), `${what}: ${JSON.stringify(el?.textContent)}`);
+      };
+      const formError = (/** @type {string} */ what) => translated('.mcp-form > .mcp-error-hint', what);
+      const banner = (/** @type {string} */ what) => translated(':scope > .mcp-error-hint', what);
+      const field = (/** @type {string} */ cls) => /** @type {HTMLInputElement} */ (formHost.querySelector(`.mcp-${cls}`));
+      try {
+        resetExtensionsCache();
+        window.fetch = /** @type {any} */ (async (/** @type {any} */ url, /** @type {any} */ init) => {
+          const u = String(url);
+          if (u.includes('/config/plugins')) {
+            return { ok: true, status: 200, json: async () => ({ disabled: ['@juggler/mcp'] }) };
+          }
+          if (u.includes('/ops/call') && JSON.parse(init.body).operation === 'listTools') {
+            const tools = JSON.parse(init.body).params.server === '1' ? [{ name: '1' }, { name: '2' }] : [];
+            return { ok: true, status: 200, json: async () => ({ success: true, data: { tools } }) };
+          }
+          throw new Error(`unexpected fetch in test: ${u}`);
+        });
+
+        /** @type {any[]} */
+        let items = [];
+        /** @type {any} */
+        let config = { global: {}, project: {}, hasProject: true };
+        let failList = false;
+        let failSet = false;
+        /** @type {() => void} */
+        let releaseLog = () => {};
+        /** @type {() => void} */
+        let releaseRestart = () => {};
+        // Non-Error rejections reach the controller's own fallback messages.
+        ctrl.spec = {
+          ...ctrl.spec,
+          ops: {
+            list: async () => { if (failList) throw 'down'; return items; },
+            getConfig: async () => config,
+            setConfig: async (/** @type {any} */ _scope, /** @type {any} */ map) => {
+              if (failSet) throw 'refused';
+              config = { ...config, global: map };
+            },
+            restart: () => new Promise((_resolve, reject) => { releaseRestart = () => reject('busy'); }),
+            getLog: () => new Promise((resolve) => { releaseLog = () => resolve(''); }),
+          },
+        };
+
+        await ctrl.refresh();
+        assert(formHost.querySelector('.mcp-empty'), 'empty state not drawn');
+        check('empty list');
+
+        // Populated: every status, a disabled entry, both scopes, the notice.
+        items = [
+          { name: '1', status: 'running', enabled: true, toolCount: 3, schemaTokens: 400, serverName: '7', serverVersion: '8' },
+          { name: '2', status: 'starting', toolCount: 1 },
+          { name: '3', status: 'stopped', enabled: false },
+          { name: '4', status: 'failed', error: '9\nmore' },
+        ];
+        config = {
+          global: { 1: { command: '5', tools: { allow: ['1', '3'] } }, 2: { command: '5' }, 3: { command: '5', enabled: false } },
+          project: { 4: { transport: 'http', url: '6' } },
+          hasProject: true,
+        };
+        await ctrl.refresh();
+        assert(formHost.querySelector('.mcp-notice'), 'the disabled-extension notice was not drawn');
+        assert(formHost.querySelectorAll('.mcp-row').length === 4, 'rows not drawn');
+        const rowErr = formHost.querySelector('.provider-info > .mcp-error-hint');
+        assert(rowErr && rowErr.textContent === '9', `a server's own error is data, was ${JSON.stringify(rowErr?.textContent)}`);
+        check('populated list');
+
+        failList = true;
+        await ctrl.refresh();
+        banner('load failure');
+        failList = false;
+        await ctrl.refresh();
+
+        // Log disclosure: loading, then empty.
+        const logOpen = ctrl._toggleLog('1');
+        assert(formHost.querySelector('.mcp-log-view'), 'log view not drawn');
+        check('log loading');
+        releaseLog();
+        await logOpen;
+        check('log empty');
+        await ctrl._toggleLog('1');
+
+        // Actions with a refresh held off, so each action's own error is shown.
+        const restartBtn = /** @type {HTMLButtonElement} */ (formHost.querySelector('.mcp-row .mcp-btn-row button'));
+        assert(restartBtn, 'no restart button');
+        ctrl.busy = true;
+        const restarting = ctrl._restart('1', restartBtn);
+        assert(isPseudoLocalized(restartBtn.textContent || ''), `restarting: ${JSON.stringify(restartBtn.textContent)}`);
+        releaseRestart();
+        await restarting;
+        ctrl.render();
+        banner('restart failure');
+
+        failSet = true;
+        await ctrl._setEnabled('global', '1', false);
+        ctrl.render();
+        banner('toggle failure');
+
+        /** @type {any} */
+        let asked = null;
+        /** @type {any} */ (window).showModal = async (/** @type {any} */ options) => { asked = options; return true; };
+        await ctrl._confirmDelete('global', '1');
+        assert(asked, 'no delete confirm');
+        for (const key of ['title', 'message', 'confirmText']) {
+          assert(isPseudoLocalized(String(asked[key] || '')), `delete confirm ${key}: ${JSON.stringify(asked[key])}`);
+        }
+        ctrl.render();
+        banner('delete failure');
+        ctrl.busy = false;
+        failSet = false;
+        await ctrl.refresh();
+
+        // Add form, stdio, with an argument and a variable row.
+        ctrl.openForm('add');
+        for (const btn of formHost.querySelectorAll('.mcp-add-row')) /** @type {HTMLElement} */ (btn).click();
+        assert(formHost.querySelector('.mcp-arg-input') && formHost.querySelector('.mcp-env-row'), 'repeat rows not drawn');
+        check('add form (stdio)');
+        const iconButtons = formHost.querySelectorAll('.mcp-remove-row, .mcp-reveal-btn');
+        assert(iconButtons.length === 3, `expected 3 icon buttons, found ${iconButtons.length}`);
+        for (const btn of iconButtons) {
+          const label = btn.getAttribute('aria-label') || '';
+          assert(isPseudoLocalized(label), `icon button aria-label: ${JSON.stringify(label)}`);
+        }
+
+        for (const [name, what] of [['', 'blank name'], ['a b', 'spaced name'], ['a/b', 'slashed name'], ['juggler', 'reserved name'], ['1', 'duplicate name']]) {
+          field('name-input').value = name;
+          await ctrl._save();
+          formError(what);
+        }
+        field('name-input').value = '9';
+        field('command-input').value = '';
+        await ctrl._save();
+        formError('missing command');
+        field('command-input').value = '5';
+        field('env-key').value = '';
+        field('env-value').value = '5';
+        await ctrl._save();
+        formError('unnamed variable');
+        field('env-value').value = '';
+        ctrl.editing.defaultArgsText = '{';
+        await ctrl._save();
+        formError('malformed fixed arguments');
+        ctrl.editing.defaultArgsText = '[1]';
+        await ctrl._save();
+        formError('non-object fixed arguments');
+        ctrl.editing.defaultArgsText = '';
+        failSet = true;
+        await ctrl._save();
+        formError('save failure');
+        check('add form with an error');
+        failSet = false;
+
+        // Remote transport, with a header row.
+        const transport = /** @type {HTMLSelectElement} */ (formHost.querySelector('.mcp-transport-input'));
+        transport.value = 'http';
+        transport.dispatchEvent(new Event('change'));
+        /** @type {HTMLElement} */ (formHost.querySelector('.mcp-add-row')).click();
+        assert(formHost.querySelector('.mcp-url-input') && formHost.querySelector('.mcp-header-row'), 'remote fields not drawn');
+        check('add form (remote)');
+        for (const btn of formHost.querySelectorAll('.mcp-remove-row, .mcp-reveal-btn')) {
+          const label = btn.getAttribute('aria-label') || '';
+          assert(isPseudoLocalized(label), `header icon button aria-label: ${JSON.stringify(label)}`);
+        }
+        await ctrl._save();
+        formError('missing URL');
+        field('url-input').value = '6';
+        field('header-key').value = '';
+        field('header-value').value = '5';
+        await ctrl._save();
+        formError('unnamed header');
+        field('header-value').value = '';
+        await ctrl._save();
+        assert(!ctrl.editing, 'a valid save should close the form');
+
+        // Edit: tools loading, then the filter with a configured name the server
+        // no longer offers, then a server offering none.
+        ctrl.openForm('edit', { name: '1' });
+        check('edit form, tools loading');
+        await until(() => !!ctrl.editing?.toolsLoaded, 'the tool list');
+        assert(formHost.querySelector('.mcp-tool-filter-list'), 'tool filter not drawn');
+        check('edit form, tools loaded');
+        ctrl.openForm('edit', { name: '2' });
+        await until(() => !!ctrl.editing?.toolsLoaded, 'the empty tool list');
+        check('edit form, no tools');
+      } finally {
+        window.fetch = originalFetch;
+        /** @type {any} */ (window).showModal = originalModal;
+        tab.dispose();
+        host.remove();
+        resetExtensionsCache();
+      }
+    });
   });
 
   return { passed, failed, errors };

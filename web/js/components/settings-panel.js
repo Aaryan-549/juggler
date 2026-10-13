@@ -27,6 +27,8 @@ import { McpTab, AcpTab } from './settings/subprocess-tabs.js';
 import { SkillsTab } from './settings/skills-tab.js';
 import { UpdatesTab } from './settings/updates-tab.js';
 import { apiUrl } from '../utils/api-url.js';
+import { escapeHtml } from '../../sdk/lib/html.js';
+import { t, htmlSlots, withHtml } from '../../sdk/lib/i18n.js';
 
 /**
  * Longest the first load will wait for the server's provider list to settle
@@ -175,36 +177,38 @@ class SettingsPanel extends HTMLElement {
    * @private
    */
   render() {
+    const isMac = !!navigator.platform && /mac|iphone|ipad/i.test(navigator.platform);
+    const credentials = { path: '<code id="credentials-path">~/.juggler/credentials.json</code>' };
     this.innerHTML = `
             <modal-backdrop class="settings-backdrop" id="settings-backdrop"></modal-backdrop>
             <modal-panel class="settings-container">
-                <button class="close-button" id="settings-close" title="Close" aria-label="Close"><span class="icon-close"></span></button>
+                <button class="close-button" id="settings-close" title="${escapeHtml(t('Close'))}" aria-label="${escapeHtml(t('Close'))}"><span class="icon-close"></span></button>
                 <nav class="settings-tabs">
                     <div class="settings-tabs-scroll">
-                        <button class="settings-tab active" data-tab="providers">Providers</button>
-                        <button class="settings-tab" data-tab="defaults">Defaults</button>
-                        <button class="settings-tab" data-tab="connectivity">Connectivity</button>
-                        <button class="settings-tab" data-tab="extensions">Extensions</button>
-                        <button class="settings-tab" data-tab="skills">Skills</button>
-                        <button class="settings-tab" data-tab="mcp">MCP servers</button>
-                        <button class="settings-tab" data-tab="acp">ACP agents</button>
-                        <button class="settings-tab" data-tab="appearance">Appearance</button>
-                        <button class="settings-tab" data-tab="notifications">Notifications</button>
-                        <button class="settings-tab" data-tab="shortcuts">Keyboard shortcuts</button>
-                        <button class="settings-tab" data-tab="logs">Logs</button>
-                        <button class="settings-tab" data-tab="updates">Updates</button>
+                        <button class="settings-tab active" data-tab="providers">${escapeHtml(t('Providers'))}</button>
+                        <button class="settings-tab" data-tab="defaults">${escapeHtml(t('Defaults'))}</button>
+                        <button class="settings-tab" data-tab="connectivity">${escapeHtml(t('Connectivity'))}</button>
+                        <button class="settings-tab" data-tab="extensions">${escapeHtml(t('Extensions'))}</button>
+                        <button class="settings-tab" data-tab="skills">${escapeHtml(t('Skills'))}</button>
+                        <button class="settings-tab" data-tab="mcp">${escapeHtml(t('MCP servers'))}</button>
+                        <button class="settings-tab" data-tab="acp">${escapeHtml(t('ACP agents'))}</button>
+                        <button class="settings-tab" data-tab="appearance">${escapeHtml(t('Appearance'))}</button>
+                        <button class="settings-tab" data-tab="notifications">${escapeHtml(t('Notifications'))}</button>
+                        <button class="settings-tab" data-tab="shortcuts">${escapeHtml(t('Keyboard shortcuts'))}</button>
+                        <button class="settings-tab" data-tab="logs">${escapeHtml(t('Logs'))}</button>
+                        <button class="settings-tab" data-tab="updates">${escapeHtml(t('Updates'))}</button>
                     </div>
                 </nav>
 
                 <div class="settings-loading" id="settings-loading">
                     <juggler-spinner style="--size: 2.5rem"></juggler-spinner>
-                    <div class="settings-loading-text">Loading settings...</div>
+                    <div class="settings-loading-text">${escapeHtml(t('Loading settings...'))}</div>
                 </div>
 
                 <main class="settings-content">
                     <section class="settings-tab-content active" id="tab-providers">
                         <p class="settings-description">
-                            Provider keys are stored in <code id="credentials-path">~/.juggler/credentials.json</code>.
+                            ${withHtml(t('Provider keys are stored in {path}.', htmlSlots(credentials)), credentials)}
                         </p>
 
                         <div class="settings-form" id="provider-form">
@@ -213,7 +217,7 @@ class SettingsPanel extends HTMLElement {
                     </section>
 
                     <section class="settings-tab-content" id="tab-defaults">
-                        <div class="settings-section-heading">New conversation defaults</div>
+                        <div class="settings-section-heading">${escapeHtml(t('New conversation defaults'))}</div>
                         <div class="settings-form" id="new-conversation-defaults-form">
                             <div class="settings-card">
                                 <div id="default-model-field-container"></div>
@@ -221,10 +225,9 @@ class SettingsPanel extends HTMLElement {
                             </div>
                         </div>
 
-                        <div class="settings-section-heading">Cheap model</div>
+                        <div class="settings-section-heading">${escapeHtml(t('Cheap model'))}</div>
                         <p class="settings-description">
-                            A small, fast model for the background jobs below. Extensions can
-                            use it too. Never used for your conversations.
+                            ${escapeHtml(t('A small, fast model for the background jobs below. Extensions can use it too. Never used for your conversations.'))}
                         </p>
                         <div class="settings-form" id="cheap-model-form">
                             <div class="settings-card">
@@ -243,37 +246,32 @@ class SettingsPanel extends HTMLElement {
 
                       <section class="settings-tab-content" id="tab-skills">
                           <p class="settings-description">
-                              Discover and install Agent Skills from external registries, or manage
-                              the ones you have. Installing downloads and writes files &mdash; it never
-                              runs anything; a skill's scripts run later only under normal approval.
+                              ${escapeHtml(t('Discover and install Agent Skills from external registries, or manage the ones you have. Installing downloads and writes files — it never runs anything; a skill\'s scripts run later only under normal approval.'))}
                           </p>
                           <div class="skills-tab" id="skills-tab-root"></div>
                       </section>
 
                     <section class="settings-tab-content" id="tab-mcp">
                         <p class="settings-description">
-                            Connect external tools via the Model Context Protocol. Servers run as
-                            local subprocesses; their tools appear to the assistant with approval.
+                            ${escapeHtml(t('Connect external tools via the Model Context Protocol. Servers run as local subprocesses; their tools appear to the assistant with approval.'))}
                         </p>
                         <div class="settings-form" id="mcp-form"></div>
                     </section>
 
                     <section class="settings-tab-content" id="tab-acp">
                         <p class="settings-description">
-                            Drive external agents that speak the Agent Client Protocol (e.g. Gemini
-                            CLI, Zed agents). Each runs as a local subprocess and appears as a model
-                            in the picker under the ACP provider. The agent runs its own tool loop.
+                            ${escapeHtml(t('Drive external agents that speak the Agent Client Protocol (e.g. Gemini CLI, Zed agents). Each runs as a local subprocess and appears as a model in the picker under the ACP provider. The agent runs its own tool loop.'))}
                         </p>
                         <div class="settings-form" id="acp-form"></div>
                     </section>
 
                     <section class="settings-tab-content" id="tab-connectivity">
                         <p class="settings-description">
-                            Control who can reach this Juggler instance.
+                            ${escapeHtml(t('Control who can reach this Juggler instance.'))}
                         </p>
                         <div class="settings-form" id="connectivity-form">
                         </div>
-                        <div class="settings-section-heading">Proxy Settings</div>
+                        <div class="settings-section-heading">${escapeHtml(t('Proxy Settings'))}</div>
                         <div class="settings-form" id="proxy-form"></div>
                     </section>
 
@@ -283,28 +281,25 @@ class SettingsPanel extends HTMLElement {
 
                     <section class="settings-tab-content" id="tab-notifications">
                         <div class="settings-form" id="notifications-form"></div>
-                        <div class="settings-section-heading">Tabs</div>
+                        <div class="settings-section-heading">${escapeHtml(t('Tabs'))}</div>
                         <div class="settings-form" id="tab-behaviour-form"></div>
                     </section>
 
                     <section class="settings-tab-content" id="tab-shortcuts">
                         <p class="settings-description">
-                            Keyboard shortcuts for common actions. Modifier keys are shown
-                            for ${navigator.platform && /mac|iphone|ipad/i.test(navigator.platform) ? 'macOS' : 'this platform'}.
+                            ${escapeHtml(t('Keyboard shortcuts for common actions. Modifier keys are shown for {platform, select, mac {macOS} other {this platform}}.', { platform: isMac ? 'mac' : 'other' }))}
                         </p>
                         <div class="settings-form" id="shortcuts-form"></div>
                     </section>
 
                     <section class="settings-tab-content" id="tab-logs">
                         <p class="settings-description">
-                            Logs for the current session. Pick a file to view it live &mdash; it
-                            updates as the app writes to it. To report a bug, reveal the file and
-                            zip its folder.
+                            ${escapeHtml(t('Logs for the current session. Pick a file to view it live — it updates as the app writes to it. To report a bug, reveal the file and zip its folder.'))}
                         </p>
                         <div class="settings-form" id="logs-form">
-                            <div class="logs-empty" id="logs-empty">No log files yet.</div>
+                            <div class="logs-empty" id="logs-empty">${escapeHtml(t('No log files yet.'))}</div>
                             <div class="logs-controls" id="logs-controls" hidden>
-                                <label class="logs-picker-label" for="logs-picker">Log file</label>
+                                <label class="logs-picker-label" for="logs-picker">${escapeHtml(t('Log file'))}</label>
                                 <select class="logs-picker" id="logs-picker"></select>
                             </div>
                             <div class="logs-filepath" id="logs-filepath"></div>
@@ -314,9 +309,7 @@ class SettingsPanel extends HTMLElement {
 
                     <section class="settings-tab-content" id="tab-updates">
                         <p class="settings-description">
-                            Control whether Juggler checks for and downloads new versions, and
-                            check for one now. A check sends this build's version, OS and
-                            architecture, and counts each install once a day.
+                            ${escapeHtml(t('Control whether Juggler checks for and downloads new versions, and check for one now. A check sends this build\'s version, OS and architecture.'))}
                         </p>
                         <div class="settings-form" id="updates-form"></div>
                     </section>
@@ -641,6 +634,7 @@ class SettingsPanel extends HTMLElement {
       // ~/.juggler on macOS/Windows) rather than the hardcoded literal.
       const credsPathEl = this.querySelector('#credentials-path');
       if (credsPathEl && config.configDir) {
+        // i18n-ignore: a file path
         credsPathEl.textContent = `${config.configDir}/credentials.json`;
       }
 
@@ -658,7 +652,7 @@ class SettingsPanel extends HTMLElement {
       return true;
     } catch (error) {
       console.error('Failed to load config:', error);
-      await showAlert("Couldn't load configuration", 'Error');
+      await showAlert(t('Couldn\'t load configuration'), t('Error'));
       return false;
     }
   }

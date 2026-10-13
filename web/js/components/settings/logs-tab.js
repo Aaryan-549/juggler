@@ -13,6 +13,7 @@ import { formatBytes } from '../../utils/format.js';
 import { addFilePath } from '../../utils/properties-panel-helpers.js';
 import { fetchJson } from '../../services/http.js';
 import { apiUrl } from '../../utils/api-url.js';
+import { t } from '../../../sdk/lib/i18n.js';
 
 /** Polling interval (ms) for tailing the selected log while the Logs tab is open. */
 const LOGS_POLL_MS = 2000;
@@ -188,9 +189,9 @@ export class LogsTab {
     picker.textContent = '';
 
     for (const group of [
-      { key: 'server', label: 'Server' },
-      { key: 'conversations', label: 'Conversations' },
-      { key: 'app', label: 'App' },
+      { key: 'server', label: t('Server') },
+      { key: 'conversations', label: t('Conversations') },
+      { key: 'app', label: t('App') },
     ]) {
       const inGroup = this._logFiles.filter((f) => f.group === group.key);
       if (inGroup.length === 0) continue;

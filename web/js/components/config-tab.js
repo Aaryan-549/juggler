@@ -25,6 +25,7 @@
  */
 
 import { showConfirm } from './modal-dialog.js';
+import { t, markForTranslation } from '../../sdk/lib/i18n.js';
 
 // ---------------------------------------------------------------------------
 // Pure config helpers (unit-tested directly — see mcp-settings-test.js / acp-settings-test.js)
@@ -150,21 +151,32 @@ export function configScopeOf(config, name) {
 /**
  * Build a name validator. Names must be non-empty, free of whitespace and
  * slashes, unique within their scope, and (optionally) not collide with a
- * reserved word.
- * @param {{article: string, noun: string, reserved?: string, reservedMsg?: string}} opts
+ * reserved word. The messages it returns are translated when it is called.
+ * @param {{duplicateMsg: string, reserved?: string, reservedMsg?: string}} opts -
+ *   `duplicateMsg` and `reservedMsg` are whole English messages (marked with
+ *   `markForTranslation`); `duplicateMsg` takes the name as `{name}`.
  * @returns {(name: string, existingNames?: string[]) => string} Validator returning '' when valid.
  */
-export function makeNameValidator({ article, noun, reserved, reservedMsg }) {
+export function makeNameValidator({ duplicateMsg, reserved, reservedMsg }) {
   return (name, existingNames) => {
     const trimmed = (name || '').trim();
-    if (!trimmed) return 'Name is required.';
-    if (/\s/.test(trimmed)) return 'Name cannot contain spaces.';
-    if (trimmed.includes('/')) return 'Name cannot contain "/".';
-    if (reserved && trimmed === reserved) return reservedMsg || `"${reserved}" is reserved.`;
-    if ((existingNames || []).includes(trimmed)) return `${article} ${noun} named "${trimmed}" already exists in this scope.`;
+    if (!trimmed) return t('Name is required.');
+    if (/\s/.test(trimmed)) return t('Name cannot contain spaces.');
+    if (trimmed.includes('/')) return t('Name cannot contain "/".');
+    if (reserved && trimmed === reserved) return reservedMsg ? t(reservedMsg) : t('"{name}" is reserved.', { name: reserved });
+    if ((existingNames || []).includes(trimmed)) return t(duplicateMsg, { name: trimmed });
     return '';
   };
 }
+
+/**
+ * How a scope is named on an entry's chip, keyed by the scope value.
+ * @type {{project: string, global: string}}
+ */
+const SCOPE_LABELS = {
+  project: markForTranslation('project'),
+  global: markForTranslation('global'),
+};
 
 // ---------------------------------------------------------------------------
 // ConfigTabController — one instance per tab, driven by a spec
@@ -177,10 +189,15 @@ export function makeNameValidator({ article, noun, reserved, reservedMsg }) {
  * differences (status dot, description, per-row error, restart/log buttons).
  * @typedef {object} ConfigTabSpec
  * @property {string} id - Short id (also the input-hook class prefix), e.g. 'mcp'.
- * @property {string} noun - Singular entity noun for generated copy, e.g. 'server'.
  * @property {string} formHostSelector - Selector of the tab's mount point, e.g. '#mcp-form'.
  * @property {number} pollMs - Background refresh interval while the tab is open.
  * @property {string} loadError - Fallback message when the initial fetch fails.
+ *
+ * Every English text field (`loadError`, `addLabel`, `emptyText`, the titles,
+ * hints, placeholders and fallback messages) holds a `markForTranslation`
+ * message, or an example value that translates to itself, and is passed to
+ * `t()` where it is drawn; the function hooks return text already translated,
+ * and `notice` returns a message for `t()`.
  * @property {{list: () => Promise<any[]>, getConfig: () => Promise<any>, setConfig: (scope: 'global'|'project', map: object) => Promise<any>, restart?: (name: string) => Promise<any>, getLog?: (name: string) => Promise<string>}} ops - Backend adapters.
  * @property {string} addLabel - Toolbar add-button label.
  * @property {string} emptyText - Empty-state text.
@@ -197,6 +214,7 @@ export function makeNameValidator({ article, noun, reserved, reservedMsg }) {
  * @property {string} namePlaceholder - Placeholder for the Name input.
  * @property {string} nameHintAdd - Name hint shown when adding.
  * @property {string} nameHintEdit - Name hint shown when editing (read-only).
+ * @property {string} scopeHintEdit - Scope hint shown when editing (a move is a delete and re-add).
  * @property {string} commandPlaceholder - Placeholder for the Command input.
  * @property {string} commandHint - Hint shown under the Command input.
  * @property {string} argFirstPlaceholder - Placeholder for the first argument row.
@@ -320,7 +338,7 @@ export class ConfigTabController {
       this.error = '';
     } catch (e) {
       // Keep the last known state; surface an inline banner instead of throwing.
-      this.error = e instanceof Error ? e.message : this.spec.loadError;
+      this.error = e instanceof Error ? e.message : t(this.spec.loadError);
     } finally {
       this.busy = false;
     }
@@ -365,7 +383,7 @@ export class ConfigTabController {
     const addBtn = document.createElement('button');
     addBtn.type = 'button';
     addBtn.className = 'settings-btn btn-primary small';
-    addBtn.textContent = this.spec.addLabel;
+    addBtn.textContent = t(this.spec.addLabel);
     addBtn.addEventListener('click', () => this.openForm('add'));
     toolbar.appendChild(addBtn);
     if (this.spec.toolbarExtra) this.spec.toolbarExtra(toolbar);
@@ -379,7 +397,7 @@ export class ConfigTabController {
       const hint = document.createElement('div');
       hint.className = 'key-source-hint mcp-empty';
       hint.style.display = 'block';
-      hint.textContent = this.spec.emptyText;
+      hint.textContent = t(this.spec.emptyText);
       host.appendChild(hint);
       return;
     }
@@ -390,7 +408,7 @@ export class ConfigTabController {
       const notice = document.createElement('div');
       notice.className = 'key-source-hint mcp-notice';
       notice.style.display = 'block';
-      notice.textContent = this.notice;
+      notice.textContent = t(this.notice);
       host.appendChild(notice);
     }
 
@@ -428,13 +446,14 @@ export class ConfigTabController {
     dot.title = spec.dotTitle(status);
     nameRow.appendChild(dot);
     const nameText = document.createElement('span');
+    nameText.className = 'mcp-entry-name';
     nameText.textContent = name;
     nameRow.appendChild(nameText);
     const extras = spec.identityExtras ? spec.identityExtras(status) : null;
     if (extras) nameRow.appendChild(extras);
     const chip = document.createElement('span');
     chip.className = 'mcp-scope-chip';
-    chip.textContent = scope === 'project' ? 'project' : 'global';
+    chip.textContent = t(scope === 'project' ? SCOPE_LABELS.project : SCOPE_LABELS.global);
     nameRow.appendChild(chip);
     info.appendChild(nameRow);
 
@@ -458,7 +477,7 @@ export class ConfigTabController {
 
     const toggle = document.createElement('label');
     toggle.className = 'mcp-toggle-wrap';
-    toggle.title = enabled ? 'Enabled' : 'Disabled';
+    toggle.title = enabled ? t('Enabled') : t('Disabled');
     const cb = document.createElement('input');
     cb.type = 'checkbox';
     cb.className = 'provider-toggle';
@@ -477,7 +496,7 @@ export class ConfigTabController {
       const restart = document.createElement('button');
       restart.type = 'button';
       restart.className = 'settings-btn small';
-      restart.textContent = 'Restart';
+      restart.textContent = t('Restart');
       if (status.status === 'starting') restart.disabled = true;
       restart.addEventListener('click', () => this._restart(name, restart));
       btnRow.appendChild(restart);
@@ -487,7 +506,7 @@ export class ConfigTabController {
       const logsBtn = document.createElement('button');
       logsBtn.type = 'button';
       logsBtn.className = 'settings-btn small';
-      logsBtn.textContent = this.logFor === name ? 'Hide log' : 'Log';
+      logsBtn.textContent = this.logFor === name ? t('Hide log') : t('Log');
       logsBtn.addEventListener('click', () => this._toggleLog(name));
       btnRow.appendChild(logsBtn);
     }
@@ -495,14 +514,14 @@ export class ConfigTabController {
     const editBtn = document.createElement('button');
     editBtn.type = 'button';
     editBtn.className = 'settings-btn small';
-    editBtn.textContent = 'Edit';
+    editBtn.textContent = t('Edit');
     editBtn.addEventListener('click', () => this.openForm('edit', status));
     btnRow.appendChild(editBtn);
 
     const delBtn = document.createElement('button');
     delBtn.type = 'button';
     delBtn.className = 'settings-btn btn-danger small';
-    delBtn.textContent = 'Delete';
+    delBtn.textContent = t('Delete');
     delBtn.addEventListener('click', () => this._confirmDelete(scope, name));
     btnRow.appendChild(delBtn);
 
@@ -516,8 +535,8 @@ export class ConfigTabController {
       const pre = document.createElement('pre');
       pre.className = 'mcp-log-view';
       pre.textContent = this.logText === null
-        ? 'Loading…'
-        : (this.logText || 'No output yet.');
+        ? t('Loading…')
+        : (this.logText || t('No output yet.'));
       list.appendChild(pre);
     }
   }
@@ -534,12 +553,12 @@ export class ConfigTabController {
     const restart = this.spec.ops.restart;
     if (!restart) return;
     btn.disabled = true;
-    btn.textContent = 'Restarting…';
+    btn.textContent = t('Restarting…');
     this.error = '';
     try {
       await restart(name);
     } catch (e) {
-      this.error = e instanceof Error ? e.message : `Failed to restart "${name}".`;
+      this.error = e instanceof Error ? e.message : t('Failed to restart "{name}".', { name });
     }
     await this.refresh();
   }
@@ -596,7 +615,7 @@ export class ConfigTabController {
         await this.spec.onAfterSave({ entry: nextMap[name] || {}, enabled, scope, name });
       }
     } catch (e) {
-      this.error = e instanceof Error ? e.message : `Failed to update "${name}".`;
+      this.error = e instanceof Error ? e.message : t('Failed to update "{name}".', { name });
     }
     await this.refresh();
   }
@@ -608,14 +627,14 @@ export class ConfigTabController {
    */
   async _confirmDelete(scope, name) {
     const { message, title } = this.spec.deleteConfirm(name);
-    const ok = await showConfirm(message, title, { confirmText: 'Remove', danger: true });
+    const ok = await showConfirm(message, title, { confirmText: t('Remove'), danger: true });
     if (!ok) return;
     this.error = '';
     const src = scope === 'project' ? this.config.project : this.config.global;
     try {
       await this.spec.ops.setConfig(scope, deleteConfigEntry(src, name));
     } catch (e) {
-      this.error = e instanceof Error ? e.message : `Failed to remove "${name}".`;
+      this.error = e instanceof Error ? e.message : t('Failed to remove "{name}".', { name });
     }
     if (this.logFor === name) { this.logFor = ''; this.logText = null; }
     await this.refresh();
@@ -681,35 +700,35 @@ export class ConfigTabController {
 
     const title = document.createElement('div');
     title.className = 'settings-section-heading';
-    title.textContent = f.mode === 'edit' ? `Edit “${f.name}”` : spec.formAddTitle;
+    title.textContent = f.mode === 'edit' ? t('Edit “{name}”', { name: f.name }) : t(spec.formAddTitle);
     wrap.appendChild(title);
 
     // Name
     const nameInput = document.createElement('input');
     nameInput.type = 'text';
     nameInput.className = `mcp-input field-input ${spec.id}-name-input`;
-    nameInput.placeholder = spec.namePlaceholder;
+    nameInput.placeholder = t(spec.namePlaceholder);
     nameInput.value = f.name;
     if (f.mode === 'edit') nameInput.readOnly = true;
-    wrap.appendChild(this._formField('Name', nameInput, f.mode === 'edit' ? spec.nameHintEdit : spec.nameHintAdd));
+    wrap.appendChild(this._formField(t('Name'), nameInput, t(f.mode === 'edit' ? spec.nameHintEdit : spec.nameHintAdd)));
 
     // Scope
     const scopeSelect = document.createElement('select');
     scopeSelect.className = `mcp-input field-input ${spec.id}-scope-input`;
     const optGlobal = document.createElement('option');
     optGlobal.value = 'global';
-    optGlobal.textContent = 'Global (all projects)';
+    optGlobal.textContent = t('Global (all projects)');
     scopeSelect.appendChild(optGlobal);
     if (this.config.hasProject || f.scope === 'project') {
       const optProject = document.createElement('option');
       optProject.value = 'project';
-      optProject.textContent = 'This project only';
+      optProject.textContent = t('This project only');
       scopeSelect.appendChild(optProject);
     }
     scopeSelect.value = f.scope;
     if (f.mode === 'edit') scopeSelect.disabled = true;
-    wrap.appendChild(this._formField('Scope', scopeSelect,
-      f.mode === 'edit' ? `Moving scope means deleting and re-adding the ${spec.noun}.` : ''));
+    wrap.appendChild(this._formField(t('Scope'), scopeSelect,
+      f.mode === 'edit' ? t(spec.scopeHintEdit) : ''));
 
     // Transport (transport-capable tabs only): switches between the stdio field
     // group (command/args/env) and the remote field group (url/headers).
@@ -718,9 +737,9 @@ export class ConfigTabController {
       transportSelect.className = `mcp-input field-input ${spec.id}-transport-input`;
       /** @type {Array<[string, string]>} */
       const transportOptions = [
-        ['stdio', 'Local process (stdio)'],
-        ['http', 'Remote (HTTP)'],
-        ['sse', 'Remote (SSE)'],
+        ['stdio', t('Local process (stdio)')],
+        ['http', t('Remote (HTTP)')],
+        ['sse', t('Remote (SSE)')],
       ];
       for (const [val, label] of transportOptions) {
         const opt = document.createElement('option');
@@ -735,8 +754,8 @@ export class ConfigTabController {
         f.transport = transportSelect.value;
         this.render();
       });
-      wrap.appendChild(this._formField('Transport', transportSelect,
-        'A local process (stdio) or a remote MCP endpoint (HTTP/SSE).'));
+      wrap.appendChild(this._formField(t('Transport'), transportSelect,
+        t('A local process (stdio) or a remote MCP endpoint (HTTP/SSE).')));
     }
 
     if (spec.supportsTransport && isRemoteTransport(f.transport)) {
@@ -763,7 +782,7 @@ export class ConfigTabController {
     enabledToggle.appendChild(enabledSw);
     const enabledText = document.createElement('span');
     enabledText.className = 'mcp-field-label';
-    enabledText.textContent = 'Enabled';
+    enabledText.textContent = t('Enabled');
     enabledField.appendChild(enabledText);
     enabledField.appendChild(enabledToggle);
     wrap.appendChild(enabledField);
@@ -783,12 +802,12 @@ export class ConfigTabController {
     const saveBtn = document.createElement('button');
     saveBtn.type = 'button';
     saveBtn.className = 'settings-btn btn-primary small';
-    saveBtn.textContent = 'Save';
+    saveBtn.textContent = t('Save');
     saveBtn.addEventListener('click', () => this._save());
     const cancelBtn = document.createElement('button');
     cancelBtn.type = 'button';
     cancelBtn.className = 'settings-btn small';
-    cancelBtn.textContent = 'Cancel';
+    cancelBtn.textContent = t('Cancel');
     cancelBtn.addEventListener('click', () => {
       this.editing = null;
       this.render();
@@ -813,16 +832,16 @@ export class ConfigTabController {
     const cmdInput = document.createElement('input');
     cmdInput.type = 'text';
     cmdInput.className = `mcp-input field-input ${spec.id}-command-input`;
-    cmdInput.placeholder = spec.commandPlaceholder;
+    cmdInput.placeholder = t(spec.commandPlaceholder);
     cmdInput.value = f.command;
-    wrap.appendChild(this._formField('Command', cmdInput, spec.commandHint));
+    wrap.appendChild(this._formField(t('Command'), cmdInput, t(spec.commandHint)));
 
     // Arguments
     const argsField = document.createElement('div');
     argsField.className = 'mcp-form-field';
     const argsLabel = document.createElement('label');
     argsLabel.className = 'mcp-field-label';
-    argsLabel.textContent = 'Arguments';
+    argsLabel.textContent = t('Arguments');
     argsField.appendChild(argsLabel);
     const argsList = document.createElement('div');
     argsList.className = 'mcp-args-list';
@@ -830,7 +849,7 @@ export class ConfigTabController {
     const addArg = document.createElement('button');
     addArg.type = 'button';
     addArg.className = 'settings-btn small mcp-add-row';
-    addArg.textContent = 'Add argument';
+    addArg.textContent = t('Add argument');
     addArg.addEventListener('click', () => {
       f.args = this._readArgs();
       f.args.push('');
@@ -845,7 +864,7 @@ export class ConfigTabController {
     envField.className = 'mcp-form-field';
     const envLabel = document.createElement('label');
     envLabel.className = 'mcp-field-label';
-    envLabel.textContent = 'Environment variables';
+    envLabel.textContent = t('Environment variables');
     envField.appendChild(envLabel);
     const envList = document.createElement('div');
     envList.className = 'mcp-env-list';
@@ -853,7 +872,7 @@ export class ConfigTabController {
     const addEnv = document.createElement('button');
     addEnv.type = 'button';
     addEnv.className = 'settings-btn small mcp-add-row';
-    addEnv.textContent = 'Add variable';
+    addEnv.textContent = t('Add variable');
     addEnv.addEventListener('click', () => {
       f.envPairs = this._readEnvPairs();
       f.envPairs.push({ key: '', value: '' });
@@ -877,16 +896,16 @@ export class ConfigTabController {
     const urlInput = document.createElement('input');
     urlInput.type = 'text';
     urlInput.className = `mcp-input field-input ${spec.id}-url-input`;
-    urlInput.placeholder = spec.urlPlaceholder || 'https://example.com/mcp';
+    urlInput.placeholder = spec.urlPlaceholder || 'https://example.com/mcp'; // i18n-ignore: an example address
     urlInput.value = f.url || '';
-    wrap.appendChild(this._formField('URL', urlInput, spec.urlHint || 'The remote MCP endpoint URL.'));
+    wrap.appendChild(this._formField(t('URL'), urlInput, spec.urlHint ? t(spec.urlHint) : t('The remote MCP endpoint URL.')));
 
     // Headers
     const headersField = document.createElement('div');
     headersField.className = 'mcp-form-field';
     const headersLabel = document.createElement('label');
     headersLabel.className = 'mcp-field-label';
-    headersLabel.textContent = 'Headers';
+    headersLabel.textContent = t('Headers');
     headersField.appendChild(headersLabel);
     const headersList = document.createElement('div');
     headersList.className = 'mcp-env-list';
@@ -894,7 +913,7 @@ export class ConfigTabController {
     const addHeader = document.createElement('button');
     addHeader.type = 'button';
     addHeader.className = 'settings-btn small mcp-add-row';
-    addHeader.textContent = 'Add header';
+    addHeader.textContent = t('Add header');
     addHeader.addEventListener('click', () => {
       f.headerPairs = this._readHeaderPairs();
       f.headerPairs.push({ key: '', value: '' });
@@ -944,12 +963,12 @@ export class ConfigTabController {
       const input = document.createElement('input');
       input.type = 'text';
       input.className = `mcp-input field-input ${spec.id}-arg-input`;
-      input.placeholder = i === 0 ? spec.argFirstPlaceholder : spec.argRestPlaceholder;
+      input.placeholder = t(i === 0 ? spec.argFirstPlaceholder : spec.argRestPlaceholder);
       input.value = arg;
       const remove = document.createElement('button');
       remove.type = 'button';
       remove.className = 'mcp-remove-row';
-      remove.setAttribute('aria-label', 'Remove argument');
+      remove.setAttribute('aria-label', t('Remove argument'));
       remove.textContent = '×';
       remove.addEventListener('click', () => {
         this.editing.args = this._readArgs();
@@ -983,13 +1002,13 @@ export class ConfigTabController {
       const value = document.createElement('input');
       value.type = 'password';
       value.className = `mcp-input field-input ${spec.id}-env-value`;
-      value.placeholder = 'value';
+      value.placeholder = t('value');
       value.value = pair.value;
       value.autocomplete = 'off';
       const reveal = document.createElement('button');
       reveal.type = 'button';
       reveal.className = 'mcp-reveal-btn';
-      reveal.setAttribute('aria-label', 'Reveal value');
+      reveal.setAttribute('aria-label', t('Reveal value'));
       reveal.textContent = '👁';
       reveal.addEventListener('click', () => {
         value.type = value.type === 'password' ? 'text' : 'password';
@@ -997,7 +1016,7 @@ export class ConfigTabController {
       const remove = document.createElement('button');
       remove.type = 'button';
       remove.className = 'mcp-remove-row';
-      remove.setAttribute('aria-label', 'Remove variable');
+      remove.setAttribute('aria-label', t('Remove variable'));
       remove.textContent = '×';
       remove.addEventListener('click', () => {
         this.editing.envPairs = this._readEnvPairs();
@@ -1029,18 +1048,18 @@ export class ConfigTabController {
       const key = document.createElement('input');
       key.type = 'text';
       key.className = `mcp-input field-input ${spec.id}-header-key`;
-      key.placeholder = spec.headerKeyPlaceholder || 'Authorization';
+      key.placeholder = spec.headerKeyPlaceholder || 'Authorization'; // i18n-ignore: an example header name
       key.value = pair.key;
       const value = document.createElement('input');
       value.type = 'password';
       value.className = `mcp-input field-input ${spec.id}-header-value`;
-      value.placeholder = 'value';
+      value.placeholder = t('value');
       value.value = pair.value;
       value.autocomplete = 'off';
       const reveal = document.createElement('button');
       reveal.type = 'button';
       reveal.className = 'mcp-reveal-btn';
-      reveal.setAttribute('aria-label', 'Reveal value');
+      reveal.setAttribute('aria-label', t('Reveal value'));
       reveal.textContent = '👁';
       reveal.addEventListener('click', () => {
         value.type = value.type === 'password' ? 'text' : 'password';
@@ -1048,7 +1067,7 @@ export class ConfigTabController {
       const remove = document.createElement('button');
       remove.type = 'button';
       remove.className = 'mcp-remove-row';
-      remove.setAttribute('aria-label', 'Remove header');
+      remove.setAttribute('aria-label', t('Remove header'));
       remove.textContent = '×';
       remove.addEventListener('click', () => {
         this.editing.headerPairs = this._readHeaderPairs();
@@ -1148,14 +1167,14 @@ export class ConfigTabController {
       if (err) { f.error = err; this.render(); return; }
     }
     if (remote) {
-      if (!f.url) { f.error = 'URL is required for a remote server.'; this.render(); return; }
+      if (!f.url) { f.error = t('URL is required for a remote server.'); this.render(); return; }
       for (const p of (f.headerPairs || [])) {
-        if (!p.key.trim() && p.value) { f.error = 'Every header needs a name.'; this.render(); return; }
+        if (!p.key.trim() && p.value) { f.error = t('Every header needs a name.'); this.render(); return; }
       }
     } else {
-      if (!f.command) { f.error = 'Command is required.'; this.render(); return; }
+      if (!f.command) { f.error = t('Command is required.'); this.render(); return; }
       for (const p of (f.envPairs || [])) {
-        if (!p.key.trim() && p.value) { f.error = 'Every environment variable needs a name.'; this.render(); return; }
+        if (!p.key.trim() && p.value) { f.error = t('Every environment variable needs a name.'); this.render(); return; }
       }
     }
 
@@ -1177,7 +1196,7 @@ export class ConfigTabController {
       try {
         entry = { ...entry, ...spec.formToConfigExtra(f) };
       } catch (e) {
-        f.error = e instanceof Error ? e.message : 'Invalid field.';
+        f.error = e instanceof Error ? e.message : t('Invalid field.');
         this.render();
         return;
       }
@@ -1187,7 +1206,7 @@ export class ConfigTabController {
     try {
       await spec.ops.setConfig(scope, upsertConfigEntry(src, name, entry));
     } catch (e) {
-      f.error = e instanceof Error ? e.message : spec.saveFailMsg;
+      f.error = e instanceof Error ? e.message : t(spec.saveFailMsg);
       this.render();
       return;
     }

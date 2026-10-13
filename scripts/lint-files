@@ -171,6 +171,10 @@ if [ ${#js_files[@]} -gt 0 ]; then
 		# any change that touches web/js/vendor fails the lint it is exempt from.
 		NODE_NO_WARNINGS=1 "$NPM_BIN/eslint" --config tooling/eslint.config.js \
 			--max-warnings 0 --ignore-pattern 'web/js/vendor/**' --no-warn-ignored "${js_files[@]}" || status=1
+		# The message catalogue is extracted from every t() in the tree, so it
+		# is checked in full whenever any JavaScript changed.
+		echo "==> i18n check"
+		node scripts/i18n check || status=1
 	fi
 fi
 

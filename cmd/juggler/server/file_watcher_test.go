@@ -27,6 +27,8 @@ func TestIsPluginFile(t *testing.T) {
 		"/a/b/icon.svg":                false,
 		"/a/juggler.extension.json.js": true,  // .js suffix
 		"/a/notes.json":                false, // a non-manifest json is ignored
+		"/a/i18n/fr.json":              true,  // a translation catalogue
+		"/a/i18n/zh-Hant.json":         true,
 	}
 	for path, want := range cases {
 		if got := isPluginFile(path); got != want {

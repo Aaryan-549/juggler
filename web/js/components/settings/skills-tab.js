@@ -10,6 +10,7 @@
 //   <https://www.gnu.org/licenses/agpl-3.0.html> for full terms.
 
 import { escapeHtml } from '../../../sdk/lib/html.js';
+import { t, markForTranslation, htmlSlots, withHtml } from '../../../sdk/lib/i18n.js';
 import { renderMarkdown } from '../../../sdk/lib/markdown.js';
 import { extractErrorMessage } from '../../../sdk/lib/error-utils.js';
 import { formatBytes } from '../../utils/format.js';
@@ -38,11 +39,15 @@ import {
 /** Categories dimmed and hidden unless "Show deprecated" is on. */
 const DEPRECATED_CATEGORIES = new Set(['deprecated', 'in-progress']);
 
-/** The three install destinations offered by the "choose install location" dialog. */
+/**
+ * The three install destinations offered by the "choose install location"
+ * dialog. Labels are English sources, translated where the dialog is drawn;
+ * hints are on-disk paths and stay as written.
+ */
 const SCOPE_OPTIONS = [
-  { value: 'user:agents', label: 'Shared with all agents', hint: '~/.agents/skills' },
-  { value: 'user:juggler', label: 'Juggler only', hint: '~/.juggler/skills' },
-  { value: 'project:juggler', label: 'This project (committed)', hint: '.juggler/skills' },
+  { value: 'user:agents', label: markForTranslation('Shared with all agents'), hint: '~/.agents/skills' },
+  { value: 'user:juggler', label: markForTranslation('Juggler only'), hint: '~/.juggler/skills' },
+  { value: 'project:juggler', label: markForTranslation('This project (committed)'), hint: '.juggler/skills' },
 ];
 
 /**
@@ -108,10 +113,10 @@ export class SkillsTab {
     root.innerHTML = `
       <div class="skills-header">
         <div class="skills-modeswitch" role="tablist">
-          <button class="skills-mode active" data-mode="discover" role="tab">Discover</button>
-          <button class="skills-mode" data-mode="manage" role="tab">Installed</button>
+          <button class="skills-mode active" data-mode="discover" role="tab">${escapeHtml(t('Discover'))}</button>
+          <button class="skills-mode" data-mode="manage" role="tab">${escapeHtml(t('Installed'))}</button>
         </div>
-        <button class="btn-ghost skills-refresh" data-action="refresh" title="Refresh" aria-label="Refresh">${REFRESH_SVG}</button>
+        <button class="btn-ghost skills-refresh" data-action="refresh" title="${escapeHtml(t('Refresh'))}" aria-label="${escapeHtml(t('Refresh'))}">${REFRESH_SVG}</button>
       </div>
       <div class="skills-body" id="skills-body"></div>
       <div class="skills-drawer" id="skills-drawer" hidden></div>
@@ -304,13 +309,13 @@ export class SkillsTab {
     // all equally). The remove × is a SIBLING of the [data-source-chip] button,
     // not a child: _onClick tests [data-source-chip] first with closest(), so a
     // nested × would select the source instead of removing it.
-    const allChip = `<button class="skills-chip ${this.activeSource === 'all' ? 'active' : ''}" data-source-chip="all">All</button>`;
+    const allChip = `<button class="skills-chip ${this.activeSource === 'all' ? 'active' : ''}" data-source-chip="all">${escapeHtml(t('All'))}</button>`;
     const sourceChips =
       allChip +
       sources
         .map((s) => {
           const chip = `<button class="skills-chip ${this.activeSource === s.id ? 'active' : ''}" data-source-chip="${escapeHtml(s.id)}">${escapeHtml(s.label)}</button>`;
-          return `<span class="skills-chip-wrap">${chip}<button class="skills-chip-remove" data-remove-source="${escapeHtml(s.id)}" title="Remove this source" aria-label="Remove source ${escapeHtml(s.label)}">&times;</button></span>`;
+          return `<span class="skills-chip-wrap">${chip}<button class="skills-chip-remove" data-remove-source="${escapeHtml(s.id)}" title="${escapeHtml(t('Remove this source'))}" aria-label="${escapeHtml(t('Remove source {label}', { label: s.label }))}">&times;</button></span>`;
         })
         .join('');
 
@@ -322,23 +327,23 @@ export class SkillsTab {
       .join('');
 
     const staleNote = sources.some((s) => s.stale || s.error)
-      ? `<div class="skills-stale">Showing cached results — some sources couldn't be refreshed.</div>`
+      ? `<div class="skills-stale">${escapeHtml(t('Showing cached results — some sources couldn\'t be refreshed.'))}</div>`
       : '';
 
     const cards = entries.length
       ? entries.map((e) => this._cardHtml(e)).join('')
-      : `<div class="skills-empty">No skills match your filters.</div>`;
+      : `<div class="skills-empty">${escapeHtml(t('No skills match your filters.'))}</div>`;
 
     return `
       <div class="skills-toolbar">
-        <input type="text" id="skills-search" class="skills-search" placeholder="Search skills…  ( / )" value="${escapeHtml(this.query)}" />
-        <button class="skills-btn" data-action="add-source" aria-haspopup="menu" aria-expanded="false" title="Add a GitHub repository (owner/repo) as a skills source">Add source ${DROPDOWN_ARROW_SVG}</button>
+        <input type="text" id="skills-search" class="skills-search" placeholder="${escapeHtml(t('Search skills…  ( / )'))}" value="${escapeHtml(this.query)}" />
+        <button class="skills-btn" data-action="add-source" aria-haspopup="menu" aria-expanded="false" title="${escapeHtml(t('Add a GitHub repository (owner/repo) as a skills source'))}">${escapeHtml(t('Add source'))} ${DROPDOWN_ARROW_SVG}</button>
       </div>
       <div class="skills-chiprow">${sourceChips}</div>
       ${catChips ? `<div class="skills-chiprow skills-catrow">${catChips}</div>` : ''}
       <div class="skills-togglerow">
-        <label><input type="checkbox" data-toggle="hideScripts" ${this.hideScripts ? 'checked' : ''}/> Hide skills that run scripts</label>
-        <label><input type="checkbox" data-toggle="showDeprecated" ${this.showDeprecated ? 'checked' : ''}/> Show deprecated / in-progress</label>
+        <label><input type="checkbox" data-toggle="hideScripts" ${this.hideScripts ? 'checked' : ''}/> ${escapeHtml(t('Hide skills that run scripts'))}</label>
+        <label><input type="checkbox" data-toggle="showDeprecated" ${this.showDeprecated ? 'checked' : ''}/> ${escapeHtml(t('Show deprecated / in-progress'))}</label>
       </div>
       ${staleNote}
       <div class="skills-grid">${cards}</div>
@@ -354,29 +359,29 @@ export class SkillsTab {
   _cardHtml(e) {
     const cat = e.category?.length ? escapeHtml(e.category.join(' / ')) : '';
     const sourceLabel = this._sourceLabel(e.source);
-    const scripts = e.hasScripts ? `<span class="skills-badge tint-blue" title="Contains scripts that can run">scripts</span>` : '';
-    const err = e.error ? `<span class="skills-badge error tint-red" title="${escapeHtml(e.error)}">⚠ error</span>` : '';
+    const scripts = e.hasScripts ? `<span class="skills-badge tint-blue" title="${escapeHtml(t('Contains scripts that can run'))}">${escapeHtml(t('scripts'))}</span>` : '';
+    const err = e.error ? `<span class="skills-badge error tint-red" title="${escapeHtml(e.error)}">⚠ ${escapeHtml(t('error'))}</span>` : '';
     const meta = [sourceLabel, cat].filter(Boolean).join(' · ');
 
     let installBtn;
     if (e.installed && !e.installed.upToDate) {
-      installBtn = `<button class="skills-btn install update" data-install="${escapeHtml(e.id)}">Update</button>`;
+      installBtn = `<button class="skills-btn install update" data-install="${escapeHtml(e.id)}">${escapeHtml(t('Update'))}</button>`;
     } else if (e.installed) {
-      installBtn = `<span class="skills-installed">${CHECK_SVG} Installed</span>`;
+      installBtn = `<span class="skills-installed">${CHECK_SVG} ${escapeHtml(t('Installed'))}</span>`;
     } else {
-      installBtn = `<button class="skills-btn install" data-install="${escapeHtml(e.id)}">Install</button>`;
+      installBtn = `<button class="skills-btn install" data-install="${escapeHtml(e.id)}">${escapeHtml(t('Install'))}</button>`;
     }
 
     return `
       <div class="skills-card surface-card ${e.installed ? 'is-installed' : ''}" data-id="${escapeHtml(e.id)}">
         <div class="skills-card-head">
-          <span class="skills-card-name">${escapeHtml(e.name || '(unnamed)')}</span>
+          <span class="skills-card-name">${escapeHtml(e.name || t('(unnamed)'))}</span>
           ${scripts}${err}
         </div>
         <div class="skills-card-meta">${escapeHtml(meta)}</div>
-        <div class="skills-card-desc">${escapeHtml(e.description || 'No description.')}</div>
+        <div class="skills-card-desc">${escapeHtml(e.description || t('No description.'))}</div>
         <div class="skills-card-actions">
-          <button class="skills-btn" data-preview="${escapeHtml(e.id)}" title="View this skill's SKILL.md and files before installing">Details</button>
+          <button class="skills-btn" data-preview="${escapeHtml(e.id)}" title="${escapeHtml(t('View this skill\'s SKILL.md and files before installing'))}">${escapeHtml(t('Details'))}</button>
           ${installBtn}
         </div>
       </div>
@@ -391,16 +396,17 @@ export class SkillsTab {
   _manageHtml() {
     const skills = [...this.installed].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
     if (!skills.length) {
-      return `<div class="skills-empty">No skills installed yet. Switch to <b>Discover</b> to add some.</div>`;
+      const markup = { discover: `<b>${escapeHtml(t('Discover'))}</b>` };
+      return `<div class="skills-empty">${withHtml(t('No skills installed yet. Switch to {discover} to add some.', htmlSlots(markup)), markup)}</div>`;
     }
     const rows = skills
       .map((s) => {
         const badge = `<span class="skills-scope-badge">${escapeHtml(s.scope)}-${escapeHtml(s.source)}</span>`;
-        const scripts = s.hasScripts ? `<span class="skills-badge tint-blue">scripts</span>` : '';
+        const scripts = s.hasScripts ? `<span class="skills-badge tint-blue">${escapeHtml(t('scripts'))}</span>` : '';
         const flag = s.error
           ? `<span class="skills-badge error tint-red" title="${escapeHtml(s.error)}">⚠ ${escapeHtml(s.error)}</span>`
           : s.shadowedBy
-            ? `<span class="skills-badge tint-neutral" title="Shadowed by ${escapeHtml(s.shadowedBy)}">shadowed by ${escapeHtml(s.shadowedBy)}</span>`
+            ? `<span class="skills-badge tint-neutral" title="${escapeHtml(t('Shadowed by {name}', { name: s.shadowedBy }))}">${escapeHtml(t('shadowed by {name}', { name: s.shadowedBy }))}</span>`
             : '';
         const pathRow = s.path
           ? `<div class="skills-filepath-mount" data-path="${escapeHtml(s.path)}"></div>`
@@ -413,12 +419,12 @@ export class SkillsTab {
                 <span class="skills-card-name">${escapeHtml(s.name)}</span>
                 ${badge}${scripts}${flag}
               </div>
-              <div class="skills-card-desc">${escapeHtml(s.description || 'No description.')}</div>
+              <div class="skills-card-desc">${escapeHtml(s.description || t('No description.'))}</div>
               ${pathRow}
             </div>
             <div class="skills-manage-actions">
-              <button class="skills-btn" data-preview-installed="${ref}" title="View this skill's SKILL.md and files">Details</button>
-              <button class="skills-btn danger" data-uninstall="${ref}">Uninstall</button>
+              <button class="skills-btn" data-preview-installed="${ref}" title="${escapeHtml(t('View this skill\'s SKILL.md and files'))}">${escapeHtml(t('Details'))}</button>
+              <button class="skills-btn danger" data-uninstall="${ref}">${escapeHtml(t('Uninstall'))}</button>
             </div>
           </div>
         `;
@@ -494,15 +500,15 @@ export class SkillsTab {
    * @private
    */
   _onInput(e) {
-    const t = /** @type {HTMLInputElement} */ (e.target);
-    if (t.id === 'skills-search') {
-      this.query = t.value;
+    const target = /** @type {HTMLInputElement} */ (e.target);
+    if (target.id === 'skills-search') {
+      this.query = target.value;
       this._rerenderGrid();
       return;
     }
-    if (t.dataset && t.dataset.toggle) {
-      if (t.dataset.toggle === 'hideScripts') this.hideScripts = t.checked;
-      if (t.dataset.toggle === 'showDeprecated') this.showDeprecated = t.checked;
+    if (target.dataset && target.dataset.toggle) {
+      if (target.dataset.toggle === 'hideScripts') this.hideScripts = target.checked;
+      if (target.dataset.toggle === 'showDeprecated') this.showDeprecated = target.checked;
       this._renderBody();
     }
   }
@@ -521,7 +527,7 @@ export class SkillsTab {
     const entries = this._filteredEntries();
     grid.innerHTML = entries.length
       ? entries.map((e) => this._cardHtml(e)).join('')
-      : `<div class="skills-empty">No skills match your filters.</div>`;
+      : `<div class="skills-empty">${escapeHtml(t('No skills match your filters.'))}</div>`;
   }
 
   /**
@@ -587,7 +593,7 @@ export class SkillsTab {
    */
   async _install(entry, scope, target, mode) {
     if (!entry.name) {
-      await this._alert('This skill has no valid name to install under.');
+      await this._alert(t('This skill has no valid name to install under.'));
       return;
     }
     try {
@@ -595,7 +601,7 @@ export class SkillsTab {
     } catch (err) {
       if (/** @type {any} */ (err).collision) {
         const existing = /** @type {any} */ (err).existing || entry.name;
-        const ok = await this._confirm(`A skill named "${existing}" already exists here. Overwrite it?`);
+        const ok = await this._confirm(t('A skill named "{existing}" already exists here. Overwrite it?', { existing }));
         if (ok) {
           await this._install(entry, scope, target, 'overwrite');
         }
@@ -643,7 +649,7 @@ export class SkillsTab {
       const options = SCOPE_OPTIONS.map(
         (o) => `
           <button class="skills-scope-action" data-scope="${escapeHtml(o.value)}">
-            <span class="skills-scope-action-label">${escapeHtml(o.label)}</span>
+            <span class="skills-scope-action-label">${escapeHtml(t(o.label))}</span>
             <span class="skills-scope-action-hint">${escapeHtml(o.hint)}</span>
           </button>`
       ).join('');
@@ -651,12 +657,12 @@ export class SkillsTab {
         <modal-backdrop class="skills-scope-backdrop"></modal-backdrop>
         <modal-panel class="skills-scope-panel">
           <header class="skills-scope-dialog-header">
-            <h2 class="skills-scope-dialog-title">Install “${escapeHtml(entry.name || 'skill')}”</h2>
+            <h2 class="skills-scope-dialog-title">${escapeHtml(t('Install “{name}”', { name: entry.name || t('skill') }))}</h2>
           </header>
-          <p class="skills-scope-dialog-sub">Choose where to install this skill:</p>
+          <p class="skills-scope-dialog-sub">${escapeHtml(t('Choose where to install this skill:'))}</p>
           <div class="skills-scope-actions">${options}</div>
           <div class="skills-scope-dialog-footer">
-            <button class="skills-btn" data-scope-cancel>Cancel</button>
+            <button class="skills-btn" data-scope-cancel>${escapeHtml(t('Cancel'))}</button>
           </div>
         </modal-panel>
       `;
@@ -675,7 +681,7 @@ export class SkillsTab {
    * @private
    */
   async _uninstall(scope, source, name) {
-    const ok = await this._confirm(`Uninstall "${name}" (${scope}-${source})? This deletes its files.`);
+    const ok = await this._confirm(t('Uninstall "{name}" ({scope}-{source})? This deletes its files.', { name, scope, source }));
     if (!ok) return;
     try {
       await uninstallSkill(/** @type {any} */ (scope), /** @type {any} */ (source), name);
@@ -738,7 +744,7 @@ export class SkillsTab {
     if (!this._releasePreviewPopup) {
       this._releasePreviewPopup = markPopupOpen(() => this._closePreview());
     }
-    const title = escapeHtml(entry.name || 'Skill');
+    const title = escapeHtml(entry.name || t('Skill'));
     drawer.innerHTML = this._previewShell(
       title,
       `<div class="skills-loading"><juggler-spinner style="--size:1.5rem"></juggler-spinner></div>`,
@@ -782,7 +788,7 @@ export class SkillsTab {
     const runs = detail.files.filter((f) => f.runs);
     const runsHtml = runs.length
       ? `<div class="skills-runs">
-           <div class="skills-runs-title">Files that run</div>
+           <div class="skills-runs-title">${escapeHtml(t('Files that run'))}</div>
            ${runs.map((f) => `<div class="skills-run-file">${escapeHtml(f.path)} <span class="skills-file-size">${formatBytes(f.size)}</span></div>`).join('')}
          </div>`
       : '';
@@ -800,7 +806,7 @@ export class SkillsTab {
 
     const fileList = detail.files.length
       ? `<div class="skills-section surface-card skills-files">
-           <div class="skills-section-title">Files (${detail.files.length})</div>
+           <div class="skills-section-title">${escapeHtml(t('Files ({count})', { count: detail.files.length }))}</div>
            <div class="skills-files-list">
              ${detail.files
                 .map(
@@ -812,19 +818,20 @@ export class SkillsTab {
          </div>`
       : '';
 
+    const slugMarkup = { name: `<code>${escapeHtml(entry.name)}</code>` };
     const slugNote = entry.slugged
-      ? `<div class="skills-slug-note">Will install as <code>${escapeHtml(entry.name)}</code> (renamed to a valid skill name).</div>`
+      ? `<div class="skills-slug-note">${withHtml(t('Will install as {name} (renamed to a valid skill name).', htmlSlots(slugMarkup)), slugMarkup)}</div>`
       : '';
     const meta = [
       escapeHtml(this._sourceLabel(entry.source)),
       entry.category?.length ? escapeHtml(entry.category.join(' / ')) : '',
-      entry.license ? `License: ${escapeHtml(entry.license)}` : '',
+      entry.license ? escapeHtml(t('License: {license}', { license: entry.license })) : '',
     ]
       .filter(Boolean)
       .join(' · ');
     const installed = entry.installed
       ? `<div class="skills-section surface-card skills-installed-section">
-           <div class="skills-drawer-installed">${CHECK_SVG} Installed${entry.installed.upToDate ? '' : ' — update available'}</div>
+           <div class="skills-drawer-installed">${CHECK_SVG} ${escapeHtml(entry.installed.upToDate ? t('Installed') : t('Installed — update available'))}</div>
            <div class="skills-filepath-mount" data-path="${escapeHtml(entry.installed.path)}"></div>
          </div>`
       : '';
@@ -832,7 +839,7 @@ export class SkillsTab {
     const body = `
       ${meta ? `<div class="skills-preview-meta">${meta}</div>` : ''}
       ${metaTable}
-      <div class="skills-safety">Installing downloads &amp; writes files — it never runs anything. A skill's text still enters the model's context, so review it below before trusting it.</div>
+      <div class="skills-safety">${escapeHtml(t('Installing downloads & writes files — it never runs anything. A skill\'s text still enters the model\'s context, so review it below before trusting it.'))}</div>
       ${installed}
       ${runsHtml}
       <div class="skills-drawer-body markdown">${renderMarkdown(markdownBody, { escapeXml: true })}</div>
@@ -840,10 +847,10 @@ export class SkillsTab {
       ${slugNote}
     `;
     const footer = `
-      <a class="skills-btn" href="${escapeHtml(entry.sourceUrl)}" target="_blank" rel="noopener noreferrer">${GITHUB_ICON_SVG} View on GitHub</a>
-      <button class="skills-btn install btn-primary" data-drawer-install>${entry.installed ? 'Reinstall' : 'Install'}</button>
+      <a class="skills-btn" href="${escapeHtml(entry.sourceUrl)}" target="_blank" rel="noopener noreferrer">${GITHUB_ICON_SVG} ${escapeHtml(t('View on GitHub'))}</a>
+      <button class="skills-btn install btn-primary" data-drawer-install>${escapeHtml(entry.installed ? t('Reinstall') : t('Install'))}</button>
     `;
-    return this._previewShell(escapeHtml(entry.name || '(unnamed)'), body, footer);
+    return this._previewShell(escapeHtml(entry.name || t('(unnamed)')), body, footer);
   }
 
   /**
@@ -900,7 +907,7 @@ export class SkillsTab {
     // Manual URL entry.
     const urlItem = document.createElement('li');
     urlItem.className = 'menu-item';
-    urlItem.textContent = 'Enter a URL…';
+    urlItem.textContent = t('Enter a URL…');
     urlItem.addEventListener('click', () => {
       close();
       this._promptAddSource();
@@ -914,7 +921,7 @@ export class SkillsTab {
 
       const header = document.createElement('li');
       header.className = 'menu-header';
-      header.textContent = 'Suggested sources';
+      header.textContent = t('Suggested sources');
       menu.appendChild(header);
 
       for (const s of defaults) {
@@ -925,7 +932,7 @@ export class SkillsTab {
           // by seed id keeps the curated label/trust (not a raw custom repo).
           item.className = 'menu-item unavailable';
           item.setAttribute('aria-disabled', 'true');
-          item.textContent = `${s.label} — added`;
+          item.textContent = t('{label} — added', { label: s.label });
         } else {
           item.className = 'menu-item';
           item.textContent = s.label;
@@ -944,7 +951,7 @@ export class SkillsTab {
       }
     }
 
-    applyMenuRoles(menu, 'Add source');
+    applyMenuRoles(menu, t('Add source'));
     surface.appendChild(menu);
     release = presentPopup({
       surface,
@@ -963,7 +970,7 @@ export class SkillsTab {
    * @private
    */
   async _promptAddSource() {
-    const url = await showPrompt('Paste a github.com/owner/repo URL or owner/repo:', '', 'Add skills source');
+    const url = await showPrompt(t('Paste a github.com/owner/repo URL or owner/repo:'), '', t('Add skills source'));
     if (!url || !url.trim()) return;
     try {
       await addSource(url.trim());
@@ -980,7 +987,7 @@ export class SkillsTab {
    * @private
    */
   async _removeSource(id) {
-    const ok = await this._confirm('Remove this source? Installed skills are unaffected.');
+    const ok = await this._confirm(t('Remove this source? Installed skills are unaffected.'));
     if (!ok) return;
     try {
       await removeSource(id);
@@ -1001,7 +1008,7 @@ export class SkillsTab {
    * @private
    */
   async _confirm(msg) {
-    return !!(await showConfirm(msg, 'Skills'));
+    return !!(await showConfirm(msg, t('Skills')));
   }
 
   /**
@@ -1010,7 +1017,7 @@ export class SkillsTab {
    * @private
    */
   async _alert(msg) {
-    await showAlert(msg, 'Skills');
+    await showAlert(msg, t('Skills'));
   }
 }
 

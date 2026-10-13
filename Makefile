@@ -1,4 +1,4 @@
-.PHONY: build test test-build test-go test-full benchmark dev clean fmt lint lint-files lint-go lint-deadcode lint-js lint-types lint-css fix fix-files fix-fmt fix-go fix-js fix-css node-deps help mac-app install-mac app-icon-embed wails-runtime-embed win-icon release-build-mac mac-dmg mac-dmg-pack win-installer win-installer-pack linux-binaries linux-tarball linux-tarball-pack mac-codesign linux-compat-server
+.PHONY: build test test-build test-go test-full benchmark dev clean fmt lint lint-files lint-go lint-deadcode lint-js lint-types lint-css lint-i18n fix fix-files fix-fmt fix-go fix-js fix-css node-deps help mac-app install-mac app-icon-embed wails-runtime-embed win-icon release-build-mac mac-dmg mac-dmg-pack win-installer win-installer-pack linux-binaries linux-tarball linux-tarball-pack mac-codesign linux-compat-server
 
 # Binary name
 BINARY_NAME=juggler
@@ -670,7 +670,7 @@ GOLANGCI_LINT_VERSION=v2.13.2
 ## golangci-lint / go vet / gofmt / eslint / stylelint by hand — the configs,
 ## flags, ignore patterns and pinned tool versions live here, and a hand-rolled
 ## invocation silently diverges from what CI enforces.
-lint: lint-fmt lint-go lint-deadcode lint-types lint-js lint-css lint-docs
+lint: lint-fmt lint-go lint-deadcode lint-types lint-js lint-css lint-docs lint-i18n
 	@echo "✓ lint passed"
 
 ## lint-files: Lint ONLY the named files, using the same linters/configs as
@@ -768,8 +768,11 @@ node-deps:
 lint-types: node-deps
 	@NODE_NO_WARNINGS=1 $(NPM_BIN)/tsc --project tooling/jsconfig.json --noEmit
 
-## lint-js: Run JavaScript linter (all warnings are errors)
+## lint-js: Run JavaScript linter (all warnings are errors), after the cases
+## for the repo's own ESLint rules — a rule that misfires would make the lint
+## that follows it meaningless.
 lint-js: node-deps
+	@NODE_NO_WARNINGS=1 node tooling/eslint-rules/no-raw-ui-string.test.js
 	@NODE_NO_WARNINGS=1 $(NPM_BIN)/eslint --config tooling/eslint.config.js --max-warnings 0 --ignore-pattern 'web/js/vendor/**' 'web/js/**/*.js' 'web/sdk/**/*.js' 'web/extensions/**/*.js' 'web/js-tests/**/*.js'
 
 ## lint-css: Run the CSS linters — stylelint (rem units, no px), then
@@ -780,6 +783,12 @@ lint-js: node-deps
 lint-css: node-deps
 	@NODE_NO_WARNINGS=1 $(NPM_BIN)/stylelint --config tooling/.stylelintrc.json 'web/css/**/*.css'
 	@node scripts/lint-css-arch
+
+## lint-i18n: Check that web/i18n/en.json and the en-XA pseudo-locale match the
+## t() calls in the source, and that tooling/i18n-pending.txt names only files
+## that exist. Whole-tree by nature, so it always runs in full.
+lint-i18n: node-deps
+	@node scripts/i18n check
 
 ## lint-docs: Check that the JavaScript examples in the Markdown docs can be
 ## copy/pasted and run — specifically, that a block never uses a name the same

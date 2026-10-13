@@ -41,12 +41,15 @@ import * as uiBrowser from '../../sdk/ui.js';
 import * as uiWorker from '../../sdk/ui-worker.js';
 import * as itemUtilsBrowser from '../../sdk/item-utils.js';
 import * as itemUtilsWorker from '../../sdk/item-utils-worker.js';
+import * as i18nBrowser from '../../sdk/i18n.js';
+import * as i18nWorker from '../../sdk/i18n-worker.js';
 
 // Keep in sync with the `*-worker.js` entries of `workerSDKImports` in
 // cmd/juggler/server/worker_module.go — those are the specifiers with a twin.
 const FACADE_PAIRS = [
   { specifier: 'juggler/ui', browser: uiBrowser, worker: uiWorker },
   { specifier: 'juggler/item-utils', browser: itemUtilsBrowser, worker: itemUtilsWorker },
+  { specifier: 'juggler/i18n', browser: i18nBrowser, worker: i18nWorker },
 ];
 
 // Pure helpers a plugin may call through `juggler/ui` in either realm. Each

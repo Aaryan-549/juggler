@@ -17,6 +17,7 @@ import wsService from './services/websocket.js';
 import actionExecutor from './services/action-executor.js';
 import workerManager from './services/worker-manager.js';
 import { runOneShot } from './engine-one-shot.js';
+import { followUILocale } from './services/ui-locale.js';
 
 /**
  * How often the engine tells the server its realm is still running. Must stay
@@ -56,6 +57,13 @@ class EngineApp {
   /** @private */
   async setup() {
     console.info('[Engine] Initializing engine...');
+
+    // The UI language, for text the engine produces. A viewer is handed it in
+    // its page; the engine has none, so it asks — before the registries load,
+    // since each extension's catalogue is fetched for the active language just
+    // before its code is imported. Plain HTTP, so it needs no connection yet,
+    // and a failure costs only translations, never the engine.
+    await followUILocale().catch((err) => console.warn('[Engine] UI language unavailable:', err));
 
     // Initialize registries (needed for context items, tools, strategies).
     // Signal readiness once the initial init attempt settles — even on failure,

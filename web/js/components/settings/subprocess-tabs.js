@@ -35,6 +35,7 @@ import {
 import { ConfigTabController, makeNameValidator } from '../config-tab.js';
 import { isMcpExtensionDisabled, MCP_DISABLED_NOTICE } from '../../services/mcp-availability.js';
 import { apiUrl } from '../../utils/api-url.js';
+import { t, markForTranslation } from '../../../sdk/lib/i18n.js';
 
 /** Polling interval (ms) for refreshing the MCP servers tab while it's open. */
 const MCP_POLL_MS = 2000;
@@ -51,9 +52,11 @@ const ACP_POLL_MS = 3000;
  */
 export function formatMcpTokenCost(status) {
   const n = (status && status.toolCount) || 0;
-  const t = (status && status.schemaTokens) || 0;
-  const tok = t >= 1000 ? `${(t / 1000).toFixed(1)}k` : String(t);
-  return `${n} tool${n === 1 ? '' : 's'}${t ? ` · ~${tok} tokens/request` : ''}`;
+  const schema = (status && status.schemaTokens) || 0;
+  const tokens = schema >= 1000 ? `${(schema / 1000).toFixed(1)}k` : String(schema);
+  return schema
+    ? t('{count, plural, one {# tool} other {# tools}} · ~{tokens} tokens/request', { count: n, tokens })
+    : t('{count, plural, one {# tool} other {# tools}}', { count: n });
 }
 
 /**
@@ -142,10 +145,10 @@ export function mcpFormToConfigExtra(f) {
     try {
       parsed = JSON.parse(text);
     } catch {
-      throw new Error('Fixed arguments must be valid JSON.');
+      throw new Error(t('Fixed arguments must be valid JSON.'));
     }
     if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      throw new Error('Fixed arguments must be a JSON object.');
+      throw new Error(t('Fixed arguments must be a JSON object.'));
     }
     if (Object.keys(parsed).length) out.defaultArguments = parsed;
   }
@@ -169,20 +172,20 @@ function renderMcpFormExtra(f, wrap, ctrl) {
   toolsField.className = 'mcp-form-field';
   const toolsLabel = document.createElement('label');
   toolsLabel.className = 'mcp-field-label';
-  toolsLabel.textContent = 'Tools';
+  toolsLabel.textContent = t('Tools');
   toolsField.appendChild(toolsLabel);
 
   if (f.mode === 'add' || !f.name) {
-    toolsField.appendChild(mcpHint('Save the server first, then edit it to choose which tools are exposed. New servers expose all tools.'));
+    toolsField.appendChild(mcpHint(t('Save the server first, then edit it to choose which tools are exposed. New servers expose all tools.')));
   } else if (f.toolsLoaded) {
     const names = f.toolNames || [];
     if (!names.length) {
-      toolsField.appendChild(mcpHint('No tools discovered yet — the server may be stopped or still connecting. All tools stay exposed until you pick.'));
+      toolsField.appendChild(mcpHint(t('No tools discovered yet — the server may be stopped or still connecting. All tools stay exposed until you pick.')));
     } else {
       const enabled = names.filter((n) => f.toolChecked[n]).length;
       const summary = document.createElement('div');
       summary.className = 'mcp-field-hint';
-      summary.textContent = `${enabled} / ${names.length} tools enabled. Unchecked tools are hidden from the model and cannot be called.`;
+      summary.textContent = t('{enabled} / {total} tools enabled. Unchecked tools are hidden from the model and cannot be called.', { enabled, total: names.length });
       toolsField.appendChild(summary);
 
       const list = document.createElement('div');
@@ -196,18 +199,18 @@ function renderMcpFormExtra(f, wrap, ctrl) {
       const configured = [...(f.toolAllow || []), ...(f.toolDeny || [])];
       const unknown = configured.filter((n) => !names.includes(n));
       if (unknown.length) {
-        toolsField.appendChild(mcpHint(`Config references tools not offered by this server: ${unknown.join(', ')}. They will be dropped on save.`));
+        toolsField.appendChild(mcpHint(t('Config references tools not offered by this server: {names}. They will be dropped on save.', { names: unknown.join(', ') })));
       }
     }
   } else {
-    toolsField.appendChild(mcpHint('Loading tools…'));
+    toolsField.appendChild(mcpHint(t('Loading tools…')));
     if (!f.toolsLoading) {
       f.toolsLoading = true;
       mcpListTools({ server: f.name })
         .then((res) => {
           if (ctrl.editing !== f) return; // form closed or switched
           const tools = Array.isArray(res && res.tools) ? res.tools : [];
-          f.toolNames = tools.map((t) => t.name);
+          f.toolNames = tools.map((tool) => tool.name);
           f.toolChecked = {};
           for (const n of f.toolNames) {
             f.toolChecked[n] = mcpToolAllowed(n, { allow: f.toolAllow, deny: f.toolDeny });
@@ -232,16 +235,16 @@ function renderMcpFormExtra(f, wrap, ctrl) {
   argsField.className = 'mcp-form-field';
   const argsLabel = document.createElement('label');
   argsLabel.className = 'mcp-field-label';
-  argsLabel.textContent = 'Fixed arguments';
+  argsLabel.textContent = t('Fixed arguments');
   argsField.appendChild(argsLabel);
   const ta = document.createElement('textarea');
   ta.className = 'mcp-input field-input mcp-default-args-input';
   ta.rows = 4;
-  ta.placeholder = '{\n  "bank_id": "general"\n}';
+  ta.placeholder = '{\n  "bank_id": "general"\n}'; // i18n-ignore: example JSON
   ta.value = f.defaultArgsText || '';
   ta.addEventListener('input', () => { f.defaultArgsText = ta.value; });
   argsField.appendChild(ta);
-  argsField.appendChild(mcpHint('A JSON object merged into every call to this server and hidden from the model. The configured value overrides anything the model supplies — use it to fix routing keys.'));
+  argsField.appendChild(mcpHint(t('A JSON object merged into every call to this server and hidden from the model. The configured value overrides anything the model supplies — use it to fix routing keys.')));
   wrap.appendChild(argsField);
 }
 
@@ -284,15 +287,39 @@ function mcpHint(text) {
 }
 
 /**
+ * How a status is named on a row's status dot, keyed by the status value the
+ * MCP manager and ACP ops report. A value missing here is shown as it came.
+ * @type {Record<string, string>}
+ */
+const STATUS_LABELS = {
+  running: markForTranslation('running'),
+  starting: markForTranslation('starting'),
+  stopped: markForTranslation('stopped'),
+  failed: markForTranslation('failed'),
+  available: markForTranslation('available'),
+  unavailable: markForTranslation('unavailable'),
+  disabled: markForTranslation('disabled'),
+};
+
+/**
+ * A status value as the dot's tooltip shows it.
+ * @param {string} status - The reported status
+ * @returns {string} Its translated name, or the value itself when unknown
+ */
+function statusLabel(status) {
+  const label = Object.prototype.hasOwnProperty.call(STATUS_LABELS, status) ? STATUS_LABELS[status] : '';
+  return label ? t(label) : status;
+}
+
+/**
  * Validate a proposed MCP server name. Names become part of the LLM tool id
  * (`mcp__<name>__<tool>`), so "juggler" is reserved for the built-in CLI bridge.
  * @type {(name: string, existingNames?: string[]) => string}
  */
 export const validateMcpServerName = makeNameValidator({
-  article: 'A',
-  noun: 'server',
+  duplicateMsg: markForTranslation('A server named "{name}" already exists in this scope.'),
   reserved: 'juggler',
-  reservedMsg: '"juggler" is reserved for the built-in tools.',
+  reservedMsg: markForTranslation('"juggler" is reserved for the built-in tools.'),
 });
 
 /**
@@ -300,7 +327,9 @@ export const validateMcpServerName = makeNameValidator({
  * provider — not a tool prefix — so no word is reserved (unlike MCP).
  * @type {(name: string, existingNames?: string[]) => string}
  */
-export const validateAcpAgentName = makeNameValidator({ article: 'An', noun: 'agent' });
+export const validateAcpAgentName = makeNameValidator({
+  duplicateMsg: markForTranslation('An agent named "{name}" already exists in this scope.'),
+});
 
 /**
  * Map an ACP agent's status string to the shared MCP status-dot CSS class
@@ -342,10 +371,9 @@ async function ensureAcpProviderEnabled() {
  */
 const MCP_SPEC = {
   id: 'mcp',
-  noun: 'server',
   formHostSelector: '#mcp-form',
   pollMs: MCP_POLL_MS,
-  loadError: 'Failed to load MCP servers.',
+  loadError: markForTranslation('Failed to load MCP servers.'),
   ops: {
     list: async () => (await mcpListServers()).servers || [],
     getConfig: () => mcpGetConfig(),
@@ -353,8 +381,8 @@ const MCP_SPEC = {
     restart: (name) => mcpServerControl({ server: name, action: 'restart' }),
     getLog: async (name) => (await mcpGetLog({ server: name })).log,
   },
-  addLabel: 'Add server',
-  emptyText: 'No MCP servers yet. Add one to give the assistant extra tools — for example a filesystem, GitHub, or database server.',
+  addLabel: markForTranslation('Add server'),
+  emptyText: markForTranslation('No MCP servers yet. Add one to give the assistant extra tools — for example a filesystem, GitHub, or database server.'),
   // The rows below report the manager's view: servers run, discover tools, and
   // show green dots whether or not anything publishes those tools to the model.
   // With the extension off, every one of them is telling the truth and the whole
@@ -364,12 +392,12 @@ const MCP_SPEC = {
   toolbarExtra: (toolbar) => {
     const soon = document.createElement('span');
     soon.className = 'mcp-import-soon';
-    soon.textContent = 'Importing from other apps is coming soon.';
+    soon.textContent = t('Importing from other apps is coming soon.');
     toolbar.appendChild(soon);
   },
   validateName: validateMcpServerName,
   dotClass: (s) => s.status || 'stopped',
-  dotTitle: (s) => s.status || 'stopped',
+  dotTitle: (s) => statusLabel(s.status || 'stopped'),
   identityExtras: (s) => {
     if (!s.serverName) return null;
     const impl = document.createElement('span');
@@ -380,24 +408,25 @@ const MCP_SPEC = {
   describe: (s) => formatMcpTokenCost(s),
   rowError: (s) => (s.status === 'failed' && s.error) ? (String(s.error).split('\n')[0] || '') : '',
   deleteConfirm: (name) => ({
-    message: `Remove the MCP server "${name}"? Its tools will disappear from conversations.`,
-    title: 'Remove server',
+    message: t('Remove the MCP server "{name}"? Its tools will disappear from conversations.', { name }),
+    title: t('Remove server'),
   }),
-  formAddTitle: 'Add MCP server',
-  namePlaceholder: 'name',
-  nameHintAdd: 'A short id — becomes the tool prefix (mcp__<name>__…). No spaces or “/”.',
-  nameHintEdit: 'Renaming means deleting and re-adding the server.',
-  commandPlaceholder: 'npx',
-  commandHint: 'The executable to launch (stdio transport).',
-  argFirstPlaceholder: '-y',
-  argRestPlaceholder: '@modelcontextprotocol/server-github',
-  envKeyPlaceholder: 'API_TOKEN',
-  saveFailMsg: 'Failed to save the server.',
+  formAddTitle: markForTranslation('Add MCP server'),
+  namePlaceholder: markForTranslation('name'),
+  nameHintAdd: markForTranslation('A short id — becomes the tool prefix (mcp__<name>__…). No spaces or “/”.'),
+  nameHintEdit: markForTranslation('Renaming means deleting and re-adding the server.'),
+  scopeHintEdit: markForTranslation('Moving scope means deleting and re-adding the server.'),
+  commandPlaceholder: 'npx', // i18n-ignore: a command name
+  commandHint: markForTranslation('The executable to launch (stdio transport).'),
+  argFirstPlaceholder: '-y', // i18n-ignore: an example argument
+  argRestPlaceholder: '@modelcontextprotocol/server-github', // i18n-ignore: an example package
+  envKeyPlaceholder: 'API_TOKEN', // i18n-ignore: an example variable name
+  saveFailMsg: markForTranslation('Failed to save the server.'),
   // MCP servers can be local subprocesses (stdio) or remote endpoints (http/sse).
   supportsTransport: true,
-  urlPlaceholder: 'https://example.com/mcp',
-  urlHint: 'The remote MCP endpoint URL (http/sse transport).',
-  headerKeyPlaceholder: 'Authorization',
+  urlPlaceholder: 'https://example.com/mcp', // i18n-ignore: an example address
+  urlHint: markForTranslation('The remote MCP endpoint URL (http/sse transport).'),
+  headerKeyPlaceholder: 'Authorization', // i18n-ignore: an example header name
   // Per-server tool visibility filter + fixed arguments (MCP only).
   seedFormExtra: mcpSeedFormExtra,
   renderFormExtra: renderMcpFormExtra,
@@ -413,36 +442,36 @@ const MCP_SPEC = {
  */
 const ACP_SPEC = {
   id: 'acp',
-  noun: 'agent',
   formHostSelector: '#acp-form',
   pollMs: ACP_POLL_MS,
-  loadError: 'Failed to load ACP agents.',
+  loadError: markForTranslation('Failed to load ACP agents.'),
   ops: {
     list: async () => (await acpListAgents()).agents || [],
     getConfig: () => acpGetConfig(),
     setConfig: (scope, agents) => acpSetConfig({ scope, agents }),
   },
-  addLabel: 'Add agent',
-  emptyText: 'No ACP agents yet. Add one — for example Gemini CLI in ACP mode — and it will appear as a model in the picker.',
+  addLabel: markForTranslation('Add agent'),
+  emptyText: markForTranslation('No ACP agents yet. Add one — for example Gemini CLI in ACP mode — and it will appear as a model in the picker.'),
   validateName: validateAcpAgentName,
   dotClass: (s) => acpDotClass(s.status),
-  dotTitle: (s) => s.status || 'unavailable',
-  describe: (s) => s.command || '(no command)',
+  dotTitle: (s) => statusLabel(s.status || 'unavailable'),
+  describe: (s) => s.command || t('(no command)'),
   rowError: (s) => (s.status === 'unavailable' && s.error) ? s.error : '',
   deleteConfirm: (name) => ({
-    message: `Remove the ACP agent "${name}"? It will disappear from the model picker.`,
-    title: 'Remove agent',
+    message: t('Remove the ACP agent "{name}"? It will disappear from the model picker.', { name }),
+    title: t('Remove agent'),
   }),
-  formAddTitle: 'Add ACP agent',
-  namePlaceholder: 'gemini',
-  nameHintAdd: 'A short id — becomes the model name in the picker. No spaces or “/”.',
-  nameHintEdit: 'Renaming means deleting and re-adding the agent.',
-  commandPlaceholder: 'gemini',
-  commandHint: 'The agent executable to launch (resolved on PATH).',
-  argFirstPlaceholder: '--experimental-acp',
-  argRestPlaceholder: 'value',
-  envKeyPlaceholder: 'API_KEY',
-  saveFailMsg: 'Failed to save the agent.',
+  formAddTitle: markForTranslation('Add ACP agent'),
+  namePlaceholder: 'gemini', // i18n-ignore: an example agent name
+  nameHintAdd: markForTranslation('A short id — becomes the model name in the picker. No spaces or “/”.'),
+  nameHintEdit: markForTranslation('Renaming means deleting and re-adding the agent.'),
+  scopeHintEdit: markForTranslation('Moving scope means deleting and re-adding the agent.'),
+  commandPlaceholder: 'gemini', // i18n-ignore: a command name
+  commandHint: markForTranslation('The agent executable to launch (resolved on PATH).'),
+  argFirstPlaceholder: '--experimental-acp', // i18n-ignore: an example argument
+  argRestPlaceholder: markForTranslation('value'),
+  envKeyPlaceholder: 'API_KEY', // i18n-ignore: an example variable name
+  saveFailMsg: markForTranslation('Failed to save the agent.'),
   // Provider AutoDetect is computed once at startup (sync.Once), so it won't
   // notice an agent added mid-session; enabling the provider closes that gap.
   // Only for an enabled agent — a disabled one adds nothing to the picker.

@@ -96,6 +96,7 @@ func (s *settingsStore) set(next core.GlobalSettings, uiPrefs map[string]json.Ra
 			gs.Connectivity = next.Connectivity
 			gs.Network = next.Network
 			gs.Models = next.Models
+			gs.UILocale = next.UILocale
 			return true
 		})
 		if mergeErr != nil {
@@ -308,6 +309,13 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		handlers.WriteError(w, r, http.StatusBadRequest, "invalid WAN launch mode")
 		return
 	}
+	// A non-empty UI language must be a language tag: it is written into every
+	// page's markup. "" is the default, English.
+	if incoming.UILocale != "" && !core.IsValidUILocale(incoming.UILocale) {
+		handlers.WriteError(w, r, http.StatusBadRequest, "invalid UI language")
+		return
+	}
+	incoming.UILocale = core.NormalizeUILocale(incoming.UILocale)
 	// A non-empty proxy mode must be recognised; manual mode needs a usable URL.
 	if incoming.Network.Proxy.Mode != "" && !core.IsKnownProxyMode(incoming.Network.Proxy.Mode) {
 		handlers.WriteError(w, r, http.StatusBadRequest, "invalid proxy mode")

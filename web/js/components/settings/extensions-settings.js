@@ -4,6 +4,7 @@
 
 import { extensionConfigGet, extensionConfigSet } from '../../services/ops-api.js';
 import { showConfirm } from '../modal-dialog.js';
+import { t, htmlSlots, withHtml } from '../../../sdk/lib/i18n.js';
 
 /** @typedef {import('../../services/extensions.js').ExtensionSetting} ExtensionSetting */
 
@@ -12,18 +13,20 @@ import { showConfirm } from '../modal-dialog.js';
  * Optional blank URL, number, and enum controls clear the stored value.
  * @param {ExtensionSetting} setting
  * @param {string|boolean} rawValue
+ * @param {string} [namespace] - The extension id, whose catalogue translates the label.
  * @returns {string|number|boolean|null} Decoded value suitable for the config operation
  */
-export function decodeExtensionSettingValue(setting, rawValue) {
+export function decodeExtensionSettingValue(setting, rawValue, namespace) {
   if (setting.type === 'boolean') return !!rawValue;
   const value = String(rawValue);
+  const label = t(setting.label, undefined, { namespace });
   if (setting.required && value.trim() === '') {
-    throw new Error(`${setting.label} is required.`);
+    throw new Error(t('{label} is required.', { label }));
   }
   if (setting.type === 'number') {
     if (value.trim() === '') return null;
     const number = Number(value);
-    if (!Number.isFinite(number)) throw new Error(`${setting.label} must be a finite number.`);
+    if (!Number.isFinite(number)) throw new Error(t('{label} must be a finite number.', { label }));
     return number;
   }
   if (setting.type === 'url') {
@@ -32,13 +35,13 @@ export function decodeExtensionSettingValue(setting, rawValue) {
       const url = new URL(value);
       if (!url.protocol || !url.host) throw new Error();
     } catch {
-      throw new Error(`${setting.label} must be an absolute URL.`);
+      throw new Error(t('{label} must be an absolute URL.', { label }));
     }
   }
   if (setting.type === 'enum') {
     if (value === '') return null;
     if (!setting.options?.includes(value)) {
-      throw new Error(`${setting.label} must be one of the available options.`);
+      throw new Error(t('{label} must be one of the available options.', { label }));
     }
   }
   return value;
@@ -101,6 +104,18 @@ export class ExtensionSettingsEditor {
   }
 
   /**
+   * Text the manifest supplied — its name, a setting's label, help or option —
+   * translated by this extension's own catalogue first, then core's, never
+   * another extension's.
+   * @param {string} text - The English.
+   * @returns {string} The text in the UI language.
+   * @private
+   */
+  _text(text) {
+    return t(text, undefined, { namespace: this.manifest.id });
+  }
+
+  /**
    * @returns {HTMLElement} The settings section
    */
   render() {
@@ -112,12 +127,19 @@ export class ExtensionSettingsEditor {
     header.className = 'plugin-section-header';
     const title = document.createElement('h5');
     title.className = 'plugin-section-title';
-    title.textContent = 'Settings';
+    title.textContent = t('Settings');
     const explanation = document.createElement('div');
     explanation.className = 'plugin-section-explanation';
-    explanation.textContent = this.capability
-      ? `Global settings, stored with the ${this.manifest.name || this.manifest.id} extension's settings under ~/.juggler/extension-config.`
-      : 'Global settings for this extension. Non-secret values are stored under ~/.juggler/extension-config; secrets are stored masked in ~/.juggler/credentials.json and are never shown here.';
+    // The paths are file names, not words, so they sit in slots as <code>.
+    const markup = {
+      configDir: '<code>~/.juggler/extension-config</code>',
+      credentials: '<code>~/.juggler/credentials.json</code>',
+    };
+    explanation.innerHTML = this.capability
+      ? withHtml(t('Global settings, stored with the {name} extension\'s settings under {configDir}.',
+        htmlSlots(markup, { name: this.manifest.name ? this._text(this.manifest.name) : this.manifest.id })), markup)
+      : withHtml(t('Global settings for this extension. Non-secret values are stored under {configDir}; secrets are stored masked in {credentials} and are never shown here.',
+        htmlSlots(markup)), markup);
     header.append(title, explanation);
     section.appendChild(header);
 
@@ -137,7 +159,7 @@ export class ExtensionSettingsEditor {
     const save = document.createElement('button');
     save.type = 'submit';
     save.className = 'settings-btn btn-primary small extension-settings-save';
-    save.textContent = 'Save settings';
+    save.textContent = t('Save settings');
     actions.appendChild(save);
     form.appendChild(actions);
 
@@ -167,24 +189,26 @@ export class ExtensionSettingsEditor {
     const label = document.createElement('label');
     label.className = 'extension-setting-label';
     label.htmlFor = this._inputId(setting.key);
-    label.textContent = setting.label;
+    label.textContent = this._text(setting.label);
     if (setting.required) {
       const required = document.createElement('span');
       required.className = 'extension-setting-required';
-      required.textContent = 'required';
+      required.textContent = t('required');
       label.appendChild(required);
     }
     info.appendChild(label);
     if (setting.help) {
       const help = document.createElement('div');
       help.className = 'extension-setting-help';
-      help.textContent = setting.help;
+      help.textContent = this._text(setting.help);
       info.appendChild(help);
     }
     if (Object.hasOwn(setting, 'default')) {
       const defaultText = document.createElement('div');
       defaultText.className = 'extension-setting-default';
-      defaultText.textContent = `Default: ${String(setting.default)}`;
+      // An enum default is one of the options, shown by its label like the rest.
+      const value = setting.type === 'enum' ? this._text(String(setting.default)) : String(setting.default);
+      defaultText.textContent = t('Default: {value}', { value });
       info.appendChild(defaultText);
     }
     row.appendChild(info);
@@ -227,12 +251,13 @@ export class ExtensionSettingsEditor {
       select.className = 'settings-select field-input extension-setting-input';
       const blank = document.createElement('option');
       blank.value = '';
-      blank.textContent = setting.required ? 'Choose an option' : 'Use default';
+      blank.textContent = setting.required ? t('Choose an option') : t('Use default');
       select.appendChild(blank);
       for (const option of setting.options || []) {
         const el = document.createElement('option');
+        // The value is what is stored; only the label shown follows the language.
         el.value = option;
-        el.textContent = option;
+        el.textContent = this._text(option);
         select.appendChild(el);
       }
       select.id = this._inputId(setting.key);
@@ -253,11 +278,11 @@ export class ExtensionSettingsEditor {
       input.step = 'any';
     } else if (setting.type === 'url') {
       input.type = 'url';
-      input.placeholder = 'https://example.com';
+      input.placeholder = 'https://example.com'; // i18n-ignore: an example address
       input.spellcheck = false;
     } else if (setting.type === 'secret') {
       input.type = 'password';
-      input.placeholder = 'Enter a new value';
+      input.placeholder = t('Enter a new value');
       input.autocomplete = 'new-password';
       input.spellcheck = false;
     } else {
@@ -274,7 +299,7 @@ export class ExtensionSettingsEditor {
   _appendSecretControls(setting, wrap, control) {
     const status = document.createElement('span');
     status.className = 'extension-secret-status';
-    status.textContent = 'Not set';
+    status.textContent = t('Not set');
     wrap.appendChild(status);
 
     const buttons = document.createElement('div');
@@ -282,14 +307,14 @@ export class ExtensionSettingsEditor {
     const save = document.createElement('button');
     save.type = 'button';
     save.className = 'settings-btn btn-primary small';
-    save.textContent = 'Save';
+    save.textContent = t('Save');
     save.addEventListener('click', () => this._saveSecret(setting, String(control.value)));
     const clear = document.createElement('button');
     clear.type = 'button';
     clear.className = 'settings-btn btn-danger small extension-secret-clear';
-    clear.textContent = 'Clear';
+    clear.textContent = t('Clear');
     clear.disabled = !!setting.required;
-    if (setting.required) clear.title = 'Required settings cannot be cleared';
+    if (setting.required) clear.title = t('Required settings cannot be cleared');
     clear.addEventListener('click', () => this._saveSecret(setting, ''));
     buttons.append(save, clear);
     wrap.appendChild(buttons);
@@ -301,7 +326,7 @@ export class ExtensionSettingsEditor {
       this._applyValues(values || {});
       this._message('');
     } catch (error) {
-      this._message(this._errorMessage(error, 'Failed to load extension settings.'), true);
+      this._message(this._errorMessage(error, t('Failed to load extension settings.')), true);
     } finally {
       this._setBusy(false);
     }
@@ -322,7 +347,7 @@ export class ExtensionSettingsEditor {
         control.value = '';
         const row = control.closest('.extension-setting-field');
         const status = row?.querySelector('.extension-secret-status');
-        if (status) status.textContent = present ? 'Set' : 'Not set';
+        if (status) status.textContent = present ? t('Set') : t('Not set');
         const clear = /** @type {HTMLButtonElement|null} */ (row?.querySelector('.extension-secret-clear'));
         if (clear && !setting.required) clear.disabled = !present;
       } else if (setting.type === 'boolean') {
@@ -418,13 +443,13 @@ export class ExtensionSettingsEditor {
           : setting.type === 'boolean'
             ? /** @type {HTMLInputElement} */ (control).checked
             : control.value;
-        values[setting.key] = decodeExtensionSettingValue(setting, raw);
+        values[setting.key] = decodeExtensionSettingValue(setting, raw, this.manifest.id);
       }
     } catch (error) {
-      this._message(this._errorMessage(error, 'Check the highlighted settings.'), true);
+      this._message(this._errorMessage(error, t('Check the highlighted settings.')), true);
       return;
     }
-    await this._save(values, 'Settings saved.');
+    await this._save(values, t('Settings saved.'));
   }
 
   /**
@@ -432,19 +457,20 @@ export class ExtensionSettingsEditor {
    * @param {string} value - New secret, or blank to clear it
    */
   async _saveSecret(setting, value) {
+    const label = this._text(setting.label);
     if (value === '' && !this.secretPresence[setting.key]) {
-      this._message(`${setting.label} is not set.`, true);
+      this._message(t('{label} is not set.', { label }), true);
       return;
     }
     if (value === '' && setting.required) {
-      this._message(`${setting.label} is required and cannot be cleared.`, true);
+      this._message(t('{label} is required and cannot be cleared.', { label }), true);
       return;
     }
     if (value === '') {
-      const confirmed = await showConfirm(`Clear ${setting.label}?`, 'Clear extension secret', { danger: true });
+      const confirmed = await showConfirm(t('Clear {label}?', { label }), t('Clear extension secret'), { danger: true });
       if (!confirmed) return;
     }
-    await this._save({ [setting.key]: value }, value ? `${setting.label} saved.` : `${setting.label} cleared.`);
+    await this._save({ [setting.key]: value }, value ? t('{label} saved.', { label }) : t('{label} cleared.', { label }));
   }
 
   /**
@@ -453,13 +479,13 @@ export class ExtensionSettingsEditor {
    */
   async _save(values, successMessage) {
     this._setBusy(true);
-    this._message('Saving…');
+    this._message(t('Saving…'));
     try {
       const result = await this.setConfig({ extId: this.manifest.id, values, scope: 'global' });
       this._applyValues(result || {});
       this._message(successMessage);
     } catch (error) {
-      this._message(this._errorMessage(error, 'Failed to save extension settings.'), true);
+      this._message(this._errorMessage(error, t('Failed to save extension settings.')), true);
     } finally {
       this._setBusy(false);
     }

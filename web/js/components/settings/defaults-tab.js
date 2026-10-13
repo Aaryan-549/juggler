@@ -31,6 +31,7 @@ import { fetchJson } from '../../services/http.js';
 import { showAlert } from '../modal-dialog.js';
 import { apiUrl } from '../../utils/api-url.js';
 import { getAppSession } from '../../utils/app-session.js';
+import { t } from '../../../sdk/lib/i18n.js';
 
 /**
  * Popup id shared by both model rows, so opening one row's picker closes the
@@ -115,11 +116,11 @@ export class DefaultsTab {
     container.appendChild(this._buildDefaultStrategyRow());
 
     const { row } = buildToggleRow(
-      'Allow file edits in new conversations',
-      'Start each new conversation with file editing already allowed, so the agent can edit ' +
+      t('Allow file edits in new conversations'),
+      t('Start each new conversation with file editing already allowed, so the agent can edit ' +
       'without asking first — handy when your project is in version control. Each conversation ' +
       'can still be toggled individually, and edits outside the project and allowed ' +
-      'paths always prompt.',
+      'paths always prompt.'),
       isDefaultFileEditingOn(getAppSession()),
       (on) => setDefaultFileEditingOn(getAppSession(), on),
     );
@@ -152,9 +153,9 @@ export class DefaultsTab {
     // On/off switch. Checked = enabled; we persist the *disabled* bool so the
     // stored key is absent by default (default-on).
     const { row, input: toggleInput } = buildToggleRow(
-      'Name new conversations',
-      'Derives a tab title from your first message. Turn this off to name new ' +
-      'conversations yourself.',
+      t('Name new conversations'),
+      t('Derives a tab title from your first message. Turn this off to name new ' +
+      'conversations yourself.'),
       !(/** @type {any} */ (this.config).autoNameDisabled),
       async (on) => {
         const previous = toggleInput.checked;
@@ -195,9 +196,9 @@ export class DefaultsTab {
     // Checked = enabled; the stored key is the *disabled* bool, so it is absent
     // by default and the feature ships on.
     const { row, input: toggleInput } = buildToggleRow(
-      'Suggest replies',
-      'Offers a few things you might say next when a turn finishes. Clicking one ' +
-      'puts it in the message box to edit — it is never sent for you.',
+      t('Suggest replies'),
+      t('Offers a few things you might say next when a turn finishes. Clicking one ' +
+      'puts it in the message box to edit — it is never sent for you.'),
       !(/** @type {any} */ (this.config).replySuggestionsDisabled),
       async (on) => {
         const previous = toggleInput.checked;
@@ -235,9 +236,9 @@ export class DefaultsTab {
 
     const description = document.createElement('div');
     description.className = 'provider-description';
-    description.textContent =
+    description.textContent = t(
       'A custom instruction for the naming model, replacing the built-in one ' +
-      'shown here. Leave blank for the default.';
+      'shown here. Leave blank for the default.');
     wrap.appendChild(description);
 
     const textarea = document.createElement('textarea');
@@ -262,14 +263,14 @@ export class DefaultsTab {
     const save = async () => {
       const value = textarea.value.trim();
       if (value === (/** @type {any} */ (this.config).autoNameInstruction || '')) return;
-      status.textContent = 'Saving…';
+      status.textContent = t('Saving…');
       try {
         await fetchJson(apiUrl('/config'), { method: 'PUT', body: { auto_name_instruction: value } });
         /** @type {any} */ (this.config).autoNameInstruction = value;
-        status.textContent = value ? 'Saved custom instruction.' : 'Saved. Using the built-in prompt.';
+        status.textContent = value ? t('Saved custom instruction.') : t('Saved. Using the built-in prompt.');
       } catch (e) {
         console.error('[SettingsPanel] Failed to save auto-name instruction:', e);
-        status.textContent = 'Failed to save.';
+        status.textContent = t('Failed to save.');
       }
     };
 
@@ -305,12 +306,12 @@ export class DefaultsTab {
     infoColumn.className = 'provider-info';
     const name = document.createElement('div');
     name.className = 'provider-name';
-    name.textContent = 'Default strategy for new conversations';
+    name.textContent = t('Default strategy for new conversations');
     const desc = document.createElement('div');
     desc.className = 'provider-description';
-    desc.textContent =
+    desc.textContent = t(
       'The strategy each new conversation starts on. You can still switch strategy per ' +
-      'conversation afterwards.';
+      'conversation afterwards.');
     infoColumn.appendChild(name);
     infoColumn.appendChild(desc);
 
@@ -329,14 +330,16 @@ export class DefaultsTab {
     const configuredIsRegistered = !configured
       || manifests.some((/** @type {{id: string}} */ m) => m.id === configured);
 
-    for (const { id, manifest } of manifests) {
+    for (const { id, manifest, extensionId } of manifests) {
       const opt = document.createElement('option');
       opt.value = id;
       // The built-in Default is the "no pin" choice: label it so, and select it
-      // when nothing (or 'default') is configured.
+      // when nothing (or 'default') is configured. The name is the manifest's,
+      // translated by its own extension's catalogue first.
+      const name = t(manifest.name, undefined, { namespace: extensionId || undefined });
       opt.textContent = id === BUILTIN_DEFAULT_STRATEGY_ID
-        ? `${manifest.name} (built-in default)`
-        : manifest.name;
+        ? t('{name} (built-in default)', { name })
+        : name;
       if (configuredIsRegistered
         ? (configured ? id === configured : id === BUILTIN_DEFAULT_STRATEGY_ID)
         : false) {
@@ -348,7 +351,7 @@ export class DefaultsTab {
     if (!configuredIsRegistered && configured) {
       const opt = document.createElement('option');
       opt.value = configured;
-      opt.textContent = `${configured} — unavailable`;
+      opt.textContent = t('{id} — unavailable', { id: configured });
       opt.selected = true;
       select.insertBefore(opt, select.firstChild);
     }
@@ -383,7 +386,7 @@ export class DefaultsTab {
 
     const heading = document.createElement('div');
     heading.className = 'settings-section-heading';
-    heading.textContent = 'Context';
+    heading.textContent = t('Context');
     container.appendChild(heading);
 
     // Automatic compaction on/off. Checked = enabled; we persist the *disabled*
@@ -391,10 +394,10 @@ export class DefaultsTab {
     // second sentence discloses the "fully off" consequence to the person
     // deliberately flipping the switch.
     const { row: autoCompactRow, input: autoCompactInput } = buildToggleRow(
-      'Automatic compaction',
-      'When a conversation nears the model\u2019s context limit, Juggler summarizes ' +
+      t('Automatic compaction'),
+      t('When a conversation nears the model\u2019s context limit, Juggler summarizes ' +
       'older turns to make room. Turn this off to keep full transcripts \u2014 long ' +
-      'conversations may then hit the model\u2019s limit and error.',
+      'conversations may then hit the model\u2019s limit and error.'),
       !(/** @type {any} */ (this.config).autoCompactDisabled),
       async (on) => {
         const previous = autoCompactInput.checked;
@@ -410,20 +413,20 @@ export class DefaultsTab {
     container.appendChild(autoCompactRow);
 
     this._appendNumberField(container, {
-      heading: 'Stream idle timeout',
-      name: 'Seconds to wait',
-      description:
+      heading: t('Stream idle timeout'),
+      name: t('Seconds to wait'),
+      description: t(
         'Seconds to wait for the next stream event before treating the connection ' +
         'as dropped ("stream stalled"). Raise it for gateways with slow cold ' +
-        'starts. Leave blank for the default (180).',
+        'starts. Leave blank for the default (180).'),
       inputId: 'stream-idle-timeout-input',
       placeholder: '180',
       current: () => /** @type {any} */ (this.config).streamIdleTimeout || '',
-      validate: (value) => (parseInt(value, 10) <= 0 ? 'Must be greater than zero.' : ''),
+      validate: (value) => (parseInt(value, 10) <= 0 ? t('Must be greater than zero.') : ''),
       save: async (value) => {
         await fetchJson(apiUrl('/config'), { method: 'PUT', body: { stream_idle_timeout: value } });
         /** @type {any} */ (this.config).streamIdleTimeout = value;
-        return value ? `Saved. Waiting up to ${value}s.` : 'Saved. Using default (180s).';
+        return value ? t('Saved. Waiting up to {value}s.', { value }) : t('Saved. Using default (180s).');
       },
       failureLog: 'stream idle timeout',
     });
@@ -432,15 +435,15 @@ export class DefaultsTab {
     // the figure people reason about is "twenty million", and a field asking
     // them to count zeroes invites the slip that switches the guard off.
     this._appendNumberField(container, {
-      heading: 'Spend ceiling',
-      name: 'Million tokens per conversation',
-      description:
+      heading: t('Spend ceiling'),
+      name: t('Million tokens per conversation'),
+      description: t(
         'Counts the input a conversation has not already paid for, across all of ' +
         'its threads: context re-read from cache does not add to it. Past the ' +
         'ceiling, sub-threads an agent started are asked to finish up and report ' +
         'what they have, and no new ones are started — in your own threads too, ' +
         'though your turns are never stopped. Leave blank for the default (10). ' +
-        '0 removes the ceiling.',
+        '0 removes the ceiling.'),
       inputId: 'spend-limit-input',
       placeholder: '10',
       current: () => {
@@ -451,8 +454,8 @@ export class DefaultsTab {
         const tokens = value === '' ? '' : String(parseInt(value, 10) * 1_000_000);
         await fetchJson(apiUrl('/config'), { method: 'PUT', body: { spend_limit_tokens: tokens } });
         /** @type {any} */ (this.config).spendLimitTokens = tokens;
-        if (value === '') return 'Saved. Using the default (10M).';
-        return value === '0' ? 'Saved. No ceiling.' : `Saved. Stopping delegated work past ${value}M.`;
+        if (value === '') return t('Saved. Using the default (10M).');
+        return value === '0' ? t('Saved. No ceiling.') : t('Saved. Stopping delegated work past {value}M.', { value });
       },
       failureLog: 'spend ceiling',
     });
@@ -478,14 +481,14 @@ export class DefaultsTab {
   _appendDiffSettings(container) {
     const heading = document.createElement('div');
     heading.className = 'settings-section-heading';
-    heading.textContent = 'Diffs';
+    heading.textContent = t('Diffs');
     container.appendChild(heading);
 
     const { row: splitRow } = buildToggleRow(
-      'Side-by-side diffs',
-      'Show the old and new file in two columns instead of one combined list. ' +
+      t('Side-by-side diffs'),
+      t('Show the old and new file in two columns instead of one combined list. ' +
       'Needs a wide enough panel — a diff with no room for two columns shows the ' +
-      'combined list whatever this says.',
+      'combined list whatever this says.'),
       defaultDiffView() === 'split',
       (on) => setDefaultDiffView(on ? 'split' : 'inline'),
     );
@@ -498,12 +501,12 @@ export class DefaultsTab {
     info.className = 'provider-info';
     const name = document.createElement('div');
     name.className = 'provider-name';
-    name.textContent = 'Lines of context';
+    name.textContent = t('Lines of context');
     const description = document.createElement('div');
     description.className = 'provider-description';
-    description.textContent =
+    description.textContent = t(
       'Unchanged lines shown above and below each change, so you can see what it ' +
-      'sits in. More is more to read; the whole file is every line of it.';
+      'sits in. More is more to read; the whole file is every line of it.');
     info.appendChild(name);
     info.appendChild(description);
 
@@ -600,7 +603,7 @@ export class DefaultsTab {
       const value = input.value.trim();
       if (value === opts.current()) return;
       if (value !== '' && !/^\d+$/.test(value)) {
-        status.textContent = 'Enter a whole number.';
+        status.textContent = t('Enter a whole number.');
         return;
       }
       const invalid = value === '' ? '' : (opts.validate?.(value) || '');
@@ -608,12 +611,12 @@ export class DefaultsTab {
         status.textContent = invalid;
         return;
       }
-      status.textContent = 'Saving…';
+      status.textContent = t('Saving…');
       try {
         status.textContent = await opts.save(value);
       } catch (e) {
         console.error(`[SettingsPanel] Failed to save ${opts.failureLog}:`, e);
-        status.textContent = 'Failed to save.';
+        status.textContent = t('Failed to save.');
       }
     };
 
@@ -643,7 +646,7 @@ export class DefaultsTab {
   renderDefaultModelField() {
     this._renderModelRow({
       containerId: '#default-model-field-container',
-      nameLabel: 'Default model for new conversations',
+      nameLabel: t('Default model for new conversations'),
       current: this.defaultModel || { provider: '', model: '', explicit: false },
       statusText: (ref) => this._defaultModelStatusText(ref),
       onSave: (config) => this._saveDefaultModel(config),
@@ -664,13 +667,13 @@ export class DefaultsTab {
   renderCheapModelField() {
     this._renderModelRow({
       containerId: '#cheap-model-field-container',
-      nameLabel: 'Cheap model',
-      description: '"Automatic" derives one from the model in use.',
+      nameLabel: t('Cheap model'),
+      description: t('"Automatic" derives one from the model in use.'),
       current: this.cheapModel || { explicit: false },
       // The one row with a third state. Turning it off is a real answer — the
       // tasks it runs are optional — and recording it is what stops the server
       // deriving a model anyway, and stops it mentioning that it can't.
-      offLabel: 'Off — no cheap model',
+      offLabel: t('Off — no cheap model'),
       statusText: (ref) => this._cheapModelStatusText(ref),
       onSave: (config) => this._saveCheapModel(config),
     });
@@ -733,7 +736,7 @@ export class DefaultsTab {
       providers: this.providers,
       // Off has no config either, so without its own word on the chip it would
       // be indistinguishable from Automatic without opening the picker.
-      placeholder: isOff ? 'Off' : 'Automatic',
+      placeholder: isOff ? t('Off') : t('Automatic'),
       buttonTitle: nameLabel,
       config,
     });
@@ -780,7 +783,7 @@ export class DefaultsTab {
     const picker = /** @type {any} */ (document.createElement('model-picker'));
     picker.providers = this.providers;
     picker.value = value;
-    picker.noneLabel = 'Automatic';
+    picker.noneLabel = t('Automatic');
     if (offLabel) picker.offLabel = offLabel;
     picker.off = !!isOff;
 
@@ -867,7 +870,7 @@ export class DefaultsTab {
       console.error('[SettingsPanel] Failed to save cheap model:', err);
       this.cheapModel = previous;
       this.renderCheapModelField();
-      await showAlert(`Couldn't save the cheap model.\n\n${extractErrorMessage(err)}`, 'Error');
+      await showAlert(t('Couldn\'t save the cheap model.\n\n{error}', { error: extractErrorMessage(err) }), t('Error'));
     }
   }
 
@@ -879,9 +882,9 @@ export class DefaultsTab {
   _defaultModelStatusText(ref) {
     if (!ref || !ref.explicit) {
       if (ref && ref.provider && ref.model) {
-        return `Auto — currently ${modelLabelFromList(this.providers, ref.provider, ref.model)}.`;
+        return t('Auto — currently {model}.', { model: modelLabelFromList(this.providers, ref.provider, ref.model) });
       }
-      return 'Auto — no provider is configured yet.';
+      return t('Auto — no provider is configured yet.');
     }
     return this._explicitModelStatusText(ref);
   }
@@ -897,13 +900,13 @@ export class DefaultsTab {
    * @private
    */
   _cheapModelStatusText(ref) {
-    if (ref && ref.disabled) return 'Off — background tasks won\'t run.';
+    if (ref && ref.disabled) return t('Off — background tasks won\'t run.');
     if (!ref || !ref.explicit) {
       const auto = ref && ref.autoResolved;
       if (auto && auto.provider && auto.model) {
-        return `Auto — currently ${modelLabelFromList(this.providers, auto.provider, auto.model)}.`;
+        return t('Auto — currently {model}.', { model: modelLabelFromList(this.providers, auto.provider, auto.model) });
       }
-      return 'Auto — nothing available for this provider.';
+      return t('Auto — nothing available for this provider.');
     }
     return this._explicitModelStatusText(ref);
   }
@@ -917,15 +920,16 @@ export class DefaultsTab {
    */
   _explicitModelStatusText(ref) {
     const p = this.providers.find((/** @type {any} */ pp) => pp.name === ref.provider);
-    if (!p) return 'Provider not registered.';
+    if (!p) return t('Provider not registered.');
+    // authHint is the server's own wording for its sign-in state.
     if (!p.available) return p.authType === 'oauth_bearer'
-      ? (p.authHint || 'Provider is unavailable. Sign in to continue.')
-      : 'Provider is configured but has no API key.';
+      ? (p.authHint || t('Provider is unavailable. Sign in to continue.'))
+      : t('Provider is configured but has no API key.');
     const hasModel = p.modelsWithContext && p.modelsWithContext.some((/** @type {{id: string}} */ m) => m.id === ref.model);
     if (p.modelsWithContext && !hasModel) {
-      return 'Model is not in the provider’s current model list.';
+      return t('Model is not in the provider’s current model list.');
     }
-    return 'Active.';
+    return t('Active.');
   }
 
   /**
@@ -956,7 +960,7 @@ export class DefaultsTab {
       console.error('[SettingsPanel] Failed to save default model:', err);
       this.defaultModel = previous;
       this.renderDefaultModelField();
-      await showAlert(`Couldn't save the default model.\n\n${extractErrorMessage(err)}`, 'Error');
+      await showAlert(t('Couldn\'t save the default model.\n\n{error}', { error: extractErrorMessage(err) }), t('Error'));
     }
   }
 }

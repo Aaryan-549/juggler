@@ -17,6 +17,11 @@
  */
 
 import { assert } from '../utilities/test-helpers.js';
+import { fetchJson } from '../../js/services/http.js';
+import { apiUrl } from '../../js/utils/api-url.js';
+import {
+  t, setLocale, registerCatalog, unregisterCatalog, isPseudoLocalized, PSEUDO_LOCALE,
+} from '../../sdk/lib/i18n.js';
 import keyShortcutManager, {
   isMac,
   eventMatchesBinding,
@@ -709,6 +714,35 @@ export async function runTests(_ctx) {
     assert(isDefaultFileEditingOn(null) === false, 'null session reads off');
     setDefaultFileEditingOn(null, true);
     setDefaultFileEditingOn({}, true);
+  });
+
+  // The definitions feed two readers. The settings page and tooltips show them
+  // translated, so every label, description and category has a catalogue entry.
+  // The AboutJuggler corpus reads the fields themselves for the model, so those
+  // stay English whatever the UI language is.
+  await run('under en-XA the definitions translate, and the fields stay English', async () => {
+    const body = await fetchJson(apiUrl(`/i18n/catalog?locale=${PSEUDO_LOCALE}`));
+    assert(body && Object.keys(body.messages || {}).length > 0, 'the en-XA catalogue is empty');
+    registerCatalog('key-shortcut-manager-test', PSEUDO_LOCALE, body.messages);
+    const previous = setLocale(PSEUDO_LOCALE);
+    try {
+      /** @type {string[]} */
+      const untranslated = [];
+      /** @type {string[]} */
+      const notEnglish = [];
+      for (const group of keyShortcutManager.byCategory()) {
+        for (const text of [group.category, ...group.shortcuts.flatMap((d) => [d.label, d.description])]) {
+          if (!isPseudoLocalized(t(text))) untranslated.push(text);
+          if (isPseudoLocalized(text)) notEnglish.push(text);
+        }
+      }
+      assert(untranslated.length === 0, `no catalogue entry: ${JSON.stringify([...new Set(untranslated)])}`);
+      assert(notEnglish.length === 0, `fields the corpus reads are not English: ${JSON.stringify(notEnglish)}`);
+      assert(!isPseudoLocalized(keyShortcutManager.label('find')), 'label(id) is the English source');
+    } finally {
+      setLocale(previous);
+      unregisterCatalog('key-shortcut-manager-test');
+    }
   });
 
   return { passed, failed, errors };

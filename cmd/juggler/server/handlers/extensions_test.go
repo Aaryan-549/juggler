@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"testing/fstest"
 )
@@ -341,6 +342,77 @@ func TestExtensionsUserExtensionDiscovered(t *testing.T) {
 	want := api.UserExtensionURLPrefix() + "code-review/context-items/lint-context-item.js"
 	if len(ext.Capabilities.ContextItems) != 1 || ext.Capabilities.ContextItems[0] != want {
 		t.Errorf("contextItems = %v, want [%s]", ext.Capabilities.ContextItems, want)
+	}
+}
+
+// An extension's translations reach the UI through Catalogs: the catalogue for
+// the asked locale, per extension id, from built-in and user extensions alike,
+// along the same chain as the core catalogue and never as English.
+func TestExtensionsCatalogs(t *testing.T) {
+	builtin := coreFS(strings.Replace(coreManifest, `"provides": {`, `"provides": {"i18n": "i18n",`, 1), "1.1.0")
+	builtin["extensions/juggler-core/i18n/en.json"] = &fstest.MapFile{Data: []byte(`{"Read":"Read"}`)}
+	builtin["extensions/juggler-core/i18n/zh.json"] = &fstest.MapFile{Data: []byte(`{"Read":"读取"}`)}
+	builtin["extensions/juggler-core/i18n/en-XA.json"] = &fstest.MapFile{Data: []byte(`{"Read":"[Ŕéåð ··]"}`)}
+
+	userExtDir := t.TempDir()
+	writeFileTree(t, userExtDir, map[string]string{
+		"good/juggler.extension.json": `{"id":"@you/good","name":"Good","version":"1.0.0","engineApi":"^1.1.0",
+			"provides":{"commands":["c/*-command-type.js"],"i18n":"i18n"}}`,
+		"good/c/x-command-type.js": "//",
+		"good/i18n/zh-Hant.json":   `{"Go":"去"}`,
+		// Only Stop is in zh: the merge gives a zh-Hant reader both.
+		"good/i18n/zh.json": `{"Go":"去 (zh)","Stop":"停"}`,
+		"broken/juggler.extension.json": `{"id":"@you/broken","name":"Broken","version":"1.0.0","engineApi":"^1.1.0",
+			"provides":{"commands":["c/*-command-type.js"],"i18n":"i18n"}}`,
+		"broken/c/x-command-type.js": "//",
+		"broken/i18n/zh.json":        `{"Go":1}`,
+		"failed/juggler.extension.json": `{"id":"@you/failed","name":"Failed","version":"1.0.0","engineApi":"^9.0.0",
+			"provides":{"commands":["c/*-command-type.js"],"i18n":"i18n"}}`,
+		"failed/c/x-command-type.js": "//",
+		"failed/i18n/zh.json":        `{"Go":"去"}`,
+		// A user extension reusing a built-in id does not replace its catalogue.
+		"impostor/juggler.extension.json": `{"id":"@juggler/core","name":"Impostor","version":"1.0.0","engineApi":"^1.1.0",
+			"provides":{"commands":["c/*-command-type.js"],"i18n":"i18n"}}`,
+		"impostor/c/x-command-type.js": "//",
+		"impostor/i18n/zh.json":        `{"Read":"冒充"}`,
+	})
+	api := NewExtensionsAPI(builtin, "", userExtDir)
+
+	got := api.Catalogs("zh-Hant-TW")
+	if got["@juggler/core"]["Read"] != "读取" {
+		t.Errorf("built-in zh-Hant-TW → zh: got %v", got["@juggler/core"])
+	}
+	if got["@you/good"]["Go"] != "去" {
+		t.Errorf("user zh-Hant-TW → zh-Hant: got %v", got["@you/good"])
+	}
+	// The chain falls back per message, not per file: what zh-Hant lacks comes
+	// from zh, and what both have comes from the more specific one.
+	if got["@you/good"]["Stop"] != "停" {
+		t.Errorf("a message zh-Hant lacks falls back to zh: got %v", got["@you/good"])
+	}
+	if _, ok := got["@you/broken"]; ok {
+		t.Error("a catalogue that will not parse must be skipped")
+	}
+	if _, ok := got["@you/failed"]; ok {
+		t.Error("an extension that does not load contributes no catalogue")
+	}
+	if xa := api.Catalogs("en-XA"); xa["@juggler/core"]["Read"] != "[Ŕéåð ··]" {
+		t.Errorf("en-XA: got %v", xa["@juggler/core"])
+	}
+	for _, locale := range []string{"en", "en-GB", "de", "", "../x"} {
+		if c := api.Catalogs(locale); len(c) != 0 {
+			t.Errorf("Catalogs(%q) = %v, want none (English is the source; nothing else matches)", locale, c)
+		}
+	}
+
+	// The broken catalogue still loads its extension, with a warning saying why
+	// its translations are missing.
+	broken := findExt(runHandler(t, api), "@you/broken")
+	if broken == nil || broken.Error != "" {
+		t.Fatalf("a broken catalogue must not stop the extension loading: %+v", broken)
+	}
+	if len(broken.Warnings) == 0 || !strings.Contains(strings.Join(broken.Warnings, " "), "i18n") {
+		t.Errorf("warnings = %v, want one naming the catalogue", broken.Warnings)
 	}
 }
 

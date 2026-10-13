@@ -137,6 +137,7 @@ core extension does (`context-items/edit/`, `context-items/execute/`).
     "workspaceProviders": ["workspaces/*-workspace-provider.js"],
     "hooks":        ["hooks/*-hook.js"],
     "systemPrompt": "system-prompt-contribution.js",  // optional; single module path
+    "i18n":         "i18n",                           // optional; directory of <locale>.json translations
     "tests":        ["_tests/*-test.js"],             // optional; test-only, never served
     "integrationTests": ["_tests/integration/*-tests.js"]  // optional; test-only, never served
   }
@@ -147,7 +148,7 @@ core extension does (`context-items/edit/`, `context-items/execute/`).
 |-------|----------|-------|
 | `id` | Yes | Scoped, e.g. `@you/name`. The unit of enable/disable. |
 | `name`, `version` | Yes | Display name and semver. |
-| `provides` | Yes | At least one capability. `contextItems`/`strategies`/`commands`/`infoCards`/`pinboardItems`/`fileViewers`/`workspaceProviders`/`hooks` are root-relative globs; `systemPrompt` is a single module path (see [System-prompt contribution](#system-prompt-contribution)); `tests` and `integrationTests` are test-only (see [Testing your extension](#testing-your-extension)) and do not count as capabilities. None may escape the extension root. |
+| `provides` | Yes | At least one capability. `contextItems`/`strategies`/`commands`/`infoCards`/`pinboardItems`/`fileViewers`/`workspaceProviders`/`hooks` are root-relative globs; `systemPrompt` is a single module path (see [System-prompt contribution](#system-prompt-contribution)); `i18n` is a directory of translation catalogues (see [Translating your extension](#translating-your-extension); needs `engineApi` `^1.1.0`); `tests` and `integrationTests` are test-only (see [Testing your extension](#testing-your-extension)). `i18n`, `tests` and `integrationTests` do not count as capabilities. None may escape the extension root. |
 | `engineApi` | Recommended | Semver range (`^1.0.0`, `1.2.3`, or `*`). Omitting it disables the compat check and earns a validation warning. The host SDK version lives in `web/sdk/version.js`. |
 | `permissions` | As needed | **Declares** the host access this extension's code uses. Surfaced to the user in the catalog and the install prompt — a disclosure, not a sandbox (see [Trust model](#trust-model)). See the vocabulary below. |
 | `settings` | As needed | User-configurable values, rendered in the extensions catalog. See [Settings and secrets](#settings-and-secrets). |
@@ -248,6 +249,7 @@ The full set of specifiers, and what each is for:
 | `juggler/registry` | `createItem()` to materialise another registered item type; `extractFileSource()` |
 | `juggler/sandbox` | `runInSandbox(code, { capabilities, timeoutMs })` — run untrusted code in an opaque-origin iframe |
 | `juggler/version` | `ENGINE_API_VERSION`, `satisfiesEngineApi(range, version)` |
+| `juggler/i18n` | `translator(id)` → a `t()` for your UI text, scoped to your extension's catalogue (English source is the key and the fallback); `markForTranslation()`, `markUntranslated()`, `htmlSlots()`/`withHtml()` for markup inside a message, `messageKey()` for a key with a context, `getLocale()`, `registerCatalog()`, and locale-aware `formatNumber`/`formatDate`/`formatRelativeTime`. See [Translating your extension](#translating-your-extension) |
 | `juggler/utils/html` | HTML escaping and templating helpers |
 | `juggler/utils/path-containment` | Path containment checks — use these rather than hand-rolling `startsWith` |
 
@@ -1402,6 +1404,100 @@ message is what the model relays to the user.
 
 Worked example: `web/extensions/exa/` (a `secret` API key, declared with the
 scoped permission `network.http:api.exa.ai`).
+
+## Translating your extension
+
+Juggler's UI can be shown in other languages, and an extension's text can
+follow it. English is the source and the fallback throughout: text with no
+translation shows in English, so an extension that ships none still works.
+
+**Wrap what the user reads in `t()`, where it is rendered.** The English
+string is the key. Get your `t()` from `translator()`, with your extension's
+id: it looks in your own catalogue first, then in the core UI's, and never in
+another extension's — so a word you share with the core UI or another
+extension (`Open`, `custom`) still gets your translation, and nobody else's
+catalogue can re-word yours.
+
+```js
+import { translator, markForTranslation, htmlSlots, withHtml } from 'juggler/i18n';
+import { escapeHtml } from 'juggler/utils/html';
+
+const t = translator('@me/my-extension');   // your manifest's id
+
+// A module-level table holds English, marked so the string is found; t() runs
+// where it is drawn. A t() up here would run once, at import, in whatever
+// language was active then.
+const MODES = [
+  { value: 'fast', label: markForTranslation('Fast') },
+  { value: 'thorough', label: markForTranslation('Thorough') },
+];
+
+export function renderPanel(el, { count, docsUrl }) {
+  el.querySelector('.title').textContent = t('Search results');
+  // Plurals and values are ICU-style placeholders: one message, never pieces.
+  el.querySelector('.count').textContent =
+    t('{count, plural, one {# match} other {# matches}}', { count });
+  for (const mode of MODES) el.querySelector(`[data-mode="${mode.value}"]`).textContent = t(mode.label);
+  // A link inside a sentence is a placeholder; its own text is a message too.
+  const markup = { docs: `<a href="${escapeHtml(docsUrl)}">${escapeHtml(t('the docs'))}</a>` };
+  el.querySelector('.hint').innerHTML = withHtml(t('See {docs} for setup.', htmlSlots(markup)), markup);
+}
+```
+
+**What the model reads stays English** — tool descriptions, `input_schema`
+text, prompts, validation errors returned to the model, and a context item's
+`getSummary()` summary, which is also the tool result. Mark such strings with
+`markUntranslated()`: it changes nothing, and tells the next reader (and
+Juggler's own i18n lint) that English is deliberate. Translating them would make
+the model's instructions depend on a UI setting.
+
+**Ship catalogues as files.** Name a directory in the manifest's `provides.i18n`
+and put one `<locale>.json` per language in it — a flat object mapping each
+English string to its translation:
+
+```text
+my-extension/
+  juggler.extension.json     "provides": { …, "i18n": "i18n" }
+  i18n/
+    en.json                  the source strings (optional; a list for translators)
+    fr.json                  { "Search results": "Résultats de la recherche", … }
+    zh-Hant.json
+```
+
+The file name is the language tag, in any letter case (`zh-hant.json` is read
+as `zh-Hant`). Lookup falls back message by message along the tag:
+for `zh-Hant-TW`, a message missing from `zh-Hant-TW.json` comes from
+`zh-Hant.json`, then from `zh.json`, and only then shows in English. The host
+registers the result under your extension id before any of your code runs, in
+the viewer and in the engine alike.
+
+Your manifest's `name`, each setting's `label`, `help` and `options`, and your
+capabilities' `MANIFEST.name` are keys too: the host translates them where it
+shows them, from your catalogue first, as `translator()` does. An option's
+label is translated; the value stored is still the English option.
+
+A bare `t()` imported from `juggler/i18n` is not scoped: it looks in the core
+UI's catalogue first, then every extension's, so a word the core UI also uses
+gets the core translation. Prefer `translator()`.
+
+**Two meanings of one English word** in your own text take a context:
+`t('Open', undefined, { context: 'door' })`. In the catalogue its key is the
+context, the character U+0004, then the English — `"door\u0004Open"` in JSON;
+`messageKey('Open', 'door')` builds it.
+
+`juggler ext validate` rejects a catalogue that is not named for a language or
+is not a flat object of strings. At runtime one such file costs the extension
+all of its translations — every language, not just that file's — but the
+extension still loads, with a warning in the catalog saying why.
+
+**Check it with the pseudo-locale.** `en-XA` accents every letter and pads each
+string (`[Šéåŕçĥ ŕéšûļţš ·····]`). With an `en-XA.json` in your catalogue and
+the language set to en-XA (Settings → Appearance → Language, shown in dev mode),
+any plain English left on screen is a string you missed, and anything clipped
+is a layout that will not survive a longer language.
+
+Worked example: `examples/extensions/hello-tool/` (`i18n/` with the manifest's
+name; the summary marked untranslated).
 
 ## Testing your extension
 

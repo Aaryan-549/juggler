@@ -7,8 +7,11 @@ package extmanifest
 import (
 	"encoding/json"
 	"os"
+	"strings"
 	"testing"
 	"testing/fstest"
+
+	"juggler/web"
 )
 
 func TestParseRejectsUnknownFields(t *testing.T) {
@@ -255,5 +258,126 @@ func TestExpandGlobsAllowsDotDotInFilename(t *testing.T) {
 	}
 	if len(got) != 2 {
 		t.Errorf("got %v, want both '..'-in-name files", got)
+	}
+}
+
+func TestParseAcceptsI18nWithoutCountingItAsACapability(t *testing.T) {
+	m, err := Parse([]byte(`{"id":"@x/y","name":"Y","version":"1.0.0","provides":{"i18n":"i18n"}}`))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if m.Provides.I18n != "i18n" {
+		t.Fatalf("Provides.I18n = %q, want i18n", m.Provides.I18n)
+	}
+	// Catalogues translate capabilities; on their own they provide nothing.
+	if err := Validate(m, "1.1.0"); err == nil {
+		t.Fatal("an extension providing only catalogues must not validate")
+	}
+}
+
+func TestCanonicalLocaleTagAliases(t *testing.T) {
+	// Intl.getCanonicalLocales keeps explicit scripts and unknown subtags, but
+	// resolves language, region and variant aliases before catalogue lookup.
+	cases := map[string]string{
+		"IW-il": "he-IL", "ji": "yi", "in-ID": "id-ID",
+		"sh": "sr-Latn", "mo": "ro", "tl": "fil", "cmn": "zh",
+		"en-BU": "en-MM", "en-Latn": "en-Latn",
+		"ja-Latn-hepburn-heploc": "ja-Latn-alalc97",
+		"zz-ZZ-abcde":            "zz-ZZ-abcde", "en-XA": "en-XA",
+		"zh-hant-tw": "zh-Hant-TW", "de-CH-1996": "de-CH-1996",
+		"no": "no", "nb": "nb", "cnr": "sr-ME", "sh-Cyrl": "sr-Cyrl",
+		"hy-SU": "hy-AM", "sr-CS": "sr-RS", "en-AN": "en-CW",
+		"iw-ZZ-abcde": "he-ZZ-abcde", "en-Zzzz": "en-Zzzz",
+		"ja-Latn-hepburn-alalc97": "ja-Latn-alalc97-hepburn",
+		"hy-arevmda":              "hyw", "sgn-DE": "gsg", "en-arevela": "en",
+		"de-1901-1901": "", "en-abcde-ABCDE": "",
+		"en-US-abc": "", "en_GB": "",
+	}
+	for in, want := range cases {
+		if got := CanonicalLocaleTag(in); got != want {
+			t.Errorf("CanonicalLocaleTag(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestReadCatalogsLocaleAliases(t *testing.T) {
+	catalogs, err := ReadCatalogs(fstest.MapFS{
+		"i18n/iw.json":    {Data: []byte(`{"Hello":"שלום"}`)},
+		"i18n/he-IL.json": {Data: []byte(`{"Bye":"להתראות"}`)},
+	}, ".", "i18n")
+	if err != nil {
+		t.Fatalf("ReadCatalogs: %v", err)
+	}
+	for _, locale := range []string{"iw-IL", "he-IL"} {
+		got := MergeChain(catalogs, LocaleChain(locale))
+		if got["Hello"] != "שלום" || got["Bye"] != "להתראות" {
+			t.Errorf("catalogues for %q = %v, want both regional and aliased base messages", locale, got)
+		}
+	}
+}
+
+func TestLocaleChain(t *testing.T) {
+	cases := map[string][]string{
+		"zh-Hant-TW": {"zh-Hant-TW", "zh-Hant", "zh"},
+		"zh-hant-tw": {"zh-Hant-TW", "zh-Hant", "zh"},
+		"FR":         {"fr"},
+		"en-US-abc":  nil,
+		"fr":         {"fr"},
+		"en-XA":      {"en-XA"},
+		"en-GB":      {"en-GB"},
+		"en":         nil,
+		"":           nil,
+		"../x":       nil,
+	}
+	for locale, want := range cases {
+		got := LocaleChain(locale)
+		if strings.Join(got, ",") != strings.Join(want, ",") {
+			t.Errorf("LocaleChain(%q) = %v, want %v", locale, got, want)
+		}
+	}
+}
+
+func TestReadCatalogs(t *testing.T) {
+	ok := fstest.MapFS{
+		"ext/i18n/en-XA.json":   {Data: []byte(`{"Hello":"[Ĥéļļö ··]"}`)},
+		"ext/i18n/zh-Hant.json": {Data: []byte(`{}`)},
+		"ext/i18n/pt-br.json":   {Data: []byte(`{"Hello":"Olá"}`)},
+		"ext/i18n/README.md":    {Data: []byte("not a catalogue")},
+	}
+	got, err := ReadCatalogs(ok, "ext", "i18n")
+	if err != nil {
+		t.Fatalf("ReadCatalogs: %v", err)
+	}
+	// Keyed by canonical tag, as LocaleChain looks them up: pt-br.json is pt-BR.
+	if len(got) != 3 || got["en-XA"]["Hello"] != "[Ĥéļļö ··]" || got["zh-Hant"] == nil || got["pt-BR"]["Hello"] != "Olá" {
+		t.Fatalf("catalogues = %v, want en-XA, zh-Hant and pt-BR", got)
+	}
+
+	bad := map[string]struct {
+		fsys fstest.MapFS
+		dir  string
+	}{
+		"missing directory":   {fstest.MapFS{"ext/x.js": {Data: []byte("//")}}, "i18n"},
+		"escapes the root":    {ok, "../i18n"},
+		"absolute":            {ok, "/i18n"},
+		"not a locale tag":    {fstest.MapFS{"ext/i18n/en_GB.json": {Data: []byte(`{}`)}}, "i18n"},
+		"not json":            {fstest.MapFS{"ext/i18n/fr.json": {Data: []byte(`{`)}}, "i18n"},
+		"a non-string value":  {fstest.MapFS{"ext/i18n/fr.json": {Data: []byte(`{"Hello":1}`)}}, "i18n"},
+		"nested, not flat":    {fstest.MapFS{"ext/i18n/fr.json": {Data: []byte(`{"a":{"b":"c"}}`)}}, "i18n"},
+		"an array, not a map": {fstest.MapFS{"ext/i18n/fr.json": {Data: []byte(`["a"]`)}}, "i18n"},
+	}
+	for name, c := range bad {
+		if _, err := ReadCatalogs(c.fsys, "ext", c.dir); err == nil {
+			t.Errorf("%s: expected an error", name)
+		}
+	}
+}
+
+// DefaultEngineAPIVersion is the fallback for when web/sdk/version.js cannot be
+// read, so it must say what that file says: a stale fallback would judge
+// extensions against an SDK the host does not ship.
+func TestDefaultEngineAPIVersionMatchesSDK(t *testing.T) {
+	if got := ReadEngineAPIVersion(web.Files); got != DefaultEngineAPIVersion {
+		t.Fatalf("web/sdk/version.js says %q but DefaultEngineAPIVersion is %q — bump them together", got, DefaultEngineAPIVersion)
 	}
 }

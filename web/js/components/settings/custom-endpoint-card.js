@@ -36,6 +36,8 @@ import providersCache from '../../services/providers-cache.js';
 import { extractErrorMessage } from '../../../sdk/lib/error-utils.js';
 import { showConfirm } from '../modal-dialog.js';
 import { CHECK_SVG } from '../../utils/icons.js';
+import { escapeHtml } from '../../../sdk/lib/html.js';
+import { t } from '../../../sdk/lib/i18n.js';
 
 /**
  * The id rule, mirroring the server's. An id becomes a provider id, a DOM
@@ -193,7 +195,7 @@ export function buildEndpointCard(endpoint, ctx) {
   const idCode = document.createElement('code');
   idCode.className = 'custom-endpoint-id';
   idCode.textContent = endpoint.providerId;
-  idCode.title = 'The provider id. Permanent: conversations and settings refer to it.';
+  idCode.title = t('The provider id. Permanent: conversations and settings refer to it.');
   providerId.appendChild(idCode);
   info.appendChild(providerId);
 
@@ -250,7 +252,7 @@ export function buildEndpointCard(endpoint, ctx) {
    * @returns {Promise<boolean>} Whether the write landed.
    */
   const saveFields = async (patch, setStatus, remodel = false) => {
-    setStatus('Saving…', 'pending');
+    setStatus(t('Saving…'), 'pending');
     try {
       const { endpoints } = await customProvidersSave({ id: endpoint.id, ...patch });
       // The endpoint's models reach the picker without a restart, so the caches
@@ -261,11 +263,11 @@ export function buildEndpointCard(endpoint, ctx) {
       // A change to what the endpoint serves needs the provider list re-read
       // before the models can be drawn from it. No DOM is rebuilt by that read.
       if (remodel) await ctx.refreshProviders();
-      setStatus('Saved', 'ok');
+      setStatus(t('Saved'), 'ok');
       refresh({ remodel });
       return true;
     } catch (error) {
-      setStatus(`Couldn’t save. ${extractErrorMessage(error)}`, 'error');
+      setStatus(t('Couldn’t save. {error}', { error: extractErrorMessage(error) }), 'error');
       return false;
     }
   };
@@ -338,11 +340,11 @@ function buildEnableToggle(endpoint, saveFields) {
  * @returns {HTMLElement} The field.
  */
 function buildNameField(endpoint, saveFields) {
-  const field = subfield('Name');
+  const field = subfield(t('Name'));
   const { wrapper, input } = wrappedInput({
     value: endpoint.displayName || '',
     placeholder: endpoint.id,
-    ariaLabel: 'Name shown in the model picker',
+    ariaLabel: t('Name shown in the model picker'),
     className: 'custom-endpoint-name-input',
   });
   field.body.appendChild(wrapper);
@@ -365,11 +367,11 @@ function buildNameField(endpoint, saveFields) {
  * @returns {HTMLElement} The field.
  */
 function buildURLField(endpoint, saveFields) {
-  const field = subfield('Base URL');
+  const field = subfield(t('Base URL'));
   const { wrapper, input } = wrappedInput({
     value: endpoint.url || '',
-    placeholder: 'https://gateway.example.com/v1',
-    ariaLabel: 'Base URL',
+    placeholder: 'https://gateway.example.com/v1', // i18n-ignore: an example address
+    ariaLabel: t('Base URL'),
     className: 'custom-endpoint-url-input',
   });
   field.body.appendChild(wrapper);
@@ -395,7 +397,7 @@ function buildURLField(endpoint, saveFields) {
  * @returns {HTMLElement} The field.
  */
 function buildHeadersField(endpoint, saveFields) {
-  const field = subfield('Request headers');
+  const field = subfield(t('Request headers'));
   const rows = document.createElement('div');
   rows.className = 'custom-endpoint-headers';
   field.body.appendChild(rows);
@@ -408,7 +410,7 @@ function buildHeadersField(endpoint, saveFields) {
       const value = /** @type {HTMLInputElement} */ (row.querySelector('.custom-endpoint-header-value')).value;
       if (!key) {
         if (value.trim()) {
-          field.setStatus('Every header needs a name.', 'error');
+          field.setStatus(t('Every header needs a name.'), 'error');
           return;
         }
         continue;
@@ -429,17 +431,21 @@ function buildHeadersField(endpoint, saveFields) {
     row.className = 'custom-endpoint-header-row';
 
     const name = wrappedInput({
-      value: key, placeholder: 'X-Tenant', ariaLabel: 'Header name', className: 'custom-endpoint-header-name',
+      // i18n-ignore: an example header name
+      value: key, placeholder: 'X-Tenant', ariaLabel: t('Header name'), className: 'custom-endpoint-header-name',
     });
     const val = wrappedInput({
-      value, placeholder: 'value', ariaLabel: `Value for header ${key || 'being added'}`, className: 'custom-endpoint-header-value',
+      value,
+      placeholder: t('value'),
+      ariaLabel: key ? t('Value for header {name}', { name: key }) : t('Value for header being added'),
+      className: 'custom-endpoint-header-value',
     });
 
     const drop = document.createElement('button');
     drop.type = 'button';
     drop.className = 'settings-btn small custom-endpoint-header-remove';
     drop.textContent = '\u00d7';
-    drop.setAttribute('aria-label', `Remove header ${key || 'being added'}`);
+    drop.setAttribute('aria-label', key ? t('Remove header {name}', { name: key }) : t('Remove header being added'));
     drop.addEventListener('click', () => {
       row.remove();
       save();
@@ -460,7 +466,7 @@ function buildHeadersField(endpoint, saveFields) {
   const add = document.createElement('button');
   add.type = 'button';
   add.className = 'settings-btn small custom-endpoint-header-add';
-  add.textContent = 'Add header';
+  add.textContent = t('Add header');
   add.addEventListener('click', () => {
     const row = addRow('', '');
     /** @type {HTMLInputElement} */ (row.querySelector('.custom-endpoint-header-name')).focus();
@@ -484,7 +490,7 @@ function buildHeadersField(endpoint, saveFields) {
  * @returns {{element: HTMLElement, refresh: () => void}} The field and its updater.
  */
 function buildKeyField(endpoint, ctx) {
-  const field = subfield('API key');
+  const field = subfield(t('API key'));
   const fromEnv = endpoint.keySource === 'env';
 
   const wrapper = document.createElement('div');
@@ -495,19 +501,21 @@ function buildKeyField(endpoint, ctx) {
   // No settings-value-input: that class marks the non-secret values the panel
   // keeps across a close, and a typed key is neither.
   input.className = 'custom-endpoint-key-input';
-  input.setAttribute('aria-label', 'API key');
+  input.setAttribute('aria-label', t('API key'));
   input.autocomplete = 'off';
   input.setAttribute('autocorrect', 'off');
   input.setAttribute('autocapitalize', 'off');
   input.spellcheck = false;
   input.disabled = fromEnv;
-  input.placeholder = fromEnv
-    ? `using $${endpoint.envVarName}`
-    : (endpoint.hasKey ? '' : 'optional — some endpoints need none');
+  /** @returns {string} What the empty key field says: where the key comes from, or that none is needed. */
+  const keyPlaceholder = () => (fromEnv
+    ? t('using ${name}', { name: endpoint.envVarName })
+    : (endpoint.hasKey ? '' : t('optional — some endpoints need none')));
+  input.placeholder = keyPlaceholder();
 
   const badge = document.createElement('span');
   badge.className = 'provider-active-badge';
-  badge.innerHTML = `${CHECK_SVG}<span>key is active</span>`;
+  badge.innerHTML = `${CHECK_SVG}<span>${escapeHtml(t('key is active'))}</span>`;
   badge.style.display = endpoint.hasKey && !fromEnv ? 'inline-flex' : 'none';
 
   const buttons = document.createElement('div');
@@ -516,13 +524,13 @@ function buildKeyField(endpoint, ctx) {
   const saveButton = document.createElement('button');
   saveButton.type = 'button';
   saveButton.className = 'settings-btn btn-primary small custom-endpoint-key-save';
-  saveButton.textContent = 'Save';
+  saveButton.textContent = t('Save');
   saveButton.style.display = 'none';
 
   const deleteButton = document.createElement('button');
   deleteButton.type = 'button';
   deleteButton.className = 'settings-btn btn-danger small custom-endpoint-key-delete';
-  deleteButton.textContent = 'Delete';
+  deleteButton.textContent = t('Delete');
   deleteButton.style.display = endpoint.keySource === 'credentials' ? 'block' : 'none';
 
   /**
@@ -534,9 +542,7 @@ function buildKeyField(endpoint, ctx) {
     saveButton.style.display = typed && !fromEnv ? 'block' : 'none';
     deleteButton.style.display = endpoint.keySource === 'credentials' ? 'block' : 'none';
     badge.style.display = endpoint.hasKey && !fromEnv && !typed ? 'inline-flex' : 'none';
-    input.placeholder = fromEnv
-      ? `using $${endpoint.envVarName}`
-      : (endpoint.hasKey ? '' : 'optional — some endpoints need none');
+    input.placeholder = keyPlaceholder();
   };
 
   input.addEventListener('input', refresh);
@@ -546,11 +552,11 @@ function buildKeyField(endpoint, ctx) {
    * @returns {Promise<void>} Completes when the write has been reported.
    */
   const writeKey = async (apiKey) => {
-    field.setStatus('Saving…', 'pending');
+    field.setStatus(t('Saving…'), 'pending');
     try {
       const { endpoints } = await customProvidersSetKey({ id: endpoint.id, apiKey });
       await providersCache.refresh();
-      field.setStatus(apiKey ? 'Saved' : 'Deleted', 'ok');
+      field.setStatus(apiKey ? t('Saved') : t('Deleted'), 'ok');
       input.value = '';
       const stored = (endpoints || []).find((/** @type {any} */ e) => e.id === endpoint.id);
       if (stored) {
@@ -560,7 +566,7 @@ function buildKeyField(endpoint, ctx) {
       refresh();
       ctx.applyEndpoints(endpoints);
     } catch (error) {
-      field.setStatus(`Couldn’t save the key. ${extractErrorMessage(error)}`, 'error');
+      field.setStatus(t('Couldn’t save the key. {error}', { error: extractErrorMessage(error) }), 'error');
     }
   };
 
@@ -577,7 +583,7 @@ function buildKeyField(endpoint, ctx) {
   if (fromEnv) {
     const hint = document.createElement('div');
     hint.className = 'key-source-hint';
-    hint.textContent = `Using environment variable $${endpoint.envVarName}`;
+    hint.textContent = t('Using environment variable ${name}', { name: endpoint.envVarName });
     field.body.appendChild(hint);
   }
 
@@ -598,13 +604,13 @@ function buildRemoveRow(endpoint, ctx) {
   const remove = document.createElement('button');
   remove.type = 'button';
   remove.className = 'settings-btn btn-danger small custom-endpoint-remove';
-  remove.textContent = 'Remove';
+  remove.textContent = t('Remove');
   remove.addEventListener('click', async () => {
     const label = endpoint.displayName || endpoint.id;
     const confirmed = await showConfirm(
-      `Remove “${label}”? Its models leave the picker, and the limits and hidden models set for them are forgotten. Its API key stays in the credentials store.`,
-      'Remove endpoint',
-      { confirmText: 'Remove', danger: true },
+      t('Remove “{name}”? Its models leave the picker, and the limits and hidden models set for them are forgotten. Its API key stays in the credentials store.', { name: label }),
+      t('Remove endpoint'),
+      { confirmText: t('Remove'), danger: true },
     );
     if (!confirmed) return;
     remove.disabled = true;
@@ -614,7 +620,7 @@ function buildRemoveRow(endpoint, ctx) {
       ctx.onRemoved(endpoints);
     } catch (error) {
       remove.disabled = false;
-      ctx.reportError(`Couldn’t remove “${label}”. ${extractErrorMessage(error)}`);
+      ctx.reportError(t('Couldn’t remove “{name}”. {error}', { name: label, error: extractErrorMessage(error) }));
     }
   });
 
@@ -640,7 +646,7 @@ export function buildAddEndpointForm(ctx) {
   info.className = 'provider-info';
   const heading = document.createElement('div');
   heading.className = 'provider-name';
-  heading.textContent = 'New endpoint';
+  heading.textContent = t('New endpoint');
   info.appendChild(heading);
 
   const idNote = document.createElement('div');
@@ -650,15 +656,16 @@ export function buildAddEndpointForm(ctx) {
   const control = document.createElement('div');
   control.className = 'provider-control';
 
-  const nameField = subfield('Name');
+  const nameField = subfield(t('Name'));
   const name = wrappedInput({
-    placeholder: 'Acme Gateway', ariaLabel: 'Name shown in the model picker', className: 'custom-endpoint-add-name',
+    placeholder: t('Acme Gateway'), ariaLabel: t('Name shown in the model picker'), className: 'custom-endpoint-add-name',
   });
   nameField.body.appendChild(name.wrapper);
 
-  const urlField = subfield('Base URL');
+  const urlField = subfield(t('Base URL'));
   const url = wrappedInput({
-    placeholder: 'https://gateway.example.com/v1', ariaLabel: 'Base URL', className: 'custom-endpoint-add-url',
+    // i18n-ignore: an example address
+    placeholder: 'https://gateway.example.com/v1', ariaLabel: t('Base URL'), className: 'custom-endpoint-add-url',
   });
   urlField.body.appendChild(url.wrapper);
 
@@ -667,7 +674,7 @@ export function buildAddEndpointForm(ctx) {
   const showID = () => {
     const derived = deriveEndpointId(name.input.value, ctx.takenIds);
     idNote.textContent = name.input.value.trim()
-      ? `Registers as custom-${derived}`
+      ? t('Registers as {id}', { id: `custom-${derived}` })
       : '';
   };
   name.input.addEventListener('input', showID);
@@ -678,24 +685,24 @@ export function buildAddEndpointForm(ctx) {
   const add = document.createElement('button');
   add.type = 'button';
   add.className = 'settings-btn btn-primary small custom-endpoint-add-save';
-  add.textContent = 'Add';
+  add.textContent = t('Add');
 
   const cancel = document.createElement('button');
   cancel.type = 'button';
   cancel.className = 'settings-btn small custom-endpoint-add-cancel';
-  cancel.textContent = 'Cancel';
+  cancel.textContent = t('Cancel');
   cancel.addEventListener('click', () => ctx.onCancel());
 
   add.addEventListener('click', async () => {
     const label = name.input.value.trim();
     const baseURL = url.input.value.trim();
     if (!baseURL) {
-      urlField.setStatus('A base URL is required.', 'error');
+      urlField.setStatus(t('A base URL is required.'), 'error');
       url.input.focus();
       return;
     }
     add.disabled = true;
-    urlField.setStatus('Saving…', 'pending');
+    urlField.setStatus(t('Saving…'), 'pending');
     try {
       const { endpoints } = await customProvidersSave({
         id: deriveEndpointId(label, ctx.takenIds),
@@ -707,7 +714,7 @@ export function buildAddEndpointForm(ctx) {
       ctx.onAdded(endpoints);
     } catch (error) {
       add.disabled = false;
-      urlField.setStatus(`Couldn’t add it. ${extractErrorMessage(error)}`, 'error');
+      urlField.setStatus(t('Couldn’t add it. {error}', { error: extractErrorMessage(error) }), 'error');
     }
   });
 

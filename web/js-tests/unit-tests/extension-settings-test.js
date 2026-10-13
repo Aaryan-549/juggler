@@ -3,6 +3,8 @@
 //   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
 
 import { assert } from '../utilities/test-helpers.js';
+import { underPseudoLocale, assertPseudoLocalized } from '../utilities/pseudo-locale.js';
+import { pseudoLocalize } from '../../sdk/lib/i18n.js';
 import {
   decodeExtensionSettingValue,
   ExtensionSettingsEditor,
@@ -301,6 +303,66 @@ export async function runTests(_ctx) {
     } finally {
       /** @type {any} */ (window).showModal = originalShowModal;
       root.remove();
+    }
+  });
+
+  // The editor's own words come from the core catalogue; the manifest's
+  // name, labels, help and option labels from the extension's, registered
+  // under its id. An option's label is translated, its stored value never is.
+  // The URL field's placeholder is an example address and the <code> paths
+  // are file names: neither is words.
+  await run('under en-XA every string the editor shows is pseudo-localised, and values stay English', async () => {
+    const manifestText = ['Sample', 'Text', 'Helpful', 'Token', 'Mode', 'fast', 'safe', 'Count', 'Host', 'Level'];
+    /** @type {any} */
+    let request = null;
+    const manifest = {
+      id: '@test/xa', name: 'Sample', version: '1.0.0',
+      settings: [
+        { key: 'text', type: 'string', label: 'Text', help: 'Helpful', required: true },
+        { key: 'token', type: 'secret', label: 'Token', required: true },
+        { key: 'mode', type: 'enum', label: 'Mode', options: ['fast', 'safe'], default: 'safe' },
+        { key: 'count', type: 'number', label: 'Count', default: 3 },
+        { key: 'host', type: 'url', label: 'Host' },
+        { key: 'level', type: 'enum', label: 'Level', options: ['fast'], capability: 'strategy:mine' },
+      ],
+    };
+    /** @type {HTMLElement[]} */
+    const roots = [];
+    try {
+      await underPseudoLocale('extension-settings-test', async () => {
+        const editor = new ExtensionSettingsEditor(/** @type {any} */ (manifest), {
+          get: async () => ({ text: '1', token: { __present: false }, mode: 'fast', count: 3 }),
+          set: async (params) => { request = params; return { text: '1', ...params.values }; },
+        });
+        const root = editor.render();
+        roots.push(root);
+        document.body.appendChild(root);
+        await new Promise(resolve => setTimeout(resolve, 0));
+
+        const select = /** @type {HTMLSelectElement} */ (root.querySelector('select'));
+        const fast = /** @type {HTMLOptionElement} */ ([...select.options].find((o) => o.value === 'fast'));
+        assert(fast && fast.textContent === pseudoLocalize('fast'),
+          `an option's label should be translated, got ${JSON.stringify(fast?.textContent)}`);
+        select.value = 'safe';
+        /** @type {HTMLButtonElement} */ (root.querySelector('.extension-settings-save')).click();
+        await new Promise(resolve => setTimeout(resolve, 0));
+        assert(request?.values.mode === 'safe',
+          `the stored value must stay English, got ${JSON.stringify(request?.values.mode)}`);
+
+        assertPseudoLocalized(root, { skip: 'input[type="url"], code', atLeast: 15 });
+
+        // A capability's page explains itself differently.
+        const scoped = new ExtensionSettingsEditor(/** @type {any} */ (manifest), {
+          get: async () => ({}), set: async () => ({}),
+        }, { capability: 'strategy:mine' });
+        const scopedRoot = scoped.render();
+        roots.push(scopedRoot);
+        document.body.appendChild(scopedRoot);
+        await new Promise(resolve => setTimeout(resolve, 0));
+        assertPseudoLocalized(scopedRoot, { skip: 'code', where: 'capability page' });
+      }, { '@test/xa': manifestText });
+    } finally {
+      for (const root of roots) root.remove();
     }
   });
 

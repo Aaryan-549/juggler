@@ -15,6 +15,7 @@ import wsService from '../../services/websocket.js';
 import { ProxySettings } from './proxy-settings.js';
 import { fetchJson, httpErrorText } from '../../services/http.js';
 import { apiUrl } from '../../utils/api-url.js';
+import { t } from '../../../sdk/lib/i18n.js';
 
 /** Polling interval (ms) for refreshing the Connectivity tab while it's open. */
 const CONNECTIVITY_POLL_MS = 2000;
@@ -47,16 +48,17 @@ const CONNECTIVITY_POLL_MS = 2000;
 
 /**
  * Human label for a client's origin, e.g. "Same machine", "LAN · 192.168.1.4",
- * or the remote transport name ("Cloudflare Tunnel relay", "Peer-to-peer").
+ * or the remote transport name ("Cloudflare Tunnel relay", "Peer-to-peer"),
+ * which the server supplies and is shown as given.
  * @param {ClientDescriptor} c
  * @returns {string} The origin label.
  */
 function clientOriginLabel(c) {
   switch (c.origin) {
-    case 'local': return 'Same machine';
-    case 'lan': return c.detail ? `LAN · ${c.detail}` : 'LAN';
-    case 'remote': return c.detail || 'Remote';
-    default: return 'Connected';
+    case 'local': return t('Same machine');
+    case 'lan': return c.detail ? t('LAN · {address}', { address: c.detail }) : t('LAN');
+    case 'remote': return c.detail || t('Remote');
+    default: return t('Connected');
   }
 }
 
@@ -338,7 +340,7 @@ export class ConnectivityTab {
     info.className = 'provider-info';
     const name = document.createElement('div');
     name.className = 'provider-name';
-    name.textContent = 'Connected clients';
+    name.textContent = t('Connected clients');
     info.appendChild(name);
 
     const ctrl = document.createElement('div');
@@ -347,7 +349,7 @@ export class ConnectivityTab {
     if (others.length === 0) {
       const empty = document.createElement('span');
       empty.className = 'connectivity-clients-empty';
-      empty.textContent = 'No other clients connected';
+      empty.textContent = t('No other clients connected');
       ctrl.appendChild(empty);
     } else {
       const list = document.createElement('ul');
@@ -398,10 +400,10 @@ export class ConnectivityTab {
     info.className = 'provider-info';
     const name = document.createElement('div');
     name.className = 'provider-name';
-    name.textContent = 'LAN access';
+    name.textContent = t('LAN access');
     const desc = document.createElement('div');
     desc.className = 'provider-description';
-    desc.textContent = 'Allow other devices on your local network to connect.';
+    desc.textContent = t('Allow other devices on your local network to connect.');
     info.appendChild(name);
     info.appendChild(desc);
 
@@ -424,17 +426,17 @@ export class ConnectivityTab {
         const hint = document.createElement('div');
         hint.className = 'key-source-hint';
         hint.style.display = 'block';
-        hint.textContent = 'No LAN interfaces detected.';
+        hint.textContent = t('No LAN interfaces detected.');
         ctrl.appendChild(hint);
       }
 
       const stopBtn = document.createElement('button');
       stopBtn.type = 'button';
       stopBtn.className = 'settings-btn btn-danger small';
-      stopBtn.textContent = 'Stop';
+      stopBtn.textContent = t('Stop');
       stopBtn.addEventListener('click', () => {
         stopBtn.disabled = true;
-        stopBtn.textContent = 'Stopping…';
+        stopBtn.textContent = t('Stopping…');
         this._setLAN(false);
       });
       ctrl.appendChild(stopBtn);
@@ -442,10 +444,10 @@ export class ConnectivityTab {
       const startBtn = document.createElement('button');
       startBtn.type = 'button';
       startBtn.className = 'settings-btn btn-primary small';
-      startBtn.textContent = 'Start LAN access';
+      startBtn.textContent = t('Start LAN access');
       startBtn.addEventListener('click', () => {
         startBtn.disabled = true;
-        startBtn.textContent = 'Starting…';
+        startBtn.textContent = t('Starting…');
         this._setLAN(true);
       });
       ctrl.appendChild(startBtn);
@@ -490,7 +492,7 @@ export class ConnectivityTab {
     input.checked = !!opts.checked;
     input.addEventListener('change', () => opts.onChange(input.checked));
     const text = document.createElement('span');
-    text.textContent = 'Start on launch';
+    text.textContent = t('Start on launch');
     label.appendChild(input);
     label.appendChild(text);
     return label;
@@ -582,7 +584,7 @@ export class ConnectivityTab {
 
     const heading = document.createElement('div');
     heading.className = 'settings-section-heading';
-    heading.textContent = 'WAN access';
+    heading.textContent = t('WAN access');
     section.appendChild(heading);
 
     const activeMode = c.tunnelEnabled ? (c.tunnelMode || '') : '';
@@ -592,7 +594,7 @@ export class ConnectivityTab {
         mode: mode.mode,
         title: mode.title,
         description: mode.description,
-        startLabel: mode.startLabel || `Start ${mode.title}`,
+        startLabel: mode.startLabel || t('Start {mode}', { mode: mode.title }),
         available: !!mode.available,
         isActive: activeMode === mode.mode,
         url: activeMode === mode.mode ? c.tunnelURL : '',
@@ -643,8 +645,8 @@ export class ConnectivityTab {
       statusHint.className = 'key-source-hint';
       statusHint.style.display = 'block';
       statusHint.textContent = opts.url
-        ? 'Open this URL in a remote browser to connect.'
-        : 'Connecting…';
+        ? t('Open this URL in a remote browser to connect.')
+        : t('Connecting…');
       ctrl.appendChild(statusHint);
 
       if (opts.url) {
@@ -662,10 +664,10 @@ export class ConnectivityTab {
       const stopBtn = document.createElement('button');
       stopBtn.type = 'button';
       stopBtn.className = 'settings-btn btn-danger small';
-      stopBtn.textContent = 'Stop';
+      stopBtn.textContent = t('Stop');
       stopBtn.addEventListener('click', () => {
         stopBtn.disabled = true;
-        stopBtn.textContent = 'Stopping…';
+        stopBtn.textContent = t('Stopping…');
         this._stopTunnel();
       });
       ctrl.appendChild(stopBtn);
@@ -676,12 +678,13 @@ export class ConnectivityTab {
       startBtn.textContent = opts.startLabel;
       startBtn.addEventListener('click', () => {
         startBtn.disabled = true;
-        startBtn.textContent = 'Starting…';
+        startBtn.textContent = t('Starting…');
         this._startTunnel(opts.mode);
       });
       ctrl.appendChild(startBtn);
     } else {
-      ctrl.appendChild(this._buildWANUnavailableHint(opts.unavailableHint || `${opts.title} is not available on this machine.`));
+      ctrl.appendChild(this._buildWANUnavailableHint(opts.unavailableHint
+        || t('{mode} is not available on this machine.', { mode: opts.title })));
     }
 
     // "Start on launch" preference for this mode — radio-style across the WAN
@@ -740,9 +743,9 @@ export class ConnectivityTab {
         method: 'POST',
         body: { enabled: true, mode },
       });
-      if (!data?.success) this._wanError = data?.error || 'Failed to start tunnel';
+      if (!data?.success) this._wanError = data?.error || t('Failed to start tunnel');
     } catch (e) {
-      this._wanError = httpErrorText(e, 'Failed to start tunnel');
+      this._wanError = httpErrorText(e, t('Failed to start tunnel'));
     }
     await this.refreshConnectivity(true);
   }
@@ -758,9 +761,9 @@ export class ConnectivityTab {
         method: 'POST',
         body: { enabled: false },
       });
-      if (!data?.success) this._wanError = data?.error || 'Failed to stop tunnel';
+      if (!data?.success) this._wanError = data?.error || t('Failed to stop tunnel');
     } catch (e) {
-      this._wanError = httpErrorText(e, 'Failed to stop tunnel');
+      this._wanError = httpErrorText(e, t('Failed to stop tunnel'));
     }
     await this.refreshConnectivity(true);
   }
@@ -784,13 +787,13 @@ export class ConnectivityTab {
     urlLink.rel = 'noopener noreferrer';
     urlLink.className = 'connectivity-url';
     urlLink.textContent = url;
-    const copyBtn = createCopyButton(url, 'connectivity-url-copy', 'Copy URL to clipboard');
+    const copyBtn = createCopyButton(url, 'connectivity-url-copy', t('Copy URL to clipboard'));
     urlRow.appendChild(urlLink);
     urlRow.appendChild(copyBtn);
     const qrHost = document.createElement('div');
     qrHost.className = 'connectivity-qr';
     qrHost.setAttribute('role', 'img');
-    qrHost.setAttribute('aria-label', 'QR code');
+    qrHost.setAttribute('aria-label', t('QR code'));
     loadQRCodeSVG(qrHost, url);
     urlBlock.appendChild(urlRow);
     urlBlock.appendChild(qrHost);

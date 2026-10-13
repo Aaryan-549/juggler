@@ -20,6 +20,7 @@
  */
 
 import { cachedUserPref, setUserPref, notifyPrefChanged, reconcilePref } from '../services/prefs.js';
+import { t } from '../../sdk/lib/i18n.js';
 
 const VIEW_KEY = 'juggler-diff-view';
 const CONTEXT_KEY = 'juggler-diff-context';
@@ -46,14 +47,15 @@ export const DEFAULT_CONTEXT_LINES = 3;
 export const CONTEXT_CHOICES = [0, 1, 3, 5, 10, 25, WHOLE_FILE];
 
 /**
- * How a context width reads in a menu.
+ * How a context width reads in a menu, in the UI language — every reader is a
+ * menu (the viewer's control and the one in Settings).
  * @param {number} lines - A width from {@link CONTEXT_CHOICES}.
  * @returns {string} Its label.
  */
 export function contextLabel(lines) {
-  if (lines === WHOLE_FILE) return 'Whole file';
-  if (lines === 0) return 'None';
-  return lines === 1 ? '1 line' : `${lines} lines`;
+  if (lines === WHOLE_FILE) return t('Whole file');
+  if (lines === 0) return t('None');
+  return t('{count, plural, one {# line} other {# lines}}', { count: lines });
 }
 
 /**

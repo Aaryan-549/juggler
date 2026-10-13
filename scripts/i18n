@@ -1,0 +1,488 @@
+#!/usr/bin/env node
+/**
+ * i18n — the UI translation tooling.
+ *
+ *   scripts/i18n extract   collect every message — the literal first argument of
+ *                          t() or markForTranslation() — into each catalogue's
+ *                          en.json (the key list translators work from) and
+ *                          regenerate its pseudo-locale; reports keys other
+ *                          catalogues hold that no longer exist in the source
+ *                          (stale: the English was reworded)
+ *   scripts/i18n pseudo    regenerate each en-XA.json from its en.json
+ *   scripts/i18n check     fail if any en.json or en-XA.json is out of date (run by lint)
+ *   scripts/i18n status    files still pending migration, and each catalogue's coverage
+ *   scripts/i18n pending   regenerate tooling/i18n-pending.txt: every UI file the
+ *                          juggler/no-raw-ui-string rule still flags. The list is a
+ *                          ratchet that slices shrink by hand; regenerate it only
+ *                          after changing the rule itself.
+ *
+ * The catalogues: web/i18n for the core UI, and, for an extension whose
+ * manifest names one, its `provides.i18n` directory — holding the messages in
+ * that extension's files plus its manifest's name and setting text. An
+ * extension that names none stays in the core catalogue.
+ *
+ * Catalogue format (<dir>/<locale>.json): one flat JSON object mapping each
+ * catalogue key — the English source, or `<context>\u0004<source>` for a message
+ * with a context — to its translation, sorted by key. This is exactly what
+ * registerCatalog() in web/sdk/lib/i18n.js takes.
+ *
+ * The pseudo-locale is produced by the SDK's own pseudoLocalize(), so the file
+ * and the runtime can never disagree about what en-XA looks like.
+ */
+
+'use strict';
+
+const fs = require('fs');
+const path = require('path');
+
+const repoRoot = path.resolve(__dirname, '..');
+const i18nDir = path.join(repoRoot, 'web', 'i18n');
+const pendingPath = path.join(repoRoot, 'tooling', 'i18n-pending.txt');
+const sdkLibPath = path.join(repoRoot, 'web', 'sdk', 'lib', 'i18n.js');
+
+/** The UI trees: everything a user can see text from. */
+const UI_ROOTS = ['web/js', 'web/sdk', 'web/extensions'];
+
+/**
+ * The containers whose subdirectories are extensions. One whose manifest names
+ * a `provides.i18n` directory has its own catalogues there; the rest stay in
+ * the core catalogue. The examples are standalone extensions, not UI of this
+ * app, but theirs are generated and checked the same way so the worked example
+ * cannot drift.
+ */
+const EXTENSION_CONTAINERS = ['web/extensions', 'examples/extensions'];
+
+/** Paths under the UI roots that are not UI: vendored code and tests. */
+const EXCLUDED = [/^web\/js\/vendor\//, /\/_tests\//];
+
+/** The import sources that provide t(). */
+const I18N_SOURCES = [/(^|\/)i18n\.js$/, /^juggler\/i18n$/];
+
+/** The functions whose literal first argument is a message. */
+const MESSAGE_FUNCTIONS = new Set(['t', 'markForTranslation']);
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * The SDK i18n module. Loaded from a data: URL because nothing above web/ gives
+ * Node a "type": "module" for it, and a data: URL is always an ES module — on
+ * every Node version CI runs. The module imports nothing, so this is exact.
+ * @returns {Promise<any>} The module namespace.
+ */
+async function loadSdk() {
+  const src = fs.readFileSync(sdkLibPath, 'utf8');
+  return import('data:text/javascript;base64,' + Buffer.from(src).toString('base64'));
+}
+
+/** @returns {any} espree, from the tooling install. */
+function espree() {
+  return require(path.join(repoRoot, 'tooling', 'node_modules', 'espree'));
+}
+
+/**
+ * Every source file under the given roots, repo-relative, sorted.
+ * @param {string[]} roots - Repo-relative directories.
+ * @returns {string[]}
+ */
+function jsFiles(roots) {
+  const out = [];
+  const walk = (rel) => {
+    if (!fs.existsSync(path.join(repoRoot, rel))) return;
+    for (const entry of fs.readdirSync(path.join(repoRoot, rel), { withFileTypes: true })) {
+      const child = `${rel}/${entry.name}`;
+      if (entry.isDirectory()) walk(child);
+      else if (entry.name.endsWith('.js') && !EXCLUDED.some((re) => re.test(child))) out.push(child);
+    }
+  };
+  for (const root of roots) walk(root);
+  return out.sort();
+}
+
+/**
+ * Every UI source file, repo-relative, sorted.
+ * @returns {string[]}
+ */
+function uiFiles() {
+  return jsFiles(UI_ROOTS);
+}
+
+/**
+ * One catalogue and the source it is extracted from: the core one (web/i18n),
+ * or an extension's (its manifest's `provides.i18n` directory, from its own
+ * files and the text in its manifest).
+ * @typedef {object} Target
+ * @property {string} label - How it is named in output (its directory, repo-relative).
+ * @property {string} dir - Absolute catalogue directory.
+ * @property {string[]} files - Repo-relative source files whose messages it holds.
+ * @property {any} [manifest] - The extension manifest, for an extension's.
+ */
+
+/**
+ * The extensions that ship their own catalogues.
+ * @returns {Array<{root: string, manifest: any, i18nDir: string}>} Repo-relative root, manifest, and catalogue dir.
+ */
+function catalogueExtensions() {
+  const out = [];
+  for (const container of EXTENSION_CONTAINERS) {
+    const abs = path.join(repoRoot, container);
+    if (!fs.existsSync(abs)) continue;
+    for (const entry of fs.readdirSync(abs, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const root = `${container}/${entry.name}`;
+      const manifestFile = path.join(repoRoot, root, 'juggler.extension.json');
+      if (!fs.existsSync(manifestFile)) continue;
+      const manifest = JSON.parse(fs.readFileSync(manifestFile, 'utf8'));
+      const dir = manifest.provides && manifest.provides.i18n;
+      if (typeof dir !== 'string' || dir === '') continue;
+      out.push({ root, manifest, i18nDir: `${root}/${path.posix.normalize(dir)}` });
+    }
+  }
+  return out.sort((a, b) => a.root.localeCompare(b.root));
+}
+
+/**
+ * Every catalogue: core first, then each extension that has its own. A file
+ * belongs to exactly one — the extension it sits in, if that extension has
+ * catalogues, else core.
+ * @returns {Target[]}
+ */
+function targets() {
+  const exts = catalogueExtensions();
+  const owned = (rel) => exts.some((e) => rel.startsWith(`${e.root}/`));
+  return [
+    { label: 'web/i18n', dir: i18nDir, files: uiFiles().filter((rel) => !owned(rel)) },
+    ...exts.map((e) => ({
+      label: e.i18nDir, dir: path.join(repoRoot, e.i18nDir), files: jsFiles([e.root]), manifest: e.manifest,
+    })),
+  ];
+}
+
+/**
+ * Write a catalogue: keys sorted, two-space indent, trailing newline.
+ * @param {string} file
+ * @param {Record<string, string>} messages
+ */
+function writeCatalog(file, messages) {
+  fs.writeFileSync(file, serializeCatalog(messages));
+}
+
+/**
+ * @param {Record<string, string>} messages
+ * @returns {string} The file text.
+ */
+function serializeCatalog(messages) {
+  const sorted = {};
+  for (const key of Object.keys(messages).sort()) sorted[key] = messages[key];
+  return JSON.stringify(sorted, null, 2) + '\n';
+}
+
+/**
+ * @param {string} file
+ * @returns {Record<string, string>} The catalogue, or {} when absent.
+ */
+function readCatalog(file) {
+  if (!fs.existsSync(file)) return {};
+  return JSON.parse(fs.readFileSync(file, 'utf8'));
+}
+
+/** @returns {string[]} The files pending migration. */
+function readPending() {
+  if (!fs.existsSync(pendingPath)) return [];
+  return fs.readFileSync(pendingPath, 'utf8').split('\n')
+    .map((l) => l.trim()).filter((l) => l && !l.startsWith('#'));
+}
+
+// ---------------------------------------------------------------------------
+// Extraction
+// ---------------------------------------------------------------------------
+
+/**
+ * Walk an AST, calling visit on every node.
+ * @param {any} node
+ * @param {(n: any) => void} visit
+ */
+function walkAst(node, visit) {
+  if (!node || typeof node.type !== 'string') return;
+  visit(node);
+  for (const key of Object.keys(node)) {
+    if (key === 'parent') continue;
+    const value = node[key];
+    if (Array.isArray(value)) value.forEach((v) => walkAst(v, visit));
+    else if (value && typeof value.type === 'string') walkAst(value, visit);
+  }
+}
+
+/**
+ * The string value of a literal, an expression-free template, or a `+` of
+ * those (a long message split across lines), else null.
+ * @param {any} node
+ * @returns {string|null}
+ */
+function staticString(node) {
+  if (!node) return null;
+  if (node.type === 'Literal' && typeof node.value === 'string') return node.value;
+  if (node.type === 'TemplateLiteral' && node.expressions.length === 0) return node.quasis[0].value.cooked;
+  if (node.type === 'BinaryExpression' && node.operator === '+') {
+    const left = staticString(node.left);
+    const right = staticString(node.right);
+    return left === null || right === null ? null : left + right;
+  }
+  return null;
+}
+
+/**
+ * The text an extension manifest shows the user, which is English source like
+ * any t() message but sits in JSON where no t() can mark it: the extension's
+ * name, and each setting's label, help and options. The UI translates them
+ * where it draws them, with t(name) and the like.
+ * @param {any} manifest
+ * @returns {string[]}
+ */
+function manifestMessages(manifest) {
+  const out = [];
+  const add = (s) => { if (typeof s === 'string' && /[A-Za-z]/.test(s)) out.push(s); };
+  add(manifest.name);
+  for (const setting of manifest.settings || []) {
+    add(setting.label);
+    add(setting.help);
+    for (const option of setting.options || []) add(option);
+  }
+  return out;
+}
+
+/**
+ * Collect a catalogue's messages: every t()/markForTranslation() literal in its
+ * files, and, for an extension's, the text in its manifest.
+ * @param {any} sdk - The SDK module (for messageKey).
+ * @param {Target} target
+ * @returns {{messages: Record<string, string>, problems: string[]}}
+ */
+function extract(sdk, target) {
+  const { parse } = espree();
+  /** @type {Record<string, string>} */
+  const messages = {};
+  const problems = [];
+  if (target.manifest) {
+    for (const source of manifestMessages(target.manifest)) messages[sdk.messageKey(source)] = source;
+  }
+  for (const rel of target.files) {
+    const text = fs.readFileSync(path.join(repoRoot, rel), 'utf8');
+    if (!/\bi18n\b/.test(text)) continue;
+    let ast;
+    try {
+      ast = parse(text, { ecmaVersion: 'latest', sourceType: 'module', loc: true });
+    } catch (err) {
+      problems.push(`${rel}: does not parse: ${err.message}`);
+      continue;
+    }
+    // Local names bound, by an import from an i18n module, to t (a message
+    // and its translation) and to markForTranslation (a message translated
+    // elsewhere — a t() of a variable names none, so the mark is what is found).
+    const names = new Set();
+    const translators = new Set();
+    for (const stmt of ast.body) {
+      if (stmt.type !== 'ImportDeclaration' || !I18N_SOURCES.some((re) => re.test(stmt.source.value))) continue;
+      for (const spec of stmt.specifiers) {
+        if (spec.type !== 'ImportSpecifier') continue;
+        if (MESSAGE_FUNCTIONS.has(spec.imported.name)) names.add(spec.local.name);
+        if (spec.imported.name === 'translator') translators.add(spec.local.name);
+      }
+    }
+    // And a t() made by translator(): `const t = translator('@me/ext')`.
+    if (translators.size > 0) {
+      walkAst(ast, (node) => {
+        if (node.type === 'VariableDeclarator' && node.id.type === 'Identifier'
+          && node.init?.type === 'CallExpression' && node.init.callee.type === 'Identifier'
+          && translators.has(node.init.callee.name)) {
+          names.add(node.id.name);
+        }
+      });
+    }
+    if (names.size === 0) continue;
+    walkAst(ast, (node) => {
+      if (node.type !== 'CallExpression' || node.callee.type !== 'Identifier' || !names.has(node.callee.name)) return;
+      const where = `${rel}:${node.loc.start.line}`;
+      const source = staticString(node.arguments[0]);
+      // A t() of a variable translates a message marked elsewhere.
+      if (source === null) return;
+      let context;
+      const opts = node.arguments[2];
+      if (opts && opts.type === 'ObjectExpression') {
+        const prop = opts.properties.find((p) => p.type === 'Property' && !p.computed
+          && (p.key.name === 'context' || p.key.value === 'context'));
+        if (prop) {
+          context = staticString(prop.value);
+          if (context === null) {
+            problems.push(`${where}: t() context must be a literal`);
+            return;
+          }
+        }
+      }
+      messages[sdk.messageKey(source, context)] = source;
+    });
+  }
+  return { messages, problems };
+}
+
+/**
+ * The pseudo-locale catalogue for a source catalogue.
+ * @param {any} sdk
+ * @param {Record<string, string>} source
+ * @returns {Record<string, string>}
+ */
+function pseudoCatalog(sdk, source) {
+  /** @type {Record<string, string>} */
+  const out = {};
+  for (const [key, english] of Object.entries(source)) out[key] = sdk.pseudoLocalize(english);
+  return out;
+}
+
+/**
+ * The real-language catalogue files in a catalogue directory (not en, not en-XA).
+ * @param {string} dir - Absolute catalogue directory.
+ * @returns {string[]}
+ */
+function translationFiles(dir) {
+  if (!fs.existsSync(dir)) return [];
+  return fs.readdirSync(dir)
+    .filter((f) => f.endsWith('.json') && f !== 'en.json' && f !== 'en-XA.json')
+    .sort();
+}
+
+/**
+ * Write a target's source list and pseudo-locale.
+ * @param {any} sdk
+ * @param {Target} target
+ * @param {Record<string, string>} messages
+ */
+function writeTarget(sdk, target, messages) {
+  fs.mkdirSync(target.dir, { recursive: true });
+  writeCatalog(path.join(target.dir, 'en.json'), messages);
+  writeCatalog(path.join(target.dir, 'en-XA.json'), pseudoCatalog(sdk, messages));
+}
+
+// ---------------------------------------------------------------------------
+// Commands
+// ---------------------------------------------------------------------------
+
+/** @param {any} sdk */
+function cmdExtract(sdk) {
+  let status = 0;
+  for (const target of targets()) {
+    const { messages, problems } = extract(sdk, target);
+    writeTarget(sdk, target, messages);
+    console.log(`${target.label}/en.json: ${Object.keys(messages).length} message(s); en-XA regenerated`);
+    for (const file of translationFiles(target.dir)) {
+      const stale = Object.keys(readCatalog(path.join(target.dir, file))).filter((k) => !(k in messages));
+      if (stale.length) {
+        console.log(`${target.label}/${file}: ${stale.length} stale key(s) — the English changed or was removed:`);
+        for (const k of stale) console.log(`  ${JSON.stringify(k)}`);
+      }
+    }
+    for (const p of problems) {
+      console.error(p);
+      status = 1;
+    }
+  }
+  return status;
+}
+
+/** @param {any} sdk */
+function cmdPseudo(sdk) {
+  for (const target of targets()) {
+    writeTarget(sdk, target, readCatalog(path.join(target.dir, 'en.json')));
+    console.log(`${target.label}/en-XA.json regenerated`);
+  }
+  return 0;
+}
+
+/** @param {any} sdk */
+function cmdCheck(sdk) {
+  let status = 0;
+  const read = (f) => (fs.existsSync(f) ? fs.readFileSync(f, 'utf8') : '');
+  for (const target of targets()) {
+    const { messages, problems } = extract(sdk, target);
+    for (const p of problems) {
+      console.error(p);
+      status = 1;
+    }
+    const want = serializeCatalog(messages);
+    const wantPseudo = serializeCatalog(pseudoCatalog(sdk, messages));
+    if (read(path.join(target.dir, 'en.json')) !== want || read(path.join(target.dir, 'en-XA.json')) !== wantPseudo) {
+      console.error(`${target.label}/en.json or en-XA.json is out of date with the t() calls in the source.`);
+      console.error('Run: node scripts/i18n extract');
+      status = 1;
+    }
+  }
+  for (const rel of readPending()) {
+    if (!fs.existsSync(path.join(repoRoot, rel))) {
+      console.error(`tooling/i18n-pending.txt lists ${rel}, which no longer exists — delete the line.`);
+      status = 1;
+    }
+  }
+  return status;
+}
+
+/** @param {any} _sdk */
+function cmdStatus(_sdk) {
+  console.log(`pending files: ${readPending().length} (tooling/i18n-pending.txt)`);
+  for (const target of targets()) {
+    const source = readCatalog(path.join(target.dir, 'en.json'));
+    const total = Object.keys(source).length;
+    const files = translationFiles(target.dir);
+    console.log(`${target.label}: ${total} source message(s)${files.length ? '' : '; translations: none yet'}`);
+    for (const file of files) {
+      const catalog = readCatalog(path.join(target.dir, file));
+      const done = Object.keys(source).filter((k) => typeof catalog[k] === 'string' && catalog[k] !== '').length;
+      const pct = total ? Math.floor((done / total) * 1000) / 10 : 100;
+      console.log(`  ${file.replace(/\.json$/, '')}: ${done}/${total} (${pct}%)`);
+    }
+  }
+  return 0;
+}
+
+/** @param {any} _sdk */
+async function cmdPending(_sdk) {
+  const { ESLint } = require(path.join(repoRoot, 'tooling', 'node_modules', 'eslint'));
+  const eslint = new ESLint({
+    cwd: repoRoot,
+    overrideConfigFile: path.join(repoRoot, 'tooling', 'eslint.config.js'),
+    // Applied after the config's own blocks, so the rule runs in full on every
+    // file — the pending files included, which is the point.
+    overrideConfig: {
+      files: UI_ROOTS.map((r) => `${r}/**/*.js`),
+      rules: { 'juggler/no-raw-ui-string': ['error', { rawStrings: true }] },
+    },
+  });
+  const results = await eslint.lintFiles(uiFiles());
+  const flagged = results
+    .filter((r) => r.messages.some((m) => m.ruleId === 'juggler/no-raw-ui-string' && m.messageId !== 'moduleScope'))
+    .map((r) => path.relative(repoRoot, r.filePath).split(path.sep).join('/'))
+    .sort();
+  const header = [
+    '# UI files not yet migrated to t() — see juggler/no-raw-ui-string in',
+    '# tooling/eslint.config.js. The rule skips raw-string checks for the files',
+    '# listed here and checks everything else. A slice ends by deleting its line;',
+    '# never add one. Generated by `node scripts/i18n pending`.',
+  ];
+  fs.writeFileSync(pendingPath, header.join('\n') + '\n' + flagged.join('\n') + '\n');
+  console.log(`tooling/i18n-pending.txt: ${flagged.length} file(s)`);
+  return 0;
+}
+
+const COMMANDS = { extract: cmdExtract, pseudo: cmdPseudo, check: cmdCheck, status: cmdStatus, pending: cmdPending };
+
+(async () => {
+  const name = process.argv[2];
+  const cmd = COMMANDS[name];
+  if (!cmd) {
+    console.error(`usage: scripts/i18n <${Object.keys(COMMANDS).join('|')}>`);
+    process.exit(2);
+  }
+  process.exit(await cmd(await loadSdk()));
+})().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

@@ -23,6 +23,10 @@ import { assert } from '../utilities/test-helpers.js';
 import { assertDialogPopover } from '../utilities/menu-assertions.js';
 import { DefaultsTab } from '../../js/components/settings/defaults-tab.js';
 import { MODEL_PICKER_OFF } from '../../js/components/model-picker/model-picker.js';
+import { closePopupById } from '../../js/utils/popup-manager.js';
+import { isPseudoLocalized } from '../../sdk/lib/i18n.js';
+import { underPseudoLocale, assertPseudoLocalized } from '../utilities/pseudo-locale.js';
+import strategyRegistry from '../../js/registries/strategy-registry.js';
 import {
   areReplySuggestionsEnabled,
   resetReplySuggestionsSettingForTests,
@@ -417,6 +421,174 @@ export async function runTests(_ctx) {
     assert(!areReplySuggestionsEnabled(),
       'the feature is on by default, but not before /api/config has answered — otherwise '
       + 'a user who turned it off gets one round of it on every startup');
+  });
+
+  // Every state the tab draws, under en-XA. The fixture's model names, the
+  // server's built-in naming prompt and the pinned strategy id are digits, so
+  // they need no exclusion; the registered strategies are stand-ins whose names
+  // a stand-in extension catalogue translates, as a real extension's would.
+  // Writes are recorded, never sent.
+  await run('under en-XA every string the tab shows is pseudo-localised', async () => {
+    const host = document.createElement('div');
+    host.innerHTML = '<div id="global-settings"></div>'
+      + '<div id="default-model-field-container"></div>'
+      + '<div id="cheap-model-field-container"></div>'
+      + '<div id="auto-name-form"></div>'
+      + '<div id="reply-suggestions-field-container"></div>'
+      + '<div id="new-conversation-defaults-fields"></div>';
+    document.body.appendChild(host);
+
+    let fail = false;
+    const originalFetch = window.fetch;
+    // Installed inside the en-XA run: the catalogue itself is fetched first.
+    const stubFetch = () => {
+      window.fetch = /** @type {any} */ (async () => {
+        if (fail) throw new Error('503');
+        return { ok: true, status: 200, json: async () => ({ explicit: false }) };
+      });
+    };
+    /** @type {{title: string, message: string}[]} */
+    const modals = [];
+    const win = /** @type {any} */ (window);
+    const originalShowModal = win.showModal;
+    win.showModal = async (/** @type {any} */ opts) => { modals.push(opts); };
+    // A pin to a strategy that is not registered, so the "unavailable" option draws.
+    const globals = /** @type {any} */ (globalThis);
+    const originalApp = globals.jugglerApp;
+    globals.jugglerApp = {
+      getSession: () => ({ getMetadata: () => '123', patchMetadata: () => {} }),
+    };
+    const digitProviders = () => [
+      { name: 'p', displayName: '1', available: true, modelsWithContext: [{ id: 'm', displayName: '7', contextWindow: 1000 }] },
+      { name: 'k', displayName: '2', available: false, authType: 'api_key' },
+      { name: 'o', displayName: '3', available: false, authType: 'oauth_bearer' },
+    ];
+    const tick = () => new Promise(resolve => setTimeout(resolve, 0));
+    const registry = /** @type {any} */ (strategyRegistry);
+    const originalManifests = registry.getAllManifests;
+    registry.getAllManifests = () => [
+      { id: 'default', manifest: { name: 'Default' } },
+      { id: 'other', manifest: { name: 'Other' } },
+    ];
+
+    try {
+      await underPseudoLocale('defaults-model-host-test', async () => {
+        stubFetch();
+        const tab = /** @type {any} */ (new DefaultsTab(host));
+        tab.onConfigLoaded({
+          config: { autoNameDefaultPrompt: '4', streamIdleTimeout: '9', spendLimitTokens: '5000000' },
+          providers: digitProviders(),
+          defaultModel: { provider: 'p', model: 'm', explicit: false },
+          cheapModel: { explicit: false },
+        }, true);
+
+        const strategySelect = /** @type {HTMLSelectElement} */ (host.querySelector('#default-strategy-select'));
+        const builtin = [...strategySelect.options].find(o => o.value === 'default');
+        assert(builtin && isPseudoLocalized(builtin.textContent || ''),
+          `the built-in strategy's label should be translated, got ${JSON.stringify(builtin?.textContent)}`);
+        // The number fields' placeholders are their defaults as figures, and the
+        // instruction's is the server's built-in prompt: neither is a message.
+        const skip = 'input, textarea';
+        assertPseudoLocalized(host, { skip, atLeast: 25, where: 'first render' });
+
+        // The cheap row's Off state, and a pinned default model.
+        tab.cheapModel = { explicit: false, disabled: true };
+        tab.renderCheapModelField();
+        tab.defaultModel = { provider: 'p', model: 'm', explicit: true };
+        tab.renderDefaultModelField();
+        // A pinned chip names its model, which is data.
+        const pinnedSkip = `${skip}, #default-model-field-container .model-name`;
+        assertPseudoLocalized(host, { skip: pinnedSkip, where: 'off and pinned' });
+
+        // Every status line either row can show.
+        const statuses = [
+          tab._defaultModelStatusText({ provider: 'p', model: 'm', explicit: false }),
+          tab._defaultModelStatusText({ explicit: false }),
+          tab._defaultModelStatusText({ provider: 'x', model: 'm', explicit: true }),
+          tab._defaultModelStatusText({ provider: 'k', model: 'm', explicit: true }),
+          tab._defaultModelStatusText({ provider: 'o', model: 'm', explicit: true }),
+          tab._defaultModelStatusText({ provider: 'p', model: 'gone', explicit: true }),
+          tab._defaultModelStatusText({ provider: 'p', model: 'm', explicit: true }),
+          tab._cheapModelStatusText({ explicit: false, disabled: true }),
+          tab._cheapModelStatusText({ explicit: false, autoResolved: { provider: 'p', model: 'm' } }),
+          tab._cheapModelStatusText({ explicit: false }),
+        ];
+        const rawStatus = statuses.filter(s => !isPseudoLocalized(s));
+        assert(rawStatus.length === 0, `plain English status lines: ${JSON.stringify(rawStatus)}`);
+
+        // The pickers' none and Off rows are labelled by this tab.
+        // The picker's own text is model-picker.js's; only the two labels it is handed are checked.
+        document.querySelectorAll('.model-picker').forEach(node => node.remove());
+        tab.cheapModel = { explicit: false };
+        tab.renderCheapModelField();
+        /** @type {any} */ (host.querySelector('#cheap-model-field-container model-chip')).button.click();
+        const picker = /** @type {any} */ (document.querySelector('.model-picker'));
+        assert(!!picker, 'the picker opens');
+        assert(isPseudoLocalized(picker.noneLabel), `the none row's label, got ${JSON.stringify(picker.noneLabel)}`);
+        assert(isPseudoLocalized(picker.offLabel), `the Off row's label, got ${JSON.stringify(picker.offLabel)}`);
+        closePopupById('settings-model-picker');
+        document.querySelectorAll('.model-picker').forEach(node => node.remove());
+
+        // The number fields' status lines: invalid, rejected, saved, cleared, failed.
+        /**
+         * @param {string} id
+         * @param {string} value
+         * @returns {Promise<string>} The status line the save left.
+         */
+        const enter = async (id, value) => {
+          const input = /** @type {HTMLInputElement} */ (host.querySelector(id));
+          input.value = value;
+          input.dispatchEvent(new Event('blur'));
+          await tick();
+          return input.closest('.provider-control')?.querySelector('.key-source-hint')?.textContent || '';
+        };
+        /** @type {string[]} */
+        const lines = [];
+        lines.push(await enter('#stream-idle-timeout-input', '1.5'));
+        lines.push(await enter('#stream-idle-timeout-input', '0'));
+        lines.push(await enter('#stream-idle-timeout-input', '30'));
+        lines.push(await enter('#stream-idle-timeout-input', ''));
+        lines.push(await enter('#spend-limit-input', '0'));
+        lines.push(await enter('#spend-limit-input', '20'));
+        lines.push(await enter('#spend-limit-input', ''));
+        fail = true;
+        lines.push(await enter('#spend-limit-input', '8'));
+        fail = false;
+
+        // The naming instruction: saved, cleared, failed.
+        const textarea = /** @type {HTMLTextAreaElement} */ (host.querySelector('#auto-name-instruction-input'));
+        const instructionStatus = () => host.querySelector('.auto-name-instruction .key-source-hint')?.textContent || '';
+        for (const [value, failing] of /** @type {[string, boolean][]} */ ([['6', false], ['', false], ['6', true]])) {
+          fail = failing;
+          textarea.value = value;
+          textarea.dispatchEvent(new Event('blur'));
+          await tick();
+          lines.push(instructionStatus());
+        }
+        fail = false;
+        const rawLines = lines.filter(s => !isPseudoLocalized(s));
+        assert(rawLines.length === 0, `plain English field status lines: ${JSON.stringify(rawLines)}`);
+
+        // A failed model save explains itself in a modal.
+        fail = true;
+        await tab._saveDefaultModel({ provider: 'p', model: 'm' });
+        await tab._saveCheapModel({ provider: 'p', model: 'm' });
+        fail = false;
+        assert(modals.length === 2, `each failed save shows one alert, got ${modals.length}`);
+        const rawModal = modals.flatMap(m => [m.title, m.message]).filter(s => !isPseudoLocalized(s));
+        assert(rawModal.length === 0, `plain English in the failure alerts: ${JSON.stringify(rawModal)}`);
+
+        assertPseudoLocalized(host, { skip: pinnedSkip, where: 'after the saves' });
+      }, { '@test/xa': ['Default', 'Other'] });
+    } finally {
+      registry.getAllManifests = originalManifests;
+      window.fetch = originalFetch;
+      win.showModal = originalShowModal;
+      globals.jugglerApp = originalApp;
+      resetReplySuggestionsSettingForTests();
+      document.querySelectorAll('.model-picker').forEach(node => node.remove());
+      host.remove();
+    }
   });
 
   return { passed, failed, errors };

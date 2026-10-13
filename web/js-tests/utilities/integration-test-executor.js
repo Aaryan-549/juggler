@@ -333,6 +333,12 @@ import { runTests as runHtmlFileViewerTests } from '../unit-tests/html-file-view
 import { runTests as runBinaryViewerTests } from '../unit-tests/binary-viewer-test.js';
 import { runTests as runMediaViewerTests } from '../unit-tests/media-viewer-test.js';
 import { runTests as runSdkFacadeParityTests } from '../unit-tests/sdk-facade-parity-test.js';
+import { runTests as runI18nTests } from '../unit-tests/i18n-test.js';
+import { runTests as runFormatTimeAgoTests } from '../unit-tests/format-time-ago-test.js';
+import { runTests as runAppearanceTabTests } from '../unit-tests/appearance-tab-test.js';
+import { runTests as runNotificationsTabTests } from '../unit-tests/notifications-tab-test.js';
+import { runTests as runSettingsPanelTests } from '../unit-tests/settings-panel-test.js';
+import { runTests as runExtensionCatalogsTests } from '../unit-tests/extension-catalogs-test.js';
 import { runTests as runSdkManifestValidationTests } from '../unit-tests/sdk-manifest-validation-test.js';
 import { runTests as runExtensionCollisionTests } from '../unit-tests/extension-collision-test.js';
 import { runTests as runExtensionCatalogTests } from '../unit-tests/extension-catalog-test.js';
@@ -787,6 +793,12 @@ const UNIT_TEST_SUITES = [
   { name: 'unit:binary-viewer', run: runBinaryViewerTests },
   { name: 'unit:media-viewer', run: runMediaViewerTests },
   { name: 'unit:sdk-facade-parity', run: runSdkFacadeParityTests },
+  { name: 'unit:i18n', run: runI18nTests },
+  { name: 'unit:format-time-ago', run: runFormatTimeAgoTests },
+  { name: 'unit:appearance-tab', run: runAppearanceTabTests },
+  { name: 'unit:notifications-tab', run: runNotificationsTabTests },
+  { name: 'unit:settings-panel', run: runSettingsPanelTests },
+  { name: 'unit:extension-catalogs', run: runExtensionCatalogsTests },
   { name: 'unit:sdk-manifest-validation', run: runSdkManifestValidationTests },
   { name: 'unit:extension-collision', run: runExtensionCollisionTests },
   { name: 'unit:extension-catalog', run: runExtensionCatalogTests },

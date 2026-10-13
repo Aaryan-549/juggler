@@ -25,6 +25,46 @@
 
 import { assert, waitFor } from '../utilities/test-helpers.js';
 import { chooseRoute, startSetupWizard } from '../../js/components/onboarding/setup-wizard.js';
+import { fetchJson } from '../../js/services/http.js';
+import { apiUrl } from '../../js/utils/api-url.js';
+import {
+  setLocale, registerCatalog, unregisterCatalog, isPseudoLocalized, PSEUDO_LOCALE,
+} from '../../sdk/lib/i18n.js';
+
+/**
+ * Markup that holds only a product or command name, which no translation
+ * changes. Commands in `<code>` are skipped wholesale.
+ */
+const NAMES = new Set(['Codex', 'claude', 'Codex CLI', 'GitHub Copilot', ':free', 'openrouter.ai/keys']);
+
+/**
+ * Every string the open wizard shows, one per block of text — a paragraph's
+ * text is one message split around its links and emphasis, so it is judged
+ * whole — plus its accessible names and titles. Names and commands are taken
+ * out of the blocks first.
+ * @returns {string[]} The strings.
+ */
+function screenStrings() {
+  const root = /** @type {HTMLElement} */ (wizardRoot());
+  /** @type {string[]} */
+  const out = [];
+  const blocks = '.wiz-title, .wiz-body p, .wiz-choice-title, .wiz-choice-detail, .wiz-action, .wiz-note, .wiz-back';
+  for (const el of root.querySelectorAll(blocks)) {
+    const copy = /** @type {HTMLElement} */ (el.cloneNode(true));
+    copy.querySelectorAll('code, strong, a').forEach((n) => {
+      if (n.tagName === 'CODE' || NAMES.has((n.textContent || '').trim())) n.remove();
+    });
+    const text = (copy.textContent || '').trim();
+    if (text) out.push(text);
+  }
+  for (const el of root.querySelectorAll('[aria-label], [title]')) {
+    for (const attr of ['aria-label', 'title']) {
+      const v = el.getAttribute(attr);
+      if (v) out.push(v);
+    }
+  }
+  return out;
+}
 
 /**
  * A detection payload with everything absent, overlaid with the case at hand.
@@ -316,6 +356,83 @@ export async function runTests() {
     errors.push(`setup-wizard back: ${/** @type {any} */ (e)?.message || e}`);
   } finally {
     clearWizard();
+  }
+
+  // --- 8: under en-XA every screen is pseudo-localised ---------------------
+  // Each machine state's first screen (after a fruitless check, so its note
+  // shows too), and every screen the account question and the free routes
+  // lead to.
+  const NS = 'setup-wizard-test';
+  const body = await fetchJson(apiUrl(`/i18n/catalog?locale=${PSEUDO_LOCALE}`));
+  registerCatalog(NS, PSEUDO_LOCALE, body?.messages || {});
+  const previous = setLocale(PSEUDO_LOCALE);
+  try {
+    clearWizard();
+    /** @type {string[]} */
+    const raw = [];
+    let screens = 0;
+    const title = () => wizardRoot()?.querySelector('.wiz-title')?.textContent || '';
+    const collect = () => {
+      screens++;
+      for (const s of screenStrings()) if (!isPseudoLocalized(s)) raw.push(s);
+    };
+    /**
+     * Click something on the open screen.
+     * @param {string} selector
+     */
+    const press = (selector) => {
+      const el = /** @type {HTMLElement|null|undefined} */ (wizardRoot()?.querySelector(selector));
+      assert(!!el, `nothing matches ${selector} on "${title()}"`);
+      /** @type {HTMLElement} */ (el).click();
+    };
+    /**
+     * Click something on the open screen and wait for the next screen.
+     * @param {string} selector
+     */
+    const advance = async (selector) => {
+      const before = title();
+      press(selector);
+      await waitFor(() => title() !== before && title() !== '', { description: `${selector} never changed screen` });
+    };
+
+    for (const state of [{ claudeCLI: true }, { codexSignedIn: true }, { chatgptApp: true }, { codexCLI: true }, { claudeDesktopApp: true }]) {
+      const done = startSetupWizard({ detect: async () => detection(state), platform: 'darwin' });
+      await waitFor(() => title() !== '', { description: `the wizard never opened for ${JSON.stringify(state)}` });
+      press('.wiz-action.btn-primary');
+      await waitFor(() => !!wizardRoot()?.querySelector('.wiz-note'), { description: 'a fruitless check left no note' });
+      collect();
+      clearWizard();
+      await done;
+    }
+
+    const done = startSetupWizard({ detect: async () => detection(), platform: 'darwin' });
+    await waitFor(() => title() !== '', { description: 'the account question never opened' });
+    collect();
+    for (let i = 0; i < 4; i++) {
+      await advance(`[data-wiz-choice="${i}"]`);
+      collect();
+      if (i === 3) {
+        for (let j = 0; j < 3; j++) {
+          await advance(`[data-wiz-choice="${j}"]`);
+          collect();
+          await advance('.wiz-back');
+        }
+      }
+      await advance('.wiz-back');
+    }
+    clearWizard();
+    await done;
+
+    assert(screens === 13, `visited ${screens} screens, expected 13`);
+    assert(raw.length === 0, `plain English under en-XA: ${JSON.stringify([...new Set(raw)])}`);
+    passed++;
+  } catch (e) {
+    failed++;
+    errors.push(`setup-wizard en-XA: ${/** @type {any} */ (e)?.message || e}`);
+  } finally {
+    clearWizard();
+    setLocale(previous);
+    unregisterCatalog(NS);
   }
 
   return { passed, failed, errors };

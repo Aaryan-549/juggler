@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"juggler/cmd/juggler/extmanifest"
 	"juggler/internal/userpaths"
 	"juggler/internal/userpaths/userpathstest"
 )
@@ -541,6 +542,90 @@ func TestIsKnownUpdateMode(t *testing.T) {
 	for _, m := range []string{"", "garbage", "AUTOMATIC"} {
 		if IsKnownUpdateMode(m) {
 			t.Errorf("IsKnownUpdateMode(%q) = true, want false", m)
+		}
+	}
+}
+
+// The UI language belongs to the person, so it lives in settings.json and
+// survives a round trip. A hand-edited value that is not a language tag reads as
+// unset: it is written into the page's markup, and a typo must cost the
+// translation, not the page.
+func TestGlobalSettingsUILocale(t *testing.T) {
+	userpathstest.Isolate(t)
+	if err := SaveGlobalSettings(&GlobalSettings{UILocale: "en-XA"}); err != nil {
+		t.Fatalf("SaveGlobalSettings: %v", err)
+	}
+	gs, err := LoadGlobalSettings()
+	if err != nil {
+		t.Fatalf("LoadGlobalSettings: %v", err)
+	}
+	if gs.UILocale != "en-XA" {
+		t.Fatalf("round-trip uiLocale = %q, want en-XA", gs.UILocale)
+	}
+
+	path := filepath.Join(userpaths.ConfigDir(), "settings.json")
+	if err := os.WriteFile(path, []byte(`{"uiLocale":"\"><b>x"}`), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	gs, err = LoadGlobalSettings()
+	if err != nil {
+		t.Fatalf("LoadGlobalSettings: %v", err)
+	}
+	if gs.UILocale != "" {
+		t.Fatalf("a value that is not a language tag must read as unset, got %q", gs.UILocale)
+	}
+}
+
+func TestIsValidUILocale(t *testing.T) {
+	for _, ok := range []string{"en", "fr", "en-XA", "zh-Hant-TW", "pt-BR", "es-419", "fil",
+		"zh-hant-tw", "FR", "sr-Latn-RS", "de-CH-1996", "ca-ES-valencia"} {
+		if !IsValidUILocale(ok) {
+			t.Errorf("IsValidUILocale(%q) = false, want true", ok)
+		}
+	}
+	// The last group are well-shaped enough for a loose pattern but rejected
+	// by Intl in the browser, where they would make every formatter throw.
+	for _, bad := range []string{"", "e", "english", "en_GB", "en-", "-en", "en-XA-", "en XA", "\"><b>", "zh-Hant-TW-aaaaaaaaa",
+		"en-US-abc", "en-12", "en-US-US", "en-Latn-abcd", "abc-de-fg-hi"} {
+		if IsValidUILocale(bad) {
+			t.Errorf("IsValidUILocale(%q) = true, want false", bad)
+		}
+	}
+}
+
+// A tag is stored in canonical case, the case catalogue files are named in: the
+// embedded asset tree is case-sensitive, so `FR` would never find fr.json.
+func TestNormalizeUILocaleCanonicalCase(t *testing.T) {
+	cases := map[string]string{
+		"zh-hant-tw":     "zh-Hant-TW",
+		"FR":             "fr",
+		"EN-xa":          "en-XA",
+		"es-419":         "es-419",
+		"de-ch-1996":     "de-CH-1996",
+		"SR-LATN":        "sr-Latn",
+		"ca-es-VALENCIA": "ca-ES-valencia",
+		"IW-il":          "he-IL",
+		"sh":             "sr-Latn",
+		"en-BU":          "en-MM",
+		"en-Latn":        "en-Latn",
+		"zz-ZZ-abcde":    "zz-ZZ-abcde",
+		"en-US-abc":      "",
+	}
+	for in, want := range cases {
+		if got := NormalizeUILocale(in); got != want {
+			t.Errorf("NormalizeUILocale(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// An extension's catalogue is named for its locale, and the server looks it up
+// by the user's UI language — so the two must agree on what a language tag is.
+func TestExtensionCatalogueLocalesMatchUILocales(t *testing.T) {
+	for _, tag := range []string{"en", "fr", "en-XA", "zh-Hant-TW", "pt-BR", "es-419", "fil",
+		"", "e", "english", "en_GB", "en-", "-en", "en-XA-", "en XA", "\"><b>", "zh-Hant-TW-aaaaaaaaa",
+		"zh-hant-tw", "de-CH-1996", "en-US-abc", "en-12", "en-US-US", "en-Latn-abcd"} {
+		if IsValidUILocale(tag) != extmanifest.IsLocaleTag(tag) {
+			t.Errorf("%q: IsValidUILocale = %v, extmanifest.IsLocaleTag = %v", tag, IsValidUILocale(tag), extmanifest.IsLocaleTag(tag))
 		}
 	}
 }

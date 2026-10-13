@@ -1,0 +1,10 @@
+{
+  "Auto-approve custom policy": "Auto-approve custom policy",
+  "Auto-approve review level": "Auto-approve review level",
+  "How strict the Auto-approve reviewer is. balanced: approves only what your messages or standing permissions cover. relaxed: also trusts routine in-project work the agent chose itself. custom: applies the policy below.": "How strict the Auto-approve reviewer is. balanced: approves only what your messages or standing permissions cover. relaxed: also trusts routine in-project work the agent chose itself. custom: applies the policy below.",
+  "Juggler Core": "Juggler Core",
+  "Shows the selected level's policy; choose custom to edit it. The reviewer always sees only your messages and the agent's tool calls, and always answers allow or deny.": "Shows the selected level's policy; choose custom to edit it. The reviewer always sees only your messages and the agent's tool calls, and always answers allow or deny.",
+  "balanced": "balanced",
+  "custom": "custom",
+  "relaxed": "relaxed"
+}

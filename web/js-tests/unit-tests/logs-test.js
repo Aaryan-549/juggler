@@ -16,6 +16,11 @@
  */
 
 import { assert } from '../utilities/test-helpers.js';
+import { fetchJson } from '../../js/services/http.js';
+import { apiUrl } from '../../js/utils/api-url.js';
+import {
+  setLocale, registerCatalog, unregisterCatalog, isPseudoLocalized, PSEUDO_LOCALE,
+} from '../../sdk/lib/i18n.js';
 import '../../js/components/settings-panel.js';
 
 /**
@@ -229,6 +234,32 @@ export async function runTests(_ctx) {
       assert(el.querySelector('#logs-controls').hidden, 'picker controls hidden');
       assert(el.querySelector('#logs-viewer').hidden, 'viewer hidden');
     });
+  });
+
+  // The tab's own words are the picker's group labels; file names, sizes and
+  // log text are data. The panel's static Logs markup is not this file's.
+  await run('under en-XA the picker group labels are pseudo-localised', async () => {
+    const body = await fetchJson(apiUrl(`/i18n/catalog?locale=${PSEUDO_LOCALE}`));
+    assert(body && Object.keys(body.messages || {}).length > 0, 'the en-XA catalogue is empty');
+    registerCatalog('logs-test', PSEUDO_LOCALE, body.messages);
+    const previous = setLocale(PSEUDO_LOCALE);
+    try {
+      const backend = makeBackend([
+        { name: 'server.log', path: '/logs/p/server.log', group: 'server', content: 'srv\n' },
+        { name: 'conv_aaa.log', path: '/logs/p/conversations/conv_aaa.log', group: 'conversations', content: 'c\n' },
+        { name: 'app.log', path: '/logs/app.log', group: 'app', content: 'app\n' },
+      ]);
+      await withPanel(backend, async (el) => {
+        await el._tabs.logs._openLogsTab();
+        const labels = [...el.querySelectorAll('#logs-picker optgroup')].map((g) => g.label);
+        assert(labels.length === 3, `three groups; got ${labels.length}`);
+        const raw = labels.filter((s) => !isPseudoLocalized(s));
+        assert(raw.length === 0, `plain English under en-XA: ${JSON.stringify(raw)}`);
+      });
+    } finally {
+      setLocale(previous);
+      unregisterCatalog('logs-test');
+    }
   });
 
   return { passed, failed, errors };

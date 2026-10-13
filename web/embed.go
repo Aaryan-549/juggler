@@ -14,7 +14,7 @@ import (
 // everything else embedded here is AGPL-3.0-or-later (see the root LICENSE).
 // Mixing them in one embed.FS is fine — see LICENSING.md at the repo root.
 //
-//go:embed css/* js/* extensions/* sdk/* resources/* index.html engine.html sandbox.html
+//go:embed css/* js/* extensions/* sdk/* resources/* i18n/* index.html engine.html sandbox.html
 var builtin embed.FS
 
 // FS is the capability set consumers of the asset tree rely on. embed.FS

@@ -13,26 +13,28 @@ import { getUpdaterState, startCheck } from '../../services/updater-control.js';
 import { fetchJson } from '../../services/http.js';
 import { extractErrorMessage } from '../../../sdk/lib/error-utils.js';
 import { apiUrl } from '../../utils/api-url.js';
+import { t, markForTranslation } from '../../../sdk/lib/i18n.js';
 
 /**
- * The three update modes, matching core.UpdateMode* on the server.
+ * The three update modes, matching core.UpdateMode* on the server. Labels and
+ * descriptions are English source text, translated where the radios are built.
  * @type {Array<{value: string, label: string, description: string}>}
  */
 const MODES = [
   {
     value: 'automatic',
-    label: 'Automatic',
-    description: 'Check periodically and download updates in the background.',
+    label: markForTranslation('Automatic'),
+    description: markForTranslation('Check periodically and download updates in the background.'),
   },
   {
     value: 'notify',
-    label: 'Notify only',
-    description: 'Check periodically and show an Update button, but never download automatically.',
+    label: markForTranslation('Notify only'),
+    description: markForTranslation('Check periodically and show an Update button, but never download automatically.'),
   },
   {
     value: 'off',
-    label: 'Off',
-    description: 'Never check automatically. You can still check manually below.',
+    label: markForTranslation('Off'),
+    description: markForTranslation('Never check automatically. You can still check manually below.'),
   },
 ];
 
@@ -69,11 +71,11 @@ export class UpdatesTab {
     versionInfo.className = 'provider-info';
     const versionName = document.createElement('div');
     versionName.className = 'provider-name';
-    versionName.textContent = 'Version';
+    versionName.textContent = t('Version');
     const versionDesc = document.createElement('div');
     versionDesc.className = 'provider-description';
     versionDesc.id = 'updates-version-info';
-    versionDesc.textContent = 'Loading…';
+    versionDesc.textContent = t('Loading…');
     versionInfo.appendChild(versionName);
     versionInfo.appendChild(versionDesc);
     versionBlock.appendChild(versionInfo);
@@ -82,13 +84,13 @@ export class UpdatesTab {
     // ── Update mode radios ──────────────────────────────────────────────
     const modeHeading = document.createElement('div');
     modeHeading.className = 'settings-section-heading';
-    modeHeading.textContent = 'When updates are available';
+    modeHeading.textContent = t('When updates are available');
     container.appendChild(modeHeading);
 
     const modeGroup = document.createElement('div');
     modeGroup.className = 'settings-form updates-mode-group';
     modeGroup.setAttribute('role', 'radiogroup');
-    modeGroup.setAttribute('aria-label', 'Update mode');
+    modeGroup.setAttribute('aria-label', t('Update mode'));
     for (const mode of MODES) {
       const row = document.createElement('label');
       row.className = 'settings-group provider-field updates-mode-row';
@@ -97,10 +99,10 @@ export class UpdatesTab {
       info.className = 'provider-info';
       const name = document.createElement('div');
       name.className = 'provider-name';
-      name.textContent = mode.label;
+      name.textContent = t(mode.label);
       const desc = document.createElement('div');
       desc.className = 'provider-description';
-      desc.textContent = mode.description;
+      desc.textContent = t(mode.description);
       info.appendChild(name);
       info.appendChild(desc);
 
@@ -139,7 +141,7 @@ export class UpdatesTab {
     btn.type = 'button';
     btn.id = 'updates-check-btn';
     btn.className = 'settings-btn btn-primary small';
-    btn.textContent = 'Check for updates';
+    btn.textContent = t('Check for updates');
     btn.addEventListener('click', () => void this._checkNow());
     actionCtrl.appendChild(btn);
 
@@ -179,29 +181,31 @@ export class UpdatesTab {
   _renderVersion(status, updater) {
     const el = this.host.querySelector('#updates-version-info');
     if (!el) return;
-    const current = status.currentVersion || (updater && updater.appVersion) || 'unknown';
+    const current = status.currentVersion || (updater && updater.appVersion) || t('unknown');
     const latest = status.latestVersion || '';
-    const parts = [`Current version ${current}.`];
+    // Whole sentences, each one message, joined with a space.
+    const parts = [t('Current version {version}.', { version: current })];
     if (status.updateAvailable && latest) {
-      parts.push(`Version ${latest} is available.`);
+      parts.push(t('Version {version} is available.', { version: latest }));
     } else if (status.unpublished) {
       // No comparison was made, and latest is usually newer than this build —
       // so it is reported as what it is, never as the version being run.
       parts.push(latest
-        ? `Latest release is ${latest}; a build from source is never offered updates.`
-        : 'A build from source is never offered updates.');
+        ? t('Latest release is {version}; a build from source is never offered updates.', { version: latest })
+        : t('A build from source is never offered updates.'));
     } else if (latest) {
-      parts.push(`This is the latest version (${latest}).`);
+      parts.push(t('This is the latest version ({version}).', { version: latest }));
     } else {
-      parts.push('No update information yet.');
+      parts.push(t('No update information yet.'));
     }
     // App-bundle / server skew: an in-app updater whose bundle version differs
     // from the viewed server (a server started outside the app), mirroring
     // update-notice.js's _hasServerSkew. Updating the app won't touch that server.
     if (updater && updater.present && updater.appVersion && status.currentVersion
       && updater.appVersion !== status.currentVersion) {
-      parts.push(`The app bundle is v${updater.appVersion}, but this server is ${status.currentVersion};`
-        + ` updating the app won't update a server started outside it.`);
+      parts.push(t('The app bundle is v{appVersion}, but this server is {serverVersion}; '
+        + 'updating the app won\'t update a server started outside it.',
+      { appVersion: updater.appVersion, serverVersion: status.currentVersion }));
     }
     el.textContent = parts.join(' ');
   }
@@ -254,7 +258,7 @@ export class UpdatesTab {
       // Revert the UI to the last-known-good mode.
       this._mode = prev;
       this._reflectMode(prev);
-      this._setStatus(`Couldn't save the update setting (${extractErrorMessage(err)}).`);
+      this._setStatus(t('Couldn\'t save the update setting ({error}).', { error: extractErrorMessage(err) }));
     }
   }
 
@@ -268,7 +272,7 @@ export class UpdatesTab {
   async _checkNow() {
     const btn = /** @type {HTMLButtonElement|null} */ (this.host.querySelector('#updates-check-btn'));
     if (btn) btn.disabled = true;
-    this._setStatus('Checking…');
+    this._setStatus(t('Checking…'));
     try {
       // Kick the in-app updater's check-only probe first (fire-and-forget; the
       // result arrives via the pushed snapshot the header button consumes).
@@ -276,22 +280,22 @@ export class UpdatesTab {
 
       const status = await fetchJson(apiUrl('/update-status/check'), { method: 'POST' });
       if (status.error) {
-        this._setStatus('Couldn’t reach the update server. Try again later.');
+        this._setStatus(t('Couldn’t reach the update server. Try again later.'));
       } else if (status.updateAvailable) {
-        this._setStatus(`Version ${status.latestVersion || ''} is available.`.trim());
+        this._setStatus(t('Version {version} is available.', { version: status.latestVersion || '' }));
         // Surface the full dialog (with download/install affordances).
         window.dispatchEvent(new CustomEvent('juggler:open-update-dialog'));
       } else if (status.unpublished) {
         this._setStatus(status.latestVersion
-          ? `Latest release is ${status.latestVersion}; a build from source is never offered updates.`
-          : 'A build from source is never offered updates.');
+          ? t('Latest release is {version}; a build from source is never offered updates.', { version: status.latestVersion })
+          : t('A build from source is never offered updates.'));
       } else {
-        this._setStatus('You’re on the latest version.');
+        this._setStatus(t('You’re on the latest version.'));
       }
       const updater = await getUpdaterState();
       this._renderVersion(status, updater);
     } catch (err) {
-      this._setStatus(`Check failed (${extractErrorMessage(err)}).`);
+      this._setStatus(t('Check failed ({error}).', { error: extractErrorMessage(err) }));
     } finally {
       if (btn) btn.disabled = false;
     }

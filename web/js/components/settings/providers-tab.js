@@ -20,6 +20,8 @@ import { buildEndpointCard, buildAddEndpointForm } from './custom-endpoint-card.
 import { apiUrl } from '../../utils/api-url.js';
 import { formatTokens } from '../../utils/format.js';
 import { CHECK_SVG, REFRESH_SVG } from '../../utils/icons.js';
+import { escapeHtml } from '../../../sdk/lib/html.js';
+import { t } from '../../../sdk/lib/i18n.js';
 
 /**
  * Whether a published model's context window is a guess nobody has corrected:
@@ -250,12 +252,12 @@ export class ProvidersTab {
 
     const heading = document.createElement('div');
     heading.className = 'settings-section-heading';
-    heading.textContent = 'Your own endpoints';
+    heading.textContent = t('Your own endpoints');
     root.appendChild(heading);
 
     const note = document.createElement('div');
     note.className = 'custom-endpoints-note';
-    note.textContent = 'Anything that speaks the OpenAI Chat Completions API — a gateway, a tenant, a local server. Each one is a provider of its own in the model picker.';
+    note.textContent = t('Anything that speaks the OpenAI Chat Completions API — a gateway, a tenant, a local server. Each one is a provider of its own in the model picker.');
     root.appendChild(note);
 
     for (const endpoint of this.endpoints) root.appendChild(this._buildCard(endpoint));
@@ -279,7 +281,7 @@ export class ProvidersTab {
       applyEndpoints: (endpoints) => { this.endpoints = Array.isArray(endpoints) ? endpoints : []; },
       refreshProviders: () => this.host.loadConfig(false),
       onRemoved: (endpoints) => this._onEndpointRemoved(endpoints),
-      reportError: (message) => { showAlert(message, 'Custom endpoints'); },
+      reportError: (message) => { showAlert(message, t('Custom endpoints')); },
     });
     this.endpointCards.set(endpoint.id, { ...card, endpoint });
     return card.element;
@@ -302,7 +304,7 @@ export class ProvidersTab {
     const add = document.createElement('button');
     add.type = 'button';
     add.className = 'settings-btn small custom-endpoint-add-open';
-    add.textContent = 'Add endpoint';
+    add.textContent = t('Add endpoint');
     add.addEventListener('click', () => {
       this.addingEndpoint = true;
       const form = this._buildAddControl();
@@ -457,9 +459,10 @@ export class ProvidersTab {
     status.className = 'key-source-hint';
     status.id = `${provider.name}-oauth-status`;
     status.style.display = 'block';
+    // The hint is the server's own wording, so only the fallbacks are messages.
     status.textContent = provider.available
-      ? (provider.authHint || 'Signed in')
-      : (provider.authHint || 'Sign in to continue');
+      ? (provider.authHint || t('Signed in'))
+      : (provider.authHint || t('Sign in to continue'));
     controlColumn.appendChild(status);
 
     const buttonGroup = document.createElement('div');
@@ -472,15 +475,15 @@ export class ProvidersTab {
         const signOutBtn = document.createElement('button');
         signOutBtn.type = 'button';
         signOutBtn.className = 'settings-btn btn-danger small';
-        signOutBtn.textContent = 'Sign out';
-        signOutBtn.title = 'Sign out of the GitHub login stored by Juggler';
+        signOutBtn.textContent = t('Sign out');
+        signOutBtn.title = t('Sign out of the GitHub login stored by Juggler');
         signOutBtn.addEventListener('click', () => this._copilotSignOut(provider, signOutBtn));
         buttonGroup.appendChild(signOutBtn);
       } else {
         const signInBtn = document.createElement('button');
         signInBtn.type = 'button';
         signInBtn.className = 'settings-btn btn-primary small';
-        signInBtn.textContent = 'Sign in with GitHub';
+        signInBtn.textContent = t('Sign in with GitHub');
         signInBtn.addEventListener('click', () => this._copilotSignIn(provider, signInBtn));
         buttonGroup.appendChild(signInBtn);
       }
@@ -538,9 +541,9 @@ export class ProvidersTab {
    * Build the refresh (re-check) button shared by every OAuth provider and by a
    * keyless provider that is reporting a hint.
    * @param {any} provider - Provider info object
-   * @param {string} [subject] - What is being re-checked, as the label words it.
-   *   An OAuth row checks a sign-in; a keyless row's hint may equally be about a
-   *   CLI that isn't installed, so it passes `status`.
+   * @param {'sign-in'|'status'} [subject] - What is being re-checked, which picks
+   *   the label's wording. An OAuth row checks a sign-in; a keyless row's hint may
+   *   equally be about a CLI that isn't installed, so it passes `status`.
    * @returns {HTMLButtonElement} The refresh button to append to the button group.
    * @private
    */
@@ -548,8 +551,11 @@ export class ProvidersTab {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'settings-btn icon';
-    btn.title = `Re-check ${subject}`;
-    btn.setAttribute('aria-label', `Re-check ${provider.displayName} ${subject}`);
+    const name = provider.displayName;
+    btn.title = subject === 'status' ? t('Re-check status') : t('Re-check sign-in');
+    btn.setAttribute('aria-label', subject === 'status'
+      ? t('Re-check {name} status', { name })
+      : t('Re-check {name} sign-in', { name }));
     btn.innerHTML = REFRESH_SVG;
     btn.addEventListener('click', () => this._refreshOAuthProvider(provider, btn, subject));
     return btn;
@@ -565,7 +571,7 @@ export class ProvidersTab {
    * without this tab reaching across to poke them.
    * @param {any} provider
    * @param {HTMLButtonElement} button
-   * @param {string} [subject] - What is being re-checked, for the status line
+   * @param {'sign-in'|'status'} [subject] - What is being re-checked, for the status line
    * @private
    */
   async _refreshOAuthProvider(provider, button, subject = 'sign-in') {
@@ -573,7 +579,7 @@ export class ProvidersTab {
     const originalStatus = status ? status.textContent : '';
     button.disabled = true;
     button.classList.add('spinning');
-    if (status) status.textContent = `Checking ${subject}\u2026`;
+    if (status) status.textContent = subject === 'status' ? t('Checking status\u2026') : t('Checking sign-in\u2026');
     try {
       const fresh = await this._recheckOAuthProvider(provider.name);
       if (fresh) {
@@ -588,7 +594,7 @@ export class ProvidersTab {
       button.disabled = false;
       button.classList.remove('spinning');
       if (status) status.textContent = originalStatus;
-      await showAlert(err instanceof Error ? err.message : 'Refresh failed', provider.displayName);
+      await showAlert(err instanceof Error ? err.message : t('Refresh failed'), provider.displayName);
     }
   }
 
@@ -656,14 +662,14 @@ export class ProvidersTab {
     const label = document.createElement('label');
     label.className = 'copilot-host-label';
     label.setAttribute('for', inputId);
-    label.textContent = 'GitHub host';
+    label.textContent = t('GitHub host');
 
     const input = document.createElement('input');
     input.type = 'text';
     input.id = inputId;
     input.className = 'settings-input small field-input';
     input.value = 'github.com';
-    input.placeholder = 'github.com or your-tenant.ghe.com';
+    input.placeholder = t('{host} or your-tenant.ghe.com', { host: 'github.com' });
     input.autocapitalize = 'off';
     input.autocomplete = 'off';
     input.spellcheck = false;
@@ -691,11 +697,12 @@ export class ProvidersTab {
     const host = input.value.trim() || 'github.com';
     try {
       const data = await fetchJson(apiUrl('/providers/copilot/host'), { method: 'POST', body: { host } });
-      if (!data?.success) throw new Error(data?.error || 'Failed to set host');
+      if (!data?.success) throw new Error(data?.error || t('Failed to set host'));
       // Re-check against the new host (rebuilds this field with the saved value).
       await this._refreshOAuthProvider(provider, this._buildOAuthRefreshButton(provider));
     } catch (err) {
-      await showAlert(httpErrorText(err, 'Failed to set host'), 'GitHub Copilot');
+      // i18n-ignore: a product name
+      await showAlert(httpErrorText(err, t('Failed to set host')), 'GitHub Copilot');
     }
   }
 
@@ -709,30 +716,32 @@ export class ProvidersTab {
    */
   async _copilotSignIn(provider, button) {
     const status = /** @type {HTMLElement|null} */ (this.host.querySelector(`#${provider.name}-oauth-status`));
-    const setStatus = (/** @type {string} */ t) => { if (status) status.textContent = t; };
+    const setStatus = (/** @type {string} */ text) => { if (status) status.textContent = text; };
     const hostInput = /** @type {HTMLInputElement|null} */ (this.host.querySelector(`#${provider.name}-host`));
     const host = (hostInput && hostInput.value.trim()) || 'github.com';
     const originalText = button.textContent;
     button.disabled = true;
-    button.textContent = 'Starting\u2026';
+    button.textContent = t('Starting\u2026');
     try {
       const data = await fetchJson(apiUrl('/providers/copilot/device/start'), { method: 'POST', body: { host } });
-      if (!data?.success) throw new Error(data?.error || 'Failed to start sign-in');
+      if (!data?.success) throw new Error(data?.error || t('Failed to start sign-in'));
 
       const { userCode, verificationUri, deviceCode, interval } = data;
       try { await navigator.clipboard.writeText(userCode); } catch { /* clipboard is best-effort */ }
       if (verificationUri) openExternalURL(verificationUri);
-      button.textContent = 'Waiting\u2026';
-      setStatus(`Enter code ${userCode} at ${verificationUri} (opened in your browser, copied to clipboard). Waiting for authorization\u2026`);
+      button.textContent = t('Waiting\u2026');
+      setStatus(t('Enter code {code} at {url} (opened in your browser, copied to clipboard). Waiting for authorization\u2026',
+        { code: userCode, url: verificationUri }));
 
       await this._pollCopilotLogin(deviceCode, Number(interval) || 5, host);
-      setStatus('Signed in with GitHub');
+      setStatus(t('Signed in with GitHub'));
       await this._refreshAfterAuthChange(provider, true);
     } catch (err) {
-      setStatus(provider.authHint || 'Sign in to continue');
+      setStatus(provider.authHint || t('Sign in to continue'));
       button.disabled = false;
       button.textContent = originalText;
-      await showAlert(httpErrorText(err, 'Sign-in failed'), 'GitHub Copilot');
+      // i18n-ignore: a product name
+      await showAlert(httpErrorText(err, t('Sign-in failed')), 'GitHub Copilot');
     }
   }
 
@@ -753,17 +762,17 @@ export class ProvidersTab {
         method: 'POST',
         body: { deviceCode, host },
       });
-      if (!data?.success) throw new Error(data?.error || 'Sign-in check failed');
+      if (!data?.success) throw new Error(data?.error || t('Sign-in check failed'));
       switch (data.status) {
         case 'authorized': return;
         case 'pending': break;
         case 'slow_down': delayMs += 5000; break;
-        case 'expired': throw new Error('The code expired before you authorized. Please try again.');
-        case 'denied': throw new Error('Access was denied on GitHub.');
-        default: throw new Error('Unexpected sign-in status from GitHub.');
+        case 'expired': throw new Error(t('The code expired before you authorized. Please try again.'));
+        case 'denied': throw new Error(t('Access was denied on GitHub.'));
+        default: throw new Error(t('Unexpected sign-in status from GitHub.'));
       }
     }
-    throw new Error('Timed out waiting for authorization.');
+    throw new Error(t('Timed out waiting for authorization.'));
   }
 
   /**
@@ -774,18 +783,19 @@ export class ProvidersTab {
    */
   async _copilotSignOut(provider, button) {
     const ok = await showConfirm(
-      'Sign out of the GitHub login stored by Juggler? Copilot becomes unavailable until you sign in again (any editor Copilot login on this machine will still be used).',
-      'Sign out'
+      t('Sign out of the GitHub login stored by Juggler? Copilot becomes unavailable until you sign in again (any editor Copilot login on this machine will still be used).'),
+      t('Sign out')
     );
     if (!ok) return;
     button.disabled = true;
     try {
       const data = await fetchJson(apiUrl('/providers/copilot/signout'), { method: 'POST' });
-      if (!data?.success) throw new Error(data?.error || 'Sign out failed');
+      if (!data?.success) throw new Error(data?.error || t('Sign out failed'));
       await this._refreshAfterAuthChange(provider, false);
     } catch (err) {
       button.disabled = false;
-      await showAlert(httpErrorText(err, 'Sign out failed'), 'GitHub Copilot');
+      // i18n-ignore: a product name
+      await showAlert(httpErrorText(err, t('Sign out failed')), 'GitHub Copilot');
     }
   }
 
@@ -803,7 +813,7 @@ export class ProvidersTab {
    */
   async _refreshAfterAuthChange(provider, available) {
     provider.available = available;
-    provider.authHint = available ? 'Signed in with GitHub' : '';
+    provider.authHint = available ? t('Signed in with GitHub') : '';
     this.renderProviderFields();
     this.updateAllButtons();
   }
@@ -880,7 +890,7 @@ export class ProvidersTab {
     if (provider.name === 'ollama') {
       controlColumn.appendChild(this._buildHostRow({
         inputId: 'ollama-host-input',
-        placeholder: 'http://localhost:11434',
+        placeholder: 'http://localhost:11434', // i18n-ignore: a default server address
         configField: 'ollamaHost',
         configKey: 'ollama_host',
         defaultLabel: 'http://localhost:11434',
@@ -894,7 +904,7 @@ export class ProvidersTab {
     if (provider.name === 'llamacpp') {
       controlColumn.appendChild(this._buildHostRow({
         inputId: 'llamacpp-host-input',
-        placeholder: 'http://127.0.0.1:8080',
+        placeholder: 'http://127.0.0.1:8080', // i18n-ignore: a default server address
         configField: 'llamacppHost',
         configKey: 'llamacpp_host',
         defaultLabel: 'http://127.0.0.1:8080',
@@ -908,7 +918,7 @@ export class ProvidersTab {
     if (provider.name === 'localai') {
       controlColumn.appendChild(this._buildHostRow({
         inputId: 'localai-host-input',
-        placeholder: 'http://127.0.0.1:8080',
+        placeholder: 'http://127.0.0.1:8080', // i18n-ignore: a default server address
         configField: 'localaiHost',
         configKey: 'localai_host',
         defaultLabel: 'http://127.0.0.1:8080',
@@ -922,7 +932,7 @@ export class ProvidersTab {
     if (provider.name === 'lmstudio') {
       controlColumn.appendChild(this._buildHostRow({
         inputId: 'lmstudio-host-input',
-        placeholder: 'http://127.0.0.1:1234',
+        placeholder: 'http://127.0.0.1:1234', // i18n-ignore: a default server address
         configField: 'lmstudioHost',
         configKey: 'lmstudio_host',
         defaultLabel: 'http://127.0.0.1:1234',
@@ -968,14 +978,13 @@ export class ProvidersTab {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'settings-btn btn-primary small';
-    button.textContent = `Switch to ${target.displayName}`;
+    button.textContent = t('Switch to {name}', { name: target.displayName });
     notice.appendChild(button);
 
     const effect = document.createElement('div');
     effect.className = 'provider-switch-effect';
-    effect.textContent = `Turns ${provider.displayName} off and ${target.displayName} on at the same address, `
-      + 'bringing your context-window settings and hidden models with it. Conversations already using '
-      + `${provider.displayName} keep it until you pick their model again.`;
+    effect.textContent = t('Turns {from} off and {to} on at the same address, bringing your context-window settings and hidden models with it. Conversations already using {from} keep it until you pick their model again.',
+      { from: provider.displayName, to: target.displayName });
     notice.appendChild(effect);
 
     const status = document.createElement('div');
@@ -984,18 +993,18 @@ export class ProvidersTab {
 
     button.addEventListener('click', async () => {
       button.disabled = true;
-      status.textContent = 'Switching…';
+      status.textContent = t('Switching…');
       const next = this._nextProvidersUpdate((list) =>
         list.some((p) => p.name === provider.name && !p.credentialed));
       try {
         await providersCache.switchProvider(provider.name);
-        status.textContent = `Switched. ${target.displayName} is on.`;
+        status.textContent = t('Switched. {name} is on.', { name: target.displayName });
         this.providers = await next;
         this.renderProviderFields();
         this.updateAllButtons();
       } catch (err) {
         button.disabled = false;
-        status.textContent = httpErrorText(err, "Couldn't switch provider");
+        status.textContent = httpErrorText(err, t("Couldn't switch provider"));
       }
     });
     return notice;
@@ -1039,7 +1048,7 @@ export class ProvidersTab {
       keyLink.target = '_blank';
       keyLink.rel = 'noopener noreferrer';
       keyLink.className = 'get-api-key-link';
-      keyLink.textContent = 'Get API Key \u2192';
+      keyLink.textContent = t('Get API Key \u2192');
       infoColumn.appendChild(keyLink);
     }
 
@@ -1060,7 +1069,7 @@ export class ProvidersTab {
     activeBadge.id = `${provider.name}-active-badge`;
     activeBadge.className = 'provider-active-badge';
     activeBadge.style.display = 'none';
-    activeBadge.innerHTML = `${CHECK_SVG}<span>key is active</span>`;
+    activeBadge.innerHTML = `${CHECK_SVG}<span>${escapeHtml(t('key is active'))}</span>`;
 
     const buttonGroup = document.createElement('div');
     buttonGroup.className = 'provider-buttons';
@@ -1069,14 +1078,14 @@ export class ProvidersTab {
     saveButton.type = 'button';
     saveButton.id = saveButtonId;
     saveButton.className = 'settings-btn btn-primary small';
-    saveButton.textContent = 'Save';
+    saveButton.textContent = t('Save');
     saveButton.style.display = 'none';
 
     const deleteButton = document.createElement('button');
     deleteButton.type = 'button';
     deleteButton.id = deleteButtonId;
     deleteButton.className = 'settings-btn btn-danger small';
-    deleteButton.textContent = 'Delete';
+    deleteButton.textContent = t('Delete');
     deleteButton.style.display = 'none';
 
     // Add input event listener to update buttons
@@ -1172,7 +1181,7 @@ export class ProvidersTab {
 
     const summaryLabel = document.createElement('span');
     summaryLabel.className = 'model-visibility-label';
-    summaryLabel.textContent = 'Models and token limits';
+    summaryLabel.textContent = t('Models and token limits');
     summary.appendChild(summaryLabel);
 
     // The count carries the state, so it's the part that stays legible when the
@@ -1188,8 +1197,10 @@ export class ProvidersTab {
     const updateSummary = () => {
       summaryCount.textContent = hidden.size === 0
         ? `${models.length}`
-        : `${models.length - hidden.size} of ${models.length} shown`;
-      summaryAssumed.textContent = assumed.size > 0 ? `${assumed.size} assumed` : '';
+        : t('{shown} of {total} shown', { shown: models.length - hidden.size, total: models.length });
+      summaryAssumed.textContent = assumed.size > 0
+        ? t('{count, plural, one {# assumed} other {# assumed}}', { count: assumed.size })
+        : '';
       summaryAssumed.hidden = assumed.size === 0;
     };
     updateSummary();
@@ -1201,11 +1212,11 @@ export class ProvidersTab {
     const filter = document.createElement('input');
     filter.type = 'text';
     filter.className = 'settings-value-input model-visibility-filter field-input';
-    filter.placeholder = 'Filter models';
+    filter.placeholder = t('Filter models');
     filter.autocomplete = 'off';
     filter.setAttribute('autocorrect', 'off');
     filter.setAttribute('autocapitalize', 'off');
-    filter.setAttribute('aria-label', `Filter ${provider.displayName} models`);
+    filter.setAttribute('aria-label', t('Filter {name} models', { name: provider.displayName }));
     filter.spellcheck = false;
 
     const list = document.createElement('div');
@@ -1216,19 +1227,19 @@ export class ProvidersTab {
     const header = document.createElement('div');
     header.className = 'model-visibility-header';
     const nameHeading = document.createElement('span');
-    nameHeading.textContent = 'Model';
+    nameHeading.textContent = t('Model');
     const windowHeading = document.createElement('span');
     windowHeading.className = 'model-visibility-header-limit';
-    windowHeading.textContent = 'Context window';
+    windowHeading.textContent = t('Context window');
     const outputHeading = document.createElement('span');
     outputHeading.className = 'model-visibility-header-limit';
-    outputHeading.textContent = 'Max output';
+    outputHeading.textContent = t('Max output');
     header.append(nameHeading, windowHeading, outputHeading);
     list.appendChild(header);
 
     const empty = document.createElement('div');
     empty.className = 'model-visibility-empty';
-    empty.textContent = 'Nothing.';
+    empty.textContent = t('Nothing.');
     empty.style.display = 'none';
 
     // The overrides this provider currently has, seeded from the catalogue: the
@@ -1268,10 +1279,10 @@ export class ProvidersTab {
      * the number clearing the field restores, not the override in force.
      * @param {any} model - The catalogue entry this row is for.
      * @param {'contextWindow'|'maxOutputTokens'} field - Which limit to edit.
-     * @param {string} label - Human name of the limit, for the aria-label.
+     * @param {string} ariaLabel - The field's accessible name.
      * @returns {HTMLInputElement} The input to append to the row.
      */
-    const buildLimitInput = (model, field, label) => {
+    const buildLimitInput = (model, field, ariaLabel) => {
       const overridden = field === 'contextWindow'
         ? model.providerContextWindow !== undefined && model.providerContextWindow !== null
         : model.providerMaxOutputTokens !== undefined && model.providerMaxOutputTokens !== null;
@@ -1285,11 +1296,11 @@ export class ProvidersTab {
       input.min = '0';
       input.className = 'model-limit-input';
       input.dataset.limit = field;
-      input.placeholder = reported > 0 ? String(reported) : 'auto';
+      input.placeholder = reported > 0 ? String(reported) : t('auto');
       input.value = stored() ? String(stored()) : '';
       input.autocomplete = 'off';
       input.spellcheck = false;
-      input.setAttribute('aria-label', `${label} for ${model.id}`);
+      input.setAttribute('aria-label', ariaLabel);
       // Four numbers that look identical in a box: one the provider stated, one
       // from Juggler's catalogue for this model, one guessed because neither
       // knows the model, and one typed here. Which it is decides how much to
@@ -1297,15 +1308,15 @@ export class ProvidersTab {
       // context window only; a guessed window's output cap is worked out from it.
       const who = provider.displayName;
       if (overridden) {
-        input.title = `You set this. Clear the field to go back to ${reported}.`;
+        input.title = t('You set this. Clear the field to go back to {count}.', { count: reported });
       } else if (model.fromAPI && !(field === 'contextWindow' && model.windowAssumed)) {
-        input.title = `${reported} tokens, as reported by ${who} for this model.`;
+        input.title = t('{count} tokens, as reported by {name} for this model.', { count: reported, name: who });
       } else if (model.windowAssumed) {
         input.title = field === 'contextWindow'
-          ? `${reported} tokens is a guess. The server didn't say how large this model's context window is, so Juggler assumed a small, safe size. Enter the size the model is loaded with.`
-          : 'Worked out from the guessed context window. Type a number to set it yourself.';
+          ? t("{count} tokens is a guess. The server didn't say how large this model's context window is, so Juggler assumed a small, safe size. Enter the size the model is loaded with.", { count: reported })
+          : t('Worked out from the guessed context window. Type a number to set it yourself.');
       } else {
-        input.title = `${reported} tokens, from Juggler's list of ${who}'s models. ${who} doesn't report limits itself — if it's out of date, type the right figure.`;
+        input.title = t("{count} tokens, from Juggler's list of {name}'s models. {name} doesn't report limits itself — if it's out of date, type the right figure.", { count: reported, name: who });
       }
 
       input.addEventListener('change', async () => {
@@ -1336,7 +1347,7 @@ export class ProvidersTab {
           // Nothing was stored, so leaving the number on screen would misreport
           // the window every later turn is admitted against.
           restore();
-          status.textContent = `Couldn't save the token limits. ${httpErrorText(err)}`;
+          status.textContent = t("Couldn't save the token limits. {error}", { error: httpErrorText(err) });
           status.style.display = '';
         }
       });
@@ -1394,7 +1405,7 @@ export class ProvidersTab {
           box.checked = !show;
           updateSummary();
           applyRowState();
-          status.textContent = `Couldn't save which models to show. ${httpErrorText(err)}`;
+          status.textContent = t("Couldn't save which models to show. {error}", { error: httpErrorText(err) });
           status.style.display = '';
         }
       });
@@ -1405,8 +1416,8 @@ export class ProvidersTab {
 
       const limitFields = document.createElement('span');
       limitFields.className = 'model-limit-fields';
-      const contextInput = buildLimitInput(model, 'contextWindow', 'Context window');
-      const outputInput = buildLimitInput(model, 'maxOutputTokens', 'Max output tokens');
+      const contextInput = buildLimitInput(model, 'contextWindow', t('Context window for {model}', { model: model.id }));
+      const outputInput = buildLimitInput(model, 'maxOutputTokens', t('Max output tokens for {model}', { model: model.id }));
       limitFields.appendChild(contextInput);
       limitFields.appendChild(outputInput);
 
@@ -1419,9 +1430,10 @@ export class ProvidersTab {
         marker = document.createElement('button');
         marker.type = 'button';
         marker.className = 'model-window-assumed';
-        marker.textContent = 'assumed';
+        marker.textContent = t('assumed');
         const guess = published.providerContextWindow ?? published.contextWindow ?? 0;
-        marker.title = `The server didn't report this model's context window, so Juggler assumed ${formatTokens(guess)}. Enter the real size in the Context window field.`;
+        marker.title = t("The server didn't report this model's context window, so Juggler assumed {size}. Enter the real size in the Context window field.",
+          { size: formatTokens(guess) });
         marker.hidden = !assumed.has(model.id);
         marker.addEventListener('click', () => contextInput.focus());
         row.appendChild(marker);
@@ -1502,7 +1514,7 @@ export class ProvidersTab {
 
     const legend = document.createElement('div');
     legend.className = 'model-limit-legend';
-    legend.textContent = 'Token limits. Leave a field blank to use the figure shown in grey; type a number to override it.';
+    legend.textContent = t('Token limits. Leave a field blank to use the figure shown in grey; type a number to override it.');
 
     details.appendChild(filter);
     details.appendChild(legend);
@@ -1555,16 +1567,16 @@ export class ProvidersTab {
     const save = async () => {
       const value = input.value.trim();
       if (value === (/** @type {any} */ (this.config)[configField] || '')) return;
-      status.textContent = 'Saving…';
+      status.textContent = t('Saving…');
       try {
         await fetchJson(apiUrl('/config'), { method: 'PUT', body: { [configKey]: value } });
         /** @type {any} */ (this.config)[configField] = value;
         status.textContent = value
-          ? `Saved. Pointing at ${value}.`
-          : `Saved. Using default (${defaultLabel}).`;
+          ? t('Saved. Pointing at {address}.', { address: value })
+          : t('Saved. Using default ({address}).', { address: defaultLabel });
       } catch (err) {
         console.error(`[SettingsPanel] Failed to save host for ${configField}:`, err);
-        status.textContent = 'Failed to save.';
+        status.textContent = t('Failed to save.');
       }
     };
 
@@ -1604,7 +1616,7 @@ export class ProvidersTab {
     input.id = 'claudecode-binary-input';
     // Non-secret persisted value: keep visible across close/reopen (see close()).
     input.className = 'settings-value-input';
-    input.placeholder = 'CLI path (leave blank for auto)';
+    input.placeholder = t('CLI path (leave blank for auto)');
     input.autocomplete = 'off';
     input.setAttribute('autocorrect', 'off');
     input.setAttribute('autocapitalize', 'off');
@@ -1620,7 +1632,7 @@ export class ProvidersTab {
     const save = async () => {
       const value = input.value.trim();
       if (value === (/** @type {any} */ (this.config).claudecodeBinaryPath || '')) return;
-      status.textContent = 'Saving…';
+      status.textContent = t('Saving…');
       try {
         await fetchJson(apiUrl('/config'), { method: 'PUT', body: { claudecode_binary_path: value } });
         /** @type {any} */ (this.config).claudecodeBinaryPath = value;
@@ -1632,13 +1644,13 @@ export class ProvidersTab {
             toggle.checked = true;
             await this.toggleProviderEnabled(provider, true);
           }
-          status.textContent = `Saved. Using ${value}.`;
+          status.textContent = t('Saved. Using {path}.', { path: value });
         } else {
-          status.textContent = 'Saved. Auto-detecting the claude CLI.';
+          status.textContent = t('Saved. Auto-detecting the claude CLI.');
         }
       } catch (err) {
         console.error('[SettingsPanel] Failed to save Claude Code binary path:', err);
-        status.textContent = 'Failed to save.';
+        status.textContent = t('Failed to save.');
       }
     };
 
@@ -1665,7 +1677,7 @@ export class ProvidersTab {
       await fetchJson(apiUrl('/config/provider-enabled'), {
         method: 'POST',
         body: { provider: provider.name, enabled },
-        errorPrefix: "Couldn't update provider",
+        errorPrefix: t("Couldn't update provider"),
       });
       // The handler queues a provider recompute; the resulting providers-update
       // is what refreshes every model selector.
@@ -1676,7 +1688,7 @@ export class ProvidersTab {
       if (toggle) {
         toggle.checked = !enabled;
       }
-      await showAlert(error instanceof Error ? error.message : "Couldn't update provider", 'Error');
+      await showAlert(error instanceof Error ? error.message : t("Couldn't update provider"), t('Error'));
     }
   }
 
@@ -1700,13 +1712,13 @@ export class ProvidersTab {
       // Update placeholder based on key source
       if (input) {
         if (provider.keySource === 'env') {
-          input.placeholder = `using $${provider.envVarName}`;
+          input.placeholder = t('using ${name}', { name: provider.envVarName });
           input.disabled = true;
         } else if (hasKey) {
           input.placeholder = '';
           input.disabled = false;
         } else {
-          input.placeholder = 'enter a key';
+          input.placeholder = t('enter a key');
           input.disabled = false;
         }
       }
@@ -1721,7 +1733,7 @@ export class ProvidersTab {
       // Update source hint
       if (sourceHint) {
         if (provider.keySource === 'env') {
-          sourceHint.textContent = `Using environment variable $${provider.envVarName}`;
+          sourceHint.textContent = t('Using environment variable ${name}', { name: provider.envVarName });
           sourceHint.style.display = 'block';
         } else {
           sourceHint.textContent = '';
@@ -1756,7 +1768,7 @@ export class ProvidersTab {
       await fetchJson(apiUrl('/config'), {
         method: 'PUT',
         body: { [provider.configKeyName]: apiKey },
-        errorPrefix: 'Failed to save API key',
+        errorPrefix: t('Failed to save API key'),
       });
 
       // Clear the input so the UI returns to the "key is active" state
@@ -1769,7 +1781,7 @@ export class ProvidersTab {
       // providers-update is what refreshes every model selector.
     } catch (error) {
       console.error('Failed to save API key:', error);
-      await showAlert(error instanceof Error ? error.message : 'Failed to save API key', 'Error');
+      await showAlert(error instanceof Error ? error.message : t('Failed to save API key'), t('Error'));
     }
   }
 
@@ -1784,7 +1796,7 @@ export class ProvidersTab {
       await fetchJson(apiUrl('/config'), {
         method: 'PUT',
         body: { [provider.configKeyName]: '' },
-        errorPrefix: 'Failed to delete API key',
+        errorPrefix: t('Failed to delete API key'),
       });
 
       // Reload config from server to get actual state (don't re-render fields)
@@ -1793,7 +1805,7 @@ export class ProvidersTab {
       // providers-update is what drops the key from every model selector.
     } catch (error) {
       console.error('Failed to delete API key:', error);
-      await showAlert(error instanceof Error ? error.message : 'Failed to delete API key', 'Error');
+      await showAlert(error instanceof Error ? error.message : t('Failed to delete API key'), t('Error'));
     }
   }
 }

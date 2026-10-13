@@ -33,3 +33,13 @@ Then ask the model to count the words in something.
 So in `getSummary()` you read `outcome.result.count`, **not** `outcome.count`.
 Reading the latter yields `undefined`, and the model sees an empty result with no
 error to explain it. This is the most common mistake in a first extension.
+
+## Translations
+
+`i18n/` holds the extension's UI catalogues, named in the manifest as
+`provides.i18n`. Here they carry only the manifest's `name` — the summary is
+also what the model reads, so it is marked `markUntranslated()` and stays
+English. `en.json` lists the source strings; `en-XA.json` is the pseudo-locale
+for checking that nothing was missed. A translation is one more file, e.g.
+`fr.json`, mapping each English string to its French. See "Translating your
+extension" in the extension guide.

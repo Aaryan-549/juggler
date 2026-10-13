@@ -36,6 +36,7 @@ var workerSDKImports = map[string]string{
 	"juggler/item-utils":             "/sdk/item-utils-worker.js",
 	"juggler/registry":               "/sdk/registry.js",
 	"juggler/version":                "/sdk/version.js",
+	"juggler/i18n":                   "/sdk/i18n-worker.js",
 	"juggler/utils/html":             "/sdk/lib/html.js",
 	"juggler/utils/path-containment": "/sdk/lib/path-containment.js",
 }

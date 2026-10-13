@@ -18,6 +18,11 @@
  */
 
 import { assert } from '../utilities/test-helpers.js';
+import { fetchJson } from '../../js/services/http.js';
+import { apiUrl } from '../../js/utils/api-url.js';
+import {
+  setLocale, registerCatalog, unregisterCatalog, isPseudoLocalized, PSEUDO_LOCALE,
+} from '../../sdk/lib/i18n.js';
 import '../../js/components/settings-panel.js';
 
 /**
@@ -339,6 +344,68 @@ export async function runTests(_ctx) {
         `active relay notes the Cloudflare relay; got: ${text}`);
     } finally {
       el.remove();
+    }
+  });
+
+  // Every word this tab and its proxy box supply comes out accented. What the
+  // server supplies is data: WAN mode titles (digits here, so the client's own
+  // "Start …" / "… is not available" wording is what shows), URLs, and the
+  // Intl-formatted "connected … ago" meta.
+  await run('under en-XA every string the tab supplies is pseudo-localised', async () => {
+    const body = await fetchJson(apiUrl(`/i18n/catalog?locale=${PSEUDO_LOCALE}`));
+    assert(body && Object.keys(body.messages || {}).length > 0, 'the en-XA catalogue is empty');
+    registerCatalog('connectivity-test', PSEUDO_LOCALE, body.messages);
+    const previous = setLocale(PSEUDO_LOCALE);
+    /** @type {any} */
+    let el = null;
+    try {
+      const mode = (/** @type {string} */ id, /** @type {boolean} */ available) => ({
+        mode: id, title: id, description: '', startLabel: '', relayNote: '', unavailableHint: '', available,
+      });
+      el = mountWith({
+        lanEnabled: true,
+        lanURLs: ['http://192.168.1.4:7000'],
+        tunnelEnabled: true,
+        tunnelURL: '',
+        tunnelMode: '3',
+        tunnelRelay: false,
+        wanModes: [mode('1', true), mode('2', false), mode('3', true)],
+        clients: [
+          { id: 'c1', origin: 'local', detail: '', userAgent: '', connectedAt: 0 },
+          { id: 'c2', origin: 'lan', detail: '10.0.0.4', userAgent: '', connectedAt: 0 },
+          { id: 'c3', origin: 'unknown', detail: '', userAgent: '', connectedAt: 0 },
+        ],
+      });
+      el._tabs.connectivity._refreshClientsSection();
+      const proxy = el._tabs.connectivity._proxy;
+      proxy.onSettingsChanged({ network: { proxy: { mode: 'manual', url: '' } } });
+      await proxy._onModeChange('manual');
+
+      /** @type {string[]} */
+      const shown = [];
+      for (const sel of ['#connectivity-form', '#proxy-form']) {
+        const root = el.querySelector(sel);
+        const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+        for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+          if (n.parentElement?.closest('.connectivity-url, .connectivity-client-meta')) continue;
+          const text = (n.textContent || '').trim();
+          if (text) shown.push(text);
+        }
+        for (const node of root.querySelectorAll('[aria-label], [title], [placeholder]')) {
+          for (const attr of ['aria-label', 'title', 'placeholder']) {
+            const v = node.getAttribute(attr);
+            if (v) shown.push(v);
+          }
+        }
+      }
+      assert(shown.length >= 20, `expected the tab's text, found ${shown.length} strings`);
+      // A string with no letters (a digit-only mode title) has nothing to translate.
+      const raw = shown.filter((s) => /[A-Za-z]/.test(s) && !isPseudoLocalized(s));
+      assert(raw.length === 0, `plain English under en-XA: ${JSON.stringify(raw)}`);
+    } finally {
+      el?.remove();
+      setLocale(previous);
+      unregisterCatalog('connectivity-test');
     }
   });
 

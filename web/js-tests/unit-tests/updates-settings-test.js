@@ -22,6 +22,11 @@
 import { assert } from '../utilities/test-helpers.js';
 import wsService from '../../js/services/websocket.js';
 import { __resetPrefsForTests } from '../../js/services/prefs.js';
+import { fetchJson } from '../../js/services/http.js';
+import { apiUrl } from '../../js/utils/api-url.js';
+import {
+  setLocale, registerCatalog, unregisterCatalog, isPseudoLocalized, PSEUDO_LOCALE,
+} from '../../sdk/lib/i18n.js';
 import '../../js/components/settings-panel.js';
 
 /**
@@ -225,6 +230,45 @@ export async function runTests(_ctx) {
       assert(checked && checked.value === 'automatic',
         `the selection under the user is untouched; got ${checked && checked.value}`);
     });
+  });
+
+  // Every word the tab itself shows comes out accented under the pseudo-locale.
+  // Versions are digits only here, because a "v" from the data would read as
+  // unconverted English. The panel shell around #updates-form is not walked.
+  await run('under en-XA every string the tab shows is pseudo-localised', async () => {
+    const body = await fetchJson(apiUrl(`/i18n/catalog?locale=${PSEUDO_LOCALE}`));
+    assert(body && Object.keys(body.messages || {}).length > 0, 'the en-XA catalogue is empty');
+    registerCatalog('updates-settings-test', PSEUDO_LOCALE, body.messages);
+    const previous = setLocale(PSEUDO_LOCALE);
+    try {
+      const status = { currentVersion: '1.0.0', latestVersion: '1.2.0', updateAvailable: true };
+      await withPanel({ status }, async (el) => {
+        el._tabs.updates.show();
+        await settle();
+        el.querySelector('#updates-check-btn').click();
+        await settle();
+        const form = el.querySelector('#updates-form');
+        /** @type {string[]} */
+        const shown = [];
+        const walker = document.createTreeWalker(form, NodeFilter.SHOW_TEXT);
+        for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+          const text = (n.textContent || '').trim();
+          if (text) shown.push(text);
+        }
+        for (const node of form.querySelectorAll('[aria-label], [title], [placeholder]')) {
+          for (const attr of ['aria-label', 'title', 'placeholder']) {
+            const v = node.getAttribute(attr);
+            if (v) shown.push(v);
+          }
+        }
+        assert(shown.length >= 10, `expected the tab's text, found ${shown.length} strings`);
+        const raw = shown.filter((s) => !isPseudoLocalized(s));
+        assert(raw.length === 0, `plain English under en-XA: ${JSON.stringify(raw)}`);
+      });
+    } finally {
+      setLocale(previous);
+      unregisterCatalog('updates-settings-test');
+    }
   });
 
   return { passed, failed, errors };

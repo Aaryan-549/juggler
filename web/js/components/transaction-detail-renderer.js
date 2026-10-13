@@ -18,6 +18,7 @@
  */
 
 import { formatNumber, formatTokens } from '../utils/format.js';
+import { formatNumber as formatLocaleNumber, formatDate } from '../../sdk/lib/i18n.js';
 import { escapeJsonContent } from '../../sdk/lib/html.js';
 import { createCopyButton } from '../utils/properties-panel-helpers.js';
 import { estimateValueTokens, LONG_TEXT_CHARS } from '../utils/token-estimate.js';
@@ -130,8 +131,10 @@ function _buildMetadataBar(blob) {
   if (blob.stopReason) {
     add(`Stop: ${blob.stopReason}`);
   }
-  if (blob.timestamp) {
-    add(`Time: ${new Date(blob.timestamp).toLocaleTimeString()}`);
+  // formatDate is '' for a garbled timestamp, which drops the field.
+  const time = blob.timestamp ? formatDate(new Date(blob.timestamp), { timeStyle: 'medium' }) : '';
+  if (time) {
+    add(`Time: ${time}`);
   }
   if (blob.modelConfig?.model) {
     add(`Model: ${blob.modelConfig.model}`);
@@ -162,7 +165,7 @@ function _buildOutputSection(blob) {
   };
 
   const section = _section('LLM Output', {
-    summary: blob.outputTokens ? `${blob.outputTokens.toLocaleString()} tokens` : '',
+    summary: blob.outputTokens ? `${formatLocaleNumber(blob.outputTokens)} tokens` : '',
     copyText: JSON.stringify(reconstructed, null, 2),
     copyLabel: 'Copy the output as JSON'
   });
@@ -276,7 +279,7 @@ function _inputSummary(blob, parts) {
     + estimateValueTokens(parts.tools);
   const bits = [`~${formatTokens(estimated)} estimated`];
   if (blob.inputTokens && !blob.inputTokensApproximate) {
-    bits.push(`${blob.inputTokens.toLocaleString()} reported`);
+    bits.push(`${formatLocaleNumber(blob.inputTokens)} reported`);
   }
   return bits.join(' · ');
 }
@@ -430,7 +433,8 @@ function _buildToolsHeader(tools, blob, messageThread) {
 
   const sent = document.createElement('div');
   sent.className = 'tx-tools-sent';
-  const when = blob?.timestamp ? ` at ${new Date(blob.timestamp).toLocaleTimeString()}` : '';
+  const time = blob?.timestamp ? formatDate(new Date(blob.timestamp), { timeStyle: 'medium' }) : '';
+  const when = time ? ` at ${time}` : '';
   sent.textContent = `${tools.length} ${tools.length === 1 ? 'tool' : 'tools'}, as sent${when} — not the live list.`;
   header.appendChild(sent);
 

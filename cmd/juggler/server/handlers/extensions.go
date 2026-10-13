@@ -185,30 +185,36 @@ func (api *ExtensionsAPI) HandleListLocations(w http.ResponseWriter, r *http.Req
 // HandleListExtensions returns all discovered extensions with expanded capabilities.
 func (api *ExtensionsAPI) HandleListExtensions(w http.ResponseWriter, r *http.Request) {
 	extensions := []Extension{}
-
-	// 1. Embedded extensions (web/extensions/* baked into the binary). Scanned
-	//    as a container so the embedded FS goes through the same per-subdir
-	//    discovery shape as the on-disk user/project containers below.
-	extensions = append(extensions, api.discoverEmbeddedContainer("extensions", "/extensions/")...)
-
-	// 2. User extensions (~/.juggler/extensions/*).
-	extensions = append(extensions, api.discoverContainer(api.userExtensionDir, api.UserExtensionURLPrefix(), "user")...)
-
+	for _, root := range api.roots() {
+		if ext, ok := api.loadExtension(root); ok {
+			extensions = append(extensions, ext)
+		}
+	}
 	WriteJSON(w, r, 0, extensions)
 }
 
-// discoverEmbeddedContainer scans a container directory inside the embedded
-// filesystem (web/extensions/*), loading each immediate subdirectory as a
-// candidate extension. It mirrors discoverContainer but over api.builtinFS
-// (an fs.FS, not a disk path), so the embedded core extension is discovered
-// through the same per-subdir shape as the on-disk user/project containers.
-// Files are served under urlPrefix+<subdir>/ with source "builtin".
-func (api *ExtensionsAPI) discoverEmbeddedContainer(containerDir, urlPrefix string) []Extension {
+// roots lists every candidate extension root in discovery order, precedence
+// low→high:
+//
+//  1. Embedded extensions (web/extensions/* baked into the binary), scanned as a
+//     container so the embedded FS goes through the same per-subdir shape as the
+//     on-disk user container below.
+//  2. User extensions (~/.juggler/extensions/*).
+func (api *ExtensionsAPI) roots() []extensionRoot {
+	roots := api.embeddedContainerRoots("extensions", "/extensions/")
+	return append(roots, api.containerRoots(api.userExtensionDir, api.UserExtensionURLPrefix(), "user")...)
+}
+
+// embeddedContainerRoots lists the immediate subdirectories of a container
+// inside the embedded filesystem (web/extensions/*) as candidate extension
+// roots. It mirrors containerRoots but over api.builtinFS (an fs.FS, not a disk
+// path). Files are served under urlPrefix+<subdir>/ with source "builtin".
+func (api *ExtensionsAPI) embeddedContainerRoots(containerDir, urlPrefix string) []extensionRoot {
 	entries, err := fs.ReadDir(api.builtinFS, containerDir)
 	if err != nil {
 		return nil
 	}
-	var out []Extension
+	var out []extensionRoot
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
@@ -219,25 +225,21 @@ func (api *ExtensionsAPI) discoverEmbeddedContainer(containerDir, urlPrefix stri
 		if api.builtinDir != "" {
 			diskDir = filepath.Join(api.builtinDir, containerDir, entry.Name())
 		}
-		root := extensionRoot{
+		out = append(out, extensionRoot{
 			fsys:      api.builtinFS,
 			dir:       path.Join(containerDir, entry.Name()),
 			urlPrefix: urlPrefix + entry.Name() + "/",
 			source:    "builtin",
 			diskDir:   diskDir,
-		}
-		if ext, ok := api.loadExtension(root); ok {
-			out = append(out, ext)
-		}
+		})
 	}
 	return out
 }
 
-// discoverContainer scans a container directory whose immediate subdirectories
-// are each a candidate extension (one juggler.extension.json apiece). Files are
-// served under urlPrefix+<subdir>/. A missing/empty container yields nothing; a
-// subdir with an invalid manifest is returned with Error set (never dropped).
-func (api *ExtensionsAPI) discoverContainer(containerDir, urlPrefix, source string) []Extension {
+// containerRoots lists a container directory's immediate subdirectories, each a
+// candidate extension (one juggler.extension.json apiece). Files are served
+// under urlPrefix+<subdir>/. A missing/empty container yields nothing.
+func (api *ExtensionsAPI) containerRoots(containerDir, urlPrefix, source string) []extensionRoot {
 	if containerDir == "" {
 		return nil
 	}
@@ -245,7 +247,7 @@ func (api *ExtensionsAPI) discoverContainer(containerDir, urlPrefix, source stri
 	if err != nil {
 		return nil // container absent or unreadable — no extensions here
 	}
-	var out []Extension
+	var out []extensionRoot
 	for _, entry := range entries {
 		full := filepath.Join(containerDir, entry.Name())
 		// Follow symlinks: a dev extension installed via `juggler ext link` is a
@@ -265,16 +267,13 @@ func (api *ExtensionsAPI) discoverContainer(containerDir, urlPrefix, source stri
 				rootDir = resolved
 			}
 		}
-		root := extensionRoot{
+		out = append(out, extensionRoot{
 			fsys:      os.DirFS(rootDir),
 			dir:       ".",
 			urlPrefix: urlPrefix + name + "/",
 			source:    source,
 			diskDir:   rootDir,
-		}
-		if ext, ok := api.loadExtension(root); ok {
-			out = append(out, ext)
-		}
+		})
 	}
 	return out
 }
@@ -331,7 +330,49 @@ func (api *ExtensionsAPI) loadExtension(root extensionRoot) (Extension, bool) {
 	if len(files) > 0 {
 		ext.Files = files
 	}
+	// A broken catalogue costs the extension its translations, never its load:
+	// it is skipped by Catalogs and said here, beside the extension.
+	if manifest.Provides.I18n != "" {
+		if _, err := extmanifest.ReadCatalogs(root.fsys, root.dir, manifest.Provides.I18n); err != nil {
+			ext.Warnings = append(ext.Warnings, "translations not loaded: "+err.Error())
+		}
+	}
 	return ext, true
+}
+
+// Catalogs returns each loadable extension's UI translation catalogue for
+// locale, keyed by extension id — its catalogues along the locale's chain
+// merged, each message from the most specific file that has it
+// (extmanifest.MergeChain), never English. Extensions
+// that fail to load, declare no i18n directory, or whose catalogues will not
+// read are left out; for a repeated id the first in discovery order (built-in
+// before user) keeps its catalogue, as it keeps its capabilities.
+func (api *ExtensionsAPI) Catalogs(locale string) map[string]map[string]string {
+	out := map[string]map[string]string{}
+	chain := extmanifest.LocaleChain(locale)
+	if len(chain) == 0 {
+		return out
+	}
+	seen := map[string]bool{}
+	for _, root := range api.roots() {
+		ext, ok := api.loadExtension(root)
+		if !ok || ext.Error != "" || seen[ext.Manifest.ID] {
+			continue
+		}
+		seen[ext.Manifest.ID] = true
+		if ext.Manifest.Provides.I18n == "" {
+			continue
+		}
+		catalogs, err := extmanifest.ReadCatalogs(root.fsys, root.dir, ext.Manifest.Provides.I18n)
+		if err != nil {
+			jlog.Error("[i18n] %s: %v", ext.Manifest.ID, err)
+			continue
+		}
+		if messages := extmanifest.MergeChain(catalogs, chain); messages != nil {
+			out[ext.Manifest.ID] = messages
+		}
+	}
+	return out
 }
 
 // expandCapabilities resolves each provides glob to concrete served URLs, with a

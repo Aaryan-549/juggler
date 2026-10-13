@@ -4,9 +4,10 @@
   "version": "1.0.0",
   "author": "Juggler Team",
   "license": "Apache-2.0",
-  "engineApi": "^1.0.0",
+  "engineApi": "^1.1.0",
   "permissions": [],
   "provides": {
-    "contextItems": ["context-items/*-context-item.js"]
+    "contextItems": ["context-items/*-context-item.js"],
+    "i18n": "i18n"
   }
 }

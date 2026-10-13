@@ -19,6 +19,7 @@
  */
 
 import { escapeHtml } from '../../../sdk/lib/html.js';
+import { t } from '../../../sdk/lib/i18n.js';
 import { presentModal } from '../../utils/modal-surface.js';
 
 /**
@@ -67,11 +68,12 @@ import { presentModal } from '../../utils/modal-surface.js';
  *   Step functions by name. Each may be async — a step that has to ask the
  *   server what to show renders a spinner until it resolves.
  * @param {string} opts.start - Name of the first step.
- * @param {string} [opts.dismissLabel] - aria-label for the close button.
+ * @param {string} [opts.dismissLabel] - aria-label for the close button, already
+ *   translated. Defaults to "Close".
  * @returns {Promise<any>} The value passed to `finish`, or `undefined` if the
  *   modal was dismissed.
  */
-export function presentWizard({ steps, start, dismissLabel = 'Close' }) {
+export function presentWizard({ steps, start, dismissLabel = t('Close') }) {
   return new Promise((resolve) => {
     /** @type {string[]} */
     const history = [];
@@ -225,9 +227,9 @@ function shell(view, actions, dismissLabel, canGoBack) {
     <modal-backdrop class="wiz-backdrop"></modal-backdrop>
     <modal-panel class="wiz-panel" role="dialog" aria-modal="true" aria-label="${escapeHtml(view.title)}">
       <header class="wiz-header">
-        ${canGoBack ? '<button type="button" class="wiz-back" aria-label="Back">← Back</button>' : ''}
+        ${canGoBack ? `<button type="button" class="wiz-back" aria-label="${escapeHtml(t('Back'))}">${escapeHtml(t('← Back'))}</button>` : ''}
         <h2 class="wiz-title">${escapeHtml(view.title)}</h2>
-        <button class="close-button wiz-close" title="Close (Esc)" aria-label="${escapeHtml(dismissLabel)}"><span class="icon-close"></span></button>
+        <button class="close-button wiz-close" title="${escapeHtml(t('Close (Esc)'))}" aria-label="${escapeHtml(dismissLabel)}"><span class="icon-close"></span></button>
       </header>
       <div class="wiz-body">${view.body}</div>
       ${buttons ? `<footer class="wiz-footer">${buttons}</footer>` : ''}

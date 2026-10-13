@@ -26,6 +26,7 @@ import workerManager from '../services/worker-manager.js';
 import { openSettings } from '../services/settings-launcher.js';
 import { setupColumnResize } from '../utils/column-resize.js';
 import { formatDuration, formatRelativeDateTime, formatTokens } from '../utils/format.js';
+import { formatNumber as formatLocaleNumber } from '../../sdk/lib/i18n.js';
 import { plain } from '../model/item-accessor.js';
 import { estimateTokens, llmTextForItem } from '../utils/token-estimate.js';
 import { FormattingHelpers } from '../../sdk/lib/formatting-helpers.js';
@@ -97,7 +98,7 @@ function paintTokenChip(chip, text) {
     return;
   }
   paintChip(chip, tokens, `~${formatTokens(tokens)}`,
-    `Estimated ${tokens.toLocaleString()} tokens from ${text.length.toLocaleString()} characters `
+    `Estimated ${formatLocaleNumber(tokens)} tokens from ${formatLocaleNumber(text.length)} characters `
     + '(~4 characters per token). Provider-reported counts cover a whole round-trip \u2014 open the '
     + 'transaction to see those.');
 }
@@ -110,7 +111,7 @@ function paintTokenChip(chip, text) {
  */
 function paintReportedChip(chip, tokens) {
   paintChip(chip, tokens, formatTokens(tokens),
-    `${tokens.toLocaleString()} output tokens, reported by the provider. This round-trip `
+    `${formatLocaleNumber(tokens)} output tokens, reported by the provider. This round-trip `
     + "produced nothing else, so the count is this item's alone.");
 }
 

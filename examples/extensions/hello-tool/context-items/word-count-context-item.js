@@ -4,6 +4,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import ContextItem from 'juggler/context-item';
+import { markUntranslated } from 'juggler/i18n';
 
 /**
  * What {@link WordCountContextItem.execute} returns. Keeping the result shape in
@@ -85,13 +86,17 @@ class WordCountContextItem extends ContextItem {
    * is nested under `result`, and reading it at the top level is the single most
    * common mistake in a first extension: it yields undefined, and the model sees
    * an empty result with nothing to explain it.
+   *
+   * The summary is also the tool_result the model reads, so it stays English
+   * whatever language the UI is in: markUntranslated() says so to the reader
+   * and to the i18n lint rule.
    * @param {import('juggler/context-item').Outcome} outcome - The execution outcome
    * @returns {import('juggler/context-item').ItemSummary} Formatted summary
    */
   getSummary(outcome) {
-    if (!outcome.success) return this.failureSummary(outcome.error ?? 'Count failed');
+    if (!outcome.success) return this.failureSummary(outcome.error ?? markUntranslated('Count failed'));
     const result = /** @type {WordCountResult} */ (outcome.result);
-    return this.successSummary(`${result.words} words, ${result.characters} characters`);
+    return this.successSummary(markUntranslated(`${result.words} words, ${result.characters} characters`));
   }
 }
 

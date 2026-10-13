@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"juggler/cmd/juggler/core"
+	"juggler/cmd/juggler/extmanifest"
 	"juggler/internal/jlog"
 
 	"github.com/fsnotify/fsnotify"
@@ -241,13 +242,17 @@ type pluginWatchDir struct {
 }
 
 // isPluginFile reports whether a changed path is one a hot reload cares about:
-// any JS capability file, an extension manifest, or a user-command markdown
-// definition. A stray .md under a watched extension tree (e.g. a README) also
-// triggers a reload, which is harmless — reloadRegistries is idempotent.
+// any JS capability file, an extension manifest, a translation catalogue (a
+// .json named for a locale, e.g. fr.json), or a user-command markdown
+// definition. A stray .md under a watched extension tree (e.g. a README), or a
+// .json that merely looks like a catalogue, also triggers a reload, which is
+// harmless — reloadRegistries is idempotent.
 func isPluginFile(name string) bool {
+	base := filepath.Base(name)
 	return strings.HasSuffix(name, ".js") ||
 		strings.HasSuffix(name, ".md") ||
-		filepath.Base(name) == "juggler.extension.json"
+		base == "juggler.extension.json" ||
+		(strings.HasSuffix(base, ".json") && extmanifest.IsLocaleTag(strings.TrimSuffix(base, ".json")))
 }
 
 // pluginEventAction is how the plugin watcher reacts to one filesystem event.

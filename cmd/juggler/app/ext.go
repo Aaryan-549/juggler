@@ -169,6 +169,13 @@ func validateExtensionDir(dir string) (extmanifest.Manifest, []string, error) {
 			return m, nil, fmt.Errorf("systemPrompt module %q matched no file under %s", sp, dir)
 		}
 	}
+	// The server skips a broken catalogue and still loads the extension; the
+	// author is told here, where it costs nothing.
+	if m.Provides.I18n != "" {
+		if _, err := extmanifest.ReadCatalogs(fsys, ".", m.Provides.I18n); err != nil {
+			return m, nil, err
+		}
+	}
 	return m, extmanifest.Warnings(m), nil
 }
 

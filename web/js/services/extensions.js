@@ -18,6 +18,7 @@ import { resolveAssetUrl, importModuleUrl } from '../utils/asset-url.js';
 import { whenRegistriesReady } from '../registries/registry-ready.js';
 import { fetchJson } from './http.js';
 import { apiUrl } from '../utils/api-url.js';
+import { loadExtensionCatalogs } from './extension-catalogs.js';
 
 /**
  * @typedef {object} ExtensionManifest
@@ -154,7 +155,10 @@ const TYPE_TO_KEY = /** @type {const} */ ({
 });
 
 /**
- * Fetch the extension catalog from the backend (cached after first call).
+ * Fetch the extension catalog from the backend (cached after first call). The
+ * extensions' translation catalogues for the active UI language are registered
+ * before this resolves: every registry awaits it before importing an extension
+ * module, so no extension renders before its translations are in.
  * @returns {Promise<Extension[]>} Discovered extensions (may include invalid ones with `error`)
  */
 export async function fetchExtensions() {
@@ -162,11 +166,14 @@ export async function fetchExtensions() {
     return cached;
   }
 
-  /** @type {Extension[]|null} */
-  const result = await fetchJson(apiUrl('/extensions'), {
-    errorPrefix: '[Extensions] Failed to fetch extensions',
-    fallback: null,
-  });
+  /** @type {[Extension[]|null, void]} */
+  const [result] = await Promise.all([
+    fetchJson(apiUrl('/extensions'), {
+      errorPrefix: '[Extensions] Failed to fetch extensions',
+      fallback: null,
+    }),
+    loadExtensionCatalogs(),
+  ]);
   if (result === null) return [];
   cached = Array.isArray(result) ? result : [];
   return cached;

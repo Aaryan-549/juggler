@@ -29,6 +29,7 @@
 
 import { isAnyPopupOpen } from '../utils/popup-manager.js';
 import { hasNativeHost } from '../../sdk/lib/window-control.js';
+import { markForTranslation } from '../../sdk/lib/i18n.js';
 
 /**
  * A platform-agnostic key binding.
@@ -236,18 +237,18 @@ export function formatBindingForPlatform(binding, mac) {
 const SHORTCUT_DEFS = [
   {
     id: 'jump-to-attention',
-    label: 'Jump to conversation needing attention',
-    description: 'Switch to the next conversation waiting on you; select its first '
-      + 'pending approval, or scroll to the end if it just needs a look.',
-    category: 'Conversations',
+    label: markForTranslation('Jump to conversation needing attention'),
+    description: markForTranslation('Switch to the next conversation waiting on you; select its first '
+      + 'pending approval, or scroll to the end if it just needs a look.'),
+    category: markForTranslation('Conversations'),
     defaultBinding: { mod: true, key: 'j' },
     allowInInput: true,
   },
   {
     id: 'new-conversation',
-    label: 'New conversation',
-    description: 'Create a new conversation and switch to it.',
-    category: 'Conversations',
+    label: markForTranslation('New conversation'),
+    description: markForTranslation('Create a new conversation and switch to it.'),
+    category: markForTranslation('Conversations'),
     // shift:false is load-bearing: an omitted shift is *tolerant* (see
     // eventMatchesBinding), so ⌘N and ⇧⌘N would both match — and ⇧⌘N is the New
     // window chord. Pinning shift off keeps this to bare ⌘N so New window opens a
@@ -264,18 +265,18 @@ const SHORTCUT_DEFS = [
   },
   {
     id: 'new-window',
-    label: 'New window',
-    description: 'Open a new app window. Desktop app only — in a plain browser tab '
-      + 'the key is left to the browser.',
-    category: 'Conversations',
+    label: markForTranslation('New window'),
+    description: markForTranslation('Open a new app window. Desktop app only — in a plain browser tab '
+      + 'the key is left to the browser.'),
+    category: markForTranslation('Conversations'),
     defaultBinding: { mod: true, shift: true, key: 'n' },
     allowInInput: true,
   },
   {
     id: 'prev-tab',
-    label: 'Previous conversation',
-    description: 'Switch to the conversation above in the tab list (wraps around).',
-    category: 'Conversations',
+    label: markForTranslation('Previous conversation'),
+    description: markForTranslation('Switch to the conversation above in the tab list (wraps around).'),
+    category: markForTranslation('Conversations'),
     // ⌥⌘↑/↓ is the established "move between tabs" gesture on the Mac (Discord,
     // others), and macOS is the only place it ships: the Windows/Linux twin,
     // Ctrl+Alt+Up/Down, collides with Intel's screen-rotation hotkeys (and some
@@ -302,19 +303,19 @@ const SHORTCUT_DEFS = [
   },
   {
     id: 'next-tab',
-    label: 'Next conversation',
-    description: 'Switch to the conversation below in the tab list (wraps around).',
-    category: 'Conversations',
+    label: markForTranslation('Next conversation'),
+    description: markForTranslation('Switch to the conversation below in the tab list (wraps around).'),
+    category: markForTranslation('Conversations'),
     defaultBinding: { mod: true, alt: true, key: 'ArrowDown', platform: 'mac' },
     aliasBindings: [{ shift: false, key: 'PageDown' }],
     allowInInput: true,
   },
   {
     id: 'move-tab-up',
-    label: 'Move conversation up',
-    description: 'Move the current conversation one place up the tab list, within its '
-      + 'own workspace box.',
-    category: 'Conversations',
+    label: markForTranslation('Move conversation up'),
+    description: markForTranslation('Move the current conversation one place up the tab list, within its '
+      + 'own workspace box.'),
+    category: markForTranslation('Conversations'),
     // The Shift-ed twin of the Page key that steps to the tab above: the same key
     // moves the tab instead of the selection.
     defaultBinding: { shift: true, key: 'PageUp' },
@@ -325,19 +326,19 @@ const SHORTCUT_DEFS = [
   },
   {
     id: 'move-tab-down',
-    label: 'Move conversation down',
-    description: 'Move the current conversation one place down the tab list, within its '
-      + 'own workspace box.',
-    category: 'Conversations',
+    label: markForTranslation('Move conversation down'),
+    description: markForTranslation('Move the current conversation one place down the tab list, within its '
+      + 'own workspace box.'),
+    category: markForTranslation('Conversations'),
     defaultBinding: { shift: true, key: 'PageDown' },
     allowInInput: 'unscrolled',
   },
   {
     id: 'select-prev-item',
-    label: 'Select previous item',
-    description: 'Move the selection to the item above in the conversation, without '
-      + 'leaving the message box.',
-    category: 'Conversations',
+    label: markForTranslation('Select previous item'),
+    description: markForTranslation('Move the selection to the item above in the conversation, without '
+      + 'leaving the message box.'),
+    category: markForTranslation('Conversations'),
     // ⌥↑/Alt+Up, the chat-app "move in the sidebar while typing" key (Slack,
     // Discord). Its native meaning in a text field is macOS's paragraph jump —
     // rarely used in a message box, and ⌘↑ still reaches the start — and it has
@@ -351,18 +352,18 @@ const SHORTCUT_DEFS = [
   },
   {
     id: 'select-next-item',
-    label: 'Select next item',
-    description: 'Move the selection to the item below in the conversation, without '
-      + 'leaving the message box.',
-    category: 'Conversations',
+    label: markForTranslation('Select next item'),
+    description: markForTranslation('Move the selection to the item below in the conversation, without '
+      + 'leaving the message box.'),
+    category: markForTranslation('Conversations'),
     defaultBinding: { alt: true, shift: false, key: 'ArrowDown' },
     allowInInput: true,
   },
   {
     id: 'bin-conversation',
-    label: 'Move conversation to bin',
-    description: 'Move the current conversation to the bin.',
-    category: 'Conversations',
+    label: markForTranslation('Move conversation to bin'),
+    description: markForTranslation('Move the current conversation to the bin.'),
+    category: markForTranslation('Conversations'),
     // Fires from the composer only when it's empty, so it works when you'd press
     // it (the composer is focused most of the time) without hijacking ⌘⌫ /
     // Ctrl+Backspace "delete to line start" while there's text to delete — and,
@@ -373,18 +374,18 @@ const SHORTCUT_DEFS = [
   },
   {
     id: 'toggle-file-editing',
-    label: 'Toggle file edit permission',
-    description: 'Allow or ask-before file edits for the current conversation.',
-    category: 'Conversations',
+    label: markForTranslation('Toggle file edit permission'),
+    description: markForTranslation('Allow or ask-before file edits for the current conversation.'),
+    category: markForTranslation('Conversations'),
     defaultBinding: { mod: true, key: 'e' },
     allowInInput: true,
   },
   {
     id: 'rename-conversation',
-    label: 'Rename conversation',
-    description: 'Rename the current conversation (opens the tab\u2019s inline name '
-      + 'editor). Also on Return when the tab bar itself is focused.',
-    category: 'Conversations',
+    label: markForTranslation('Rename conversation'),
+    description: markForTranslation('Rename the current conversation (opens the tab\u2019s inline name '
+      + 'editor). Also on Return when the tab bar itself is focused.'),
+    category: markForTranslation('Conversations'),
     // F2 is the cross-platform rename key (Explorer/most tree views on
     // Windows/Linux; unclaimed on macOS, so it's safe to bind app-wide). It has
     // no native meaning in a text field, so allowInInput lets it fire straight
@@ -395,11 +396,11 @@ const SHORTCUT_DEFS = [
   },
   {
     id: 'pause-conversation',
-    label: 'Pause conversation',
-    description: 'Stops as soon as possible without interrupting any tool'
+    label: markForTranslation('Pause conversation'),
+    description: markForTranslation('Stops as soon as possible without interrupting any tool'
       + ' uses or in-flight LLM responses. Trades places with plain Escape under'
-      + ' some Escape-key behaviours (see below).',
-    category: 'Conversations',
+      + ' some Escape-key behaviours (see below).'),
+    category: markForTranslation('Conversations'),
     // Dispatched externally: both Escape keydown handlers (conversation-tab.js and
     // composer.js) delegate to escape-behaviour.js, which routes Shift+Escape to
     // whichever stop the plain key isn't bound to — a polite pause under the
@@ -413,9 +414,9 @@ const SHORTCUT_DEFS = [
     // The id is the persistence key for a rebinding, so it stays as it is even
     // though Find long ago stopped being about conversations alone.
     id: 'find-in-conversation',
-    label: 'Find',
-    description: 'Open the find bar to search for text in the panel you are in.',
-    category: 'Search',
+    label: markForTranslation('Find'),
+    description: markForTranslation('Open the find bar to search for text in the panel you are in.'),
+    category: markForTranslation('Search'),
     // Works while typing in the composer — the find bar is a search overlay, so
     // it must be reachable without first leaving the text field.
     defaultBinding: { mod: true, key: 'f' },
@@ -423,43 +424,43 @@ const SHORTCUT_DEFS = [
   },
   {
     id: 'undo',
-    label: 'Undo',
-    description: 'Undo the last change in the current conversation.',
-    category: 'Editing',
+    label: markForTranslation('Undo'),
+    description: markForTranslation('Undo the last change in the current conversation.'),
+    category: markForTranslation('Editing'),
     // Not in text fields — the composer has its own native undo.
     defaultBinding: { mod: true, shift: false, key: 'z' },
     allowInInput: false,
   },
   {
     id: 'redo',
-    label: 'Redo',
-    description: 'Redo the last undone change in the current conversation.',
-    category: 'Editing',
+    label: markForTranslation('Redo'),
+    description: markForTranslation('Redo the last undone change in the current conversation.'),
+    category: markForTranslation('Editing'),
     defaultBinding: { mod: true, shift: true, key: 'z' },
     allowInInput: false,
   },
   {
     id: 'zoom-in',
-    label: 'Zoom in',
-    description: 'Increase the interface zoom level.',
-    category: 'View',
+    label: markForTranslation('Zoom in'),
+    description: markForTranslation('Increase the interface zoom level.'),
+    category: markForTranslation('View'),
     defaultBinding: { mod: true, key: '=', displayKey: '+' },
     allowInInput: true,
   },
   {
     id: 'zoom-out',
-    label: 'Zoom out',
-    description: 'Decrease the interface zoom level.',
-    category: 'View',
+    label: markForTranslation('Zoom out'),
+    description: markForTranslation('Decrease the interface zoom level.'),
+    category: markForTranslation('View'),
     defaultBinding: { mod: true, key: '-', displayKey: '−' },
     allowInInput: true,
   },
   {
     id: 'toggle-tool-grouping',
-    label: 'Group consecutive tool uses',
-    description: 'Collapse runs of adjacent tool uses into a single group item, or '
-      + 'show them individually again.',
-    category: 'View',
+    label: markForTranslation('Group consecutive tool uses'),
+    description: markForTranslation('Collapse runs of adjacent tool uses into a single group item, or '
+      + 'show them individually again.'),
+    category: markForTranslation('View'),
     // ⌥⌘G / Ctrl+Alt+G — G for "group"; bare ⌘G is find-next everywhere, so the
     // Option is load-bearing. Fires from the composer (allowInInput) since it is
     // a display-only toggle you reach for while typing, and the command modifier
@@ -469,10 +470,10 @@ const SHORTCUT_DEFS = [
   },
   {
     id: 'toggle-pinboard',
-    label: 'Toggle Pinboard',
-    description: 'Open or close the pinboard \u2014 the tabbed panel of pinned items '
-      + 'behind the right edge of the window.',
-    category: 'View',
+    label: markForTranslation('Toggle Pinboard'),
+    description: markForTranslation('Open or close the pinboard \u2014 the tabbed panel of pinned items '
+      + 'behind the right edge of the window.'),
+    category: markForTranslation('View'),
     // ⌥⌘P / Ctrl+Alt+P — P for pinboard, in the same ⌥⌘ family as the other
     // panel/mode toggles (⌥⌘G, ⌥⌘M, ⌥⌘T). Bare ⌘P is Print in every browser and
     // ⇧⌘P is Firefox's private window, so the Option is load-bearing. Fires from
@@ -487,11 +488,11 @@ const SHORTCUT_DEFS = [
   },
   {
     id: 'prev-pin',
-    label: 'Previous pin',
-    description: 'Show the pinboard tab to the left. Plain \u2190 does the same when the '
+    label: markForTranslation('Previous pin'),
+    description: markForTranslation('Show the pinboard tab to the left. Plain \u2190 does the same when the '
       + 'board has focus and nothing inside the pin wants the key; this chord works '
-      + 'wherever focus is.',
-    category: 'View',
+      + 'wherever focus is.'),
+    category: markForTranslation('View'),
     // The pinboard's ⌥⌘←/→ answers the conversation list's ⌥⌘↑/↓, and ships where
     // that one does and for the same reason: Ctrl+Alt+arrow is Intel's screen
     // rotation on Windows and workspace switching on Linux.
@@ -507,11 +508,11 @@ const SHORTCUT_DEFS = [
   },
   {
     id: 'next-pin',
-    label: 'Next pin',
-    description: 'Show the pinboard tab to the right. Plain \u2192 does the same when the '
+    label: markForTranslation('Next pin'),
+    description: markForTranslation('Show the pinboard tab to the right. Plain \u2192 does the same when the '
       + 'board has focus and nothing inside the pin wants the key; this chord works '
-      + 'wherever focus is.',
-    category: 'View',
+      + 'wherever focus is.'),
+    category: markForTranslation('View'),
     defaultBinding: { mod: true, alt: true, key: 'ArrowRight', platform: 'mac' },
     aliasBindings: [{ mod: true, key: 'PageDown' }],
     allowInInput: true,
@@ -519,9 +520,9 @@ const SHORTCUT_DEFS = [
   },
   {
     id: 'show-shortcuts',
-    label: 'Show keyboard shortcuts',
-    description: 'Open Settings to this Keyboard shortcuts tab.',
-    category: 'View',
+    label: markForTranslation('Show keyboard shortcuts'),
+    description: markForTranslation('Open Settings to this Keyboard shortcuts tab.'),
+    category: markForTranslation('View'),
     // ⌘/ (Ctrl+/) is the near-universal "show shortcuts" chord (Slack, GitHub,
     // Gmail). It fires from the composer (allowInInput) since it is invoked with
     // the command modifier rather than as ordinary typed text.
@@ -530,10 +531,10 @@ const SHORTCUT_DEFS = [
   },
   {
     id: 'open-settings',
-    label: 'Open Settings',
-    description: 'Open the Settings panel. On macOS, desktop app only — in a browser '
-      + 'tab \u2318, is left to the browser\u2019s own settings.',
-    category: 'View',
+    label: markForTranslation('Open Settings'),
+    description: markForTranslation('Open the Settings panel. On macOS, desktop app only — in a browser '
+      + 'tab \u2318, is left to the browser\u2019s own settings.'),
+    category: markForTranslation('View'),
     // ⌘, / Ctrl+, is the platform Settings key: macOS's standard, and the one
     // cross-platform apps use on Windows and Linux, where no OS key exists. Every
     // macOS browser claims ⌘, for its own settings, so in a browser tab there the
@@ -544,17 +545,17 @@ const SHORTCUT_DEFS = [
   },
   {
     id: 'strategy-switch',
-    label: 'Switch strategy',
-    description: 'Cycle the active strategy; hold to open the strategy menu.',
-    category: 'Conversations',
+    label: markForTranslation('Switch strategy'),
+    description: markForTranslation('Cycle the active strategy; hold to open the strategy menu.'),
+    category: markForTranslation('Conversations'),
     defaultBinding: { shift: true, key: 'Tab' },
     external: true,
   },
   {
     id: 'cycle-model',
-    label: 'Switch model',
-    description: 'Cycle through recently-used models; hold to open the model menu.',
-    category: 'Conversations',
+    label: markForTranslation('Switch model'),
+    description: markForTranslation('Cycle through recently-used models; hold to open the model menu.'),
+    category: markForTranslation('Conversations'),
     // ⌥⌘M / Ctrl+Alt+M — bare ⌘M is macOS minimize, so the Option is load-bearing.
     // Dispatched externally by the hold-to-cycle model controller.
     // shift:false is load-bearing too: an omitted shift is *tolerant* (see
@@ -567,9 +568,9 @@ const SHORTCUT_DEFS = [
   },
   {
     id: 'cycle-thinking',
-    label: 'Switch thinking level',
-    description: 'Cycle the current model\u2019s thinking level; hold to open the level popover.',
-    category: 'Conversations',
+    label: markForTranslation('Switch thinking level'),
+    description: markForTranslation('Cycle the current model\u2019s thinking level; hold to open the level popover.'),
+    category: markForTranslation('Conversations'),
     // ⌥⌘T / Ctrl+Alt+T — bare ⌘T is the browser new-tab key, deliberately avoided.
     // Dispatched externally by the hold-to-cycle thinking controller.
     defaultBinding: { mod: true, alt: true, key: 't' },
@@ -578,10 +579,10 @@ const SHORTCUT_DEFS = [
   },
   {
     id: 'open-model-picker',
-    label: 'Open model picker',
-    description: 'Open the model picker and leave it open, so the list can be read '
-      + 'rather than cycled. Type to filter, arrows to move, Enter to pick, Escape to close.',
-    category: 'Conversations',
+    label: markForTranslation('Open model picker'),
+    description: markForTranslation('Open the model picker and leave it open, so the list can be read '
+      + 'rather than cycled. Type to filter, arrows to move, Enter to pick, Escape to close.'),
+    category: markForTranslation('Conversations'),
     // ⇧⌥⌘M / Ctrl+Alt+Shift+M — the Shift-ed twin of the model cycler's chord,
     // which pins shift:false so exactly one of the two fires. The Option is
     // inherited from that pairing and is load-bearing anyway: bare ⌘M is macOS

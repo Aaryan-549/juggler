@@ -3,8 +3,30 @@
 //   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
 
 /**
- * Formatting utilities for displaying numbers in human-readable format
+ * Formatting utilities for displaying numbers, sizes, durations and times.
+ *
+ * Every function here formats through `Intl` in the UI's formatting locale
+ * (`formattingLocale()` in sdk/lib/i18n.js): the runtime's own default until a
+ * UI language is chosen, so output is what the platform would produce, and the
+ * chosen language's conventions after. The compact suffixes (`k`, `M`) and the
+ * size units (`KB`, `MB`) are symbols and stay as they are; only the digits,
+ * separators and words around them follow the locale.
  */
+
+import {
+  t, formatNumber as formatLocaleNumber, formatDate, formatRelativeTime, formattingLocale,
+} from '../../sdk/lib/i18n.js';
+
+/**
+ * Plain digits in the formatting locale, without thousands grouping: for a
+ * number that already carries a unit and should read as one token.
+ * @param {number} value
+ * @param {number} [maxFraction=20] - The most fraction digits to show.
+ * @returns {string} The formatted digits.
+ */
+function digits(value, maxFraction = 20) {
+  return formatLocaleNumber(value, { useGrouping: false, maximumFractionDigits: maxFraction });
+}
 
 /**
  * Format a number with SI suffixes (k, M, B, T)
@@ -13,23 +35,16 @@
  * @returns {string} - Formatted number (e.g., "1.2k", "3.4M")
  */
 export function formatNumber(num, decimals = 1) {
-  if (num === 0) return '0';
-  if (num < 1000) return num.toString();
+  if (num === 0) return digits(0);
+  if (num < 1000) return digits(num);
 
   const units = ['', 'k', 'M', 'B', 'T'];
   const tier = Math.floor(Math.log10(Math.abs(num)) / 3);
   const unit = units[tier] || units[units.length - 1];
   const scaled = num / Math.pow(1000, tier);
 
-  // Show decimals only if needed
-  const formatted = scaled.toFixed(decimals);
-  // Remove trailing zeros and the decimal point if they're now redundant — but
-  // ONLY when a decimal point is present. Stripping unconditionally corrupts
-  // round integer results at decimals=0 (e.g. "100" → "1", so 100000 → "1k").
-  const trimmed = formatted.includes('.')
-    ? formatted.replace(/\.?0+$/, '')
-    : formatted;
-  return trimmed + unit;
+  // At most `decimals` fraction digits, and none that are trailing zeros.
+  return digits(scaled, decimals) + unit;
 }
 
 /**
@@ -41,7 +56,7 @@ export function formatNumber(num, decimals = 1) {
  */
 export function formatBytes(bytes) {
   if (!Number.isFinite(bytes) || bytes < 0) return '';
-  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024) return `${digits(bytes)} B`;
   const units = ['KB', 'MB', 'GB', 'TB'];
   let val = bytes / 1024;
   let i = 0;
@@ -49,25 +64,29 @@ export function formatBytes(bytes) {
     val /= 1024;
     i++;
   }
-  return `${val < 10 ? val.toFixed(1) : Math.round(val)} ${units[i]}`;
+  const shown = val < 10
+    ? formatLocaleNumber(val, { useGrouping: false, minimumFractionDigits: 1, maximumFractionDigits: 1 })
+    : digits(Math.round(val));
+  return `${shown} ${units[i]}`;
 }
 
 /**
- * Short relative "N ago" string from a unix-ms timestamp: "just now",
- * "N min ago", "N hr(s) ago", "N day(s) ago".
+ * Short relative "N ago" string from a unix-ms timestamp: "just now", "5 min
+ * ago", "2 hrs ago", "3 days ago". Messages rather than
+ * `Intl.RelativeTimeFormat`'s short style, whose abbreviations vary by runtime
+ * and locale ("5 min. ago", "2 hr. ago") — a catalogue translates them.
  * @param {number} ms - Unix-ms timestamp in the past
  * @returns {string} A short "N min ago"-style string, or '' for a falsy input.
  */
 export function formatTimeAgo(ms) {
   if (!ms) return '';
   const diff = Date.now() - ms;
-  if (diff < 45000) return 'just now';
-  const mins = Math.round(diff / 60000);
-  if (mins < 60) return `${mins} min ago`;
-  const hrs = Math.round(mins / 60);
-  if (hrs < 24) return `${hrs} hr${hrs === 1 ? '' : 's'} ago`;
-  const days = Math.round(hrs / 24);
-  return `${days} day${days === 1 ? '' : 's'} ago`;
+  if (diff < 45000) return t('just now');
+  const count = Math.round(diff / 60000);
+  if (count < 60) return t('{count, plural, one {# min ago} other {# min ago}}', { count });
+  const hrs = Math.round(count / 60);
+  if (hrs < 24) return t('{count, plural, one {# hr ago} other {# hrs ago}}', { count: hrs });
+  return t('{count, plural, one {# day ago} other {# days ago}}', { count: Math.round(hrs / 24) });
 }
 
 /**
@@ -81,9 +100,34 @@ export function formatTimeAgo(ms) {
  */
 export function formatTokens(n) {
   const v = Math.max(0, Number(n) || 0);
-  if (v >= 1000000) return Math.floor(v / 100000) / 10 + 'M';
-  if (v >= 2000) return Math.floor(v / 1000) + 'k';
-  return v.toLocaleString();
+  if (v >= 1000000) return digits(Math.floor(v / 100000) / 10) + 'M';
+  if (v >= 2000) return digits(Math.floor(v / 1000)) + 'k';
+  return formatLocaleNumber(v);
+}
+
+/**
+ * `Intl.DurationFormat` in its narrow style, or null where the runtime lacks it
+ * or the value is not a whole number of seconds (it accepts integers only).
+ * @param {number} seconds
+ * @returns {string|null} The formatted duration, spaces made non-breaking.
+ */
+function formatDurationIntl(seconds) {
+  const DurationFormat = /** @type {any} */ (Intl).DurationFormat;
+  if (typeof DurationFormat !== 'function' || !Number.isInteger(seconds) || seconds < 0) return null;
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const secs = seconds % 60;
+  // The same units the fallback shows: seconds alone under a minute, minutes
+  // and seconds under an hour, hours and minutes beyond — zero parts dropped.
+  /** @type {Record<string, number>} */
+  const parts = hours > 0 ? { hours, minutes } : minutes > 0 ? { minutes, seconds: secs } : { seconds: secs };
+  for (const key of Object.keys(parts)) if (parts[key] === 0 && Object.keys(parts).length > 1) delete parts[key];
+  try {
+    const formatter = new DurationFormat(formattingLocale(), { style: 'narrow' });
+    return formatter.format(parts).replace(/ /g, '\u00A0');
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -96,6 +140,8 @@ export function formatTokens(n) {
  * @returns {string} Formatted duration.
  */
 export function formatDuration(seconds) {
+  const viaIntl = formatDurationIntl(seconds);
+  if (viaIntl !== null) return viaIntl;
   if (seconds < 60) return `${seconds}s`;
   const mins = Math.floor(seconds / 60);
   const secs = seconds % 60;
@@ -103,6 +149,19 @@ export function formatDuration(seconds) {
   const hours = Math.floor(mins / 60);
   const remainMins = mins % 60;
   return remainMins > 0 ? `${hours}h\u00A0${remainMins}m` : `${hours}h`;
+}
+
+/** @type {Intl.DateTimeFormatOptions} */
+const TIME_24H = { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false };
+
+/**
+ * Upper-case a phrase's first letter, for a word `Intl` returns in running-text
+ * case ("yesterday") that is shown here at the start of a label.
+ * @param {string} text
+ * @returns {string} The text with its first character upper-cased.
+ */
+function sentenceCase(text) {
+  return text ? text.charAt(0).toLocaleUpperCase() + text.slice(1) : text;
 }
 
 /**
@@ -129,19 +188,11 @@ export function formatRelativeDateTime(input) {
   yesterday.setDate(now.getDate() - 1);
   const isToday = date.toDateString() === now.toDateString();
   const isYesterday = date.toDateString() === yesterday.toDateString();
-  const timeStr = date.toLocaleTimeString([], {
-    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
-  });
-  const full = date.toLocaleString([], {
-    month: 'short', day: 'numeric',
-    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
-  });
-  let prefix = '';
-  if (isYesterday) {
-    prefix = 'Yesterday, ';
-  } else if (!isToday) {
-    prefix = date.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ', ';
-  }
-  return { short: prefix + timeStr, full };
+  const timeStr = formatDate(date, TIME_24H);
+  const full = formatDate(date, { month: 'short', day: 'numeric', ...TIME_24H });
+  if (isToday) return { short: timeStr, full };
+  const day = isYesterday
+    ? sentenceCase(formatRelativeTime(-1, 'day', { numeric: 'auto' }))
+    : formatDate(date, { month: 'short', day: 'numeric' });
+  return { short: t('{day}, {time}', { day, time: timeStr }), full };
 }
-

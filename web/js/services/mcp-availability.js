@@ -19,6 +19,7 @@
 import { fetchDisabledPluginIds } from './extensions.js';
 import { mcpListServers } from './ops-api.js';
 import { parseMcpToolName } from './thread-tool-inventory.js';
+import { markForTranslation } from '../../sdk/lib/i18n.js';
 
 /** Extension that publishes every MCP tool to the model. */
 export const MCP_EXTENSION_ID = '@juggler/mcp';
@@ -29,10 +30,13 @@ export const MCP_ITEM_TYPE = 'mcp-tool';
 /**
  * The one-line statement every MCP surface makes when the extension is off.
  * Servers keep running and keep reporting tools; nothing publishes them.
+ * English: a UI surface passes it to `t()` where it draws it, while
+ * {@link mcpToolMissReason} hands it to the model as it stands.
  * @type {string}
  */
-export const MCP_DISABLED_NOTICE =
-  'The MCP extension is disabled, so no MCP tools reach the model. Turn "Juggler MCP" back on in Settings › Extensions.';
+export const MCP_DISABLED_NOTICE = markForTranslation(
+  'The MCP extension is disabled, so no MCP tools reach the model. Turn "Juggler MCP" back on in Settings › Extensions.'
+);
 
 /**
  * Whether MCP tools are switched off at the extension level for this project.
