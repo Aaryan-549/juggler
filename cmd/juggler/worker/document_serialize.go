@@ -317,6 +317,7 @@ func yMapToConversationItem(m *ycrdt.YMap) ConversationItem {
 		IsError:                yMapBool(m, "isError"),
 		Cancelled:              yMapBool(m, "cancelled"),
 		Result:                 yMapRawJSON(m, "result"),
+		Hooks:                  yMapRawJSON(m, "hooks"),
 		Goal:                   yMapString(m, "goal"),
 		Items:                  yMapRawJSON(m, "items"),
 		BoundedCompaction:      yMapBool(m, "boundedCompaction"),
