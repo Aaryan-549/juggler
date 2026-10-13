@@ -15,6 +15,7 @@
  */
 
 import { assert } from '../utilities/test-helpers.js';
+import { assertDialogPopover } from '../utilities/menu-assertions.js';
 import recentModels from '../../js/services/recent-models.js';
 import keyShortcutManager from '../../js/services/key-shortcut-manager.js';
 import { registerConversationShortcuts } from '../../js/services/shortcut-bindings.js';
@@ -167,6 +168,7 @@ export async function runTests(_ctx) {
       assert(!!surface, 'opening creates a live model picker');
       assert(!!anchor && anchor.isConnected, 'the picker anchor starts connected');
       assert(surface.parentElement === document.body, 'the live picker is hosted by document.body');
+      assertDialogPopover(surface, anchor, 'model picker');
 
       assert(el.applyConfigPair({ provider: 'p', model: 'other' }), 'the next model applies');
 
@@ -180,6 +182,8 @@ export async function runTests(_ctx) {
       assert(!!surface.querySelector('.model-selection-item.active[data-model="other"]'),
         'the live picker highlights the newly selected model');
       assert(anchor.textContent.includes('Other'), 'the anchor label updates in place');
+      el.close();
+      assert(anchor.getAttribute('aria-expanded') === 'false', 'the model button still says open after closing');
     } finally {
       el.close();
       el.remove();

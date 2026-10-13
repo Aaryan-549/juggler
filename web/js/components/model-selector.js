@@ -430,6 +430,7 @@ class ModelSelector extends HTMLElement {
       onClose: () => this.closeDropdown(),
       insideSelectors: ['model-selector', '.model-picker'],
     });
+    if (this._chip) this._chip.expanded = true;
 
     // Ask the server to re-check external provider state. This catches cases
     // like `codex login` completing while Juggler is already open; the fresh list
@@ -454,6 +455,7 @@ class ModelSelector extends HTMLElement {
       this._pickerRelease = null;
     }
     this._picker = null;
+    if (this._chip) this._chip.expanded = false;
   }
 
   /**

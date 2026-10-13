@@ -403,12 +403,11 @@ export async function openProjectPicker(currentPath, session) {
   // desktop window on a server the app did not start, whose paths may be on
   // another machine (the picker copy explains the tab-set change there).
   const newWindowOnly = newWindows && switching;
+  const title = switching && !newWindowOnly ? 'Switch project folder' : 'Open project folder';
   const { element, promise, cancel } = buildPickerPanel({
     recents,
     currentPath,
-    title: newWindowOnly ? 'Open project folder'
-      : switching ? 'Switch project folder'
-        : 'Open project folder',
+    title,
     confirmLabel: newWindowOnly ? 'Open'
       : switching ? 'Switch' : 'Open',
     subtitle: newWindowOnly
@@ -428,20 +427,27 @@ export async function openProjectPicker(currentPath, session) {
   // Marks this panel as a presented surface (fixed, var-positioned) without
   // touching the plain centred-card `.pp-panel` used by inline consumers.
   element.classList.add('pp-panel-popup');
+  element.setAttribute('role', 'dialog');
+  element.setAttribute('aria-label', title);
 
   const release = presentPopup({
     surface: element,
     anchor,
     id: 'project-picker',
-    onClose: () => cancel(),
+    onClose: () => {
+      anchor.setAttribute('aria-expanded', 'false');
+      cancel();
+    },
     align: 'left',
     // The path-input completion menu portals to <body>; its selector is
     // "inside" so picking a completion doesn't dismiss the picker.
     insideSelectors: ['.pp-panel', '#project-path-chip', '.path-input-menu'],
   });
+  anchor.setAttribute('aria-expanded', 'true');
 
   const chosen = await promise;
   release();
+  anchor.setAttribute('aria-expanded', 'false');
 
   if (!chosen || isOpeningProject()) return;
 
@@ -532,6 +538,8 @@ export function openNewProjectPanel(recents = []) {
   const parentValue = defaultParentFolder(recents);
   const panel = document.createElement('div');
   panel.className = 'pp-panel pp-panel-popup';
+  panel.setAttribute('role', 'dialog');
+  panel.setAttribute('aria-label', 'New project folder');
   panel.innerHTML = `
     <div class="pp-header">
       <span class="pp-title">New project folder</span>
@@ -608,6 +616,7 @@ export function openNewProjectPanel(recents = []) {
   const close = () => {
     if (closed) return;
     closed = true;
+    anchor.setAttribute('aria-expanded', 'false');
     release?.();
   };
 
@@ -620,6 +629,7 @@ export function openNewProjectPanel(recents = []) {
     insideSelectors: ['.pp-panel', '#project-path-chip', '.path-input-menu'],
   });
   if (closed) release();
+  else anchor.setAttribute('aria-expanded', 'true');
 
   /** @returns {Promise<void>} */
   async function create() {

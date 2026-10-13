@@ -28,7 +28,8 @@ import wsService from '../services/websocket.js';
 import gitStatusCache from '../services/git-status-cache.js';
 import gitReviewService from '../services/git-review-service.js';
 import { shellKill, shellTaskStatus } from '../services/ops-api.js';
-import { openMenuAt } from '../services/context-menu-service.js';
+import { presentPopup } from '../utils/popup-surface.js';
+import { applyMenuRoles, attachMenuKeyboard } from '../utils/menu-roles.js';
 import { reviewDraftBoundsError } from '../utils/review-draft.js';
 import { formatReviewMessage } from '../utils/review-message.js';
 import { extractErrorMessage } from '../../sdk/lib/error-utils.js';
@@ -340,6 +341,8 @@ class PinboardContent extends JugglerElement {
     this._actionList = [];
     /** @type {string} @private What the drawn toolbar says, to spot a real change. */
     this._actionSignature = '';
+    /** @type {(() => void)|null} @private Closes the open `⋯` menu, while there is one. */
+    this._closeOverflow = null;
     /**
      * Whether anyone can read what is drawn here. The surface above says so:
      * the docked panel is put away with a transform and stays in the document,
@@ -402,6 +405,7 @@ class PinboardContent extends JugglerElement {
 
   disconnectedCallback() {
     super.disconnectedCallback();
+    this._closeOverflow?.();
     this._unmount();
     // Retention is for a pin that is off screen, not for one whose board has
     // left the document: nothing may still be running against a board nobody
@@ -772,6 +776,8 @@ class PinboardContent extends JugglerElement {
     if (signature === this._actionSignature) return;
     this._actionSignature = signature;
 
+    // The `⋯` it may hang from is about to be replaced.
+    this._closeOverflow?.();
     host.replaceChildren();
     const fileActions = createFileActions(path);
     if (fileActions) host.appendChild(fileActions);
@@ -814,15 +820,63 @@ class PinboardContent extends JugglerElement {
     more.textContent = '⋯';
     more.setAttribute('aria-label', 'More actions');
     more.setAttribute('aria-haspopup', 'menu');
+    more.setAttribute('aria-expanded', 'false');
     more.addEventListener('click', () => {
-      const rect = more.getBoundingClientRect();
-      openMenuAt(overflow.map((index) => ({
-        label: this._actionList[index]?.label || '',
-        disabled: this._actionList[index]?.disabled === true,
-        onClick: () => this._runActionAt(index),
-      })), rect.left, rect.bottom + 4, more);
+      if (this._closeOverflow) this._closeOverflow();
+      else this._openOverflow(more, overflow);
     });
     host.appendChild(more);
+  }
+
+  /**
+   * Open the `⋯` menu under its button: one row per action behind it, read from
+   * the action list as it stands now.
+   * @param {HTMLElement} more - The `⋯` button.
+   * @param {number[]} overflow - Indexes into the action list.
+   * @private
+   */
+  _openOverflow(more, overflow) {
+    const surface = document.createElement('nav');
+    surface.className = 'dropdown-menu pinboard-item-toolbar-menu show';
+    const list = document.createElement('menu');
+    for (const index of overflow) {
+      const action = this._actionList[index];
+      const row = document.createElement('li');
+      row.className = 'menu-item';
+      row.textContent = action?.label || '';
+      if (action?.disabled === true) {
+        row.classList.add('unavailable');
+      } else {
+        row.addEventListener('click', () => {
+          this._closeOverflow?.();
+          this._runActionAt(index);
+        });
+      }
+      list.appendChild(row);
+    }
+    applyMenuRoles(list, 'More actions');
+    surface.appendChild(list);
+
+    /** @type {(() => void)|null} */
+    let release = null;
+    const close = () => {
+      this._closeOverflow = null;
+      more.setAttribute('aria-expanded', 'false');
+      const r = release;
+      release = null;
+      r?.();
+    };
+    this._closeOverflow = close;
+    release = presentPopup({
+      surface,
+      anchor: more,
+      id: 'pinboard-item-toolbar-menu',
+      onClose: close,
+      gap: 4,
+      insideSelectors: ['.pinboard-item-toolbar-menu', '.pinboard-item-toolbar__more'],
+    });
+    attachMenuKeyboard(list, { close });
+    more.setAttribute('aria-expanded', 'true');
   }
 
   /**
@@ -1925,6 +1979,7 @@ class PinboardContent extends JugglerElement {
     // description of what is drawn — and the next pin's actions must not be
     // mistaken for the ones already there.
     this._actionSignature = '';
+    this._closeOverflow?.();
     if (this._actions) {
       this._actions.replaceChildren();
       this._actions.hidden = true;

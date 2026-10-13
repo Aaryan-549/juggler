@@ -33,6 +33,7 @@ import {
 // Imported for its registration: the file-reference menu is a side effect of
 // loading the module that owns it, and these tests are about that menu.
 import '../../js/utils/properties-panel-helpers.js';
+import { assertMenuShape } from '../utilities/menu-assertions.js';
 // Likewise the code-block provider, which claims a block before the text-edit
 // menu is reached and so must offer the paste row itself.
 import '../../js/components/code-block.js';
@@ -435,10 +436,16 @@ export async function runTests() {
       `style: rows keep their labels (got ${JSON.stringify(rows.map((r) => r.textContent))})`, errors));
     const greyed = rows[1];
     tally(check(!!greyed && greyed.getAttribute('aria-disabled') === 'true'
-      && greyed.classList.contains('unavailable') && !greyed.hasAttribute('tabindex'),
-    'style: a disabled row is aria-disabled, wears .unavailable and takes no focus', errors));
+      && greyed.classList.contains('unavailable') && /** @type {HTMLElement} */ (greyed).tabIndex !== 0,
+    'style: a disabled row is aria-disabled, wears .unavailable and is never the tab stop', errors));
     tally(check(/** @type {HTMLElement} */ (rows[0]).tabIndex === 0,
-      'style: an enabled row is focusable from the keyboard', errors));
+      'style: the first enabled row is the keyboard\'s way in', errors));
+    try {
+      assertMenuShape(menu, 'right-click menu');
+      tally(true);
+    } catch (e) {
+      tally(check(false, `aria: ${e instanceof Error ? e.message : String(e)}`, errors));
+    }
     tally(check(!!rows[2]?.classList.contains('danger'),
       'style: a danger row wears .danger', errors));
     const sep = menu?.querySelector('[role="separator"]');

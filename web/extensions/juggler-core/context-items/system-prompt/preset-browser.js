@@ -11,7 +11,8 @@
  * Written as functions taking the context item as their first argument, in the
  * conversation-area-rendering.js / composer-attachments.js shape, because every
  * one of them reads or writes item state — `data.text`, `data.selectedPresetId`,
- * the `_dropdownRelease` handle — rather than being pure the way
+ * the `_dropdownRelease` handle and the `_dropdownAnchor` whose `aria-expanded`
+ * it keeps — rather than being pure the way
  * web-search/ddg-parser.js was. The item keeps `_dropdownRelease` as its own
  * field: presentPopup hands back one release per surface, and both this module's
  * surfaces (browser and manage) share the slot so opening either closes the
@@ -21,6 +22,7 @@
  */
 
 import { createElement, presentPopup } from 'juggler/ui';
+import { attachMenuKeyboard, focusMenuItem } from '../../../../js/utils/menu-roles.js';
 import { systemPromptRegistry } from '../../../../sdk/lib/system-prompt-registry.js';
 import { extractErrorMessage } from '../../../../sdk/lib/error-utils.js';
 import {
@@ -53,6 +55,8 @@ function closeDropdown(item) {
     item._dropdownRelease();
     item._dropdownRelease = null;
   }
+  item._dropdownAnchor?.setAttribute('aria-expanded', 'false');
+  item._dropdownAnchor = null;
 }
 
 /**
@@ -88,6 +92,25 @@ export async function showPresetBrowser(item, buttonElement, container) {
     onClose: () => closeDropdown(item),
     insideSelectors: ['.system-prompt-preset-dropdown', '.system-prompt-preset-btn'],
   });
+  item._dropdownAnchor = buttonElement;
+  buttonElement.setAttribute('aria-expanded', 'true');
+  attachPresetKeyboard(item, dropdown);
+}
+
+/**
+ * Give the dropdown's current menu its keyboard. A re-render in place (after a
+ * default change or a save) builds a new menu, so it is attached again then;
+ * a keyboard user is put back on the item they were on.
+ * @param {any} item - The SystemPromptContextItem
+ * @param {HTMLElement} dropdown - The dropdown surface
+ * @param {number} [focusIndex] - The item to put focus back on, if any
+ */
+function attachPresetKeyboard(item, dropdown, focusIndex = -1) {
+  const menu = /** @type {HTMLElement|null} */ (dropdown.querySelector('[role="menu"]'));
+  if (!menu) return;
+  attachMenuKeyboard(menu, { close: () => closeDropdown(item), autoFocus: focusIndex < 0 });
+  const again = /** @type {HTMLElement|undefined} */ (menu.querySelectorAll('[role^="menuitem"]')[focusIndex]);
+  if (again) focusMenuItem(menu, again);
 }
 
 /**
@@ -98,7 +121,13 @@ export async function showPresetBrowser(item, buttonElement, container) {
  * @param {HTMLElement} container - Properties panel container
  */
 function renderPresetMenu(item, dropdown, container) {
+  const previous = dropdown.querySelector('[role="menu"]');
+  const focusIndex = previous
+    ? Array.from(previous.querySelectorAll('[role^="menuitem"]')).findIndex((el) => el === document.activeElement)
+    : -1;
   const menu = document.createElement('menu');
+  menu.setAttribute('role', 'menu');
+  menu.setAttribute('aria-label', 'System prompt presets');
   const defaultId = getDefaultPresetId();
   const selectedId = item.data.selectedPresetId;
 
@@ -114,7 +143,9 @@ function renderPresetMenu(item, dropdown, container) {
   }
 
   // Footer actions.
-  menu.appendChild(createElement('li', 'sp-preset-separator'));
+  const separator = createElement('li', 'sp-preset-separator');
+  separator.setAttribute('role', 'separator');
+  menu.appendChild(separator);
 
   menu.appendChild(buildActionItem(SP_ICON_PLUS, 'Save current text as preset…', () => {
     saveCurrentAsPreset(item, dropdown, container);
@@ -125,15 +156,19 @@ function renderPresetMenu(item, dropdown, container) {
   }));
 
   dropdown.replaceChildren(menu);
+  if (previous) attachPresetKeyboard(item, dropdown, focusIndex);
 }
 
 /**
- * Build an uppercase section label row (capitalized; CSS upper-cases it).
+ * Build an uppercase section label row (capitalized; CSS upper-cases it). It
+ * carries no role: a menu owns only items, and the rows under it name themselves.
  * @param {string} label - Category label
  * @returns {HTMLElement} The header row
  */
 function buildCategoryHeader(label) {
-  return createElement('li', 'sp-preset-category', label.charAt(0).toUpperCase() + label.slice(1));
+  const header = createElement('li', 'sp-preset-category', label.charAt(0).toUpperCase() + label.slice(1));
+  header.setAttribute('role', 'none');
+  return header;
 }
 
 /**
@@ -141,6 +176,12 @@ function buildCategoryHeader(label) {
  * applied to this conversation; the name flexes; the trailing slot shows a
  * "default" badge (for the new-conversation default) or a hover-revealed
  * "Set default" button.
+ *
+ * The row is two items side by side — the preset itself, a radio item named by
+ * its name, and "Set default" — since a menu item may not contain another
+ * control. The <li> is only the row they share; a click anywhere on it applies
+ * the preset. The check and the badge are drawn for the eye; the radio item's
+ * checked state and name say the same to a screen reader.
  * @param {any} item - The SystemPromptContextItem
  * @param {SystemPromptPreset} preset - The preset this row represents
  * @param {string} defaultId - The current default preset id
@@ -151,19 +192,30 @@ function buildCategoryHeader(label) {
  */
 function buildPresetMenuItem(item, preset, defaultId, selectedId, dropdown, container) {
   const isSelected = preset.id === selectedId;
+  const isDefault = preset.id === defaultId;
   const row = createElement('li', 'sp-preset-row' + (isSelected ? ' is-selected' : ''));
+  row.setAttribute('role', 'none');
 
   const icon = createElement('span', 'sp-preset-row-icon');
+  icon.setAttribute('aria-hidden', 'true');
   if (isSelected) icon.innerHTML = SP_ICON_CHECK;
   row.appendChild(icon);
 
-  row.appendChild(createElement('span', 'sp-preset-row-name', preset.name));
+  const name = createElement('span', 'sp-preset-row-name', preset.name);
+  name.setAttribute('role', 'menuitemradio');
+  name.setAttribute('aria-checked', String(isSelected));
+  if (isDefault) name.setAttribute('aria-label', `${preset.name} (default)`);
+  row.appendChild(name);
 
-  if (preset.id === defaultId) {
-    row.appendChild(createElement('span', 'sp-preset-default-badge', 'default'));
+  if (isDefault) {
+    const badge = createElement('span', 'sp-preset-default-badge', 'default');
+    badge.setAttribute('aria-hidden', 'true');
+    row.appendChild(badge);
   } else {
     const setBtn = document.createElement('button');
     setBtn.className = 'sp-preset-setdefault-btn';
+    setBtn.setAttribute('role', 'menuitem');
+    setBtn.setAttribute('aria-label', `Set ${preset.name} as the default`);
     setBtn.textContent = 'Set default';
     setBtn.title = `Make "${preset.name}" the default for new conversations`;
     setBtn.addEventListener('click', async (e) => {
@@ -192,8 +244,10 @@ function buildPresetMenuItem(item, preset, defaultId, selectedId, dropdown, cont
  */
 function buildActionItem(iconSvg, label, onClick) {
   const row = createElement('li', 'sp-preset-row sp-preset-action');
+  row.setAttribute('role', 'menuitem');
 
   const icon = createElement('span', 'sp-preset-row-icon');
+  icon.setAttribute('aria-hidden', 'true');
   icon.innerHTML = iconSvg;
   row.appendChild(icon);
 
@@ -324,8 +378,11 @@ async function reportPresetFailure(err, verb, logPrefix) {
  * @param {HTMLElement} container - Properties panel container
  */
 function showManagePresets(item, container) {
+  // A dialog, not a menu: each row holds Edit and Delete buttons.
   const surface = document.createElement('nav');
   surface.className = 'dropdown-menu system-prompt-manage-dropdown show';
+  surface.setAttribute('role', 'dialog');
+  surface.setAttribute('aria-label', 'Manage presets');
 
   const render = () => {
     const menu = document.createElement('menu');

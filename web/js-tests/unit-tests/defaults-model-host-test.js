@@ -20,6 +20,7 @@
  */
 
 import { assert } from '../utilities/test-helpers.js';
+import { assertDialogPopover } from '../utilities/menu-assertions.js';
 import { DefaultsTab } from '../../js/components/settings/defaults-tab.js';
 import { MODEL_PICKER_OFF } from '../../js/components/model-picker/model-picker.js';
 import {
@@ -366,12 +367,15 @@ export async function runTests(_ctx) {
       pill.click();
       const mini = document.querySelector('.thinking-mini');
       assert(!!mini, 'pressing the pill opens the thinking popover');
+      assertDialogPopover(mini, pill, 'thinking popover');
       // Settings is a modal: a popover on the ordinary dropdown layer is behind
       // the panel that opened it, which reads as "the pill does nothing".
       const layer = Number(getComputedStyle(/** @type {Element} */ (mini)).zIndex);
       const modal = Number(getComputedStyle(document.documentElement).getPropertyValue('--z-modal'));
       assert(layer >= modal,
         `the settings panel sits at ${modal}, so the popover must not be below it — got ${layer}`);
+      chip.closeMini();
+      assert(pill.getAttribute('aria-expanded') === 'false', 'the pill still says open after the popover closed');
     } finally {
       chip?.closeMini();
       h.restore();

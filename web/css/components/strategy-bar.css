@@ -62,6 +62,16 @@ strategy-selector {
     opacity: 0.6;
 }
 
+/* The item a keyboard reaches is the row's body, but it is the row that lights
+   up, as a hovered one does (patterns/menus.css does the same for .menu-item). */
+.strategy-item:has(> .strategy-item-body:focus-visible) {
+    background: var(--bg-raised);
+}
+
+.strategy-item-body:focus-visible {
+    outline: none;
+}
+
 /* Strategy item header */
 .strategy-item-header {
     display: flex;

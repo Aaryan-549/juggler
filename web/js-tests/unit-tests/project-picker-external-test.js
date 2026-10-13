@@ -15,6 +15,7 @@
  */
 
 import { assert } from '../utilities/test-helpers.js';
+import { assertDialogPopover } from '../utilities/menu-assertions.js';
 import { closePopupById } from '../../js/utils/popup-manager.js';
 import apiService from '../../js/services/api.js';
 import { openProjectPicker } from '../../js/components/project-picker.js';
@@ -32,12 +33,18 @@ async function presentAndRead() {
   void openProjectPicker('/remote/current', null);
   const panel = document.querySelector('.pp-panel-popup');
   assert(!!panel, 'the picker never presented');
+  // The chip is static markup in index.html, where it says it opens a dialog;
+  // this stand-in carries only what the picker itself keeps up to date.
+  const chip = document.getElementById('project-path-chip');
+  chip?.setAttribute('aria-haspopup', 'dialog');
+  assertDialogPopover(panel, chip, 'project picker');
   const open = /** @type {HTMLElement|null} */ (panel?.querySelector('.pp-btn-open') ?? null);
   const result = {
     confirm: open ? (open.textContent || '').trim() : '',
     newWindowButton: !!panel?.querySelector('.pp-btn-newwindow'),
   };
   closePopupById('project-picker');
+  assert(chip?.getAttribute('aria-expanded') === 'false', 'the chip still says the picker is open after it closed');
   return result;
 }
 

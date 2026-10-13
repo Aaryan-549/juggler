@@ -24,7 +24,8 @@
 
 import pinboardItemRegistry from '../registries/pinboard-item-registry.js';
 import pinboardStore from '../services/pinboard-store.js';
-import { presentPopup } from '../utils/popup-surface.js';
+import { presentPopup, POPUP_REVEALED_EVENT } from '../utils/popup-surface.js';
+import { attachMenuKeyboard, focusMenuItem } from '../utils/menu-roles.js';
 
 /** Shared popup id, so opening any other menu dismisses this one. */
 const POPUP_ID = 'pinboard-add-picker';
@@ -93,8 +94,6 @@ export function openAddPicker({ anchor, active, onPick }) {
 
   const menu = document.createElement('nav');
   menu.className = 'dropdown-menu pinboard-add-picker show';
-  menu.setAttribute('role', 'menu');
-  menu.setAttribute('aria-label', 'Add to Pinboard');
 
   /** @type {(() => void)|null} */
   let release = null;
@@ -119,8 +118,19 @@ export function openAddPicker({ anchor, active, onPick }) {
     menu.appendChild(filter);
   }
 
+  // The menu is the list alone: the filter field beside it is not an item.
   const list = document.createElement('menu');
+  list.setAttribute('role', 'menu');
+  list.setAttribute('aria-label', 'Add to Pinboard');
   menu.appendChild(list);
+  // ArrowDown leaves the filter for the first row it left standing.
+  filter?.addEventListener('keydown', (e) => {
+    if (e.key !== 'ArrowDown') return;
+    const first = /** @type {HTMLElement|null} */ (list.querySelector('[role="menuitem"]:not([aria-disabled="true"])'));
+    if (!first) return;
+    e.preventDefault();
+    focusMenuItem(list, first);
+  });
 
   /**
    * Draw the rows matching a filter string.
@@ -138,6 +148,8 @@ export function openAddPicker({ anchor, active, onPick }) {
     if (!shown.length) {
       const empty = document.createElement('li');
       empty.className = 'menu-item unavailable';
+      empty.setAttribute('role', 'menuitem');
+      empty.setAttribute('aria-disabled', 'true');
       empty.textContent = needle ? 'Nothing.' : 'Nothing to add.';
       list.appendChild(empty);
       return;
@@ -190,6 +202,11 @@ export function openAddPicker({ anchor, active, onPick }) {
   render('');
 
   anchor.setAttribute('aria-expanded', 'true');
+  // With a filter, it is the filter that takes focus, once the surface is shown
+  // (a hidden field cannot): typing is how a long list is meant to be used.
+  if (filter) {
+    menu.addEventListener(POPUP_REVEALED_EVENT, () => filter?.focus(), { once: true });
+  }
   release = presentPopup({
     surface: menu,
     anchor,
@@ -199,7 +216,7 @@ export function openAddPicker({ anchor, active, onPick }) {
     gap: 6,
     insideSelectors: ['.pinboard-add-picker'],
   });
+  attachMenuKeyboard(list, { close, autoFocus: !filter });
 
-  filter?.focus();
   return close;
 }

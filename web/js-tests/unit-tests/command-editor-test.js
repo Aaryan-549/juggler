@@ -16,6 +16,7 @@
  */
 
 import { assert, neutralizeStrayOverlays } from '../utilities/test-helpers.js';
+import { assertDialogPopover } from '../utilities/menu-assertions.js';
 import { openCommandEditor } from '../../js/components/command-editor-dialog.js';
 import { buildModelConfig } from '../../js/model/model-config.js';
 import providersCache from '../../js/services/providers-cache.js';
@@ -198,8 +199,10 @@ export async function runTests(_ctx) {
     const picker = /** @type {any} */ (document.querySelector('model-picker'));
     assert(!!picker, 'pressing the chip must open the picker');
     assert(picker.value?.model === 'm', `the picker must open on the current model, got ${JSON.stringify(picker.value)}`);
+    assertDialogPopover(picker, chip.button, 'command editor model picker');
 
     picker.dispatchEvent(new CustomEvent('change', { detail: buildModelConfig('p', 'other', '', '') }));
+    assert(chip.button.getAttribute('aria-expanded') === 'false', 'the chip still says open after choosing a model');
     assert(chip.config?.model === 'other', `the chip must follow the picker, got ${JSON.stringify(chip.config)}`);
 
     /** @type {any} */ (save).click();

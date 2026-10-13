@@ -291,6 +291,7 @@ function closeSchedulePicker(composer) {
     composer._schedulePickerCleanup = null;
     release();
   }
+  composer.querySelector('.schedule-send-btn')?.setAttribute('aria-expanded', 'false');
 }
 
 /**
@@ -315,9 +316,12 @@ function openSchedulePicker(composer) {
   }
   if (!anchor) return;
 
+  // A dialog, not a menu: it holds preset chips, steppers and a confirm button.
   const menu = document.createElement('div');
   menu.className = 'dropdown-menu schedule-send-menu show';
   menu.id = 'schedule-send-menu';
+  menu.setAttribute('role', 'dialog');
+  menu.setAttribute('aria-label', 'Send later');
 
   const present = () => {
     composer._schedulePickerCleanup = presentPopup({
@@ -328,6 +332,9 @@ function openSchedulePicker(composer) {
       align: 'right',
       insideSelectors: ['.schedule-send-btn', '.schedule-send-menu'],
     });
+    // Only the clock button opens this; the "⋮" it may hang from on touch says
+    // it opens the actions sheet, which has closed.
+    if (anchor?.classList.contains('schedule-send-btn')) anchor.setAttribute('aria-expanded', 'true');
   };
 
   // --- Armed: show what it is waiting for, offer to cancel ----------------

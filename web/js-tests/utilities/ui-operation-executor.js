@@ -25,6 +25,7 @@ import { apiUrl } from '../../js/utils/api-url.js';
 import { pingWorker } from './worker-test-hooks.js';
 import { setPluginEnabled } from './plugin-config.js';
 import { waitFor } from './test-helpers.js';
+import { assertMenuShape } from './menu-assertions.js';
 
 /**
  * @typedef {import('./integration-test-runner.js').TestOperation} TestOperation
@@ -1482,8 +1483,12 @@ export async function executeUIOperation(harness, op) {
         const addDropdown = document.querySelector('.context-item-add-dropdown');
         const headerRows = addDropdown?.querySelectorAll('.category-header, .menu-header, .menu-divider') ?? [];
         if (headerRows.length) throw new Error(`add-ai-files-to-sub-thread: add-context-item menu has ${headerRows.length} header/divider row(s): ${Array.from(headerRows).map(el => el.textContent.trim() || el.className).join(', ')}`);
-        if (addDropdown?.getAttribute('role') !== 'menu' || menuItemsAI.some(el => el.getAttribute('role') !== 'menuitem')) {
-          throw new Error('add-ai-files-to-sub-thread: add-context-item menu rows should be role="menuitem" inside a role="menu"');
+        assertMenuShape(addDropdown, 'add-ai-files-to-sub-thread: add-context-item menu');
+        if (menuItemsAI.some(el => el.getAttribute('role') !== 'menuitem')) {
+          throw new Error('add-ai-files-to-sub-thread: add-context-item menu rows should be role="menuitem"');
+        }
+        if (fakeBtnAI.getAttribute('aria-expanded') !== 'true') {
+          throw new Error('add-ai-files-to-sub-thread: the add button does not say its menu is open');
         }
         const aiFilesItem = /** @type {HTMLElement|undefined} */ (menuItemsAI.find(el => el.textContent.trim() === 'AI assistant files'));
         if (!aiFilesItem) throw new Error(`add-ai-files-to-sub-thread: "AI assistant files" menu item not found (found: ${menuItemsAI.map(el => el.textContent.trim()).join(', ')})`);

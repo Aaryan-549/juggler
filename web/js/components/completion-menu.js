@@ -4,6 +4,7 @@
 
 import { presentPopup } from '../utils/popup-surface.js';
 import { caretViewportRect } from '../utils/textarea-caret.js';
+import { applyListboxRoles, linkListbox, setActiveOption } from '../utils/listbox-roles.js';
 
 /**
  * Returns the longest string that is a prefix of every element in strs.
@@ -100,6 +101,9 @@ export class CompletionMenu {
     /** @type {Function|null} @private */     this._popupCleanup = null;
     /** @type {number|null} @private */       this._debounceId = null;
     /** @type {number} @private */            this._gen = 0;
+
+    // A <textarea> cannot be a combobox; it can say it offers a list.
+    textarea.setAttribute('aria-autocomplete', 'list');
   }
 
   /** @returns {boolean} Whether the completion menu is open */
@@ -272,6 +276,7 @@ export class CompletionMenu {
       this._caretAnchor.remove();
       this._caretAnchor = null;
     }
+    linkListbox(this._textarea, null);
     this._menu = null;
     this._provider = null;
     this._active = false;
@@ -366,6 +371,12 @@ export class CompletionMenu {
       menu.appendChild(li);
     });
 
+    // A list the textarea drives, not a menu: focus stays in the textarea, and
+    // the highlighted row is announced through it (see _highlight).
+    applyListboxRoles(menu, 'Suggestions');
+    linkListbox(this._textarea, menu);
+    setActiveOption(this._textarea, menu, -1);
+
     menu.classList.add('show');
     this._menu = menu;
     this._active = true;
@@ -435,6 +446,7 @@ export class CompletionMenu {
     items.forEach((item, i) => {
       item.classList.toggle('highlighted', i === this._index);
     });
+    setActiveOption(this._textarea, this._menu, this._index);
     const item = items[this._index];
     if (this._index >= 0 && item) {
       item.scrollIntoView({ block: 'nearest' });

@@ -30,6 +30,7 @@ import { assert, styledProbeFrame } from '../utilities/test-helpers.js';
 import { serverPath } from '../../js/utils/api-url.js';
 import { bindNetworkClients } from '../../js/utils/header-controls.js';
 import { setupHeaderOverflowMenu } from '../../js/utils/header-overflow-menu.js';
+import { assertMenuShape } from '../utilities/menu-assertions.js';
 import keyShortcutManager from '../../js/services/key-shortcut-manager.js';
 import tooltipManager from '../../js/services/tooltip-manager.js';
 
@@ -433,6 +434,7 @@ export async function runTests() {
       button.click();
       const rows = [...(surface()?.querySelectorAll('.menu-item') || [])];
       assert(rows.length === 3, `three rows, got ${rows.length}`);
+      assertMenuShape(surface(), 'header overflow menu');
       assert(button.getAttribute('aria-expanded') === 'true', 'the button says the menu is open');
       const labelOf = (/** @type {Element} */ r) => r.querySelector('.menu-item-name')?.textContent;
       const keysOf = (/** @type {Element} */ r) => r.querySelector('.menu-item-shortcut')?.textContent;

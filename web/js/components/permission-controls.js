@@ -283,10 +283,10 @@ class PermissionControls extends HTMLElement {
     const includePopupHtml = this.popupOpen && !existingPopup;
 
     this.innerHTML = `
-            <button class="permission-btn input-ctrl-btn ${this._buttonStateClass()} ${this.popupOpen ? 'open' : ''}" title="Manage auto-approval permissions" data-shortcut-id="toggle-file-editing">
+            <button class="permission-btn input-ctrl-btn ${this._buttonStateClass()} ${this.popupOpen ? 'open' : ''}" title="Manage auto-approval permissions" data-shortcut-id="toggle-file-editing" aria-haspopup="dialog" aria-expanded="${this.popupOpen}">
                   ${this._buttonInnerHTML()}
               </button>
-            ${includePopupHtml ? `<div class="dropdown-menu permissions-popup show"></div>` : ''}
+            ${includePopupHtml ? `<div class="dropdown-menu permissions-popup show" role="dialog" aria-label="Permissions"></div>` : ''}
         `;
 
     const btn = this.querySelector('.permission-btn');
@@ -315,6 +315,7 @@ class PermissionControls extends HTMLElement {
     const btn = /** @type {HTMLElement|null} */ (this.querySelector('.permission-btn'));
     if (!btn) return;
     btn.className = `permission-btn input-ctrl-btn ${this._buttonStateClass()} ${this.popupOpen ? 'open' : ''}`;
+    btn.setAttribute('aria-expanded', String(this.popupOpen));
     btn.innerHTML = this._buttonInnerHTML();
   }
 

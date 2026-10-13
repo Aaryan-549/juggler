@@ -18,6 +18,7 @@
  */
 
 import { assert } from '../utilities/test-helpers.js';
+import { assertMenuShape } from '../utilities/menu-assertions.js';
 import strategyRegistry from '../../js/registries/strategy-registry.js';
 import { REGISTRIES_RELOADED } from '../../js/registries/reload-registries.js';
 import { registerSettingsOpener } from '../../js/services/settings-launcher.js';
@@ -163,6 +164,67 @@ export async function runTests(_ctx) {
       restoreOpener();
       selector._menu?.surface?.remove();
       selector.remove();
+    }
+  });
+
+  await run('the open dropdown is a menu of radio items, each with its details item beside it', async () => {
+    if (!strategyRegistry.isInitialized()) await strategyRegistry.init();
+    const manifests = strategyRegistry.getAllManifests();
+    assert(manifests.length > 1, 'registry has at least two strategies');
+    const idA = manifests[0].id;
+    const idB = manifests[1].id;
+
+    // presentInlineMenu relocates the menu in a frame; the hidden test window
+    // may never paint, so frames run on macrotasks here.
+    const realRaf = window.requestAnimationFrame;
+    const realCancelRaf = window.cancelAnimationFrame;
+    window.requestAnimationFrame = (/** @type {FrameRequestCallback} */ cb) =>
+      /** @type {any} */ (setTimeout(() => cb(performance.now()), 0));
+    window.cancelAnimationFrame = (/** @type {number} */ id) => clearTimeout(id);
+    const frame = () => new Promise((r) => setTimeout(r, 0));
+
+    const selector = /** @type {any} */ (document.createElement('strategy-selector'));
+    document.body.appendChild(selector);
+    try {
+      selector.setMessageThread(/** @type {any} */ ({ currentStrategyId: idA }));
+      const button = () => /** @type {HTMLElement} */ (selector.querySelector('.strategy-selector-button'));
+      assert(button().getAttribute('aria-haspopup') === 'menu', 'the strategy button does not announce a menu');
+      assert(button().getAttribute('aria-expanded') === 'false', 'the strategy button does not start collapsed');
+
+      selector.toggleDropdown();
+      await frame();
+      await frame();
+      const surface = selector._menu?.surface;
+      const menu = assertMenuShape(surface, 'strategy menu');
+      assert(button().getAttribute('aria-expanded') === 'true', 'the strategy button does not say its menu is open');
+
+      /**
+       * @param {string} id - A strategy id.
+       * @returns {string|null|undefined} Its radio item's aria-checked.
+       */
+      const checkedOf = (id) => menu.querySelector(`[data-strategy-id="${id}"] [role="menuitemradio"]`)?.getAttribute('aria-checked');
+      assert(checkedOf(idA) === 'true' && checkedOf(idB) === 'false',
+        `only the current strategy is checked (A ${checkedOf(idA)}, B ${checkedOf(idB)})`);
+      const radios = menu.querySelectorAll('[role="menuitemradio"]');
+      const infos = menu.querySelectorAll('.strategy-info-button[role="menuitem"]');
+      assert(radios.length === manifests.length && infos.length === manifests.length,
+        `each strategy is one radio item plus one details item (${radios.length} radios, ${infos.length} details)`);
+      assert(radios.length > 0 && Array.from(radios).every((r) => !r.querySelector('button')),
+        'a radio item still contains a button');
+
+      // A re-render while open keeps the menu a menu, and moves the check.
+      selector.setMessageThread(/** @type {any} */ ({ currentStrategyId: idB }));
+      await Promise.resolve(); // the menu keyboard re-picks its tab stop from a MutationObserver
+      assertMenuShape(surface, 'strategy menu after refresh');
+      assert(checkedOf(idA) === 'false' && checkedOf(idB) === 'true', 'the check did not follow the thread change');
+
+      selector.closeDropdown();
+      assert(button().getAttribute('aria-expanded') === 'false', 'the strategy button still says open after closing');
+    } finally {
+      selector.closeDropdown();
+      selector.remove();
+      window.requestAnimationFrame = realRaf;
+      window.cancelAnimationFrame = realCancelRaf;
     }
   });
 

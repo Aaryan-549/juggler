@@ -214,6 +214,16 @@ const SYSTEM_PROMPT_STYLES = `
 .sp-preset-row:hover {
   background: var(--bg-raised);
 }
+/* A row reached from the keyboard lights up as a hovered one does — the row
+   itself for an action, the row around it for a preset's name. */
+.sp-preset-row[role="menuitem"]:focus-visible,
+.sp-preset-row:has(> .sp-preset-row-name:focus-visible) {
+  background: var(--bg-raised);
+  outline: none;
+}
+.sp-preset-row-name:focus-visible {
+  outline: none;
+}
 .sp-preset-row.sp-preset-static {
   cursor: default;
 }
@@ -582,6 +592,8 @@ class SystemPromptContextItem extends ContextItem {
     const presetBtn = document.createElement('button');
     presetBtn.textContent = 'Select a preset';
     presetBtn.className = 'system-prompt-preset-btn';
+    presetBtn.setAttribute('aria-haspopup', 'menu');
+    presetBtn.setAttribute('aria-expanded', 'false');
     presetBtn.onclick = (e) => { e.stopPropagation(); showPresetBrowser(this, presetBtn, container); };
     body.appendChild(presetBtn);
     section.appendChild(body);

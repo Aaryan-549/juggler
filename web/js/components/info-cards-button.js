@@ -34,6 +34,7 @@ import {
   INFO_CARDS_CHANGED_EVENT,
 } from '../services/info-cards-manager.js';
 import { presentPopup } from '../utils/popup-surface.js';
+import { applyMenuRoles, attachMenuKeyboard, focusMenuItem } from '../utils/menu-roles.js';
 import { CHECK_SVG, INFO_SVG, withAttrs } from '../utils/icons.js';
 import JugglerElement from './juggler-element.js';
 
@@ -120,9 +121,7 @@ class InfoCardsButton extends JugglerElement {
     // because display comes from the base `.dropdown-menu` rule.
     const menu = document.createElement('nav');
     menu.className = 'dropdown-menu info-cards-menu show';
-    menu.setAttribute('role', 'menu');
     this._menu = menu;
-    this._renderMenu();
 
     this._popupRelease = presentPopup({
       surface: menu,
@@ -134,16 +133,35 @@ class InfoCardsButton extends JugglerElement {
       gap: 6,
       insideSelectors: ['info-cards-button', '.info-cards-menu'],
     });
+    this._renderMenu();
   }
 
   /**
    * Populate the open menu with a toggle row per enabled card. Rebuilds the
    * surface's contents in place, so it also drives the live refresh when a toggle
    * fires INFO_CARDS_CHANGED_EVENT while the menu is open (presentPopup's
-   * observer re-anchors on the content change).
+   * observer re-anchors on the content change). A keyboard user who toggled a
+   * row is put back on the same row of the rebuilt list.
    * @private
    */
   _renderMenu() {
+    if (!this._menu) return;
+    const previous = this._menu.querySelector('[role="menu"]');
+    const rows = previous ? Array.from(previous.querySelectorAll('[role^="menuitem"]')) : [];
+    const focusedIndex = rows.findIndex((row) => row === document.activeElement);
+    this._fillMenu();
+    const list = /** @type {HTMLElement|null} */ (this._menu.querySelector('[role="menu"]'));
+    if (!list) return;
+    attachMenuKeyboard(list, { close: () => this._closeMenu(), autoFocus: !previous });
+    const again = /** @type {HTMLElement|undefined} */ (list.querySelectorAll('[role^="menuitem"]')[focusedIndex]);
+    if (focusedIndex >= 0 && again) focusMenuItem(list, again);
+  }
+
+  /**
+   * Build the menu's rows: a toggle per enabled card, under a caption.
+   * @private
+   */
+  _fillMenu() {
     if (!this._menu) return;
     const cards = allInfoCards();
 
@@ -159,6 +177,7 @@ class InfoCardsButton extends JugglerElement {
       empty.className = 'menu-item unavailable';
       empty.textContent = 'No info cards.';
       list.appendChild(empty);
+      applyMenuRoles(list, 'Info cards');
       this._menu.replaceChildren(list);
       return;
     }
@@ -192,6 +211,7 @@ class InfoCardsButton extends JugglerElement {
       list.appendChild(row);
     }
 
+    applyMenuRoles(list, 'Info cards');
     this._menu.replaceChildren(list);
   }
 

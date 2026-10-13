@@ -63,6 +63,8 @@ class ModelChip extends HTMLElement {
     this._batching = false;
     /** @type {string|null} @private - Last button content, used to preserve unchanged child nodes. */
     this._renderedContentHTML = null;
+    /** @type {boolean} @private - Whether the host's picker is open (see `expanded`). */
+    this._expanded = false;
   }
 
   connectedCallback() {
@@ -261,7 +263,7 @@ class ModelChip extends HTMLElement {
       : `Thinking: ${declaredDefault ? `${declaredDefault} (default)` : 'default'} — click to change${keyHint}`;
     // A <span> (not <button>): the chip nests inside the model button, and a
     // button inside a button is invalid HTML the parser would eject.
-    return `<span class="thinking-chip${level ? '' : ' default'}" role="button" title="${escapeHtml(title)}">${escapeHtml(shown)}</span>`;
+    return `<span class="thinking-chip${level ? '' : ' default'}" role="button" aria-haspopup="dialog" aria-expanded="${!!this._miniRelease}" title="${escapeHtml(title)}">${escapeHtml(shown)}</span>`;
   }
 
   /**
@@ -370,6 +372,8 @@ class ModelChip extends HTMLElement {
     // base .dropdown-menu rule, which hides surfaces without it.
     const surface = document.createElement('nav');
     surface.className = 'dropdown-menu thinking-mini show';
+    surface.setAttribute('role', 'dialog');
+    surface.setAttribute('aria-label', 'Thinking');
     const tuning = document.createElement('model-tuning');
     /** @type {any} */ (tuning).sections = 'thinking';
     /** @type {any} */ (tuning).modelEntry = modelEntry;
@@ -394,6 +398,7 @@ class ModelChip extends HTMLElement {
       // outside-click dismissal (which runs before the pill's bubble handler).
       insideSelectors: ['model-chip', 'model-selector', '.thinking-mini'],
     });
+    chip.setAttribute('aria-expanded', 'true');
     return true;
   }
 
@@ -407,6 +412,22 @@ class ModelChip extends HTMLElement {
       this._miniRelease = null;
     }
     this._miniSurface = null;
+    this.querySelector('.thinking-chip')?.setAttribute('aria-expanded', 'false');
+  }
+
+  /**
+   * Whether the picker this chip opens is open — the host owns the picker, so
+   * it says so here, and the button announces it.
+   * @param {boolean} open - Whether the host's picker is now open.
+   */
+  set expanded(open) {
+    this._expanded = !!open;
+    this.button?.setAttribute('aria-expanded', String(this._expanded));
+  }
+
+  /** @returns {boolean} Whether the host's picker is open. */
+  get expanded() {
+    return this._expanded;
   }
 
   /**
@@ -476,7 +497,7 @@ class ModelChip extends HTMLElement {
     const contentHTML = this._contentHTML(state);
     this._renderedContentHTML = contentHTML;
     this.innerHTML = `
-            <button class="${classes.join(' ')}" id="model-button" type="button" title="${escapeHtml(this._buttonTitle)}">
+            <button class="${classes.join(' ')}" id="model-button" type="button" title="${escapeHtml(this._buttonTitle)}" aria-haspopup="dialog" aria-expanded="${this._expanded}">
                 ${contentHTML}
             </button>
         `;

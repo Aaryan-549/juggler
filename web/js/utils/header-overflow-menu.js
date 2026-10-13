@@ -14,6 +14,7 @@
  */
 
 import { presentPopup } from './popup-surface.js';
+import { applyMenuRoles, attachMenuKeyboard } from './menu-roles.js';
 import keyShortcutManager from '../services/key-shortcut-manager.js';
 
 /** Popup-manager id: at most one overflow menu is ever open. */
@@ -47,13 +48,11 @@ export function setupHeaderOverflowMenu(button, items) {
   const open = () => {
     const surface = document.createElement('nav');
     surface.className = 'dropdown-menu header-overflow-menu show';
-    surface.setAttribute('role', 'menu');
     const list = document.createElement('menu');
     for (const item of items) {
       if (item.omit?.()) continue;
       const row = document.createElement('li');
       row.className = 'menu-item';
-      row.setAttribute('role', 'menuitem');
       const name = document.createElement('span');
       name.className = 'menu-item-name';
       name.textContent = item.label;
@@ -72,6 +71,7 @@ export function setupHeaderOverflowMenu(button, items) {
       });
       list.append(row);
     }
+    applyMenuRoles(list, 'More controls');
     surface.append(list);
     button.setAttribute('aria-expanded', 'true');
     release = presentPopup({
@@ -84,6 +84,7 @@ export function setupHeaderOverflowMenu(button, items) {
       gap: 6,
       insideSelectors: ['.header-overflow-menu', '#header-overflow-button'],
     });
+    attachMenuKeyboard(list, { close });
   };
 
   const onClick = () => { if (release) close(); else open(); };

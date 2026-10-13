@@ -23,6 +23,7 @@
  */
 
 import { fetchPathCompletions, fetchFileCompletions } from '../services/completions-api.js';
+import { applyListboxRoles, linkListbox, setActiveOption } from '../utils/listbox-roles.js';
 
 /**
  * Matching quote pairs that can wrap a copied path. macOS Finder's "Copy as
@@ -86,7 +87,7 @@ class PathInput extends HTMLElement {
     const placeholder = this.getAttribute('placeholder') || '';
     const initial = this.getAttribute('value') || '';
 
-    this.innerHTML = `<input class="path-input-field field-input" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">`;
+    this.innerHTML = `<input class="path-input-field field-input" type="text" role="combobox" aria-autocomplete="list" aria-expanded="false" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">`;
     this._input = /** @type {HTMLInputElement} */ (this.querySelector('.path-input-field'));
     this._input.placeholder = placeholder;
     this._input.value = initial;
@@ -234,6 +235,10 @@ class PathInput extends HTMLElement {
 
       menu.appendChild(li);
     }
+    // A list the field drives, not a menu: focus stays in the field, and the
+    // highlighted row is announced through it (see _highlight).
+    applyListboxRoles(menu, 'Path suggestions');
+    if (this._input) linkListbox(this._input, menu);
 
     // Portal to <body> with fixed positioning so the menu escapes every
     // ancestor `overflow: hidden|auto|scroll` clipping context (the
@@ -300,6 +305,7 @@ class PathInput extends HTMLElement {
       this._menu.remove();
       this._menu = null;
     }
+    if (this._input) linkListbox(this._input, null);
     this._items = [];
     this._index = -1;
   }
@@ -323,6 +329,7 @@ class PathInput extends HTMLElement {
     if (!this._menu) return;
     const items = this._menu.querySelectorAll('.menu-item');
     items.forEach((el, i) => el.classList.toggle('highlighted', i === idx));
+    if (this._input) setActiveOption(this._input, this._menu, idx);
     this._index = idx;
   }
 

@@ -22,6 +22,7 @@
  */
 
 import { assert } from '../utilities/test-helpers.js';
+import { assertMenuShape } from '../utilities/menu-assertions.js';
 import '../../js/components/bin-modal.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -108,6 +109,7 @@ export async function runTests() {
     button.click();
     let menu = /** @type {HTMLElement|null} */ (document.querySelector('.bin-empty-menu'));
     assert(!!menu, 'clicking Empty Bin opened no menu');
+    assertMenuShape(menu, 'empty bin menu');
     assert(button.getAttribute('aria-expanded') === 'true', 'aria-expanded stayed false with the menu open');
     assert(session.emptied.length === 0, 'opening the menu emptied the bin on its own');
 

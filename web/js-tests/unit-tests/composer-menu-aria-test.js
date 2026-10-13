@@ -22,6 +22,8 @@
  */
 
 import { assert } from '../utilities/test-helpers.js';
+import { assertMenuShape, assertDialogPopover } from '../utilities/menu-assertions.js';
+import { toggleSchedulePicker } from '../../js/components/composer-schedule.js';
 import { closeAllPopups, __resetPopupManagerForTests } from '../../js/utils/popup-manager.js';
 import { buildCommandRow, buildManageCommandsRow } from '../../js/services/command-manager-entry.js';
 import { renderSkillMenuItem } from '../../js/components/skill-mention-provider.js';
@@ -103,6 +105,7 @@ function assertMenuSurface(menu, label) {
   assert(unroled.length === 0, `${label}: rows without role="menuitem": ${JSON.stringify(unroled)}`);
   const dividers = /** @type {HTMLElement[]} */ ([...m.querySelectorAll('.menu-divider')]);
   assert(dividers.every((d) => d.getAttribute('role') === 'separator'), `${label}: a divider is not a separator`);
+  assertMenuShape(m, label);
 }
 
 /**
@@ -199,6 +202,14 @@ export async function runTests() {
       for (const s of sections) {
         assert(s.getAttribute('role') === 'group' && !!s.getAttribute('aria-label'),
           `actions sheet: section "${(s.querySelector('summary')?.textContent || '').trim()}" is not a labelled group`);
+        // A collapsed section's rows are not rendered, so its header is the only
+        // way to them from the keyboard: it is an item that says it expands.
+        const summary = /** @type {HTMLDetailsElement} */ (s).querySelector('summary');
+        assert(summary?.getAttribute('role') === 'menuitem' && summary.getAttribute('aria-expanded') === 'false',
+          'actions sheet: a collapsed section header is not a collapsed menu item');
+        /** @type {HTMLDetailsElement} */ (s).open = true;
+        s.dispatchEvent(new Event('toggle'));
+        assert(summary?.getAttribute('aria-expanded') === 'true', 'actions sheet: an expanded section header still says collapsed');
       }
       assertTrigger(button, 'true', 'sheet open');
 
@@ -211,6 +222,29 @@ export async function runTests() {
       errors.push('actions-sheet: ' + (e instanceof Error ? e.message : String(e)));
     } finally {
       box._closeActionsSheet?.();
+      container.remove();
+    }
+  }
+
+  // ── Test 5: the schedule-send picker is a dialog, not a menu ──────────────
+  // It holds preset chips, steppers and a confirm button, which a menu could not.
+  {
+    __resetPopupManagerForTests();
+    const { box, container } = mountComposer();
+    try {
+      const button = /** @type {HTMLElement|null} */ (box.querySelector('.schedule-send-btn'));
+      assert(button?.getAttribute('aria-expanded') === 'false', 'schedule: the clock button does not start collapsed');
+      toggleSchedulePicker(box);
+      assertDialogPopover(document.querySelector('#schedule-send-menu'), button, 'schedule-send picker');
+      closeAllPopups();
+      assert(!document.querySelector('#schedule-send-menu'), 'schedule: the dismissed picker is still in the page');
+      assert(button?.getAttribute('aria-expanded') === 'false', 'schedule: the clock button still says open after dismissal');
+      passed++;
+    } catch (e) {
+      failed++;
+      errors.push('schedule-send: ' + (e instanceof Error ? e.message : String(e)));
+    } finally {
+      closeAllPopups();
       container.remove();
     }
   }

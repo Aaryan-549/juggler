@@ -12,6 +12,7 @@ import { openCommandManager } from './command-editor-dialog.js';
 import { isAnyPopupOpen } from '../utils/popup-manager.js';
 import { handleEscapeKey } from '../services/escape-behaviour.js';
 import { presentPopup, COARSE_POINTER_QUERY } from '../utils/popup-surface.js';
+import { applyMenuRoles, attachMenuKeyboard } from '../utils/menu-roles.js';
 import { CompletionMenu } from './completion-menu.js';
 import { createFileMentionProvider, extractFileMentionsAsync } from './file-mention-provider.js';
 import { slashCommandProvider } from './slash-command-provider.js';
@@ -95,32 +96,6 @@ const MAX_TEXTAREA_HEIGHT_PX = 400;
  * instead.
  */
 const MAX_MESSAGE_CHARS = 100_000;
-
-/**
- * Give one of the composer's button-opened menus its ARIA: the surface is a
- * named `menu`, each `.menu-item` row a `menuitem` (the empty-state hint a
- * disabled one, since choosing it does nothing), each divider a `separator`,
- * and each collapsible sheet section a group named by its header.
- *
- * The roles are applied here rather than by the row builders because the `/`
- * and `$` autocomplete renders the same rows, and that is a list attached to
- * the textarea, not a menu.
- * @param {HTMLElement} menu - The fully built menu surface
- * @param {string} label - Its accessible name
- */
-function applyMenuRoles(menu, label) {
-  menu.setAttribute('role', 'menu');
-  menu.setAttribute('aria-label', label);
-  menu.querySelectorAll('.menu-item').forEach((row) => {
-    row.setAttribute('role', 'menuitem');
-    if (row.classList.contains('menu-item-hint')) row.setAttribute('aria-disabled', 'true');
-  });
-  menu.querySelectorAll('.menu-divider').forEach((divider) => divider.setAttribute('role', 'separator'));
-  menu.querySelectorAll('details').forEach((section) => {
-    section.setAttribute('role', 'group');
-    section.setAttribute('aria-label', section.querySelector('summary')?.textContent || '');
-  });
-}
 
 class Composer extends HTMLElement {
   constructor() {
@@ -2283,6 +2258,7 @@ class Composer extends HTMLElement {
       gap: 4,
       insideSelectors: ['#skill-button', '.skill-menu'],
     });
+    attachMenuKeyboard(this._skillMenu, { close: () => this._closeSkillMenu() });
     button.setAttribute('aria-expanded', 'true');
   }
 
@@ -2427,6 +2403,7 @@ class Composer extends HTMLElement {
       gap: 4,
       insideSelectors: ['#commands-button', '.commands-menu'],
     });
+    attachMenuKeyboard(this._commandsMenu, { close: () => this._closeCommandsMenu() });
     button.setAttribute('aria-expanded', 'true');
   }
 
@@ -2625,6 +2602,7 @@ class Composer extends HTMLElement {
       gap: 4,
       insideSelectors: ['#more-actions-button', '.actions-sheet'],
     });
+    attachMenuKeyboard(menu, { close: () => this._closeActionsSheet() });
     button.setAttribute('aria-expanded', 'true');
   }
 
@@ -2683,7 +2661,8 @@ class Composer extends HTMLElement {
                         </button>
                         <button class="schedule-send-btn input-ctrl-btn"
                                 title="Send later"
-                                aria-label="Send later">
+                                aria-label="Send later"
+                                aria-haspopup="dialog" aria-expanded="false">
                             <span class="schedule-send-icon">${CLOCK_SVG}</span>
                             <span class="schedule-send-countdown" hidden></span>
                         </button>

@@ -18,6 +18,7 @@ import { markPopupOpen } from '../../utils/popup-manager.js';
 import { presentModal } from '../../utils/modal-surface.js';
 import { showAlert, showConfirm, showPrompt } from '../modal-dialog.js';
 import { presentPopup } from '../../utils/popup-surface.js';
+import { applyMenuRoles, attachMenuKeyboard } from '../../utils/menu-roles.js';
 import { addFilePath } from '../../utils/properties-panel-helpers.js';
 import { skillPreviewShell, openInstalledSkillPreview } from './skill-preview.js';
 import { fetchSkills, resetSkillsCache } from '../../services/skills.js';
@@ -331,7 +332,7 @@ export class SkillsTab {
     return `
       <div class="skills-toolbar">
         <input type="text" id="skills-search" class="skills-search" placeholder="Search skills…  ( / )" value="${escapeHtml(this.query)}" />
-        <button class="skills-btn" data-action="add-source" title="Add a GitHub repository (owner/repo) as a skills source">Add source ${DROPDOWN_ARROW_SVG}</button>
+        <button class="skills-btn" data-action="add-source" aria-haspopup="menu" aria-expanded="false" title="Add a GitHub repository (owner/repo) as a skills source">Add source ${DROPDOWN_ARROW_SVG}</button>
       </div>
       <div class="skills-chiprow">${sourceChips}</div>
       ${catChips ? `<div class="skills-chiprow skills-catrow">${catChips}</div>` : ''}
@@ -889,6 +890,7 @@ export class SkillsTab {
     /** @type {(() => void)|null} */
     let release = null;
     const close = () => {
+      anchor.setAttribute('aria-expanded', 'false');
       if (release) {
         release();
         release = null;
@@ -908,7 +910,6 @@ export class SkillsTab {
     if (defaults.length) {
       const divider = document.createElement('li');
       divider.className = 'menu-divider';
-      divider.setAttribute('role', 'separator');
       menu.appendChild(divider);
 
       const header = document.createElement('li');
@@ -943,6 +944,7 @@ export class SkillsTab {
       }
     }
 
+    applyMenuRoles(menu, 'Add source');
     surface.appendChild(menu);
     release = presentPopup({
       surface,
@@ -952,6 +954,8 @@ export class SkillsTab {
       align: 'right',
       insideSelectors: ['.skills-add-source-menu'],
     });
+    attachMenuKeyboard(menu, { close });
+    anchor.setAttribute('aria-expanded', 'true');
   }
 
   /**

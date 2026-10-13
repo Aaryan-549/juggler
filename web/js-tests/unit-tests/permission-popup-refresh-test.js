@@ -26,6 +26,7 @@ import {
   createTestConversation,
   assert
 } from '../utilities/test-helpers.js';
+import { assertDialogPopover } from '../utilities/menu-assertions.js';
 import { MessageThread } from '../../js/model/message-thread.js';
 import '../../js/components/permission-controls.js';
 
@@ -116,6 +117,36 @@ export async function runTests(_ctx) {
     } finally {
       document.querySelectorAll('.permissions-popup[data-permission-controls="true"]').forEach(e => e.remove());
       el.remove();
+    }
+  });
+
+  await run('the open popup is a named dialog, and its button says so', async () => {
+    const conversation = await createTestConversation(session);
+    const el = /** @type {any} */ (document.createElement('permission-controls'));
+    document.body.appendChild(el);
+    // presentInlineMenu relocates the popup in a frame; frames run on
+    // macrotasks here, since the hidden test window may never paint.
+    const realRaf = window.requestAnimationFrame;
+    const realCancelRaf = window.cancelAnimationFrame;
+    window.requestAnimationFrame = (/** @type {FrameRequestCallback} */ cb) =>
+      /** @type {any} */ (setTimeout(() => cb(performance.now()), 0));
+    window.cancelAnimationFrame = (/** @type {number} */ id) => clearTimeout(id);
+    const frame = () => new Promise((r) => setTimeout(r, 0));
+    try {
+      el.setMessageThread(conversation.rootMessageThread);
+      const button = () => el.querySelector('.permission-btn');
+      assert(button()?.getAttribute('aria-expanded') === 'false', 'the permissions button does not start collapsed');
+      el.openPopup();
+      await frame();
+      await frame();
+      assertDialogPopover(el._menu?.surface ?? null, button(), 'permissions popup');
+      el.closePopup();
+      assert(button()?.getAttribute('aria-expanded') === 'false', 'the permissions button still says open after closing');
+    } finally {
+      el.closePopup?.();
+      el.remove();
+      window.requestAnimationFrame = realRaf;
+      window.cancelAnimationFrame = realCancelRaf;
     }
   });
 

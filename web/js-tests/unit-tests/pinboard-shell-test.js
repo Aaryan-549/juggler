@@ -19,6 +19,7 @@
  */
 
 import { assert, waitFor, styledProbeFrame } from '../utilities/test-helpers.js';
+import { assertMenuShape } from '../utilities/menu-assertions.js';
 import pinboardStore from '../../js/services/pinboard-store.js';
 import pinboardView from '../../js/services/pinboard-view.js';
 import pinboardItemRegistry from '../../js/registries/pinboard-item-registry.js';
@@ -1182,6 +1183,7 @@ export async function runTests(_ctx) {
         shell.querySelector('.pinboard-tabbar__add').click();
         const picker = document.querySelector('.pinboard-add-picker');
         assert(!!picker, 'the + must open the picker');
+        assertMenuShape(picker, 'add picker');
         const rows = [...picker.querySelectorAll('.pinboard-add-picker__item')];
         assert(rows.some((r) => r.dataset.typeId === 'probe'),
           `the picker must offer the enabled types, got ${rows.map((r) => r.dataset.typeId).join(',')}`);
@@ -1342,16 +1344,26 @@ export async function runTests(_ctx) {
         shell.querySelector('.pinboard-item-toolbar__action').click();
         assert(actionCalls.open === 1, 'the primary button runs its action');
 
-        shell.querySelector('.pinboard-item-toolbar__more').click();
-        const menu = document.querySelector('.juggler-context-menu');
-        assert(!!menu, 'the overflow opens the shared menu');
+        const more = shell.querySelector('.pinboard-item-toolbar__more');
+        assert(more.getAttribute('aria-expanded') === 'false', 'the overflow button starts collapsed');
+        more.click();
+        const menu = document.querySelector('.pinboard-item-toolbar-menu');
+        assert(!!menu, 'the overflow opens a button menu');
+        assertMenuShape(menu, 'toolbar overflow');
+        assert(more.getAttribute('aria-expanded') === 'true', 'the overflow button says its menu is open');
         const rows = [...menu.querySelectorAll('.menu-item')]
           .map((r) => r.textContent);
         assert(rows.join(',') === 'Refresh,Copy path',
           `the overflow holds the non-primary actions in order, got "${rows.join(',')}"`);
+        more.click();
+        assert(!document.querySelector('.pinboard-item-toolbar-menu') && more.getAttribute('aria-expanded') === 'false',
+          'a second press on the overflow button closes its menu');
+        more.click();
 
-        /** @type {any} */ ([...menu.querySelectorAll('.menu-item')]
+        /** @type {any} */ ([...document.querySelectorAll('.pinboard-item-toolbar-menu .menu-item')]
           .find((r) => r.textContent === 'Copy path')).click();
+        assert(!document.querySelector('.pinboard-item-toolbar-menu') && more.getAttribute('aria-expanded') === 'false',
+          'choosing a row closes the menu');
         assert(actionCalls.thrown === 1, 'an overflow row runs its action');
         const status = shell.querySelector('.pinboard-panel__status');
         assert(!status.hidden && status.textContent.startsWith("Couldn't copy path."),
@@ -1359,7 +1371,7 @@ export async function runTests(_ctx) {
         assert(status.textContent.includes('clipboard said no'),
           'and the underlying error survives the lead');
       } finally {
-        document.querySelector('.juggler-context-menu')?.remove();
+        document.querySelector('.pinboard-item-toolbar-menu')?.remove();
         teardown();
       }
     });
@@ -1511,11 +1523,11 @@ export async function runTests(_ctx) {
         // A picture in a menu of words says nothing, so an icon action is never
         // put behind the overflow — whatever it says about `primary`.
         shell.querySelector('.pinboard-item-toolbar__more').click();
-        const rows = [...document.querySelectorAll('.juggler-context-menu .menu-item')].map((r) => r.textContent);
+        const rows = [...document.querySelectorAll('.pinboard-item-toolbar-menu .menu-item')].map((r) => r.textContent);
         assert(rows.join(',') === 'Later',
           `the overflow holds only what has no picture, got "${rows.join(',')}"`);
       } finally {
-        document.querySelector('.juggler-context-menu')?.remove();
+        if (document.querySelector('.pinboard-item-toolbar-menu')) shell.querySelector('.pinboard-item-toolbar__more')?.click();
         teardown();
       }
     });

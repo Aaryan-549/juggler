@@ -50,6 +50,13 @@ export const SHEET_QUERY = '(width <= 36rem)';
 export const COARSE_POINTER_QUERY = '(hover: none) and (pointer: coarse)';
 
 /**
+ * Event a presented surface dispatches (bubbling) the first time it is placed
+ * and made visible — the earliest moment anything inside it can take focus.
+ * @type {string}
+ */
+export const POPUP_REVEALED_EVENT = 'popup-revealed';
+
+/**
  * Present an already-built popup surface and wire everything it needs.
  *
  * Call when the popup OPENS; run the returned `release` exactly once when it
@@ -192,10 +199,17 @@ export function presentPopup({
     }
   };
 
+  let revealed = false;
   const apply = () => {
     if (mql.matches) applySheet(); else applyAnchored();
     // Placed — reveal it. Harmless to repeat on a breakpoint-crossing re-apply.
     surface.style.removeProperty('visibility');
+    // Until now nothing inside could take focus; say so once, for a menu that
+    // moves focus in on a keyboard open (utils/menu-roles.js).
+    if (!revealed) {
+      revealed = true;
+      surface.dispatchEvent(new Event(POPUP_REVEALED_EVENT, { bubbles: true }));
+    }
   };
 
   const mql = window.matchMedia(SHEET_QUERY);

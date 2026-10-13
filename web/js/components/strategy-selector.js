@@ -5,6 +5,7 @@
 import strategyRegistry from '../registries/strategy-registry.js';
 import { REGISTRIES_RELOADED } from '../registries/reload-registries.js';
 import { presentInlineMenu } from '../utils/popup-surface.js';
+import { attachMenuKeyboard } from '../utils/menu-roles.js';
 import { INFO_SVG } from '../utils/icons.js';
 import CycleBuffer from '../services/cycle-buffer.js';
 import { findLastAssistantTxnId } from '../utils/transaction-anchor.js';
@@ -608,6 +609,12 @@ class StrategySelector extends HTMLElement {
       surfaceSelector: '.strategy-dropdown',
       anchorSelector: '.strategy-selector-button',
       onClose: () => this.closeDropdown(),
+      // The <menu> outlives in-place refreshes (only its rows are replaced), so
+      // the keyboard is attached once, here.
+      onPresent: (surface) => {
+        const menu = /** @type {HTMLElement|null} */ (surface.querySelector('[role="menu"]'));
+        if (menu) attachMenuKeyboard(menu, { close: () => this.closeDropdown() });
+      },
     });
   }
 
@@ -623,6 +630,7 @@ class StrategySelector extends HTMLElement {
       const button = this.querySelector('.strategy-selector-button');
       if (button) {
         button.classList.remove('open');
+        button.setAttribute('aria-expanded', 'false');
       }
     }
   }
@@ -688,8 +696,10 @@ class StrategySelector extends HTMLElement {
   generateDropdownContent() {
     if (this._strategies.length === 0) {
       return `
-                <li class="strategy-item unavailable">
-                    <p class="strategy-item-description">No strategies.</p>
+                <li class="strategy-item unavailable" role="none">
+                    <div class="strategy-item-body" role="menuitem" aria-disabled="true">
+                        <p class="strategy-item-description">No strategies.</p>
+                    </div>
                 </li>
             `;
     }
@@ -702,16 +712,21 @@ class StrategySelector extends HTMLElement {
         ? `<span class="strategy-item-icon ${manifest.icon}" aria-hidden="true"></span>`
         : '';
 
+      // The row is two items side by side — choosing the strategy, and opening
+      // its details — since a menu item may not contain another control. The
+      // <li> is only the row they share, and clicks on the body bubble to it.
       return `
-                <li class="strategy-item ${isActive ? 'active' : ''}" data-strategy-id="${id}" ${colorStyle}>
-                    <header class="strategy-item-header">
-                        <span class="strategy-item-label">
-                            ${iconHtml}
-                            <span class="strategy-item-name">${manifest.name}</span>
-                        </span>
-                    </header>
-                    <p class="strategy-item-description">${manifest.description}</p>
-                    <button type="button" class="strategy-info-button btn-ghost" data-strategy-info-id="${id}" title="View strategy details" aria-label="View ${manifest.name} strategy details">${INFO_SVG}</button>
+                <li class="strategy-item ${isActive ? 'active' : ''}" data-strategy-id="${id}" role="none" ${colorStyle}>
+                    <div class="strategy-item-body" role="menuitemradio" aria-checked="${isActive}">
+                        <header class="strategy-item-header">
+                            <span class="strategy-item-label">
+                                ${iconHtml}
+                                <span class="strategy-item-name">${manifest.name}</span>
+                            </span>
+                        </header>
+                        <p class="strategy-item-description">${manifest.description}</p>
+                    </div>
+                    <button type="button" class="strategy-info-button btn-ghost" role="menuitem" data-strategy-info-id="${id}" title="View strategy details" aria-label="View ${manifest.name} strategy details">${INFO_SVG}</button>
                 </li>
             `;
     }).join('');
@@ -867,7 +882,7 @@ class StrategySelector extends HTMLElement {
     }
 
     const dropdownHtml = (this._dropdownOpen && !liveDropdown)
-      ? `<nav class="dropdown-menu strategy-dropdown show" id="strategy-dropdown"><menu>${dropdownContent}</menu></nav>`
+      ? `<nav class="dropdown-menu strategy-dropdown show" id="strategy-dropdown"><menu role="menu" aria-label="Strategy">${dropdownContent}</menu></nav>`
       : '';
 
     const buttonIconHtml = strategyIcon
@@ -875,7 +890,7 @@ class StrategySelector extends HTMLElement {
       : '';
 
     this.innerHTML = `
-            <button class="strategy-selector-button input-ctrl-btn ${this._dropdownOpen ? 'open' : ''}" id="strategy-button" tabindex="-1" title="Select Strategy" ${colorStyle} ${hasColorAttr}>
+            <button class="strategy-selector-button input-ctrl-btn ${this._dropdownOpen ? 'open' : ''}" id="strategy-button" tabindex="-1" title="Select Strategy" aria-haspopup="menu" aria-expanded="${this._dropdownOpen}" ${colorStyle} ${hasColorAttr}>
                 ${buttonIconHtml}
                 <span class="strategy-name">${strategyName}</span>
             </button>
@@ -939,6 +954,7 @@ class StrategySelector extends HTMLElement {
       button.removeAttribute('data-has-color');
     }
     button.classList.toggle('open', this._dropdownOpen);
+    button.setAttribute('aria-expanded', String(this._dropdownOpen));
   }
 
   /**

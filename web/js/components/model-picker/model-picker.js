@@ -879,6 +879,10 @@ class ModelPicker extends JugglerElement {
   render() {
     this._rendered = true;
     this.classList.add('dropdown-menu', 'model-picker', 'show');
+    // A dialog, not a menu: it holds a filter field, the tuning controls and
+    // buttons beside its rows.
+    this.setAttribute('role', 'dialog');
+    this.setAttribute('aria-label', 'Choose a model');
     // Seed the non-destructive-update caches with what we're about to write, so a
     // later refresh only rewrites what genuinely differs from this DOM.
     this._lastListHTML = this._listHTML();

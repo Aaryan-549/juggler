@@ -246,6 +246,10 @@ import { runTests as runReorderDragTests } from '../unit-tests/reorder-drag-test
 import { runTests as runSlashCompletionTests } from '../unit-tests/slash-completion-test.js';
 import { runTests as runSkillCompletionTests } from '../unit-tests/skill-completion-test.js';
 import { runTests as runComposerMenuAriaTests } from '../unit-tests/composer-menu-aria-test.js';
+import { runTests as runSkillsAddSourceMenuAriaTests } from '../unit-tests/skills-add-source-menu-aria-test.js';
+import { runTests as runMenuKeyboardTests } from '../unit-tests/menu-keyboard-test.js';
+import { runTests as runPresetBrowserAriaTests } from '../unit-tests/preset-browser-aria-test.js';
+import { runTests as runAutocompleteAriaTests } from '../unit-tests/autocomplete-aria-test.js';
 import { runTests as runUnclaimedConversationsTests } from '../unit-tests/unclaimed-conversations-test.js';
 import { runTests as runThreadColumnSelectionTests } from '../unit-tests/thread-column-selection-test.js';
 import { runTests as runThreadSelectionPinTests } from '../unit-tests/thread-selection-pin-test.js';
@@ -580,6 +584,10 @@ const UNIT_TEST_SUITES = [
   { name: 'unit:slash-completion', run: runSlashCompletionTests },
   { name: 'unit:skill-completion', run: runSkillCompletionTests },
   { name: 'unit:composer-menu-aria', run: runComposerMenuAriaTests },
+  { name: 'unit:skills-add-source-menu-aria', run: runSkillsAddSourceMenuAriaTests },
+  { name: 'unit:menu-keyboard', run: runMenuKeyboardTests, needsExclusiveRun: true },
+  { name: 'unit:preset-browser-aria', run: runPresetBrowserAriaTests },
+  { name: 'unit:autocomplete-aria', run: runAutocompleteAriaTests },
   { name: 'unit:search-action', run: runSearchActionTests },
   { name: 'unit:tool-cancellation', run: runToolCancellationTests },
   { name: 'unit:unbounded-await', run: runUnboundedAwaitTests },

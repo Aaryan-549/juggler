@@ -208,6 +208,7 @@ export function openCommandEditor(options = {}) {
       /** @type {(() => void)|null} */
       let release = null;
       const closePicker = () => {
+        modelChip.expanded = false;
         if (release) {
           release();
           release = null;
@@ -227,6 +228,7 @@ export function openCommandEditor(options = {}) {
         onClose: closePicker,
         insideSelectors: ['model-chip', '.model-picker'],
       });
+      modelChip.expanded = true;
     };
 
     modelChip.addEventListener('chip-toggle', openModelPicker);

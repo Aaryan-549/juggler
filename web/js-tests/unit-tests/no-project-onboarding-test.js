@@ -28,6 +28,7 @@
  */
 
 import { assert } from '../utilities/test-helpers.js';
+import { assertDialogPopover } from '../utilities/menu-assertions.js';
 import { closePopupById } from '../../js/utils/popup-manager.js';
 import apiService from '../../js/services/api.js';
 import wsService from '../../js/services/websocket.js';
@@ -370,8 +371,13 @@ export async function runTests() {
 
     openNewProjectPanel([]);
     assert(!!livePanel(), 'the new-folder panel never presented');
+    // The real chip says it opens a dialog in index.html's markup; this stand-in
+    // carries only what the panel itself keeps up to date.
+    chip.setAttribute('aria-haspopup', 'dialog');
+    assertDialogPopover(livePanel(), chip, 'new-folder panel');
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     assert(!livePanel(), 'Escape left the new-folder panel on screen');
+    assert(chip.getAttribute('aria-expanded') === 'false', 'the chip still says the new-folder panel is open');
     passed++;
 
     // --- 18: and by clicking away from it ------------------------------------

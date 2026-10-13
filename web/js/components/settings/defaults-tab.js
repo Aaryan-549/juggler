@@ -787,6 +787,7 @@ export class DefaultsTab {
     /** @type {(() => void)|null} */
     let release = null;
     const close = () => {
+      chip.expanded = false;
       if (release) {
         release();
         release = null;
@@ -806,6 +807,7 @@ export class DefaultsTab {
       onClose: close,
       insideSelectors: ['model-chip', '.model-picker'],
     });
+    chip.expanded = true;
   }
 
   /**

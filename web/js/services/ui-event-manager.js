@@ -3,6 +3,7 @@
 //   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
 
 import { presentPopup } from '../utils/popup-surface.js';
+import { applyMenuRoles, attachMenuKeyboard } from '../utils/menu-roles.js';
 import { markPopupOpen } from '../utils/popup-manager.js';
 import { attachSwipeDismiss } from '../utils/swipe-dismiss.js';
 import { holdLifted } from '../utils/reorder-drag.js';
@@ -589,6 +590,7 @@ class UIEventManager {
     const existingDropdown = document.querySelector('.context-item-add-dropdown');
     if (existingDropdown) {
       existingDropdown.remove();
+      button?.setAttribute('aria-expanded', 'false');
       return;
     }
 
@@ -608,14 +610,16 @@ class UIEventManager {
     // Create dropdown menu
     const dropdown = document.createElement('nav');
     dropdown.className = 'dropdown-menu context-item-add-dropdown show';
-    dropdown.setAttribute('role', 'menu');
 
     // presentPopup (wired at the end of this method) returns the single
     // teardown; `close` runs it from every dismissal path (selection, outside
     // click, Escape). Declared up front so the item handlers below can call it.
     /** @type {(() => void)|null} */
     let release = null;
-    const close = () => { if (release) { release(); release = null; } };
+    const close = () => {
+      button.setAttribute('aria-expanded', 'false');
+      if (release) { release(); release = null; }
+    };
 
     // No heading: the button that opened it already says what the menu is for,
     // so every row is a choice.
@@ -630,7 +634,6 @@ class UIEventManager {
     if (visible?.awaitingSetup !== true) {
       const aiFilesItem = document.createElement('li');
       aiFilesItem.className = 'menu-item';
-      aiFilesItem.setAttribute('role', 'menuitem');
       aiFilesItem.textContent = 'AI assistant files';
       aiFilesItem.addEventListener('click', async () => {
         await this._addAIAssistantFiles(threadItemId);
@@ -650,7 +653,6 @@ class UIEventManager {
 
         const item = document.createElement('li');
         item.className = 'menu-item';
-        item.setAttribute('role', 'menuitem');
         item.textContent = manifest.name;
 
         item.addEventListener('click', async () => {
@@ -699,6 +701,7 @@ class UIEventManager {
       }
     }
 
+    applyMenuRoles(menu, 'Add Context Item');
     dropdown.appendChild(menu);
 
     // presentPopup owns body-append, dismissal wiring (outside-click via
@@ -711,6 +714,8 @@ class UIEventManager {
       onClose: close,
       insideSelectors: ['.context-item-add-dropdown'],
     });
+    attachMenuKeyboard(menu, { close });
+    button.setAttribute('aria-expanded', 'true');
   }
 
   /**

@@ -7,6 +7,7 @@ import { BIN_LARGE_BYTES } from '../utils/constants.js';
 import { markPopupOpen } from '../utils/popup-manager.js';
 import { fadeOutScrims } from '../utils/modal-scrim.js';
 import { presentPopup } from '../utils/popup-surface.js';
+import { applyMenuRoles, attachMenuKeyboard } from '../utils/menu-roles.js';
 import { showAlert, showConfirm } from './modal-dialog.js';
 import JugglerElement from './juggler-element.js';
 import { UNTITLED_BASE } from '../model/conversation-naming.js';
@@ -300,7 +301,6 @@ class BinModal extends JugglerElement {
 
     const menu = document.createElement('nav');
     menu.className = 'dropdown-menu bin-empty-menu show';
-    menu.setAttribute('role', 'menu');
     this._emptyMenu = menu;
     this._renderEmptyMenu();
     button.setAttribute('aria-expanded', 'true');
@@ -315,6 +315,8 @@ class BinModal extends JugglerElement {
       gap: 6,
       insideSelectors: ['.bin-empty-menu', '.bin-empty-now'],
     });
+    const list = menu.querySelector('menu');
+    if (list) attachMenuKeyboard(list, { close: () => this._closeEmptyMenu() });
   }
 
   /** @private */
@@ -343,7 +345,6 @@ class BinModal extends JugglerElement {
       const matches = this._idsOlderThan(days).length;
       const row = document.createElement('li');
       row.className = matches > 0 ? 'menu-item' : 'menu-item unavailable';
-      row.setAttribute('role', 'menuitem');
       row.textContent = `Older than ${days} days`;
       if (matches > 0) {
         row.addEventListener('click', (e) => {
@@ -361,7 +362,6 @@ class BinModal extends JugglerElement {
 
     const everything = document.createElement('li');
     everything.className = 'menu-item danger';
-    everything.setAttribute('role', 'menuitem');
     everything.textContent = 'Everything';
     everything.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -370,6 +370,7 @@ class BinModal extends JugglerElement {
     });
     list.appendChild(everything);
 
+    applyMenuRoles(list, 'Empty Bin');
     this._emptyMenu.replaceChildren(list);
   }
 

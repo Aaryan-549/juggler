@@ -61,6 +61,7 @@
 import { copyToClipboard, readFromClipboard } from '../../sdk/lib/clipboard.js';
 import { formatCodeReference } from '../../sdk/lib/context-item-utils.js';
 import { markPopupOpen } from '../utils/popup-manager.js';
+import { attachMenuKeyboard } from '../utils/menu-roles.js';
 import { resolveCodeSelection, proseReference } from '../utils/code-selection.js';
 import { insertAtCaret } from '../components/composer-paste-tokens.js';
 
@@ -93,6 +94,14 @@ let _releaseOpenState = null;
  * @private
  */
 let _anchor = null;
+
+/**
+ * What had focus when the open menu opened, to have it back when the menu
+ * closes having taken it.
+ * @type {HTMLElement|null}
+ * @private
+ */
+let _returnFocus = null;
 
 /**
  * Register a juggler context-menu provider. Call once at module load from the
@@ -393,16 +402,17 @@ export function resolveMenu(start, event) {
 }
 
 /**
- * Open the shared popup menu at viewport coordinates, for a control whose whole
- * job is to offer a menu — an overflow button, say — rather than for a
- * right-click. It is the same menu the providers build: the same chrome, the same
+ * Open the context menu at viewport coordinates, for a gesture that stands in
+ * for a right-click — a touch long-press, which raises no `contextmenu` event of
+ * its own. It is the same menu the providers build: the same chrome, the same
  * outside-pointer and Escape/Back dismissal, the same viewport clamping, and the
- * same one-at-a-time rule.
+ * same one-at-a-time rule. A button that opens a menu is not a context menu: it
+ * presents one with `presentPopup` (utils/popup-surface.js), anchored to itself.
  * @param {ContextMenuItem[]} items - The rows to show.
- * @param {number} x - Viewport x to open at, usually a button's left edge.
- * @param {number} y - Viewport y to open at, usually a button's bottom edge.
- * @param {Element|null} [anchor] - The button the menu hangs off. Pass it so a
- *   scroll that doesn't move the button leaves the menu open.
+ * @param {number} x - Viewport x to open at, where the gesture ended.
+ * @param {number} y - Viewport y to open at.
+ * @param {Element|null} [anchor] - What the menu was opened on. Pass it so a
+ *   scroll that doesn't move it leaves the menu open.
  * @returns {void}
  */
 export function openMenuAt(items, x, y, anchor) {
@@ -429,9 +439,15 @@ function syncWailsDebugFlag() {
  */
 function closeMenu() {
   if (_openMenu) {
+    // A menu that took focus gives it back to what had it before it opened; a
+    // control focused elsewhere since keeps it.
+    const focused = document.activeElement;
+    const tookFocus = focused === null || focused === document.body || _openMenu.contains(focused);
     _openMenu.remove();
     _openMenu = null;
+    if (tookFocus && _returnFocus?.isConnected) _returnFocus.focus({ preventScroll: true });
   }
+  _returnFocus = null;
   if (_releaseOpenState) {
     _releaseOpenState();
     _releaseOpenState = null;
@@ -491,11 +507,15 @@ function _onOutside(e) {
  */
 function showMenu(items, x, y, anchor) {
   closeMenu();
+  _returnFocus = document.activeElement instanceof HTMLElement && document.activeElement !== document.body
+    ? document.activeElement
+    : null;
 
   const menu = document.createElement('div');
   menu.className = 'dropdown-menu juggler-context-menu show';
-  menu.setAttribute('role', 'menu');
   const list = document.createElement('menu');
+  list.setAttribute('role', 'menu');
+  list.setAttribute('aria-label', 'Context menu');
   menu.appendChild(list);
 
   for (const item of items) {
@@ -515,8 +535,6 @@ function showMenu(items, x, y, anchor) {
       row.classList.add('unavailable');
       row.setAttribute('aria-disabled', 'true');
     } else {
-      // Focusable and activated by Enter or Space, as a button row would be.
-      row.tabIndex = 0;
       row.addEventListener('click', () => {
         closeMenu();
         try {
@@ -524,11 +542,6 @@ function showMenu(items, x, y, anchor) {
         } catch (e) {
           console.error('[ContextMenu] action failed:', e);
         }
-      });
-      row.addEventListener('keydown', (e) => {
-        if (e.key !== 'Enter' && e.key !== ' ') return;
-        e.preventDefault();
-        row.click();
       });
     }
     list.appendChild(row);
@@ -565,6 +578,9 @@ function showMenu(items, x, y, anchor) {
   const originY = Math.min(height, Math.max(0, y - top));
   menu.style.setProperty('--popup-origin', `${originX}px ${originY}px`);
   menu.style.visibility = '';
+  // Arrows, Enter/Space and Tab; opened from the keyboard (the context-menu
+  // key, Shift+F10) it takes focus now that it is shown.
+  attachMenuKeyboard(list, { close: closeMenu });
 
   document.addEventListener('pointerdown', _onOutside, true);
   window.addEventListener('blur', closeMenu);
