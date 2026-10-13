@@ -186,6 +186,7 @@ import { runTests as runModalShellTests } from '../unit-tests/modal-shell-test.j
 import { runTests as runButtonVariantsTests } from '../unit-tests/button-variants-test.js';
 import { runTests as runBadgeTintsTests } from '../unit-tests/badge-tints-test.js';
 import { runTests as runTextOnAccentTests } from '../unit-tests/text-on-accent-test.js';
+import { runTests as runTypeScaleTests } from '../unit-tests/type-scale-test.js';
 import { runTests as runWarningTextTests } from '../unit-tests/warning-text-test.js';
 import { runTests as runSurfacesTests } from '../unit-tests/surfaces-test.js';
 import { runTests as runLabelStylesTests } from '../unit-tests/label-styles-test.js';
@@ -652,6 +653,7 @@ const UNIT_TEST_SUITES = [
   { name: 'unit:button-variants', run: runButtonVariantsTests },
   { name: 'unit:badge-tints', run: runBadgeTintsTests },
   { name: 'unit:text-on-accent', run: runTextOnAccentTests },
+  { name: 'unit:type-scale', run: runTypeScaleTests },
   { name: 'unit:warning-text', run: runWarningTextTests },
   { name: 'unit:surfaces', run: runSurfacesTests },
   { name: 'unit:label-styles', run: runLabelStylesTests },

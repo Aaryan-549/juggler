@@ -230,7 +230,7 @@ pinboard-tabbar {
     align-items: center;
     max-width: 14rem;
     border: 0.0625rem solid var(--border-color);
-    border-radius: 0.8rem;
+    border-radius: var(--radius-2xl);
     background: var(--bg-primary);
     color: var(--text-secondary);
     transition: background var(--transition-base), border-color var(--transition-base), color var(--transition-base);
@@ -308,14 +308,14 @@ pinboard-tabbar {
 .pinboard-tab > .drag-grip {
     width: 1rem;
     margin-left: 0.25rem;
-    font-size: 0.75rem;
+    font-size: var(--font-size-sm);
 }
 
 /* A finger has no hover to find it with, and needs a target it can hit. */
 @media (pointer: coarse) {
     .pinboard-tab > .drag-grip {
         width: 1.75rem;
-        font-size: 1.125rem;
+        font-size: var(--font-size-xl);
     }
 }
 
@@ -574,7 +574,7 @@ pinboard-content:focus {
 .pinboard-empty__add {
     padding: var(--spacing-xs) var(--spacing-lg);
     border: 0.0625rem solid var(--border-color);
-    border-radius: 1rem;
+    border-radius: var(--radius-2xl);
     background: var(--bg-raised);
     color: var(--text-primary);
     font-family: inherit;

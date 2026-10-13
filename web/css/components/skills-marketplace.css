@@ -73,7 +73,7 @@
   background: transparent;
   color: var(--text-secondary);
   font: inherit;
-  font-size: 0.85rem;
+  font-size: var(--font-size-md);
   font-weight: 500;
   padding: 0.3rem 0.85rem;
   border-radius: var(--radius-sm);
@@ -102,7 +102,7 @@
   background: var(--bg-primary);
   color: var(--text-primary);
   font: inherit;
-  font-size: 0.9rem;
+  font-size: var(--font-size-md);
 }
 
 .skills-search:focus {
@@ -116,7 +116,7 @@
   border-width: 1px;
   border-style: solid;
   font: inherit;
-  font-size: 0.82rem;
+  font-size: var(--font-size-base);
   font-weight: 500;
   padding: 0.35rem 0.7rem;
   border-radius: var(--radius-md);
@@ -171,7 +171,7 @@
 
 .skills-installed {
   color: var(--accent-green);
-  font-size: 0.82rem;
+  font-size: var(--font-size-base);
   font-weight: 600;
   display: inline-flex;
   align-items: center;
@@ -199,10 +199,10 @@
   background: var(--bg-primary);
   color: var(--text-secondary);
   font: inherit;
-  font-size: 0.78rem;
+  font-size: var(--font-size-sm);
   font-weight: 500;
   padding: 0.2rem 0.6rem;
-  border-radius: 62.4375rem;
+  border-radius: var(--radius-pill);
   cursor: pointer;
 }
 
@@ -237,10 +237,10 @@
   background: var(--bg-primary);
   color: var(--text-secondary);
   font: inherit;
-  font-size: 0.78rem;
+  font-size: var(--font-size-sm);
   line-height: 1;
   padding: 0.2rem 0.45rem;
-  border-radius: 0 62.4375rem 62.4375rem 0;
+  border-radius: 0 var(--radius-pill) var(--radius-pill) 0;
   cursor: pointer;
 }
 
@@ -261,7 +261,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: 1rem;
-  font-size: 0.8rem;
+  font-size: var(--font-size-base);
   color: var(--text-secondary);
 }
 
@@ -273,7 +273,7 @@
 }
 
 .skills-stale {
-  font-size: 0.78rem;
+  font-size: var(--font-size-sm);
   color: var(--text-tertiary);
   background: var(--bg-tertiary);
   padding: 0.35rem 0.6rem;
@@ -307,17 +307,17 @@
 
 .skills-card-name {
   font-weight: 700;
-  font-size: 0.92rem;
+  font-size: var(--font-size-md);
   color: var(--text-primary);
 }
 
 .skills-card-meta {
-  font-size: 0.76rem;
+  font-size: var(--font-size-sm);
   color: var(--text-tertiary);
 }
 
 .skills-card-desc {
-  font-size: 0.82rem;
+  font-size: var(--font-size-base);
   color: var(--text-secondary);
   line-height: 1.35;
   display: -webkit-box;
@@ -337,7 +337,7 @@
 
 /* Badges */
 .skills-badge {
-  font-size: 0.68rem;
+  font-size: var(--font-size-xs);
   padding: 0.1rem 0.4rem;
   border-radius: var(--radius-sm);
   font-weight: 600;
@@ -351,7 +351,7 @@
 }
 
 .skills-scope-badge {
-  font-size: 0.68rem;
+  font-size: var(--font-size-xs);
   font-family: var(--font-mono);
   color: var(--text-tertiary);
   background: var(--bg-tertiary);
@@ -394,7 +394,7 @@
   padding: 1.5rem;
   text-align: center;
   color: var(--text-tertiary);
-  font-size: 0.85rem;
+  font-size: var(--font-size-md);
 }
 
 .skills-loading {
@@ -437,7 +437,7 @@
 
 .skills-preview-title {
   margin: 0;
-  font-size: 1.15rem;
+  font-size: var(--font-size-xl);
   font-weight: 700;
   color: var(--text-primary);
   overflow: hidden;
@@ -460,7 +460,7 @@
 }
 
 .skills-preview-meta {
-  font-size: 0.78rem;
+  font-size: var(--font-size-sm);
   color: var(--text-tertiary);
 }
 
@@ -475,7 +475,7 @@
 }
 
 .skills-safety {
-  font-size: 0.78rem;
+  font-size: var(--font-size-sm);
   color: var(--text-secondary);
   background: var(--bg-tertiary);
   border-radius: var(--radius-sm);
@@ -503,7 +503,7 @@
   width: 100%;
   border-collapse: separate;
   border-spacing: 0;
-  font-size: 0.8rem;
+  font-size: var(--font-size-base);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
   overflow: hidden;
@@ -528,7 +528,7 @@
   font-weight: 600;
   color: var(--text-secondary);
   font-family: var(--font-mono);
-  font-size: 0.75rem;
+  font-size: var(--font-size-sm);
   border-right: 1px solid var(--border-divider);
 }
 
@@ -542,7 +542,7 @@
 }
 
 .skills-drawer-installed {
-  font-size: 0.82rem;
+  font-size: var(--font-size-base);
   font-weight: 600;
   color: var(--accent-green);
   display: inline-flex;
@@ -564,14 +564,14 @@
 
 .skills-runs-title {
   font-weight: 600;
-  font-size: 0.8rem;
+  font-size: var(--font-size-base);
   color: var(--accent-red);
   margin-bottom: 0.25rem;
 }
 
 .skills-run-file {
   font-family: var(--font-mono);
-  font-size: 0.76rem;
+  font-size: var(--font-size-sm);
   color: var(--text-secondary);
   display: flex;
   justify-content: space-between;
@@ -589,7 +589,7 @@
 
 .skills-file {
   font-family: var(--font-mono);
-  font-size: 0.76rem;
+  font-size: var(--font-size-sm);
   color: var(--text-secondary);
   display: flex;
   justify-content: space-between;
@@ -625,12 +625,12 @@
   border-top: 1px solid var(--border-divider);
   border-bottom: 1px solid var(--border-divider);
   padding: 0.85rem 0;
-  font-size: 0.85rem;
+  font-size: var(--font-size-md);
   line-height: 1.55;
 }
 
 .skills-slug-note {
-  font-size: 0.78rem;
+  font-size: var(--font-size-sm);
   color: var(--text-secondary);
 }
 
@@ -662,7 +662,7 @@
 
 .skills-scope-dialog-title {
   margin: 0;
-  font-size: 1.05rem;
+  font-size: var(--font-size-lg);
   font-weight: 700;
   color: var(--text-primary);
   overflow: hidden;
@@ -672,7 +672,7 @@
 
 .skills-scope-dialog-sub {
   margin: 0;
-  font-size: 0.82rem;
+  font-size: var(--font-size-base);
   color: var(--text-secondary);
 }
 
@@ -702,14 +702,14 @@
 }
 
 .skills-scope-action-label {
-  font-size: 0.88rem;
+  font-size: var(--font-size-md);
   font-weight: 600;
   color: var(--text-primary);
 }
 
 .skills-scope-action-hint {
   font-family: var(--font-mono);
-  font-size: 0.74rem;
+  font-size: var(--font-size-sm);
   color: var(--text-tertiary);
 }
 

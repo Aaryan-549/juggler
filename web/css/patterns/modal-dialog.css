@@ -20,7 +20,7 @@ modal-dialog .modal-header {
 }
 
 modal-dialog .modal-title {
-    font-size: 1.125rem;
+    font-size: var(--font-size-xl);
     color: var(--text-primary);
     margin: 0;
 }
@@ -40,7 +40,7 @@ modal-dialog .modal-input {
     width: 100%;
     padding: 0.625rem 0.875rem;
     color: var(--text-primary);
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     font-family: inherit;
 }
 
@@ -55,7 +55,7 @@ modal-dialog .modal-footer {
 modal-dialog .modal-button {
     padding: 0.625rem 1.25rem;
     border-radius: var(--radius-lg);
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     cursor: pointer;
     transition: background var(--transition-base);
 }
@@ -101,7 +101,7 @@ modal-dialog.is-notice .modal-body {
 
 modal-dialog.is-notice .modal-message {
     color: var(--notice-text);
-    font-size: 0.9375rem;
+    font-size: var(--font-size-body-lg);
     font-weight: 500;
     line-height: 1.5;
     margin-bottom: 0;       /* no footer to space it from */
@@ -139,9 +139,9 @@ modal-dialog .modal-choice-button {
     margin: 0.5rem 0;
     background: var(--bg-primary);
     border: 0.125rem solid var(--border-color);
-    border-radius: 3rem;
+    border-radius: var(--radius-pill);
     color: var(--text-primary);
-    font-size: 1rem;
+    font-size: var(--font-size-lg);
     text-align: left;
     cursor: pointer;
     transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
@@ -178,7 +178,7 @@ modal-dialog .modal-custom-input {
     border: 0.125rem solid var(--accent-blue);
     border-radius: var(--radius-xl);
     color: var(--text-primary);
-    font-size: 1rem;
+    font-size: var(--font-size-lg);
 }
 
 modal-dialog .modal-custom-input:focus {

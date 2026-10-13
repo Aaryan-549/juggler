@@ -2,7 +2,7 @@
 /**
  * lint-css-arch — checks the CSS architecture contract in web/css/README.md.
  *
- * Seven checks, all driven by web/css/manifest.json:
+ * Eight checks, all but the last driven by web/css/manifest.json:
  *
  *   ownership       a selector lives in the file that owns its root
  *   dead-selector   a class in the CSS is referenced by no JS, HTML or extension
@@ -12,6 +12,8 @@
  *   layer-order     a sheet's directory is its layer, and the list is in layer order
  *   asset-url       every relative url() resolves to a file that exists
  *   layer-inversion a rule is filed below a rule it overrides
+ *   scale-literal   CSS injected from JS writes a font-size or radius out
+ *                   instead of using a scale token
  *
  * Known violations live in web/css/.lint-css-allowlist, one per line, as
  * `<check> <item>` with an optional `# note`. The allowlist is the outstanding
@@ -839,6 +841,70 @@ function checkAssetUrls(sheets, sources) {
 	return dedupe(failures);
 }
 
+/** A font-size that is not a scale literal. Kept in step with unit:type-scale. */
+const FONT_SIZE_OK = /^(var\(--font-size-[\w-]+\)|[\d.]+em|inherit|unset)$/;
+
+/** One component of a radius that is not a scale literal. Kept in step with unit:type-scale. */
+const RADIUS_PART_OK = /^(0|0px|50%|inherit|unset|var\(--[\w-]*radius[\w-]*(,.*)?\)|var\(--toggle-height\))$/;
+
+/** Split a value on top-level whitespace, keeping a var() and its fallback whole. */
+function valueComponents(value) {
+	const parts = [];
+	let depth = 0;
+	let current = '';
+	for (const c of value) {
+		if (c === '(') depth++;
+		if (c === ')') depth--;
+		if (/\s/.test(c) && depth === 0) {
+			if (current) parts.push(current);
+			current = '';
+		} else {
+			current += c;
+		}
+	}
+	if (current) parts.push(current);
+	return parts;
+}
+
+/**
+ * scale-literal: a font-size or radius written out in the CSS that the JS
+ * injects (extension and SDK style strings) instead of a scale token.
+ *
+ * The sheets under web/css are held to the scale by the browser test
+ * unit:type-scale, which reads them as the page parsed them. Injected styles
+ * are only in a page once something has used them, so they are read from
+ * source here.
+ */
+function checkScaleLiterals() {
+	const skipped = (file) => file.split(path.sep).some((part) => part === '_tests' || part === 'vendor');
+	const files = [
+		...walk(path.join(repoRoot, 'web', 'js'), (n) => n.endsWith('.js')),
+		...walk(path.join(repoRoot, 'web', 'sdk'), (n) => n.endsWith('.js')),
+		...walk(path.join(repoRoot, 'web', 'extensions'), (n) => n.endsWith('.js') || n.endsWith('.css')),
+	].filter((file) => !skipped(file));
+	const failures = [];
+	for (const file of files) {
+		const rel = path.relative(repoRoot, file).split(path.sep).join('/');
+		const lines = fs.readFileSync(file, 'utf8').split('\n');
+		lines.forEach((text, index) => {
+			for (const match of text.matchAll(/(?:^|[\s;{"'`])(font-size|border(?:-[a-z]+)*-radius)\s*:\s*([^;}\n"'`]+)/g)) {
+				const [, property, raw] = match;
+				const value = raw.trim().replace(/\s*!important$/, '');
+				if (value.includes('${')) continue;
+				const ok = property === 'font-size'
+					? FONT_SIZE_OK.test(value)
+					: valueComponents(value).every((part) => RADIUS_PART_OK.test(part));
+				if (ok) continue;
+				failures.push({
+					item: `${rel}:${index + 1}`,
+					message: `${rel}:${index + 1} writes ${property}: ${value} — use a --font-size-* / --radius-* token from tokens/scale.css`,
+				});
+			}
+		});
+	}
+	return failures;
+}
+
 /**
  * layer-inversion: a rule filed below a rule it overrides.
  *
@@ -1229,6 +1295,7 @@ function main() {
 		'link-parity': checkLinkParity(manifest),
 		'layer-order': checkLayerOrder(manifest, sheets, sources),
 		'asset-url': checkAssetUrls(sheets, sources),
+		'scale-literal': checkScaleLiterals(),
 	};
 
 	// `--emit-allowlist` prints every current failure in allowlist format,

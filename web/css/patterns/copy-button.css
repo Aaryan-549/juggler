@@ -42,7 +42,7 @@
     border: 1px solid var(--border-floating);
     border-radius: var(--radius-md);
     color: var(--tooltip-text);
-    font-size: 0.6875rem;
+    font-size: var(--font-size-xs);
     font-weight: 500;
     line-height: 1.2;
     white-space: nowrap;

@@ -834,7 +834,7 @@ const FILE_CONTENT_STYLES = `
 .file-content-seeded-note {
   display: flex; flex-direction: column; gap: 0.5rem;
   padding: 0 0 0.5rem 0;
-  font-size: 0.75rem; line-height: 1.5;
+  font-size: var(--font-size-sm); line-height: 1.5;
   color: var(--text-tertiary, var(--text-secondary));
 }
 .file-content-seeded-actions {
@@ -842,8 +842,8 @@ const FILE_CONTENT_STYLES = `
 }
 .file-content-seeded-changed { color: var(--text-secondary); }
 .file-content-seeded-update {
-  padding: 0.125rem 0.625rem; border-radius: 4px;
-  font-size: 0.75rem; cursor: pointer;
+  padding: 0.125rem 0.625rem; border-radius: var(--radius-md);
+  font-size: var(--font-size-sm); cursor: pointer;
   border: 1px solid var(--border-color, rgba(127, 127, 127, 0.3));
   background: var(--bg-raised, rgba(127, 127, 127, 0.15));
   color: var(--text-primary);
@@ -852,12 +852,12 @@ const FILE_CONTENT_STYLES = `
 .file-content-seeded-update:disabled { opacity: 0.5; cursor: default; }
 .file-content-snapshot { display: flex; flex-direction: column; gap: 0.5rem; }
 .file-content-snapshot-note {
-  font-size: 0.75rem; font-style: italic;
+  font-size: var(--font-size-sm); font-style: italic;
   color: var(--text-tertiary, var(--text-secondary));
 }
 .file-content-snapshot-text {
   margin: 0; white-space: pre-wrap; word-break: break-word;
-  font-family: var(--font-mono, monospace); font-size: 0.75rem;
+  font-family: var(--font-mono, monospace); font-size: var(--font-size-sm);
 }
 `;
 

@@ -192,7 +192,7 @@
     width: var(--tick-box-size, 0.875rem);
     height: var(--tick-box-size, 0.875rem);
     border: 0.0625rem solid var(--tick-box-border, transparent);
-    border-radius: var(--tick-box-radius, 0.1875rem);
+    border-radius: var(--tick-box-radius, var(--radius-sm));
     background: var(--tick-box-fill, transparent);
 }
 

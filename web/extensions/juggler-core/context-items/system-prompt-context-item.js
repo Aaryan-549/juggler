@@ -23,11 +23,11 @@ const SYSTEM_PROMPT_STYLES = `
 .system-prompt-preset-btn {
   margin-top: 0.5rem;
   padding: 0.375rem 0.75rem;
-  font-size: 0.75rem;
+  font-size: var(--font-size-sm);
   background-color: var(--accent-blue);
   color: var(--text-on-accent);
   border: none;
-  border-radius: 0.25rem;
+  border-radius: var(--radius-md);
   cursor: pointer;
   transition: background-color 150ms ease;
   align-self: flex-start;
@@ -38,11 +38,11 @@ const SYSTEM_PROMPT_STYLES = `
 .system-prompt-textarea {
   width: 100%;
   padding: 1rem;
-  font-size: 0.8rem;
+  font-size: var(--font-size-base);
   font-family: var(--font-mono);
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
-  border-radius: 0.25rem;
+  border-radius: var(--radius-md);
   color: var(--text-primary);
   resize: vertical;
   min-height: 6rem;
@@ -64,7 +64,7 @@ const SYSTEM_PROMPT_STYLES = `
   gap: 0.8rem;
 }
 .system-prompt-section {
-  border-radius: 0.75rem;
+  border-radius: var(--radius-2xl);
   overflow: hidden;
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
@@ -73,7 +73,7 @@ const SYSTEM_PROMPT_STYLES = `
   display: flex;
   align-items: center;
   padding: 0.375rem 0.625rem;
-  font-size: 0.6875rem;
+  font-size: var(--font-size-xs);
   font-weight: 600;
   color: var(--text-tertiary);
   text-transform: uppercase;
@@ -83,7 +83,7 @@ const SYSTEM_PROMPT_STYLES = `
 }
 .system-prompt-section-body {
   padding: 0.625rem;
-  font-size: 0.75rem;
+  font-size: var(--font-size-sm);
   color: var(--text-secondary);
 }
 .system-prompt-section-body .ci-text-block {
@@ -110,7 +110,7 @@ const SYSTEM_PROMPT_STYLES = `
 .system-prompt-tools-group {
   margin-top: 0.5rem;
   font-family: var(--font-mono);
-  font-size: 0.6875rem;
+  font-size: var(--font-size-xs);
   color: var(--text-tertiary);
 }
 .system-prompt-tools-group:first-child {
@@ -158,7 +158,7 @@ const SYSTEM_PROMPT_STYLES = `
 .system-prompt-tools-silent {
   margin-top: 0.5rem;
   font-family: var(--font-mono);
-  font-size: 0.6875rem;
+  font-size: var(--font-size-xs);
   color: var(--accent-yellow);
 }
 .system-prompt-tools-drift {
@@ -189,7 +189,7 @@ const SYSTEM_PROMPT_STYLES = `
 .sp-preset-category {
   padding: 0.5rem 0.625rem 0.25rem;
   padding-left: calc(0.625rem + 1.125rem + 0.5rem);
-  font-size: 0.6875rem;
+  font-size: var(--font-size-xs);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -237,7 +237,7 @@ const SYSTEM_PROMPT_STYLES = `
 .sp-preset-row-name {
   flex: 1;
   min-width: 0;
-  font-size: 0.875rem;
+  font-size: var(--font-size-md);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -246,17 +246,17 @@ const SYSTEM_PROMPT_STYLES = `
   font-weight: 600;
 }
 .sp-preset-default-badge {
-  font-size: 0.6875rem;
+  font-size: var(--font-size-xs);
   font-weight: 600;
   color: var(--accent-blue);
   white-space: nowrap;
 }
 .sp-preset-setdefault-btn,
 .sp-preset-delete-btn {
-  font-size: 0.6875rem;
+  font-size: var(--font-size-xs);
   padding: 0.15rem 0.55rem;
   border: 0.0625rem solid var(--border-color);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: transparent;
   color: var(--text-tertiary);
   cursor: pointer;
@@ -291,7 +291,7 @@ const SYSTEM_PROMPT_STYLES = `
   padding: 0.4rem 0.625rem;
   padding-left: calc(0.625rem + 1.125rem + 0.5rem);
   color: var(--text-tertiary);
-  font-size: 0.8125rem;
+  font-size: var(--font-size-base);
   font-style: italic;
 }
 `;

@@ -43,7 +43,7 @@ properties-panel-empty {
 }
 
 .properties-panel-empty-text {
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     text-align: center;
 }
 
@@ -127,14 +127,14 @@ properties-panel-section {
 }
 
 .properties-panel-title {
-    font-size: 1rem;
+    font-size: var(--font-size-lg);
     font-weight: 600;
     color: var(--text-primary);
     margin: 0;
 }
 
 properties-panel-body {
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     line-height: 1.6;
     color: var(--text-primary);
 }
@@ -150,7 +150,7 @@ properties-panel-body pre {
     background: var(--bg-primary);
     padding: 0.75rem;
     border-radius: var(--radius-md);
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
 }
 
 /* Thinking body, plain variant: reasoning that carries no Markdown is shown as
@@ -159,7 +159,7 @@ properties-panel-body pre {
    Sized to match the panel's other verbatim text rather than its prose. */
 .properties-panel-thinking .plain {
     font-family: var(--font-mono);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-base);
     white-space: pre-wrap;
     overflow-wrap: break-word;
 }
@@ -192,7 +192,7 @@ properties-panel-subsection {
 .live-task-output-note {
     background: none;
     padding: 0;
-    font-size: 0.75rem;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
 }
 
@@ -262,7 +262,7 @@ file-view {
 }
 
 .pdf-view-pagecount {
-    font-size: 0.625rem;
+    font-size: var(--font-size-2xs);
     font-family: var(--font-mono);
     opacity: 0.7;
 }
@@ -285,7 +285,7 @@ file-view {
 }
 
 .properties-panel-attachment-name {
-    font-size: 0.8125rem;
+    font-size: var(--font-size-base);
     color: var(--text-primary);
     overflow: hidden;
     text-overflow: ellipsis;
@@ -293,7 +293,7 @@ file-view {
 }
 
 .properties-panel-attachment-meta {
-    font-size: 0.6875rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
 }
 
@@ -310,7 +310,7 @@ file-view {
 /* Bare file path (no box) */
 .properties-panel-filepath {
     font-family: var(--font-mono);
-    font-size: 0.75rem;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
     padding: 0;
     word-break: break-all;
@@ -332,7 +332,7 @@ file-view {
     border-radius: var(--radius-md);
     color: var(--text-primary);
     font-family: var(--font-mono);
-    font-size: 0.75rem;
+    font-size: var(--font-size-sm);
     line-height: 1.45;
     word-break: break-all;
 }
@@ -340,7 +340,7 @@ file-view {
 /* Size / line-count annotation, on its own line below the path row */
 .properties-panel-filepath-info {
     font-family: var(--font-mono);
-    font-size: 0.6875rem;
+    font-size: var(--font-size-xs);
     color: var(--text-tertiary);
     white-space: nowrap;
     margin-top: 0.25rem;
@@ -401,13 +401,13 @@ reveal-button {
    co-class is what the highlighter adds, so these only apply once it has run. */
 .properties-panel-code.syntax-highlight {
     white-space: pre-wrap;
-    font-size: 0.75rem;
+    font-size: var(--font-size-sm);
     padding: 0.1rem 0.5rem;
 }
 
 .properties-panel-result.syntax-highlight {
     white-space: pre-wrap;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-base);
     padding: 0.1rem 0.5rem;
     background: var(--bg-primary);
 }
@@ -417,7 +417,7 @@ reveal-button {
     border-radius: var(--radius-md);
     padding: 0.1rem 0.5rem;
     font-family: var(--font-mono);
-    font-size: 0.75rem;
+    font-size: var(--font-size-sm);
     line-height: 1.5;
     overflow-x: auto;
     white-space: pre-wrap;
@@ -436,7 +436,7 @@ reveal-button {
     padding: 0.1rem 0.5rem;
     border-radius: var(--radius-md);
     font-family: var(--font-mono);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-base);
     line-height: 1.5;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
@@ -486,7 +486,7 @@ properties-panel-section .properties-panel-result {
 /* Timestamp label in header (shown before token chip) */
 .properties-panel-timestamp {
     margin-left: auto;
-    font-size: 0.6875rem;
+    font-size: var(--font-size-xs);
     color: var(--text-tertiary);
     white-space: nowrap;
 }
@@ -496,8 +496,8 @@ properties-panel-section .properties-panel-result {
     margin-left: auto;
     margin-right: 0.1rem;
     padding: 0.125rem 0.5rem;
-    border-radius: 0.75rem;
-    font-size: 0.6875rem;
+    border-radius: var(--radius-2xl);
+    font-size: var(--font-size-xs);
     font-family: var(--font-mono);
     white-space: nowrap;
     color: var(--text-secondary);
@@ -571,7 +571,7 @@ properties-panel-controls:empty {
     border: 1px solid var(--border-color);
     border-radius: var(--radius-lg);
     color: var(--text-secondary);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-base);
     cursor: pointer;
     transition: background var(--transition-base), border-color var(--transition-base), color var(--transition-base);
 }
@@ -696,7 +696,7 @@ properties-panel-tx-sections > properties-panel-subsection + properties-panel-su
 .tx-section-summary {
     margin-left: auto;
     font-family: var(--font-mono);
-    font-size: 0.6875rem;
+    font-size: var(--font-size-xs);
     color: var(--text-tertiary);
     white-space: nowrap;
 }
@@ -722,7 +722,7 @@ properties-panel-tx-sections > properties-panel-subsection + properties-panel-su
     padding: 0.3rem 0.25rem;
     cursor: pointer;
     list-style: none;
-    font-size: 0.75rem;
+    font-size: var(--font-size-sm);
 }
 
 .tx-row-summary::-webkit-details-marker {
@@ -786,7 +786,7 @@ properties-panel-tx-sections > properties-panel-subsection + properties-panel-su
 .tx-field-key,
 .tx-out-kind {
     font-family: var(--font-mono);
-    font-size: 0.6875rem;
+    font-size: var(--font-size-xs);
     color: var(--text-tertiary);
     margin-bottom: 0.25rem;
 }
@@ -797,7 +797,7 @@ properties-panel-tx-sections > properties-panel-subsection + properties-panel-su
     max-height: 30rem;
     overflow: auto;
     font-family: var(--font-mono);
-    font-size: 0.75rem;
+    font-size: var(--font-size-sm);
 }
 
 /* JSON inside a row sits tight against its key label rather than carrying the
@@ -820,7 +820,7 @@ properties-panel-tx-sections > properties-panel-subsection + properties-panel-su
    for a reason, and the header is what says so. */
 .tx-tools-header {
     padding: 0.25rem 0.25rem 0.35rem;
-    font-size: 0.6875rem;
+    font-size: var(--font-size-xs);
     color: var(--text-tertiary);
 }
 
@@ -835,7 +835,7 @@ properties-panel-tx-sections > properties-panel-subsection + properties-panel-su
     gap: 0.5rem;
     padding: 0.5rem 0.25rem 0.25rem;
     font-family: var(--font-mono);
-    font-size: 0.6875rem;
+    font-size: var(--font-size-xs);
     color: var(--text-tertiary);
 }
 
@@ -858,7 +858,7 @@ properties-panel-tx-sections > properties-panel-subsection + properties-panel-su
     padding: 0.2rem 0.25rem 0.2rem 0.75rem;
     cursor: pointer;
     list-style: none;
-    font-size: 0.75rem;
+    font-size: var(--font-size-sm);
 }
 
 .tx-tool-summary::-webkit-details-marker {
@@ -881,7 +881,7 @@ properties-panel-tx-sections > properties-panel-subsection + properties-panel-su
 
 .tx-tool-category {
     flex-shrink: 0;
-    font-size: 0.625rem;
+    font-size: var(--font-size-2xs);
     color: var(--text-tertiary);
 }
 
@@ -905,7 +905,7 @@ properties-panel-tx-metadata {
     gap: 0.75rem;
     padding: 0.5rem 0;
     margin-bottom: 1rem;
-    font-size: 0.6875rem;
+    font-size: var(--font-size-xs);
 }
 
 properties-panel-tx-metadata .meta-item {
@@ -919,7 +919,7 @@ properties-panel-tx-metadata .meta-item {
     background: transparent;
     border: none;
     font-family: var(--font-mono);
-    font-size: 0.75rem;
+    font-size: var(--font-size-sm);
     line-height: 1.6;
     color: var(--text-primary);
     white-space: pre-wrap;
@@ -956,7 +956,7 @@ properties-panel-tx-metadata .meta-item {
 /* Selection styles - apply to outer custom element, not article */
 .conversation-item.selected {
     background: var(--item-selected-bg);
-    border-radius: 0.4rem 0.5rem;
+    border-radius: var(--radius-lg) var(--radius-xl);
 
     /* The hand below is a click affordance, and the gesture most likely to
        start over the item that is already selected is a drag across its text.

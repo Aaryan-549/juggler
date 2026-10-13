@@ -85,7 +85,7 @@
     padding: 0;
     color: var(--text-primary);
     font-family: var(--font-mono);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-base);
 }
 
 /* Non-scrolling positioning context wrapped around each rendered code block by
@@ -298,12 +298,12 @@
     font-weight: 600;
 }
 
-:where(.markdown) h1 { font-size: 1.5rem; }
-:where(.markdown) h2 { font-size: 1.25rem; }
-:where(.markdown) h3 { font-size: 1.125rem; }
-:where(.markdown) h4 { font-size: 1rem; }
-:where(.markdown) h5 { font-size: 0.875rem; }
-:where(.markdown) h6 { font-size: 0.875rem; }
+:where(.markdown) h1 { font-size: var(--font-size-3xl); }
+:where(.markdown) h2 { font-size: var(--font-size-2xl); }
+:where(.markdown) h3 { font-size: var(--font-size-xl); }
+:where(.markdown) h4 { font-size: var(--font-size-lg); }
+:where(.markdown) h5 { font-size: var(--font-size-md); }
+:where(.markdown) h6 { font-size: var(--font-size-md); }
 
 :where(.markdown) blockquote {
     border-left: 0.1875rem solid var(--accent-blue);

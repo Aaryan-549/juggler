@@ -34,7 +34,7 @@ conversation-tab .conversation-tab-loading-content {
 }
 
 conversation-tab .conversation-tab-loading-message {
-    font-size: 0.9rem;
+    font-size: var(--font-size-md);
 }
 
 conversation-tab .conversation-tab-loading-retry {
@@ -44,7 +44,7 @@ conversation-tab .conversation-tab-loading-retry {
     border-radius: var(--radius-md);
     padding: 0.35rem 0.9rem;
     cursor: pointer;
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
 }
 
 conversation-tab .conversation-tab-loading-retry:hover {

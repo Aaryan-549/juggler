@@ -65,7 +65,7 @@ workspace-panel {
    from here down is about this workspace alone. */
 .workspace-panel-title {
     margin: 0.4rem 0 0;
-    font-size: 1.5rem;
+    font-size: var(--font-size-3xl);
     font-weight: 600;
     color: var(--text-primary);
     overflow-wrap: anywhere;
@@ -76,7 +76,7 @@ workspace-panel {
    before the name is what separates the kind from the instance. */
 .workspace-panel-kind-note {
     margin: 0.15rem 0 0;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-base);
     color: var(--text-tertiary);
     line-height: var(--leading-normal);
 }
@@ -115,7 +115,7 @@ workspace-panel {
 .workspace-panel-note,
 .workspace-panel-pending {
     margin: 0;
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     line-height: var(--leading-normal);
     color: var(--text-secondary);
 }
@@ -169,7 +169,7 @@ workspace-panel {
     padding: 0.7rem 0.9rem;
     background: var(--bg-secondary);
     border: 0.0625rem solid var(--border-color);
-    border-radius: 0.6rem;
+    border-radius: var(--radius-xl);
     color: var(--text-primary);
     font: inherit;
     text-align: left;
@@ -188,12 +188,12 @@ workspace-panel {
     display: flex;
     align-items: center;
     gap: 0.4rem;
-    font-size: 0.9375rem;
+    font-size: var(--font-size-body-lg);
     font-weight: 500;
 }
 
 .workspace-panel-action-note {
-    font-size: 0.8125rem;
+    font-size: var(--font-size-base);
     color: var(--text-secondary);
 }
 

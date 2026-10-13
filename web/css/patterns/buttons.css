@@ -174,7 +174,7 @@
 .btn-ghost,
 .close-button {
     border: 0.0625rem solid transparent;
-    border-radius: 1rem;
+    border-radius: var(--radius-2xl);
     background: transparent;
     color: var(--text-secondary);
     cursor: pointer;

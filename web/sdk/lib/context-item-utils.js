@@ -553,13 +553,13 @@ export function injectFileContentStyles() {
   height: 100%;
 }
 .file-content-filename {
-  font-size: 0.8125rem;
+  font-size: var(--font-size-base);
   font-weight: 600;
   color: var(--text-primary);
   word-break: break-all;
 }
 .file-content-meta {
-  font-size: 0.625rem;
+  font-size: var(--font-size-2xs);
   font-family: var(--font-mono, 'Courier New', monospace);
   opacity: 0.7;
 }
@@ -570,18 +570,18 @@ export function injectFileContentStyles() {
 }
 .file-content-warning {
   padding: 0.5rem;
-  font-size: 0.75rem;
+  font-size: var(--font-size-sm);
   background: rgb(from var(--accent-yellow) r g b / 15%);
   border: 1px solid var(--accent-yellow);
-  border-radius: 0.25rem;
+  border-radius: var(--radius-md);
   color: var(--accent-yellow);
 }
 .file-content-not-found {
   padding: 0.5rem;
-  font-size: 0.75rem;
+  font-size: var(--font-size-sm);
   background: rgb(from var(--accent-red) r g b / 15%);
   border: 1px solid var(--accent-red);
-  border-radius: 0.25rem;
+  border-radius: var(--radius-md);
   color: var(--accent-red);
 }
 `);

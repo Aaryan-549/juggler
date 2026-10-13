@@ -11,7 +11,7 @@
    ============================================================================ */
 
 settings-panel .get-api-key-link {
-    font-size: 0.75rem;
+    font-size: var(--font-size-sm);
     color: var(--accent-blue);
     text-decoration: none;
     font-weight: normal;
@@ -24,7 +24,7 @@ settings-panel .get-api-key-link:hover {
 
 /* Settings panel - Key source hint */
 settings-panel .key-source-hint {
-    font-size: 0.75rem;
+    font-size: var(--font-size-sm);
     color: var(--accent-green);
     margin-top: 0.375rem;
     padding-left: 0.125rem;
@@ -42,7 +42,7 @@ settings-panel .provider-switch-notice {
     border: 0.0625rem solid var(--accent-orange);
     border-radius: var(--radius-lg);
     background: var(--bg-primary);
-    font-size: 0.75rem;
+    font-size: var(--font-size-sm);
     color: var(--text-primary);
 }
 
@@ -76,7 +76,7 @@ settings-panel .model-visibility-summary {
     padding: 0.1875rem 0.25rem;
     margin-left: -0.25rem;
     border-radius: var(--radius-md);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-base);
     font-weight: 500;
     color: var(--text-primary);
     cursor: pointer;
@@ -134,7 +134,7 @@ settings-panel .model-visibility-header {
     padding: 0.125rem 0.375rem;
     background: var(--bg-primary);
     border-bottom: 0.0625rem solid var(--border-color);
-    font-size: 0.6875rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
 }
 
@@ -145,7 +145,7 @@ settings-panel .model-visibility-header-limit {
 
 /* The picker's "assumed" marker, on the row whose window it qualifies. */
 settings-panel .model-visibility-row .model-window-assumed {
-    font-size: 0.6875rem;
+    font-size: var(--font-size-xs);
     color: var(--accent-orange);
 }
 
@@ -158,7 +158,7 @@ settings-panel .model-visibility-filter {
     padding: 0.375rem 0.5rem;
     color: var(--text-primary);
     font-family: var(--font-mono);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-base);
 }
 
 /* Capped and scrollable: OpenRouter lists several hundred models, and without a
@@ -215,7 +215,7 @@ settings-panel .model-visibility-toggle {
 
 settings-panel .model-limit-legend {
     margin-top: 0.375rem;
-    font-size: 0.6875rem;
+    font-size: var(--font-size-xs);
     color: var(--text-tertiary);
 }
 
@@ -233,7 +233,7 @@ settings-panel .model-limit-input {
     border: 0.0625rem solid var(--border-color);
     border-radius: var(--radius-md);
     font-family: var(--font-mono);
-    font-size: 0.6875rem;
+    font-size: var(--font-size-xs);
     text-align: right;
 }
 
@@ -266,7 +266,7 @@ settings-panel .model-visibility-name {
     flex: 1 1 auto;
     min-width: 0;
     font-family: var(--font-mono);
-    font-size: 0.75rem;
+    font-size: var(--font-size-sm);
     color: var(--text-primary);
     overflow: hidden;
     text-overflow: ellipsis;
@@ -282,14 +282,14 @@ settings-panel .model-visibility-row.is-hidden .model-visibility-name {
 }
 
 settings-panel .model-visibility-empty {
-    font-size: 0.75rem;
+    font-size: var(--font-size-sm);
     color: var(--text-tertiary);
     padding: 0.375rem;
 }
 
 /* Only ever an error — the save is silent when it works. */
 settings-panel .model-visibility-status {
-    font-size: 0.75rem;
+    font-size: var(--font-size-sm);
     color: var(--accent-red);
     margin-top: 0.375rem;
     padding-left: 0.125rem;
@@ -307,7 +307,7 @@ settings-panel .provider-subfield {
 }
 
 settings-panel .provider-subfield-label {
-    font-size: 0.75rem;
+    font-size: var(--font-size-sm);
     font-weight: 500;
     color: var(--text-secondary);
 }
@@ -319,7 +319,7 @@ settings-panel .provider-subfield-status {
     position: absolute;
     top: 0;
     right: 0.125rem;
-    font-size: 0.75rem;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
     pointer-events: none;
     transition: color var(--transition-base);
@@ -337,7 +337,7 @@ settings-panel .provider-subfield-status[data-kind="error"] {
    plus the few controls only an endpoint has. */
 settings-panel .custom-endpoints-note {
     color: var(--text-secondary);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-base);
     line-height: 1.5;
     margin-bottom: 0.625rem;
 }
@@ -349,14 +349,14 @@ settings-panel .custom-endpoint .provider-control {
 /* The provider id: not editable, because everything stored names it. */
 settings-panel .custom-endpoint-id {
     font-family: var(--font-mono);
-    font-size: 0.75rem;
+    font-size: var(--font-size-sm);
     color: var(--text-tertiary);
 }
 
 /* Always in the card, so saying something later costs no rebuild. Empty means
    there is nothing wrong, and it takes no room. */
 settings-panel .custom-endpoint-problem {
-    font-size: 0.75rem;
+    font-size: var(--font-size-sm);
     line-height: 1.4;
     color: var(--accent-red);
 }
@@ -366,7 +366,7 @@ settings-panel .custom-endpoint-problem:empty {
 }
 
 settings-panel .custom-endpoint-toggle-note {
-    font-size: 0.75rem;
+    font-size: var(--font-size-sm);
     color: var(--accent-red);
 }
 
@@ -425,7 +425,7 @@ settings-panel .custom-endpoint-add {
 
 settings-panel .custom-endpoint-add-id {
     font-family: var(--font-mono);
-    font-size: 0.75rem;
+    font-size: var(--font-size-sm);
     color: var(--text-tertiary);
 }
 
@@ -553,7 +553,7 @@ settings-panel .settings-tab {
     border: none;
     color: var(--text-secondary);
     padding: 0.875rem 1.25rem;
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     cursor: pointer;
     border-radius: 0;
     border-bottom: 0.125rem solid transparent;
@@ -622,7 +622,7 @@ settings-panel.loaded .settings-loading {
 
 settings-panel .settings-loading-text {
     color: var(--text-secondary);
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
 }
 
 settings-panel .settings-tab-content {
@@ -643,7 +643,7 @@ settings-panel .settings-description {
     color: var(--text-secondary);
     margin-bottom: 1.5rem;
     line-height: 1.6;
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
 }
 
 settings-panel .settings-description code {
@@ -652,7 +652,7 @@ settings-panel .settings-description code {
     border-radius: var(--radius-sm);
     color: var(--accent-green);
     font-family: var(--font-mono);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-base);
 }
 
 settings-panel .settings-form {
@@ -732,7 +732,7 @@ settings-panel #logs-form {
 
 settings-panel .logs-empty {
     color: var(--text-secondary);
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
 }
 
 settings-panel .logs-controls {
@@ -745,7 +745,7 @@ settings-panel .logs-controls {
 settings-panel .logs-picker-label {
     flex-shrink: 0;
     color: var(--text-secondary);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-base);
 }
 
 settings-panel .logs-picker {
@@ -757,7 +757,7 @@ settings-panel .logs-picker {
     border: 1px solid var(--border-color);
     border-radius: var(--radius-lg);
     font-family: var(--font-ui);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-base);
     cursor: pointer;
 }
 
@@ -783,7 +783,7 @@ settings-panel .logs-viewer {
     padding: 0.75rem 1rem;
     color: var(--text-primary);
     font-family: var(--font-mono);
-    font-size: 0.75rem;
+    font-size: var(--font-size-sm);
     line-height: 1.5;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
@@ -846,7 +846,7 @@ settings-panel .shortcut-keycap {
 
     /* System UI stack: reliably carries the ⌘ ⇧ ⌥ ⌫ glyphs (unlike the mono font). */
     font-family: -apple-system, system-ui, var(--font-ui), sans-serif;
-    font-size: 1.0625rem;
+    font-size: var(--font-size-lg);
     letter-spacing: 0.06em;
     white-space: nowrap;
 }
@@ -860,14 +860,14 @@ settings-panel .provider-info {
 
 settings-panel .provider-info .provider-name {
     color: var(--text-primary);
-    font-size: 0.9375rem;
+    font-size: var(--font-size-body-lg);
     font-weight: 500;
     margin: 0;
 }
 
 settings-panel .provider-info .provider-description {
     color: var(--text-secondary);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-base);
     line-height: 1.4;
 }
 
@@ -905,7 +905,7 @@ settings-panel .provider-input-wrapper input {
     background: transparent;
     border: none;
     color: var(--text-primary);
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     font-family: var(--font-mono);
 }
 
@@ -928,7 +928,7 @@ settings-panel .copilot-host-field {
 
 settings-panel .copilot-host-label {
     color: var(--text-secondary);
-    font-size: 0.75rem;
+    font-size: var(--font-size-sm);
 }
 
 settings-panel .copilot-host-field input {
@@ -936,7 +936,7 @@ settings-panel .copilot-host-field input {
     box-sizing: border-box;
     padding: 0.4rem 0.6rem;
     color: var(--text-primary);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-base);
     font-family: var(--font-mono);
 }
 
@@ -949,7 +949,7 @@ settings-panel .provider-active-badge {
     align-items: center;
     gap: 0.375rem;
     color: var(--text-secondary);
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     pointer-events: none;
 }
 
@@ -966,7 +966,7 @@ settings-panel .proxy-mode-select {
     width: 100%;
     padding: 0.625rem 2rem 0.625rem 0.875rem;
     color: var(--text-primary);
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     font-family: inherit;
     cursor: pointer;
     appearance: none;
@@ -991,7 +991,7 @@ settings-panel .chime-select option {
 settings-panel .settings-btn {
     padding: 0.625rem 1.25rem;
     border-radius: var(--radius-lg);
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     cursor: pointer;
     transition: background var(--transition-base);
     border: none;
@@ -999,7 +999,7 @@ settings-panel .settings-btn {
 
 settings-panel .settings-btn.small {
     padding: 0.375rem 0.75rem;
-    font-size: 0.75rem;
+    font-size: var(--font-size-sm);
     min-width: 4rem;
 }
 
@@ -1111,7 +1111,7 @@ settings-panel .proxy-url-input {
     padding: 0.4375rem 0.625rem;
     color: var(--text-primary);
     font-family: var(--font-ui);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-base);
 }
 
 /* Manual URL field: revealed only when Manual is selected (JS toggles [hidden]),
@@ -1134,7 +1134,7 @@ settings-panel .connectivity-launch-toggle {
     align-items: center;
     gap: 0.375rem;
     color: var(--text-secondary);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-base);
     cursor: pointer;
     user-select: none;
 }
@@ -1152,7 +1152,7 @@ settings-panel .connectivity-clients {
 
 settings-panel .connectivity-clients-empty {
     color: var(--text-tertiary);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-base);
 }
 
 settings-panel .connectivity-client-list {
@@ -1168,7 +1168,7 @@ settings-panel .connectivity-client {
     display: flex;
     align-items: baseline;
     gap: 0.5rem;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-base);
     color: var(--text-secondary);
 }
 
@@ -1221,7 +1221,7 @@ settings-panel .mcp-toolbar {
 
 settings-panel .mcp-import-soon {
     color: var(--text-tertiary);
-    font-size: 0.75rem;
+    font-size: var(--font-size-sm);
 }
 
 settings-panel .mcp-empty {
@@ -1290,14 +1290,14 @@ settings-panel .mcp-status-dot.status-stopped {
 settings-panel .mcp-impl,
 settings-panel .mcp-scope-chip {
     color: var(--text-tertiary);
-    font-size: 0.75rem;
+    font-size: var(--font-size-sm);
     font-weight: normal;
 }
 
 settings-panel .mcp-scope-chip {
     padding: 0.0625rem 0.375rem;
     border: 0.0625rem solid var(--border-color);
-    border-radius: 0.625rem;
+    border-radius: var(--radius-2xl);
 }
 
 settings-panel .mcp-error-hint {
@@ -1331,7 +1331,7 @@ settings-panel .mcp-log-view {
     border-radius: var(--radius-lg);
     color: var(--text-secondary);
     font-family: var(--font-mono);
-    font-size: 0.75rem;
+    font-size: var(--font-size-sm);
     line-height: 1.5;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
@@ -1353,20 +1353,20 @@ settings-panel .mcp-form-field {
 
 settings-panel .mcp-field-label {
     color: var(--text-primary);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-base);
     font-weight: 500;
 }
 
 settings-panel .mcp-field-hint {
     color: var(--text-tertiary);
-    font-size: 0.75rem;
+    font-size: var(--font-size-sm);
 }
 
 settings-panel .mcp-input {
     padding: 0.4375rem 0.625rem;
     color: var(--text-primary);
     font-family: var(--font-ui);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-base);
 }
 
 settings-panel select.mcp-input {
@@ -1404,7 +1404,7 @@ settings-panel .mcp-reveal-btn {
     border: 0.0625rem solid var(--border-color);
     border-radius: var(--radius-lg);
     color: var(--text-secondary);
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     cursor: pointer;
 }
 
@@ -1463,7 +1463,7 @@ settings-panel .chime-select-field {
 
 settings-panel .chime-select-label {
     color: var(--text-secondary);
-    font-size: 0.75rem;
+    font-size: var(--font-size-sm);
 }
 
 /* Volume rotary + Preview/Random/Reset buttons share the action row; it wraps,
@@ -1483,7 +1483,7 @@ settings-panel .chime-rotary {
     align-items: center;
     gap: 0.4rem;
     color: var(--text-primary);
-    font-size: 0.75rem;
+    font-size: var(--font-size-sm);
     user-select: none;
 }
 
@@ -1530,7 +1530,7 @@ settings-panel .chime-rotary-tick {
     left: 50%;
     width: 1.45rem;
     height: var(--chime-rotary-ring-thickness);
-    border-radius: 999rem;
+    border-radius: var(--radius-pill);
     background: var(--chime-rotary-colour);
     transform: translateY(-50%) rotate(var(--angle));
     transform-origin: 0 50%;
@@ -1588,7 +1588,7 @@ settings-panel .connectivity-url-row {
 
 settings-panel .connectivity-url {
     display: block;
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     color: var(--accent-blue);
     word-break: break-all;
     text-align: center;

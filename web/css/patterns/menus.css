@@ -65,7 +65,7 @@ body.hud-pointer-idle .dropdown-menu {
     padding: var(--menu-item-padding-block) var(--menu-item-padding-inline);
     border-radius: var(--radius-menu-item);
     color: var(--text-primary);
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     cursor: pointer;
     transition: background var(--transition-base);
     display: flex;
@@ -148,7 +148,7 @@ body.hud-pointer-idle .dropdown-menu {
 /* Indented items in menu groups */
 :where(.menu-group) .menu-item {
     padding-left: 2rem;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-base);
 }
 
 /* A plain <menu> list nested in a dropdown, holding its rows. The dropdown is
@@ -173,7 +173,7 @@ body.hud-pointer-idle .dropdown-menu {
 
 .menu-hint-text {
     color: var(--text-secondary);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-base);
     line-height: 1.5;
     text-align: center;
     display: block;
@@ -208,7 +208,7 @@ body.hud-pointer-idle .dropdown-menu {
     flex-shrink: 0;
     padding-left: 1.5rem;
     color: var(--text-tertiary);
-    font-size: 0.75rem;
+    font-size: var(--font-size-sm);
     font-variant-numeric: tabular-nums;
 }
 

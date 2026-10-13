@@ -50,7 +50,7 @@
 }
 
 .loading-overlay__message {
-    font-size: 1.25rem;
+    font-size: var(--font-size-2xl);
     color: var(--text-primary);
 }
 
@@ -59,13 +59,13 @@
 .loading-overlay__detail {
     margin-top: 0.5rem;
     min-height: 1.25em;
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     color: var(--text-secondary);
 }
 
 .loading-overlay__host {
     margin-top: 0.5rem;
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     color: var(--text-tertiary);
     font-family: var(--font-mono);
 }
@@ -97,7 +97,7 @@
 
 .completions-menu .menu-item-path {
     font-family: var(--font-mono);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-base);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -124,7 +124,7 @@
 
 .completions-menu .menu-item-command {
     font-family: var(--font-mono);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-base);
     color: var(--text-primary);
     flex-shrink: 0;
 }
@@ -136,7 +136,7 @@
     flex: 1;
     min-width: 0;
     color: var(--text-secondary);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-base);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -243,7 +243,7 @@
 }
 
 .pp-title {
-    font-size: 0.9375rem;
+    font-size: var(--font-size-body-lg);
     font-weight: 600;
     color: var(--text-primary);
 }
@@ -251,7 +251,7 @@
 .pp-subtitle {
     display: block;
     margin-top: 0.375rem;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-base);
     line-height: 1.4;
     font-weight: 400;
     color: var(--text-secondary);
@@ -291,7 +291,7 @@
     box-sizing: border-box;
     color: var(--text-primary);
     font-family: var(--font-mono);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-base);
     padding: 0.5rem 0.75rem;
 }
 
@@ -315,12 +315,12 @@ path-input .path-input-field {
     box-sizing: border-box;
     color: var(--text-primary);
     font-family: var(--font-mono);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-base);
     padding: 0.5rem 0.75rem;
 }
 
 .pp-status {
-    font-size: 0.75rem;
+    font-size: var(--font-size-sm);
     min-height: 1rem;
     padding: 0 0.125rem;
     font-family: var(--font-mono);
@@ -358,7 +358,7 @@ path-input .path-input-field {
     color: var(--text-primary);
     cursor: pointer;
     font-family: var(--font-mono);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-base);
     overflow: hidden;
     padding: 0.3125rem 0.5rem;
     text-overflow: ellipsis;
@@ -382,7 +382,7 @@ path-input .path-input-field {
     border: none;
     border-radius: var(--radius-lg);
     cursor: pointer;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-base);
     font-family: inherit;
     padding: 0.4375rem 1rem;
     transition: background var(--transition-base), opacity var(--transition-base);
@@ -460,14 +460,14 @@ update-notice .update-notice__panel {
 }
 
 update-notice .update-notice__title {
-    font-size: 1.0625rem;
+    font-size: var(--font-size-lg);
     font-weight: 600;
     color: var(--text-primary);
 }
 
 update-notice .update-notice__body {
     color: var(--text-secondary);
-    font-size: 0.9375rem;
+    font-size: var(--font-size-body-lg);
     line-height: 1.6;
 }
 
@@ -498,7 +498,7 @@ update-notice .update-notice__footer {
 update-notice .update-notice__button {
     padding: 0.5rem 1rem;
     border-radius: var(--radius-lg);
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     font-weight: 500;
     cursor: pointer;
     border-width: 1px;
@@ -534,7 +534,7 @@ update-notice .update-notice__status {
 
 update-notice .update-notice__status-text {
     margin: 0;
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     color: var(--text-secondary);
 }
 
@@ -546,7 +546,7 @@ update-notice .update-notice__status--error .update-notice__status-text {
    the secondary colour so the lead reads first and this stays legible. */
 update-notice .update-notice__status-detail {
     margin: 0;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-base);
     line-height: 1.45;
     color: var(--text-secondary);
     overflow-wrap: anywhere;
@@ -558,14 +558,14 @@ update-notice .update-notice__skew {
     border-radius: var(--radius-lg);
     background: var(--bg-raised);
     color: var(--text-secondary);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-base);
     line-height: 1.5;
 }
 
 update-notice .update-notice__progress {
     position: relative;
     height: 0.375rem;
-    border-radius: 999rem;
+    border-radius: var(--radius-pill);
     background: var(--bg-tertiary);
     overflow: hidden;
 }
@@ -614,7 +614,7 @@ update-button .update-btn {
     margin: 0 4px;
     padding: 0 12px;
     border: none;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     background: var(--accent-blue);
     color: var(--text-on-accent);
     font-family: var(--font-ui);

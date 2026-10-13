@@ -56,7 +56,7 @@
 
 .workspace-move-title {
     margin: 0;
-    font-size: 1.125rem;
+    font-size: var(--font-size-xl);
     color: var(--text-primary);
 }
 
@@ -100,7 +100,7 @@
 }
 
 .workspace-move-now-label {
-    font-size: 0.9375rem;
+    font-size: var(--font-size-body-lg);
     font-weight: 600;
     color: var(--text-primary);
 }
@@ -123,7 +123,7 @@
     flex: 1;
     min-width: 0;
     font-family: var(--font-mono);
-    font-size: 0.75rem;
+    font-size: var(--font-size-sm);
     line-height: 1.5;
     color: var(--text-tertiary);
     overflow-wrap: anywhere;
@@ -214,7 +214,7 @@
 
 .workspace-create-title {
     margin: 0;
-    font-size: 1.125rem;
+    font-size: var(--font-size-xl);
     color: var(--text-primary);
 }
 
@@ -316,7 +316,7 @@
 
 .workspace-create-detail-title {
     margin: 0;
-    font-size: 0.9375rem;
+    font-size: var(--font-size-body-lg);
     font-weight: 600;
     color: var(--text-primary);
 }
@@ -371,7 +371,7 @@
 
 .workspace-finish-about {
     margin: 0;
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     color: var(--text-secondary);
     line-height: 1.5;
 }
@@ -381,7 +381,7 @@
    the ending. */
 
 .workspace-finish-warning {
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     color: var(--error-color);
     line-height: 1.5;
 }
@@ -401,7 +401,7 @@
     width: 100%;
     padding: 0.5rem 0.625rem;
     font-family: inherit;
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
 }
 
 .workspace-finish-field textarea.setup-field-input {
@@ -422,7 +422,7 @@
 }
 
 .workspace-finish-work-count {
-    font-size: 0.8125rem;
+    font-size: var(--font-size-base);
     color: var(--text-secondary);
 }
 
@@ -434,7 +434,7 @@
     padding: 0.4rem 0.5rem;
     overflow-y: auto;
     font-family: var(--font-mono);
-    font-size: 0.75rem;
+    font-size: var(--font-size-sm);
 }
 
 .workspace-finish-work-row {
@@ -479,7 +479,7 @@
     border-radius: var(--radius-xl);
     color: var(--text-primary);
     font: inherit;
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     text-align: left;
 }
 
@@ -493,7 +493,7 @@
 
 .workspace-finish-alternative-note {
     display: block;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-base);
     color: var(--text-secondary);
     line-height: 1.45;
 }

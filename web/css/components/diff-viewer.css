@@ -18,7 +18,7 @@ diff-viewer {
     background: var(--bg-primary);
     border: 0.0625rem solid var(--border-color);
     font-family: var(--font-mono);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-base);
     line-height: 1.5;
     box-shadow: 0 0.125rem 0.5rem rgb(0 0 0 / 20%);
 }
@@ -72,7 +72,7 @@ diff-viewer .diff-controls {
     border-bottom: 0.0625rem solid var(--border-divider);
     color: var(--text-tertiary);
     font-family: var(--font-sans);
-    font-size: 0.75rem;
+    font-size: var(--font-size-sm);
 }
 
 /* The picker's dial idiom at chrome scale, as the command editor's run-mode
@@ -84,7 +84,7 @@ diff-viewer .diff-view-switch {
     padding: 0.0625rem;
     background: var(--bg-primary);
     border: 0.0625rem solid var(--border-color);
-    border-radius: 0.3125rem;
+    border-radius: var(--radius-lg);
 }
 
 diff-viewer .diff-view-btn {
@@ -206,7 +206,7 @@ diff-viewer diff-hunk-header {
     padding: 0.25rem 0.75rem;
     background: var(--bg-secondary);
     color: var(--text-secondary);
-    font-size: 0.75rem;
+    font-size: var(--font-size-sm);
     border-top: 0.0625rem solid var(--bg-dark-alt);
     border-bottom: 0.0625rem solid var(--bg-dark-alt);
     top: 2.75rem;
@@ -247,7 +247,7 @@ diff-viewer .line-num {
     color: var(--text-tertiary);
     -webkit-user-select: none;
     user-select: none;
-    font-size: 0.75rem;
+    font-size: var(--font-size-sm);
 }
 
 /* Revealed by hovering the line, but never removed from the tab order or the
@@ -263,7 +263,7 @@ diff-viewer .diff-comment-btn {
     background: var(--accent-blue);
     color: var(--text-on-accent);
     font-family: inherit;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-base);
     line-height: 1;
     cursor: pointer;
     opacity: 0;
@@ -302,7 +302,7 @@ diff-viewer diff-stats {
     background: var(--bg-secondary);
     border-top: 0.0625rem solid var(--border-divider);
     color: var(--text-secondary);
-    font-size: 0.75rem;
+    font-size: var(--font-size-sm);
     position: sticky;
     bottom: 0;
     z-index: 1;
@@ -331,7 +331,7 @@ diff-viewer diff-notice {
     background: var(--bg-secondary);
     border-bottom: 0.0625rem solid var(--border-divider);
     color: var(--text-secondary);
-    font-size: 0.75rem;
+    font-size: var(--font-size-sm);
 }
 
 diff-viewer diff-notice[data-kind="error"] {
@@ -364,7 +364,7 @@ diff-viewer diff-file-comments {
 diff-viewer .diff-comment {
     padding: 0.375rem 0;
     font-family: var(--font-sans);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-base);
     color: var(--text-primary);
 }
 
@@ -384,7 +384,7 @@ diff-viewer .diff-comment-quote {
     border-left: 0.125rem solid var(--border-color);
     color: var(--text-secondary);
     font-family: var(--font-mono);
-    font-size: 0.75rem;
+    font-size: var(--font-size-sm);
     white-space: pre-wrap;
     overflow-wrap: anywhere;
 }
@@ -392,7 +392,7 @@ diff-viewer .diff-comment-quote {
 diff-viewer .diff-comment-heading {
     margin: 0;
     font-family: var(--font-sans);
-    font-size: 0.75rem;
+    font-size: var(--font-size-sm);
     font-weight: 600;
     color: var(--text-secondary);
 }
@@ -410,7 +410,7 @@ diff-viewer .diff-comment-actions button {
     background: var(--bg-primary);
     color: var(--text-secondary);
     font-family: var(--font-sans);
-    font-size: 0.75rem;
+    font-size: var(--font-size-sm);
     cursor: pointer;
 }
 
@@ -647,7 +647,7 @@ diff-viewer .diff-file-comment-list.stale .diff-comment {
     overflow: hidden;
     color: var(--text-tertiary);
     font-family: var(--font-mono);
-    font-size: 0.75rem;
+    font-size: var(--font-size-sm);
     text-overflow: ellipsis;
     white-space: nowrap;
 }
@@ -656,19 +656,19 @@ diff-viewer .diff-file-comment-list.stale .diff-comment {
     flex-shrink: 0;
     color: var(--text-tertiary);
     font-family: var(--font-mono);
-    font-size: 0.75rem;
+    font-size: var(--font-size-sm);
     white-space: nowrap;
 }
 
 .review-panel__count {
     flex-shrink: 0;
     color: var(--text-tertiary);
-    font-size: 0.75rem;
+    font-size: var(--font-size-sm);
 }
 
 .review-panel__count:not(:empty) {
     padding: 0 0.375rem;
-    border-radius: 0.625rem;
+    border-radius: var(--radius-2xl);
     background: color-mix(in srgb, var(--text-primary) 10%, transparent);
 }
 
@@ -722,7 +722,7 @@ diff-viewer .diff-file-comment-list.stale .diff-comment {
 .review-panel__editor-label {
     color: var(--text-secondary);
     font-family: var(--font-sans);
-    font-size: 0.75rem;
+    font-size: var(--font-size-sm);
 }
 
 .review-panel__editor-text {
@@ -731,14 +731,14 @@ diff-viewer .diff-file-comment-list.stale .diff-comment {
     padding: 0.375rem 0.5rem;
     color: var(--text-primary);
     font-family: var(--font-sans);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-base);
     resize: vertical;
 }
 
 .review-panel__editor-error {
     color: var(--accent-red);
     font-family: var(--font-sans);
-    font-size: 0.75rem;
+    font-size: var(--font-size-sm);
     overflow-wrap: anywhere;
 }
 
@@ -757,7 +757,7 @@ diff-viewer .diff-file-comment-list.stale .diff-comment {
     background: var(--bg-primary);
     color: var(--text-secondary);
     font-family: var(--font-sans);
-    font-size: 0.75rem;
+    font-size: var(--font-size-sm);
     cursor: pointer;
     flex-shrink: 0;
 }

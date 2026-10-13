@@ -33,7 +33,7 @@ injectStylesOnce('project-files-pin-styles', `
      the buttons drop into it. */
   min-height: 1.625rem;
   padding-right: 0.25rem;
-  border-radius: 0.25rem;
+  border-radius: var(--radius-md);
   line-height: 1.7;
   /* Every row answers a click — a folder opens, a file is selected and pins on a
      second — so every row says so under the pointer. */

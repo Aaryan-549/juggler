@@ -109,7 +109,7 @@
     min-width: 0;
     max-width: 100%;
     padding: 0.25rem 1rem;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-base);
     font-weight: 500;
 }
 

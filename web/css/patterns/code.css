@@ -29,7 +29,7 @@ pre {
 
 code {
     font-family: var(--font-mono);
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
 }
 
 /* Inline code */

@@ -33,7 +33,7 @@ injectStylesOnce('task-progress-styles', `
   display: flex;
   height: 0.375rem;
   margin: -0.25rem 0 0.625rem;
-  border-radius: 999rem;
+  border-radius: var(--radius-pill);
   background: var(--bg-tertiary);
   overflow: hidden;
 }

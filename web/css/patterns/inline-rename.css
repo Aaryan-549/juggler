@@ -54,7 +54,7 @@
     border: 0.0625rem solid var(--inline-rename-accent, var(--accent-blue));
 
     /* A row's corner plus the bleed, so the two curves run concentric. */
-    border-radius: 0.75rem;
+    border-radius: var(--radius-2xl);
     box-shadow: 0 0 0 0.1875rem var(--inline-rename-ring), var(--shadow-md);
     box-sizing: border-box;
     animation: inline-rename-in var(--popup-enter-duration) var(--popup-enter-ease);
@@ -89,7 +89,7 @@
     padding: 0;
     margin: 0;
     font-family: var(--font-ui);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-base);
     line-height: 1.2;
     outline: none;
 }
@@ -97,7 +97,7 @@
 /* What the editor says when a name was refused and the user can answer it. */
 .inline-rename-error {
     color: var(--accent-red);
-    font-size: 0.75rem;
+    font-size: var(--font-size-sm);
     line-height: 1.2;
 }
 

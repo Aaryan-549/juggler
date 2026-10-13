@@ -26,16 +26,16 @@ const STYLES = `
   margin-bottom: 0.375rem;
 }
 .html-view-toggle {
-  font-size: 0.6875rem;
+  font-size: var(--font-size-xs);
   padding: 0.125rem 0.5rem;
   border: 1px solid var(--border-color, currentColor);
-  border-radius: 0.25rem;
+  border-radius: var(--radius-md);
   background: transparent;
   color: inherit;
   cursor: pointer;
 }
 .html-view-note {
-  font-size: 0.6875rem;
+  font-size: var(--font-size-xs);
   color: var(--text-tertiary);
   margin-bottom: 0.375rem;
 }
@@ -45,7 +45,7 @@ const STYLES = `
   height: 70vh;
   min-height: 20rem;
   border: 1px solid var(--border-color, transparent);
-  border-radius: 0.25rem;
+  border-radius: var(--radius-md);
   background: #fff;
 }
 `;

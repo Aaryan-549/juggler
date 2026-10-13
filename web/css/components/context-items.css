@@ -56,7 +56,7 @@
 
 .ci-text-block {
     user-select: text;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-base);
 }
 
 /* ===================================================================
@@ -86,7 +86,7 @@
     padding: 0.5rem 0.75rem;
     background: var(--bg-raised);
     border-bottom: 0.0625rem solid var(--border-divider);
-    font-size: 0.6875rem;
+    font-size: var(--font-size-xs);
 }
 
 .ci-code-language {
@@ -98,7 +98,7 @@
 .ci-code-range {
     font-family: var(--font-mono);
     color: var(--text-secondary);
-    font-size: 0.625rem;
+    font-size: var(--font-size-2xs);
 }
 
 .ci-code-content {
@@ -118,7 +118,7 @@
     border: none;
     border-radius: 0;
     font-family: var(--font-mono);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-base);
     line-height: 1.6;
     color: var(--text-primary);
     white-space: pre;
@@ -150,7 +150,7 @@
     position: relative;
     padding-left: var(--line-gutter);
     font-family: var(--font-mono);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-base);
     line-height: 1.6;
 
     /* A blank line is an empty block, which would otherwise collapse to no
@@ -247,7 +247,7 @@
     border: none;
     cursor: pointer;
     font-family: inherit;
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     color: var(--text-primary);
     text-align: left;
     transition: background 0.2s;
@@ -258,7 +258,7 @@
 }
 
 .thinking-block-icon {
-    font-size: 0.75rem;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
 }
 
@@ -268,7 +268,7 @@
 }
 
 .thinking-block-signature {
-    font-size: 0.75rem;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
     font-family: var(--font-mono);
 }
@@ -283,7 +283,7 @@
     margin: 0;
     padding: 0;
     font-family: var(--font-mono);
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     line-height: 1.5;
     color: var(--text-primary);
     white-space: pre-wrap;
@@ -319,7 +319,7 @@
     /* The properties panel inherits the app's monospace font; the explainer is
        prose, so pin it to the UI (non-fixed-width) font. */
     font-family: var(--font-ui);
-    font-size: 0.82rem;
+    font-size: var(--font-size-base);
     line-height: 1.45;
     color: var(--text-secondary);
 }
@@ -349,7 +349,7 @@
 }
 
 .skill-load-note {
-    font-size: 0.8rem;
+    font-size: var(--font-size-base);
     line-height: 1.4;
     color: var(--text-secondary);
     background: var(--bg-tertiary);
@@ -360,7 +360,7 @@
 /* Rendered SKILL.md body. The enclosing panel section scrolls, so this just
    sets readable width limits and a subtle frame. */
 .skill-load-body {
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
     line-height: 1.5;
     color: var(--text-primary);
 }
@@ -369,7 +369,7 @@
     margin: 0;
     padding: 0.6rem 0.7rem;
     font-family: var(--font-mono);
-    font-size: 0.8rem;
+    font-size: var(--font-size-base);
     line-height: 1.5;
     color: var(--text-primary);
     white-space: pre-wrap;

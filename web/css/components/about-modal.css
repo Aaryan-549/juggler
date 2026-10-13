@@ -120,7 +120,7 @@ about-modal .logo-spin {
 
 about-modal .about-version {
     display: block;
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     color: var(--text-secondary);
     margin-top: 0.25rem;
 }
@@ -132,7 +132,7 @@ about-modal .about-content {
 
 about-modal .about-description {
     color: var(--text-primary);
-    font-size: 0.9375rem;
+    font-size: var(--font-size-body-lg);
     line-height: 1.6;
     margin: 0 0 1rem;
 }
@@ -148,7 +148,7 @@ about-modal .about-description + .about-link {
 about-modal .about-link a {
     color: var(--accent-blue);
     text-decoration: none;
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
 }
 
 about-modal .about-link a:hover {
@@ -164,7 +164,7 @@ about-modal .about-footer {
 about-modal .about-button {
     padding: 0.625rem 1.25rem;
     border-radius: var(--radius-lg);
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     font-weight: 500;
     cursor: pointer;
     transition: background var(--transition-base);

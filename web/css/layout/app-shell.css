@@ -135,10 +135,10 @@ app-container {
     min-width: 0.875rem;
     height: 0.875rem;
     padding: 0 0.1875rem;
-    border-radius: 0.4375rem;
+    border-radius: var(--radius-pill);
     background-color: var(--text-secondary);
     color: var(--bg-primary);
-    font-size: 0.625rem;
+    font-size: var(--font-size-2xs);
     font-weight: 600;
     font-variant-numeric: tabular-nums;
     line-height: 0.875rem;

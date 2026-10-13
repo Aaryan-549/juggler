@@ -21,7 +21,7 @@ injectStylesOnce('memory-pin-styles', `
 .memory-pin .memory-delete:hover { opacity: 1; }
 .memory-pin__error {
   color: var(--error-color, var(--text-secondary));
-  font-size: 0.75rem;
+  font-size: var(--font-size-sm);
 }
 `);
 

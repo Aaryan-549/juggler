@@ -57,7 +57,7 @@
 .context-item-type-badge,
 .item-lozenge {
     display: inline-block;
-    font-size: 0.6875rem;
+    font-size: var(--font-size-xs);
     font-weight: 600;
     line-height: 1;
     text-transform: uppercase;

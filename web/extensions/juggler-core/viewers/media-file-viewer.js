@@ -13,7 +13,7 @@ const STYLES = `
 .media-view-player {
   display: block;
   max-width: 100%;
-  border-radius: 0.25rem;
+  border-radius: var(--radius-md);
   background: var(--bg-secondary);
 }
 video.media-view-player {
