@@ -99,6 +99,17 @@ func Run(cfg Config) int {
 		return machineserver.RunCommand(os.Args[2:])
 	}
 
+	// `juggler server status|sessions|stop` and `juggler open <project>` are
+	// clients of a running machine server: they find it through server.json
+	// and drive its control API, and boot nothing themselves.
+	if len(os.Args) > 1 && (os.Args[1] == "server" || os.Args[1] == "open") {
+		env := machineserver.CLIEnv{Stdout: os.Stdout, Stderr: os.Stderr, OpenBrowser: openInBrowser}
+		if os.Args[1] == "server" {
+			return machineserver.RunServerCommand(os.Args[2:], env)
+		}
+		return machineserver.RunOpenCommand(os.Args[2:], env)
+	}
+
 	// `juggler run "<prompt>"` runs one prompt to completion and exits with a
 	// status. Unlike the subcommands above it needs the whole server — the
 	// engine is what carries the run out — so it parses its own flags here and

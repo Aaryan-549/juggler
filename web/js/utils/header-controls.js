@@ -16,7 +16,7 @@ import { hasNativeHost } from '../../sdk/lib/window-control.js';
 import { fetchJson } from '../services/http.js';
 import { showAlert } from '../components/modal-dialog.js';
 import { apiUrl } from './api-url.js';
-import { projectsOpenInNewWindow } from './project-open-mode.js';
+import { chooseProject, projectIsFixed, projectsOpenInNewWindow } from './project-open-mode.js';
 import { statusHoldsTurn } from '../model/processing-status.js';
 
 /**
@@ -173,13 +173,11 @@ export function setupHeaderControls(session) {
     updateButtons();
   };
 
-  // Both the header path chip and the native Session ▸ Open… menu event open the
-  // same project picker; the module is imported lazily so the picker (and its
-  // deps) stay off the initial header render path.
-  const openPicker = async () => {
-    const { openProjectPicker } = await import('../components/project-picker.js');
-    openProjectPicker(session.projectPath || '', session);
-  };
+  // Both the header path chip and the native Session ▸ Open… menu event let the
+  // user choose another project: the project picker (imported lazily, so it
+  // and its deps stay off the initial header render path), or, in a session
+  // whose project is fixed, the machine server's sessions page.
+  const openPicker = () => chooseProject(session.projectPath || '', session);
 
   const updateProjectPath = (/** @type {string} */ projectPath) => {
     if (!pathDisplay || !pathLabel) return;
@@ -190,15 +188,18 @@ export function setupHeaderControls(session) {
     } else {
       pathLabel.textContent = projectPath;
       if (pathChip) {
-        // On the desktop app, opening another project spawns a new window and
-        // leaves this one untouched; in a browser/PWA, or a desktop window on a
-        // server the app did not start, it switches in place (each folder
-        // carries its own tabs).
-        pathChip.title = projectsOpenInNewWindow()
-          ? `Current project folder: ${projectPath}\n`
-            + 'Click to open another project in a new window — this one stays put.'
-          : `Current project folder: ${projectPath}\n`
-            + 'Click to switch to a different project folder';
+        // In a session the machine server spawned, another project is another
+        // session, opened from its sessions page. On the desktop app, opening
+        // another project spawns a new window and leaves this one untouched; in
+        // a browser/PWA, or a desktop window on a server the app did not start,
+        // it switches in place (each folder carries its own tabs).
+        let action = 'Click to switch to a different project folder';
+        if (projectIsFixed()) {
+          action = 'Click to open another project as its own session, from the sessions page';
+        } else if (projectsOpenInNewWindow()) {
+          action = 'Click to open another project in a new window — this one stays put.';
+        }
+        pathChip.title = `Current project folder: ${projectPath}\n${action}`;
       }
       pathDisplay.classList.remove('is-empty');
     }

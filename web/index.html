@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="{{.HTMLLang}}"{{if .UILocale}} data-ui-locale="{{.UILocale}}"{{end}}>
+<html lang="{{.HTMLLang}}"{{if .UILocale}} data-ui-locale="{{.UILocale}}"{{end}}{{if .FixedProject}} data-fixed-project="1"{{end}}>
 <head>
     <meta charset="UTF-8">
     {{if .UICatalog}}<!-- The UI language's catalogue, read by web/sdk/lib/i18n.js when it

@@ -20,6 +20,7 @@ import (
 	"strings"
 
 	"juggler/cmd/juggler/core"
+	"juggler/cmd/juggler/webui"
 	"juggler/internal/jlog"
 	"juggler/internal/srcroot"
 	"juggler/web"
@@ -492,7 +493,7 @@ func (s *Server) serveIndex(w http.ResponseWriter, r *http.Request) {
 	// viewer gets the same one. With none chosen the page is plain English and
 	// carries no catalogue at all.
 	uiLocale := s.uiLocale()
-	htmlLang := uiSourceLocale
+	htmlLang := webui.SourceLocale
 	var uiCatalog map[string]string
 	if uiLocale != "" {
 		htmlLang = uiLocale
@@ -514,6 +515,7 @@ func (s *Server) serveIndex(w http.ResponseWriter, r *http.Request) {
 		UICatalog        map[string]string
 		ProjectKey       string
 		ICEServers       []webrtc.ICEServer
+		FixedProject     bool
 	}{
 		StaticVersion: s.staticVersion,
 		IsTestMode:    s.testMode,
@@ -537,6 +539,9 @@ func (s *Server) serveIndex(w http.ResponseWriter, r *http.Request) {
 		// Wails runtime <script>, which only does anything in a native window.
 		IsWindowMode: r.URL.Query().Has("window"),
 		CSPNonce:     nonce,
+		// Marks the page so its project chip leads to the sessions page rather
+		// than a picker the server would refuse (see setupProjectRoutes).
+		FixedProject: s.fixedProject,
 	}
 
 	if err := s.indexTemplate.Execute(w, data); err != nil {

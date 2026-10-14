@@ -5,19 +5,19 @@ of changes; this project follows semantic versioning.
 
 ## [Unreleased]
 
-- New --allow-host flag serves Juggler behind a reverse proxy such as tailscale serve
 - New run_code tool: a mutating version of query_code, to give full "code mode" features
-- batch_read's properties panel lists files with open, copy, reveal and pin buttons
-- Turns cut off by a provider's server mid-stream are now retried automatically
+- New --allow-host flag serves Juggler behind a reverse proxy such as tailscale serve
 - Git pin reviews any scope: staged, unstaged, branch, last commit, or a git diff range
+- Copy a whole conversation as Markdown from its tab menu or footer
+- batch_read's properties panel lists files with open, copy, reveal and pin buttons
+- LAN servers answer to local names like `juggler` or `mymac.local`, not just IPs
+- Turns cut off by a provider's server mid-stream are now retried automatically
 - Fixed a turn started while a conversation loaded getting the wrong strategy's tools
 - Fixed tools briefly "unavailable" after toggling a plugin or reloading an extension
 - Denying a tool call also stops approved calls still waiting their turn
 - Remote viewers keep their own sound, Escape and diff settings instead of changing the desktop's
-- Copy a whole conversation as Markdown from its tab menu or footer
 - Fixed Claude Code cutting long tool descriptions short; the model now sees them whole
 - query_code says what is already in scope when a script reaches for Node's modules
-- LAN servers answer to local names like `juggler` or `mymac.local`, not just IPs
 - Fixed query_code rewriting the text "import(" inside a script's strings
 - run_code and query_code programs can show the model images with `image()`
 - MCP tools' images now reach the model instead of an `[image]` placeholder

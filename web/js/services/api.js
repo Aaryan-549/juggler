@@ -700,14 +700,6 @@ class APIService {
   }
 
   /**
-   * Close the current project (return to no-project mode).
-   * @returns {Promise<{projectPath: string}>} Resolves with an empty projectPath.
-   */
-  async closeProject() {
-    return await this.request('/project', { method: 'DELETE' });
-  }
-
-  /**
    * Get the user-level recent project paths.
    * @returns {Promise<{paths: string[]}>} Resolves with the recents list, most-recent first.
    */

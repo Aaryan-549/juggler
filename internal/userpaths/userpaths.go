@@ -30,6 +30,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 )
 
 // ConfigDir returns Juggler's per-user config directory (credentials, default
@@ -106,4 +107,19 @@ func resolveCacheDir(goos, home string, getenv func(string) string) string {
 		}
 	}
 	return filepath.Join(os.TempDir(), "juggler", "cache")
+}
+
+// ExpandHome replaces a leading "~" (alone, or followed by a path separator)
+// with the current user's home directory. Any other path — including
+// "~user/…", which names someone else's home — is returned unchanged, as is
+// every path when the home directory can't be resolved.
+func ExpandHome(path string) string {
+	if path != "~" && !strings.HasPrefix(path, "~/") && !strings.HasPrefix(path, `~\`) {
+		return path
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return path
+	}
+	return home + path[1:]
 }

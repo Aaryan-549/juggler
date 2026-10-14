@@ -29,6 +29,7 @@ import (
 	"juggler/internal/hostcheck"
 	"juggler/internal/ingress"
 	"juggler/internal/jlog"
+	"juggler/internal/userpaths"
 )
 
 // Server is the machine server: registry, control API, and session proxy.
@@ -46,6 +47,16 @@ type Server struct {
 	// lan is LAN access: off at startup, and while off every caller off
 	// loopback is refused (see lanGate).
 	lan atomic.Bool
+	// recents is the machine's recent-projects list: every project a session
+	// is opened for goes to its front, and the sessions page offers it back.
+	recents *core.RecentsStore
+	// uiLocale returns the UI language the sessions page is written in ("" for
+	// the source language; nil is the same). serve reads it from settings.
+	uiLocale func() string
+	// restart governs respawning crashed children (zero: the defaults).
+	restart restartPolicy
+	// supervising counts the sessions' supervisor goroutines still running.
+	supervising atomic.Int64
 	// testChildren (serve --test) spawns every child as a test server whose
 	// test window loads its session through this server's proxy. Test
 	// binaries only: a production-tagged child panics on --test.
@@ -70,8 +81,9 @@ func (s *Server) childExtraArgs(sessionID string) []string {
 		"--test-window-url", "http://" + s.addr + "/s/" + sessionID + "/"}
 }
 
-// routes builds the machine server's handler: the control API under
-// /api/server, plus the /s/<id>/ session proxy. Everything is wrapped in the
+// routes builds the machine server's handler: the sessions page at / and the
+// assets it loads, the control API under /api/server, and the /s/<id>/ session
+// proxy. Everything is wrapped in the
 // LAN gate, then the host guard, then the origin guard, so no caller off
 // loopback gets in while LAN access is off, and neither a DNS-rebinding page
 // nor a drive-by page on another origin can drive the control API or ride the
@@ -85,9 +97,12 @@ func (s *Server) routes() http.Handler {
 	api.HandleFunc("/sessions", s.handleListSessions).Methods("GET")
 	api.HandleFunc("/sessions", s.handleOpenSession).Methods("POST")
 	api.HandleFunc("/sessions/{id}", s.handleStopSession).Methods("DELETE")
+	api.HandleFunc("/recents", s.handleRecents).Methods("GET")
 	api.HandleFunc("/shutdown", s.handleShutdown).Methods("POST")
 	r.HandleFunc("/s/{id}", s.redirectSession)
 	r.PathPrefix("/s/{id}/").HandlerFunc(s.handleSessionProxy)
+	r.HandleFunc("/", s.handlePage).Methods("GET")
+	r.PathPrefix("/v" + assetVersion + "/").Handler(assetHandler()).Methods("GET")
 	return s.lanGate(s.hostGuard(originGuard(r)))
 }
 
@@ -247,16 +262,42 @@ func (s *Server) handleOpenSession(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "session was removed during spawn", http.StatusConflict)
 		return
 	}
-	// Surface an unexpected child exit in the registry. A supervised stop
-	// (beginStop) is exempt inside noteExit.
-	go func() {
-		<-c.exited
-		s.reg.noteExit(sess.ID)
-	}()
-	go s.pollActivity(sess.ID, c, activityPollInterval)
+	s.startSupervising(sess.ID, c)
 	jlog.Info("[machineserver] session %s: %s at %s (pid %d)", sess.ID, project, c.addr, c.cmd.Process.Pid)
+	s.rememberRecent(project)
 	sess, _ = s.reg.get(sess.ID)
 	writeJSON(w, http.StatusCreated, sess)
+}
+
+// rememberRecent puts project at the front of the machine's recents. A failure
+// costs only a missing entry on the sessions page, so it is logged, not served.
+func (s *Server) rememberRecent(project string) {
+	if s.recents == nil {
+		return
+	}
+	if err := s.recents.Add(project); err != nil {
+		jlog.Error("[machineserver] recording %s in recents: %v", project, err)
+	}
+}
+
+// recentsResponse is the GET /api/server/recents payload.
+type recentsResponse struct {
+	Paths []string `json:"paths"`
+}
+
+// handleRecents serves the machine's recent projects, most recent first, with
+// folders that no longer exist dropped (RecentsStore.Prune).
+// GET /api/server/recents.
+func (s *Server) handleRecents(w http.ResponseWriter, _ *http.Request) {
+	paths := []string{}
+	if s.recents != nil {
+		got, err := s.recents.Prune()
+		if err != nil {
+			jlog.Error("[machineserver] reading recents: %v", err)
+		}
+		paths = append(paths, got...)
+	}
+	writeJSON(w, http.StatusOK, recentsResponse{Paths: paths})
 }
 
 // handleStopSession stops a session child and drops its registry entry.
@@ -319,16 +360,20 @@ func (s *Server) stopAllChildren() {
 	}
 }
 
-// resolveProject validates a control-API project path: absolute-ized, must
-// exist, must be a directory. Mirrors the --project validation in the child.
+// resolveProject validates a control-API project path: absolute, or under ~
+// (expanded to the home of the user the server runs as); it must exist and be a
+// directory. A relative path is refused: it would resolve against the folder
+// `juggler serve` started in, which means nothing to a caller in a browser, so
+// a CLI caller sends an absolute path instead.
 func resolveProject(p string) (string, error) {
 	if p == "" {
 		return "", fmt.Errorf("project path is required")
 	}
-	abs, err := filepath.Abs(p)
-	if err != nil {
-		return "", fmt.Errorf("project %s: %w", p, err)
+	expanded := userpaths.ExpandHome(p)
+	if !filepath.IsAbs(expanded) {
+		return "", fmt.Errorf("project %s: give an absolute path, or one starting with ~/", p)
 	}
+	abs := filepath.Clean(expanded)
 	info, err := os.Stat(abs)
 	if err != nil {
 		return "", fmt.Errorf("project %s: %w", abs, err)

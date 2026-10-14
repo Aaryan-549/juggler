@@ -17,3 +17,42 @@ export function projectsOpenInNewWindow() {
   const { windowMode, externalServer } = document.documentElement.dataset;
   return windowMode === '1' && externalServer !== '1';
 }
+
+/**
+ * Whether this page's project is fixed: a session the machine server spawned
+ * for one project, whose server refuses to switch it (the page is served with
+ * `data-fixed-project="1"`). Another folder is another session there.
+ * @returns {boolean} True when the project cannot be changed in this page.
+ */
+export function projectIsFixed() {
+  return document.documentElement.dataset.fixedProject === '1';
+}
+
+/**
+ * The machine server's sessions page: the root of the origin this session is
+ * served from, which the session's own pages sit under (`/s/<id>/`).
+ * @returns {string} Absolute URL of the sessions page.
+ */
+export function sessionsPageUrl() {
+  return new URL('/', window.location.href).href;
+}
+
+/** Window name the sessions page opens in, so repeated opens reuse one tab. */
+export const SESSIONS_PAGE_TARGET = 'juggler-sessions';
+
+/**
+ * Let the user choose another project: the sessions page when this page's
+ * project is fixed, else the project picker.
+ * @param {string} currentPath - The project loaded now ('' for none).
+ * @param {any} session - Passed through to the picker.
+ * @param {(url: string, target: string) => void} [open] - Opens a URL in a named window.
+ * @returns {Promise<void>} Resolves once the sessions page or picker is open.
+ */
+export async function chooseProject(currentPath, session, open = (url, target) => { window.open(url, target); }) {
+  if (projectIsFixed()) {
+    open(sessionsPageUrl(), SESSIONS_PAGE_TARGET);
+    return;
+  }
+  const { openProjectPicker } = await import('../components/project-picker.js');
+  openProjectPicker(currentPath, session);
+}

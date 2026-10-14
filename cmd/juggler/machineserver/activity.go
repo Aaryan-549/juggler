@@ -25,7 +25,7 @@ var activityHTTP = &http.Client{Timeout: activityPollInterval}
 // pollActivity asks c, every interval, whether it is running a turn and
 // records the answer on session id (Session.Busy, Session.LastActive). It
 // returns when c exits. A poll that fails records nothing: an unreachable
-// child is either gone — which noteExit records — or stuck, and a stuck child
+// child is either gone — which its supervisor records — or stuck, and a stuck child
 // stays whatever it was last seen to be rather than turning idle under a turn.
 func (s *Server) pollActivity(id string, c *child, every time.Duration) {
 	tick := time.NewTicker(every)

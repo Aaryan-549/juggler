@@ -42,7 +42,7 @@ const pendingPath = path.join(repoRoot, 'tooling', 'i18n-pending.txt');
 const sdkLibPath = path.join(repoRoot, 'web', 'sdk', 'lib', 'i18n.js');
 
 /** The UI trees: everything a user can see text from. */
-const UI_ROOTS = ['web/js', 'web/sdk', 'web/extensions'];
+const UI_ROOTS = ['web/js', 'web/sdk', 'web/extensions', 'web/machine'];
 
 /**
  * The containers whose subdirectories are extensions. One whose manifest names

@@ -280,6 +280,7 @@ func (a *App) initServer() error {
 		ExitWithParent: a.flags.exitWithParent,
 		LoopbackOnly:   a.flags.sessionChild,
 		IngressSecret:  a.ingressSecret,
+		FixedProject:   a.flags.sessionChild,
 		AllowedHosts:   allowedHosts,
 	})
 	if err != nil {

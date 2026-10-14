@@ -11,9 +11,18 @@ package worker
 
 import (
 	"encoding/json"
+	"sync"
 
 	"juggler/internal/jlog"
 )
+
+// pendingMocks holds scripted responses queued under a conversation name for a
+// conversation that does not exist yet — one another conversation's tool will
+// create. Every worker of a session runs in this process, so the queue can be
+// filled through any of them; the worker the named conversation gets takes it
+// at init (adoptPendingMocks), before a message can reach it. Name →
+// []MockResponse; LoadAndDelete makes taking a queue a single step.
+var pendingMocks sync.Map
 
 // handleTestMessage routes test-harness messages. Returns true when the
 // message was consumed so the caller can skip the normal switch.
@@ -30,6 +39,8 @@ func (w *ConversationWorker) handleTestMessage(msg workerMessage) bool {
 		if w.mock != nil {
 			w.mock.release()
 		}
+	case "queue-mocks-for-name":
+		w.handleQueueMocksForName(msg.Payload)
 	default:
 		return false
 	}
@@ -96,4 +107,43 @@ func (w *ConversationWorker) handleSetMockResponses(payload json.RawMessage) {
 			Result: true,
 		})
 	}
+}
+
+// handleQueueMocksForName queues scripted responses for the conversation that
+// will be created with the given name (see pendingMocks). The receiving
+// worker is only the carrier; its own script is untouched.
+func (w *ConversationWorker) handleQueueMocksForName(payload json.RawMessage) {
+	var msg struct {
+		Name      string         `json:"name"`
+		Responses []MockResponse `json:"responses"`
+		AckID     string         `json:"ackId,omitempty"`
+	}
+	if !w.decodePayload("queue-mocks-for-name", payload, &msg) {
+		return
+	}
+	pendingMocks.Store(msg.Name, msg.Responses)
+	jlog.Info("[queue-mocks-for-name] via=%s name=%q count=%d", w.conversationID, msg.Name, len(msg.Responses))
+	if msg.AckID != "" {
+		w.send(AckMessage{Type: "ack", AckID: msg.AckID, Result: true})
+	}
+}
+
+// adoptPendingMocks installs the responses queued under this conversation's
+// name, if any, and spends the queue. Called at init on the run goroutine. A
+// script installed directly is never replaced.
+func (w *ConversationWorker) adoptPendingMocks() {
+	if w.mock != nil {
+		return
+	}
+	name := w.conversationName()
+	if name == "" {
+		return
+	}
+	queued, ok := pendingMocks.LoadAndDelete(name)
+	if !ok {
+		return
+	}
+	responses, _ := queued.([]MockResponse)
+	w.setMockResponses(responses)
+	jlog.Info("[adopt-mocks] conv=%s name=%q count=%d", w.conversationID, name, len(responses))
 }

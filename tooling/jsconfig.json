@@ -46,6 +46,7 @@
     "../web/js/types/**/*.d.ts",
     "../web/sdk/**/*.js",
     "../web/extensions/**/*.js",
+    "../web/machine/**/*.js",
     "../examples/**/*.js"
   ],
   "exclude": [

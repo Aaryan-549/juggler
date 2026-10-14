@@ -150,3 +150,20 @@ func TestConfigAndCacheUnderHome(t *testing.T) {
 		t.Errorf("CacheDir() %q not under isolated HOME %q", cache, home)
 	}
 }
+
+// TestExpandHome: only "~" and "~/…" name this user's home.
+func TestExpandHome(t *testing.T) {
+	home := withHome(t)
+	for in, want := range map[string]string{
+		"~":           home,
+		"~/a/b":       home + "/a/b",
+		"/abs":        "/abs",
+		"rel/~":       "rel/~",
+		"~other/proj": "~other/proj",
+		"":            "",
+	} {
+		if got := ExpandHome(in); got != want {
+			t.Errorf("ExpandHome(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

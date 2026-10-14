@@ -5,13 +5,11 @@
 package server
 
 import (
-	"encoding/json"
 	"net/http"
 
 	"juggler/cmd/juggler/core"
-	"juggler/cmd/juggler/extmanifest"
 	"juggler/cmd/juggler/server/handlers"
-	"juggler/internal/jlog"
+	"juggler/cmd/juggler/webui"
 	"juggler/web"
 )
 
@@ -24,42 +22,8 @@ import (
 //
 // A viewer is handed its catalogue inline by serveIndex, so the first frame is
 // already translated. The engine has no page of its own to read, so it fetches
-// the same file through handleUICatalog.
-
-// uiCatalogDir is where the catalogues live in the web asset tree.
-const uiCatalogDir = "i18n"
-
-// uiSourceLocale is the language messages are written in, and so the page's
-// language when none is chosen.
-const uiSourceLocale = "en"
-
-// loadUICatalog returns the catalogue for locale: the catalogues along the
-// language's chain — "zh-Hant-TW", "zh-Hant", "zh", stopping at the source
-// language (extmanifest.LocaleChain) — merged, each message from the most
-// specific file that has it (extmanifest.MergeChain, as extension catalogues
-// are). Nil when the locale is invalid or nothing matches; a catalogue that
-// will not parse is logged and treated as missing, so a bad file costs its
-// translations rather than the page.
-func loadUICatalog(read func(string) ([]byte, error), locale string) map[string]string {
-	if !core.IsValidUILocale(locale) {
-		return nil
-	}
-	chain := extmanifest.LocaleChain(locale)
-	found := map[string]map[string]string{}
-	for _, candidate := range chain {
-		data, err := read(uiCatalogDir + "/" + candidate + ".json")
-		if err != nil {
-			continue
-		}
-		var messages map[string]string
-		if err := json.Unmarshal(data, &messages); err != nil {
-			jlog.Error("[i18n] %s.json is not a valid catalogue: %v", candidate, err)
-			continue
-		}
-		found[candidate] = messages
-	}
-	return extmanifest.MergeChain(found, chain)
-}
+// the same file through handleUICatalog. The catalogue lookup itself is
+// webui.LoadCatalog, shared with the machine server's sessions page.
 
 // uiLocale is the UI language the user chose, or "" for the default. A server
 // without a settings store (a bare test server) has none.
@@ -73,7 +37,7 @@ func (s *Server) uiLocale() string {
 // uiCatalog is the catalogue for locale from the served asset tree (the disk
 // tree under --assets-from-disk, so an edited catalogue shows on reload).
 func (s *Server) uiCatalog(locale string) map[string]string {
-	return loadUICatalog(func(p string) ([]byte, error) { return s.readWebAsset(p, web.Files) }, locale)
+	return webui.LoadCatalog(func(p string) ([]byte, error) { return s.readWebAsset(p, web.Files) }, locale)
 }
 
 // uiCatalogResponse is GET /api/i18n/catalog's body.

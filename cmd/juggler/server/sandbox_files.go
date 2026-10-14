@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"juggler/cmd/juggler/core"
+	"juggler/cmd/juggler/webui"
 	"juggler/cmd/juggler/workspace"
 )
 
@@ -152,52 +153,10 @@ func serveSandboxImportFile(w http.ResponseWriter, r *http.Request, mod sandboxM
 	}
 	// Reuse the shared web-asset MIME map, defaulting to JavaScript since
 	// sandbox project files are imported as ES modules.
-	ct := staticAssetContentType(mod.rel)
+	ct := webui.ContentType(mod.rel)
 	if ct == "" {
 		ct = "text/javascript; charset=utf-8"
 	}
 	w.Header().Set("Content-Type", ct)
 	http.ServeContent(w, r, path.Base(mod.rel), info.ModTime(), f)
-}
-
-// staticAssetContentType returns a stable Content-Type for the web-asset
-// extensions the app serves, or "" to defer to the file server's own detection.
-//
-// http.FileServer derives the type from mime.TypeByExtension, which consults the
-// host MIME database — and on Windows that comes from the registry, where .mjs is
-// frequently mapped to text/plain (and other web types are unreliable too). A
-// module script served as text/plain is rejected by the browser's strict MIME
-// check, which silently breaks the app's entire ES-module graph (e.g.
-// web/js/vendor/yjs.mjs) while leaving unrelated standalone modules loading — so
-// we set these types explicitly rather than trust the OS. Mirrors the explicit
-// Content-Type in serveSandboxImportFile.
-func staticAssetContentType(p string) string {
-	switch strings.ToLower(path.Ext(p)) {
-	case ".js", ".mjs", ".cjs":
-		return "text/javascript; charset=utf-8"
-	case ".json", ".map":
-		return "application/json; charset=utf-8"
-	case ".css":
-		return "text/css; charset=utf-8"
-	case ".svg":
-		return "image/svg+xml"
-	case ".wasm":
-		return "application/wasm"
-	default:
-		return ""
-	}
-}
-
-// staticAssetHandler wraps a static file server, forcing a stable Content-Type
-// for known web-asset extensions so serving is correct regardless of the host
-// MIME database. See staticAssetContentType. http.ServeContent (used by
-// http.FileServer) only sniffs a type when Content-Type is unset, so a header we
-// set here is preserved.
-func staticAssetHandler(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if ct := staticAssetContentType(r.URL.Path); ct != "" {
-			w.Header().Set("Content-Type", ct)
-		}
-		next.ServeHTTP(w, r)
-	})
 }

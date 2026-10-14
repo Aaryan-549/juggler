@@ -773,7 +773,7 @@ lint-types: node-deps
 ## that follows it meaningless.
 lint-js: node-deps
 	@NODE_NO_WARNINGS=1 node tooling/eslint-rules/no-raw-ui-string.test.js
-	@NODE_NO_WARNINGS=1 $(NPM_BIN)/eslint --config tooling/eslint.config.js --max-warnings 0 --ignore-pattern 'web/js/vendor/**' 'web/js/**/*.js' 'web/sdk/**/*.js' 'web/extensions/**/*.js' 'web/js-tests/**/*.js'
+	@NODE_NO_WARNINGS=1 $(NPM_BIN)/eslint --config tooling/eslint.config.js --max-warnings 0 --ignore-pattern 'web/js/vendor/**' 'web/js/**/*.js' 'web/sdk/**/*.js' 'web/extensions/**/*.js' 'web/machine/**/*.js' 'web/js-tests/**/*.js'
 
 ## lint-css: Run the CSS linters — stylelint (rem units, no px), then
 ## lint-css-arch, which checks the architecture contract in web/css/README.md:
@@ -781,7 +781,7 @@ lint-js: node-deps
 ## link the same sheets. The second is whole-tree by nature, so it always runs
 ## in full rather than over a file list.
 lint-css: node-deps
-	@NODE_NO_WARNINGS=1 $(NPM_BIN)/stylelint --config tooling/.stylelintrc.json 'web/css/**/*.css'
+	@NODE_NO_WARNINGS=1 $(NPM_BIN)/stylelint --config tooling/.stylelintrc.json 'web/css/**/*.css' 'web/machine/**/*.css'
 	@node scripts/lint-css-arch
 
 ## lint-i18n: Check that web/i18n/en.json and the en-XA pseudo-locale match the
@@ -822,11 +822,11 @@ fix-go: app-icon-embed wails-runtime-embed
 
 ## fix-js: eslint --fix (same globs, config, and ignore patterns as lint-js).
 fix-js: node-deps
-	@NODE_NO_WARNINGS=1 $(NPM_BIN)/eslint --config tooling/eslint.config.js --fix --ignore-pattern 'web/js/vendor/**' 'web/js/**/*.js' 'web/sdk/**/*.js' 'web/extensions/**/*.js' 'web/js-tests/**/*.js'
+	@NODE_NO_WARNINGS=1 $(NPM_BIN)/eslint --config tooling/eslint.config.js --fix --ignore-pattern 'web/js/vendor/**' 'web/js/**/*.js' 'web/sdk/**/*.js' 'web/extensions/**/*.js' 'web/machine/**/*.js' 'web/js-tests/**/*.js'
 
 ## fix-css: stylelint --fix (same globs and config as lint-css).
 fix-css: node-deps
-	@NODE_NO_WARNINGS=1 $(NPM_BIN)/stylelint --config tooling/.stylelintrc.json --fix 'web/css/**/*.css'
+	@NODE_NO_WARNINGS=1 $(NPM_BIN)/stylelint --config tooling/.stylelintrc.json --fix 'web/css/**/*.css' 'web/machine/**/*.css'
 
 ## fix-files: Auto-fix ONLY the named files, routed by extension to the same
 ## fixers as `make fix` (the write-mode counterpart to lint-files). Whole-program

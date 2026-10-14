@@ -46,23 +46,3 @@ func TestStaticModuleMIME(t *testing.T) {
 		t.Fatalf("yjs.mjs served as %q; a module must have a JavaScript media type", ct)
 	}
 }
-
-func TestStaticAssetContentType(t *testing.T) {
-	cases := map[string]string{
-		"/js/app.js":          "text/javascript; charset=utf-8",
-		"/js/vendor/yjs.mjs":  "text/javascript; charset=utf-8",
-		"/sdk/thing.cjs":      "text/javascript; charset=utf-8",
-		"/css/styles.css":     "text/css; charset=utf-8",
-		"/data/model.json":    "application/json; charset=utf-8",
-		"/js/app.js.map":      "application/json; charset=utf-8",
-		"/resources/logo.svg": "image/svg+xml",
-		"/wasm/mod.wasm":      "application/wasm",
-		"/index.html":         "", // defer to the file server's own detection
-		"/resources/pic.png":  "",
-	}
-	for p, want := range cases {
-		if got := staticAssetContentType(p); got != want {
-			t.Errorf("staticAssetContentType(%q) = %q, want %q", p, got, want)
-		}
-	}
-}

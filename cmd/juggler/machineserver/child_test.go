@@ -12,7 +12,10 @@ import (
 	"net/http/httptest"
 	"os"
 	"os/exec"
+	"strconv"
+	"strings"
 	"testing"
+	"time"
 
 	"juggler/internal/ingress"
 )
@@ -25,7 +28,9 @@ const helperChildEnv = "JUGGLER_MACHINESERVER_HELPER_CHILD"
 // spawnHelperChildren execs, this test binary run again with helperChildEnv
 // set. It does what a child must for spawnChild — prints JUGGLER_ADDR= once it
 // is listening — and answers every request with the ingress secret its
-// environment gave it and the ingress header the request carried.
+// environment gave it and the ingress header the request carried. GET
+// /exit/<code> makes it answer, then exit with that code, as a crash (non-zero)
+// or a deliberate shutdown (0) would.
 func TestHelperSessionChild(t *testing.T) {
 	if os.Getenv(helperChildEnv) != "1" {
 		t.Skip("run only as the stand-in session child")
@@ -36,6 +41,16 @@ func TestHelperSessionChild(t *testing.T) {
 	}
 	fmt.Printf("JUGGLER_ADDR=%s\n", ln.Addr())
 	_ = http.Serve(ln, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if code, ok := strings.CutPrefix(r.URL.Path, "/exit/"); ok {
+			n, _ := strconv.Atoi(code)
+			w.WriteHeader(http.StatusAccepted)
+			w.(http.Flusher).Flush()
+			go func() {
+				time.Sleep(20 * time.Millisecond)
+				os.Exit(n)
+			}()
+			return
+		}
 		_ = json.NewEncoder(w).Encode(helperReport{
 			EnvSecret: os.Getenv(ingress.SecretEnv),
 			Header:    r.Header.Get(ingress.Header),

@@ -21,8 +21,13 @@ const (
 	SessionRunning SessionState = "running"
 	// SessionStopping: a stop was requested; the child is being torn down.
 	SessionStopping SessionState = "stopping"
-	// SessionError: the child failed to start or exited unexpectedly.
+	// SessionError: the child failed to start, or crashed more often than the
+	// restart policy allows; Error says why. A stop dismisses it, and the next
+	// open for its project replaces it.
 	SessionError SessionState = "error"
+	// SessionRestarting: the child crashed and a replacement will be spawned
+	// at NextRestartAt, under the same ID; Error says how it ended.
+	SessionRestarting SessionState = "restarting"
 )
 
 // Session is the public registry record for one session child, as served by
@@ -45,6 +50,12 @@ type Session struct {
 	// LastActive is the time of the latest poll that found the child busy;
 	// absent when no poll has.
 	LastActive *time.Time `json:"lastActive,omitempty"`
+	// Restarts counts the times a crashed child has been respawned for this
+	// session since it was opened.
+	Restarts int `json:"restarts,omitempty"`
+	// NextRestartAt is when a restarting session's next spawn is due; absent
+	// in every other state.
+	NextRestartAt *time.Time `json:"nextRestartAt,omitempty"`
 }
 
 // sessionEntry pairs the public record with the live child handle.
@@ -159,6 +170,7 @@ func (r *registry) setRunning(id string, c *child, pid int) bool {
 			return
 		}
 		e.State = SessionRunning
+		e.Error = ""
 		e.Addr = c.addr
 		e.PID = pid
 		e.child = c
@@ -173,10 +185,7 @@ func (r *registry) setError(id, msg string) {
 		if e, ok := m[id]; ok {
 			e.State = SessionError
 			e.Error = msg
-			e.Addr = ""
-			e.PID = 0
-			e.Busy = false
-			e.child = nil
+			e.clearChild()
 		}
 	})
 }
@@ -201,18 +210,80 @@ func (r *registry) remove(id string) {
 	})
 }
 
-// noteExit records that a session child's process exited on its own (not via
-// beginStop): the entry flips to error so the control API surfaces the crash.
-// A stopping entry is left alone — its stopper removes it.
-func (r *registry) noteExit(id string) {
+// owned reports whether e is still c's to supervise: its child is c (nil for a
+// supervisor between children, whose restart spawn failed) and no stop has
+// claimed it. A stopping entry belongs to its stopper, which removes it.
+func (e *sessionEntry) owned(c *child) bool {
+	return e.child == c && e.State != SessionStopping
+}
+
+// clearChild drops the live child from the record.
+func (e *sessionEntry) clearChild() {
+	e.Addr = ""
+	e.PID = 0
+	e.Busy = false
+	e.child = nil
+}
+
+// removeOwned drops the session after its child c exited cleanly, unless the
+// session has moved on (stopped, replaced). Reports whether it was removed.
+func (r *registry) removeOwned(id string, c *child) bool {
+	var ok bool
 	r.do(func(m map[string]*sessionEntry) {
-		if e, ok := m[id]; ok && e.State != SessionStopping {
+		if e, found := m[id]; found && e.owned(c) {
+			delete(m, id)
+			ok = true
+		}
+	})
+	return ok
+}
+
+// setRestarting records that the session's child c crashed (reason) and a
+// replacement will be spawned at next. Reports false when the session has
+// moved on, and the supervisor must then stop supervising it.
+func (r *registry) setRestarting(id string, c *child, reason string, next time.Time) bool {
+	var ok bool
+	r.do(func(m map[string]*sessionEntry) {
+		e, found := m[id]
+		if !found || !e.owned(c) {
+			return
+		}
+		e.State = SessionRestarting
+		e.Error = reason
+		e.NextRestartAt = &next
+		e.clearChild()
+		ok = true
+	})
+	return ok
+}
+
+// beginRestart claims a restarting session for its respawn: it turns to
+// starting, which a stop waits out (see handleStopSession), and the restart is
+// counted. It returns the project to spawn for; ok is false when the session
+// was stopped during the backoff.
+func (r *registry) beginRestart(id string) (project string, ok bool) {
+	r.do(func(m map[string]*sessionEntry) {
+		e, found := m[id]
+		if !found || e.State != SessionRestarting {
+			return
+		}
+		e.State = SessionStarting
+		e.NextRestartAt = nil
+		e.Restarts++
+		project, ok = e.Project, true
+	})
+	return project, ok
+}
+
+// failOwned gives the session up: it turns to error with msg, unless it has
+// moved on.
+func (r *registry) failOwned(id string, c *child, msg string) {
+	r.do(func(m map[string]*sessionEntry) {
+		if e, found := m[id]; found && e.owned(c) {
 			e.State = SessionError
-			e.Error = "session child exited"
-			e.Addr = ""
-			e.PID = 0
-			e.Busy = false
-			e.child = nil
+			e.Error = msg
+			e.NextRestartAt = nil
+			e.clearChild()
 		}
 	})
 }

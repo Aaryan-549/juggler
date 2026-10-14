@@ -204,6 +204,10 @@ func (r *run) handleInit(payload json.RawMessage) {
 	r.seedNameIsProvisional()
 	r.seedHasAutoNamed()
 
+	// Test servers only: take any scripted responses queued under this
+	// conversation's name before it existed (worker_test_support.go).
+	r.adoptPendingMocks()
+
 	// Seed the strategy-activation marker so onActivate fires only on a genuine,
 	// non-baseline activation (matching the old "fires on a live switch, never on
 	// initial load" rule):

@@ -36,6 +36,11 @@ type child struct {
 	contained *childcontain.Child
 	addr      string
 	exited    chan struct{} // closed by the monitor goroutine when the process exits
+	// exit is how the process ended (nil if it couldn't be reaped), and
+	// waitErr why it couldn't. Both are written once, before exited closes,
+	// and read only after.
+	exit    *os.ProcessState
+	waitErr error
 	// ingressSecret is this child's alone, handed to it in its environment
 	// (ingress.SecretEnv). The proxy sends it to vouch that a request came from
 	// a caller off loopback (see handleSessionProxy).
@@ -103,7 +108,7 @@ func spawnChild(bin, project string, extra []string) (*child, error) {
 	// Monitor: reap the process and release containment resources exactly once,
 	// whatever caused the exit. Everyone else observes c.exited.
 	go func() {
-		_, _ = cmd.Process.Wait()
+		c.exit, c.waitErr = cmd.Process.Wait()
 		c.contained.Cleanup()
 		close(c.exited)
 	}()
@@ -160,6 +165,21 @@ func (c *child) stop() {
 	case <-time.After(childStopGrace):
 		jlog.Error("[machineserver] session child pid %d did not exit after kill", c.cmd.Process.Pid)
 	}
+}
+
+// exitedCleanly reports whether the exited process ended with status 0: a
+// deliberate shutdown, not a crash. Call only after exited has closed.
+func (c *child) exitedCleanly() bool {
+	return c.exit != nil && c.exit.Success()
+}
+
+// exitReason describes how the exited process ended ("exit status 3",
+// "signal: killed"). Call only after exited has closed.
+func (c *child) exitReason() string {
+	if c.exit == nil {
+		return fmt.Sprintf("session child could not be reaped: %v", c.waitErr)
+	}
+	return "session child ended: " + c.exit.String()
 }
 
 // openStderrSink opens the per-project raw-stderr crash file for a session

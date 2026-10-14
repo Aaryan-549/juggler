@@ -46,6 +46,7 @@ func TestControlAPIRequiresToken(t *testing.T) {
 		{"GET", "/api/server/sessions", ""},
 		{"POST", "/api/server/sessions", `{"project":"/"}`},
 		{"DELETE", "/api/server/sessions/nope", ""},
+		{"GET", "/api/server/recents", ""},
 		{"POST", "/api/server/shutdown", ""},
 	}
 	for _, serverToken := range []string{testToken, ""} {

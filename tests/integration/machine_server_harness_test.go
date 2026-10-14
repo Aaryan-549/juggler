@@ -8,6 +8,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -45,11 +46,12 @@ const sessionOpenTimeout = 60 * time.Second
 // developer's, another test's, or a real machine server's.
 type machineServer struct {
 	t         *testing.T
-	Addr      string // host:port from the JUGGLER_ADDR= line
-	Home      string // the temporary HOME it and its children run under
-	ConfigDir string // where it keeps server.lock and server.json, under Home
-	Logs      string // JUGGLER_LOG_DIR for it and its children
-	Token     string // the control-API token, read from server.json as a client would
+	Addr      string      // host:port from the JUGGLER_ADDR= line
+	Home      string      // the temporary HOME it and its children run under
+	ConfigDir string      // where it keeps server.lock and server.json, under Home
+	Logs      string      // JUGGLER_LOG_DIR for it and its children
+	Token     string      // the control-API token, read from server.json as a client would
+	iso       isolatedRun // the binary and environment it runs under, for CLI clients of it
 	cmd       *exec.Cmd
 	exited    chan struct{} // closed once the process has been reaped
 	stderr    string        // path of the captured stderr
@@ -110,7 +112,7 @@ func startMachineServer(t *testing.T, serveArgs ...string) (*machineServer, func
 	_ = stderrFile.Close()
 
 	ms := &machineServer{
-		t: t, Home: iso.home, ConfigDir: configDirUnder(iso.home), Logs: iso.logs, cmd: cmd,
+		t: t, Home: iso.home, ConfigDir: configDirUnder(iso.home), Logs: iso.logs, iso: iso, cmd: cmd,
 		exited: make(chan struct{}), stderr: stderrPath,
 		children: map[int]string{},
 	}
@@ -328,6 +330,28 @@ func (ms *machineServer) stop() {
 	if t.Failed() {
 		t.Logf("machine server stderr:\n%s", ms.stderrText())
 	}
+}
+
+// cli runs the suite's binary as a client of this server — `juggler server …`
+// or `juggler open …` — under the server's own environment, so it finds the
+// server through the same server.json. It returns the exit code and output.
+func (ms *machineServer) cli(args ...string) (code int, stdout, stderr string) {
+	ms.t.Helper()
+	cmd := exec.Command(ms.iso.binary, args...)
+	cmd.Env = ms.iso.env
+	var out, errOut strings.Builder
+	cmd.Stdout = &out
+	cmd.Stderr = &errOut
+	err := cmd.Run()
+	var exitErr *exec.ExitError
+	switch {
+	case err == nil:
+	case errors.As(err, &exitErr):
+		code = exitErr.ExitCode()
+	default:
+		ms.t.Fatalf("run %s %v: %v", ms.iso.binary, args, err)
+	}
+	return code, out.String(), errOut.String()
 }
 
 // noteChild records a session's child for the leak check at stop.

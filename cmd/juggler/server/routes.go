@@ -22,6 +22,7 @@ import (
 	"juggler/cmd/juggler/ops"
 	"juggler/cmd/juggler/providers/provider"
 	"juggler/cmd/juggler/server/handlers"
+	"juggler/cmd/juggler/webui"
 	"juggler/cmd/juggler/worker"
 	"juggler/internal/apipaths"
 	"juggler/internal/jlog"
@@ -275,16 +276,33 @@ func (s *Server) setupSessionRoutes(sessionAPI *handlers.SessionAPI) {
 
 // setupProjectRoutes registers /api/project and /api/recents endpoints.
 // These delegate to ProjectAPI which calls back into Server.SwitchProject.
+//
+// With a fixed project (Config.FixedProject — a machine-server session child)
+// opening or creating a folder in place is refused: the supervisor keys the
+// session by its project and respawns that project after a crash, so a switch
+// would leave its sessions list wrong and be undone by the next restart.
+// Another folder is another session, opened from the sessions page.
 func (s *Server) setupProjectRoutes() {
 	api := s.router.PathPrefix("/api").Subrouter()
 	projectAPI := handlers.NewProjectAPI(s.ProjectPath, s.SwitchProject, s.recentsStore)
 	api.HandleFunc("/project", projectAPI.HandleGetProject).Methods("GET")
-	api.HandleFunc("/project", projectAPI.HandlePostProject).Methods("POST")
-	api.HandleFunc("/project", projectAPI.HandleDeleteProject).Methods("DELETE")
-	api.HandleFunc("/project/new", projectAPI.HandleNewProject).Methods("POST")
+	if s.fixedProject {
+		api.HandleFunc("/project", refuseFixedProject).Methods("POST")
+		api.HandleFunc("/project/new", refuseFixedProject).Methods("POST")
+	} else {
+		api.HandleFunc("/project", projectAPI.HandlePostProject).Methods("POST")
+		api.HandleFunc("/project/new", projectAPI.HandleNewProject).Methods("POST")
+	}
 	api.HandleFunc("/project/check", projectAPI.HandleCheckProject).Methods("GET")
 	api.HandleFunc("/recents", projectAPI.HandleGetRecents).Methods("GET")
 	api.HandleFunc("/recents", projectAPI.HandleDeleteRecent).Methods("DELETE")
+}
+
+// refuseFixedProject answers a request to open or create a project in place on
+// a server whose project is fixed (see setupProjectRoutes).
+func refuseFixedProject(w http.ResponseWriter, r *http.Request) {
+	handlers.WriteError(w, r, http.StatusConflict,
+		"This session's project folder is fixed. Open another folder as its own session from the sessions page.")
 }
 
 // setupLogsRoutes registers the read-only /api/logs endpoints that back the
@@ -613,7 +631,9 @@ func (s *Server) setupRoutes() {
 	// Production assets come from web.Files; the test-only js-tests/ tree comes
 	// from web.TestFiles, which is empty under -tags production (see embed_testassets.go).
 	vPrefix := "/v" + s.staticVersion
-	prodPrefixes := []string{"/css/", "/js/", "/extensions/", "/sdk/", "/resources/"}
+	// machine/ is the machine server's sessions page (served there, not here);
+	// it is served here too so its modules run in the browser test harness.
+	prodPrefixes := []string{"/css/", "/js/", "/extensions/", "/sdk/", "/resources/", "/machine/"}
 	// Captured so the absolute-project-path route below can reuse it. Serves the
 	// web root, so a request path of "/js/foo.js" maps to web/js/foo.js.
 	var staticFileServer http.Handler
@@ -632,12 +652,12 @@ func (s *Server) setupRoutes() {
 			jlog.Error("Failed to find static directory: %v", err)
 			jlog.Error("Falling back to embedded files")
 			staticFS, _ := fs.Sub(web.Files, ".")
-			staticFileServer = staticAssetHandler(http.FileServer(http.FS(staticFS)))
+			staticFileServer = webui.AssetHandler(http.FileServer(http.FS(staticFS)))
 			registerStatic(prodPrefixes...)
 			s.serveEmbeddedTestAssets(vPrefix)
 		} else {
 			jlog.Info("🔧 Dev mode: serving static files from %s", staticDir)
-			staticFileServer = staticAssetHandler(http.FileServer(http.Dir(staticDir)))
+			staticFileServer = webui.AssetHandler(http.FileServer(http.Dir(staticDir)))
 			// Disk has js-tests/ alongside everything else, so serve it from disk too.
 			registerStatic(append(prodPrefixes, "/js-tests/")...)
 		}
@@ -647,7 +667,7 @@ func (s *Server) setupRoutes() {
 		if err != nil {
 			jlog.Error("Could not load static files: %v", err)
 		}
-		staticFileServer = staticAssetHandler(http.FileServer(http.FS(staticFS)))
+		staticFileServer = webui.AssetHandler(http.FileServer(http.FS(staticFS)))
 		registerStatic(prodPrefixes...)
 		s.serveEmbeddedTestAssets(vPrefix)
 	}
@@ -768,6 +788,6 @@ func (s *Server) serveEmbeddedTestAssets(vPrefix string) {
 		jlog.Error("Could not load test assets: %v", err)
 		return
 	}
-	fileServer := staticAssetHandler(http.FileServer(http.FS(testFS)))
+	fileServer := webui.AssetHandler(http.FileServer(http.FS(testFS)))
 	s.router.PathPrefix(vPrefix + "/js-tests/").Handler(http.StripPrefix(vPrefix, fileServer))
 }

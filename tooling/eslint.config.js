@@ -17,7 +17,7 @@ const jugglerPlugin = {
 };
 
 // UI source: every file a user can see text from. Tests and vendored code are not.
-const UI_FILES = ['web/js/**/*.js', 'web/sdk/**/*.js', 'web/extensions/**/*.js'];
+const UI_FILES = ['web/js/**/*.js', 'web/sdk/**/*.js', 'web/extensions/**/*.js', 'web/machine/**/*.js'];
 const NOT_UI = ['web/js/vendor/**', 'web/extensions/**/_tests/**/*.js'];
 
 // The files not yet migrated to t() — the i18n ratchet. See the rule's header
@@ -32,7 +32,7 @@ export default [
     ignores: ['web/js/vendor/**'],
   },
   {
-    files: ['web/js/**/*.js', 'web/sdk/**/*.js', 'web/extensions/**/*.js', 'web/js-tests/**/*.js', 'examples/**/*.js'],
+    files: ['web/js/**/*.js', 'web/sdk/**/*.js', 'web/extensions/**/*.js', 'web/machine/**/*.js', 'web/js-tests/**/*.js', 'examples/**/*.js'],
     plugins: { '@stylistic': stylistic },
     languageOptions: {
       ecmaVersion: 2022,

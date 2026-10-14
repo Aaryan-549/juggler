@@ -14,3 +14,6 @@ package worker
 // dispatch. The non-production build (worker_test_support.go) routes test
 // messages to in-process handlers.
 func (w *ConversationWorker) handleTestMessage(workerMessage) bool { return false }
+
+// adoptPendingMocks in production is a no-op: no responses are ever queued.
+func (w *ConversationWorker) adoptPendingMocks() {}

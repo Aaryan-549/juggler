@@ -238,6 +238,7 @@ type Server struct {
 	loopbackOnly   bool                // Config.LoopbackOnly: bind 127.0.0.1 instead of every interface
 	ingressSecret  string              // Config.IngressSecret: the supervisor's proof that a caller is off loopback ("" when there is no supervisor)
 	allowedHosts   hostcheck.AllowList // Config.AllowedHosts: extra Host names a reverse proxy on this machine serves us under
+	fixedProject   bool                // Config.FixedProject: the project can't be switched or created in place (see setupProjectRoutes)
 
 	// conversationCache holds the per-conversation Provider.Conversation
 	// handles: one handle per (convID, providerName, model), opened lazily
@@ -339,6 +340,12 @@ type Config struct {
 	// remote ingress (see supervisorIngressMiddleware). Empty for any other
 	// server, which then ignores the header.
 	IngressSecret string
+
+	// FixedProject refuses opening or creating another project in place
+	// (POST /api/project, /api/project/new). A machine-server session child
+	// sets it: its supervisor keys the session by the project it spawned it
+	// for, so another folder is another session (see setupProjectRoutes).
+	FixedProject bool
 
 	// AllowedHosts are extra Host names this server accepts on top of
 	// hostcheck.NamesThisMachine: the names a reverse proxy on this machine
@@ -457,6 +464,7 @@ func New(cfg Config) (*Server, error) {
 	s.exitWithParent = cfg.ExitWithParent
 	s.loopbackOnly = cfg.LoopbackOnly
 	s.ingressSecret = cfg.IngressSecret
+	s.fixedProject = cfg.FixedProject
 	s.allowedHosts = cfg.AllowedHosts
 	s.staticVersion = staticVersion
 	s.apiToken = mintAPIToken()

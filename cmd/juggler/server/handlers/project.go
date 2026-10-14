@@ -13,19 +13,10 @@ import (
 	"strings"
 
 	"juggler/cmd/juggler/core"
+	"juggler/internal/userpaths"
 )
 
-// expandTilde replaces a leading "~" with the current user's home directory.
-func expandTilde(path string) string {
-	if path == "~" || strings.HasPrefix(path, "~/") || strings.HasPrefix(path, `~\`) {
-		if home, err := os.UserHomeDir(); err == nil {
-			return home + path[1:]
-		}
-	}
-	return path
-}
-
-// ProjectAPI exposes endpoints for opening, closing, and listing recent
+// ProjectAPI exposes endpoints for opening, creating, and listing recent
 // project folders. It delegates the actual switch to a callback so the
 // server's project-state lifecycle stays out of the handler layer.
 type ProjectAPI struct {
@@ -37,7 +28,7 @@ type ProjectAPI struct {
 
 // NewProjectAPI creates a new ProjectAPI.
 //   - pathProvider returns the currently-loaded project path ("" if none).
-//   - switchFn is called with the desired project path ("" to clear) and
+//   - switchFn is called with the desired project path (an absolute folder) and
 //     should perform the live swap. Errors propagate to the HTTP response.
 func NewProjectAPI(pathProvider func() string, switchFn func(path string) error, recents *core.RecentsStore) *ProjectAPI {
 	return &ProjectAPI{
@@ -70,7 +61,7 @@ func (api *ProjectAPI) HandlePostProject(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	abs, err := filepath.Abs(expandTilde(req.Path))
+	abs, err := filepath.Abs(userpaths.ExpandHome(req.Path))
 	if err != nil {
 		WriteError(w, r, http.StatusBadRequest, err.Error())
 		return
@@ -135,7 +126,7 @@ func (api *ProjectAPI) HandleNewProject(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	parent, err := filepath.Abs(expandTilde(req.Parent))
+	parent, err := filepath.Abs(userpaths.ExpandHome(req.Parent))
 	if err != nil {
 		WriteError(w, r, http.StatusBadRequest, err.Error())
 		return
@@ -182,7 +173,7 @@ func (api *ProjectAPI) HandleCheckProject(w http.ResponseWriter, r *http.Request
 		WriteJSON(w, r, 0, map[string]any{"valid": false, "error": "path is required"})
 		return
 	}
-	abs, err := filepath.Abs(expandTilde(raw))
+	abs, err := filepath.Abs(userpaths.ExpandHome(raw))
 	if err != nil {
 		WriteJSON(w, r, 0, map[string]any{"valid": false, "error": err.Error()})
 		return
@@ -223,16 +214,6 @@ func (api *ProjectAPI) HandleCheckProject(w http.ResponseWriter, r *http.Request
 	}
 
 	WriteJSON(w, r, 0, map[string]any{"valid": true, "path": abs})
-}
-
-// HandleDeleteProject closes the current project (returns to no-project mode).
-// DELETE /api/project
-func (api *ProjectAPI) HandleDeleteProject(w http.ResponseWriter, r *http.Request) {
-	if err := api.switchFn(""); err != nil {
-		WriteError(w, r, http.StatusInternalServerError, err.Error())
-		return
-	}
-	WriteJSON(w, r, 0, map[string]any{"projectPath": ""})
 }
 
 // HandleGetRecents returns the user's recents list (most-recent first).

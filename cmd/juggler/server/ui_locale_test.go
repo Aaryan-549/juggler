@@ -7,7 +7,6 @@ package server
 import (
 	"encoding/json"
 	"html/template"
-	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
@@ -60,48 +59,6 @@ func TestPutSettingsUILocale(t *testing.T) {
 	putSettings(t, s, `{"uiLocale":""}`, http.StatusOK)
 	if got := s.settings.get().UILocale; got != "" {
 		t.Fatalf("clearing left uiLocale = %q", got)
-	}
-}
-
-// A catalogue is looked up along the language's chain, most specific first,
-// and never as the English key list: en.json lists the source strings for
-// translators, and serving it as a translation would be pure overhead.
-func TestLoadUICatalogChain(t *testing.T) {
-	files := fstest.MapFS{
-		"i18n/en.json":      {Data: []byte(`{"Close":"Close"}`)},
-		"i18n/en-XA.json":   {Data: []byte(`{"Close":"[Çļöšé ··]"}`)},
-		"i18n/zh.json":      {Data: []byte(`{"Close":"关闭","Open":"打开"}`)},
-		"i18n/zh-Hant.json": {Data: []byte(`{"Close":"關閉"}`)},
-		"i18n/broken.json":  {Data: []byte(`{not json`)},
-		"i18n/de-CH.json":   {Data: []byte(`{"Close":"Schliessen"}`)},
-		"i18n/he.json":      {Data: []byte(`{"Close":"סגור"}`)},
-	}
-	read := func(p string) ([]byte, error) { return fs.ReadFile(files, p) }
-	cases := []struct {
-		locale, want string
-	}{
-		{"en-XA", "[Çļöšé ··]"},
-		{"zh-Hant-TW", "關閉"},
-		{"zh", "关闭"},
-		{"de-CH", "Schliessen"},
-		{"iw-IL", "סגור"},
-		{"he-IL", "סגור"},
-		{"de", ""},
-		{"en", ""},
-		{"en-GB", ""},
-		{"broken", ""},
-		{"", ""},
-		{"../etc", ""},
-	}
-	for _, c := range cases {
-		got := loadUICatalog(read, c.locale)["Close"]
-		if got != c.want {
-			t.Errorf("loadUICatalog(%q)[Close] = %q, want %q", c.locale, got, c.want)
-		}
-	}
-	// Per message, not per file: zh-Hant has no Open, so it comes from zh.
-	if got := loadUICatalog(read, "zh-Hant-TW")["Open"]; got != "打开" {
-		t.Errorf("loadUICatalog(zh-Hant-TW)[Open] = %q, want the zh fallback", got)
 	}
 }
 

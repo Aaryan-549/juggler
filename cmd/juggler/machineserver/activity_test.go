@@ -177,7 +177,7 @@ func TestRegistryActivityBelongsToItsChild(t *testing.T) {
 		t.Fatalf("activity from the owning child: session = %+v, want busy at %s", cur, at)
 	}
 
-	r.noteExit(s.ID)
+	r.setRestarting(s.ID, c, "crashed", time.Now().Add(time.Second))
 	r.setActivity(s.ID, c, true, at.Add(time.Second))
 	cur, _ := r.get(s.ID)
 	if cur.Busy {

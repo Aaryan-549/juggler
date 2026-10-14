@@ -89,8 +89,16 @@ func RunCommand(args []string) int {
 		return 1
 	}
 
+	recents, err := core.NewRecentsStore()
+	if err != nil {
+		jlog.Error("serve: %v", err)
+		return 1
+	}
+
 	s := &Server{
 		reg:          newRegistry(),
+		recents:      recents,
+		uiLocale:     settingsUILocale,
 		lock:         lock,
 		childBin:     bin,
 		startedAt:    time.Now(),

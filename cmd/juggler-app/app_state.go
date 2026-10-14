@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"juggler/cmd/juggler/core"
+	"juggler/internal/userpaths"
 	"juggler/internal/webviewenv"
 	"juggler/internal/windowgeom"
 
@@ -1023,12 +1024,7 @@ func (a *appState) rememberRecentProject(project string) {
 	if project == "" {
 		return
 	}
-	if project == "~" || strings.HasPrefix(project, "~/") || strings.HasPrefix(project, `~\`) {
-		if home, err := os.UserHomeDir(); err == nil {
-			project = home + project[1:]
-		}
-	}
-	abs, err := filepath.Abs(project)
+	abs, err := filepath.Abs(userpaths.ExpandHome(project))
 	if err != nil {
 		return
 	}

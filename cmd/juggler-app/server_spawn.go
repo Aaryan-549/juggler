@@ -19,6 +19,7 @@ import (
 	"juggler/cmd/juggler/core"
 	"juggler/internal/binpath"
 	"juggler/internal/logpaths"
+	"juggler/internal/userpaths"
 )
 
 // serverStartTimeout bounds how long we wait for a freshly spawned server to
@@ -83,11 +84,7 @@ func expandProject(project string) string {
 	if project == "" {
 		return ""
 	}
-	if project == "~" || strings.HasPrefix(project, "~/") {
-		if home, err := os.UserHomeDir(); err == nil {
-			project = filepath.Join(home, strings.TrimPrefix(project, "~"))
-		}
-	}
+	project = userpaths.ExpandHome(project)
 	if abs, err := filepath.Abs(project); err == nil {
 		return abs
 	}

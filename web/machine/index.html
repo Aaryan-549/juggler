@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="{{.HTMLLang}}"{{if .UILocale}} data-ui-locale="{{.UILocale}}"{{end}}>
+<head>
+    <meta charset="UTF-8">
+    {{if .UICatalog}}<!-- The UI language's catalogue, read by sdk/lib/i18n.js when it loads
+         (with data-ui-locale above). Data, not script: it never runs. -->
+    <script type="application/json" id="juggler-ui-catalog">{{.UICatalog}}</script>{{end}}
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="color-scheme" content="dark light">
+    <title>Juggler</title>
+    <link rel="icon" type="image/svg+xml" href="{{.AssetBase}}/resources/juggler-logo.svg">
+
+    <!-- The theme follows the system's, set before the first paint. -->
+    <script nonce="{{.CSPNonce}}">
+        (function () {
+            var light = window.matchMedia('(prefers-color-scheme: light)');
+            var apply = function () {
+                document.documentElement.dataset.theme = light.matches ? 'light' : 'dark';
+            };
+            apply();
+            light.addEventListener('change', apply);
+        })();
+    </script>
+
+    <link rel="stylesheet" href="{{.AssetBase}}/css/base/fonts.css">
+    <link rel="stylesheet" href="{{.AssetBase}}/css/tokens/scale.css">
+    <link rel="stylesheet" href="{{.AssetBase}}/css/tokens/theme-dark.css">
+    <link rel="stylesheet" href="{{.AssetBase}}/css/tokens/theme-light.css">
+    <link rel="stylesheet" href="{{.AssetBase}}/css/base/reset.css">
+    <link rel="stylesheet" href="{{.AssetBase}}/css/base/elements.css">
+    <link rel="stylesheet" href="{{.AssetBase}}/machine/sessions.css">
+
+    <!-- What the page's script needs from the server (control-api.js,
+         readPageConfig). Data, not script: it never runs. -->
+    <script type="application/json" id="machine-config">{{.Config}}</script>
+    <script type="module" src="{{.AssetBase}}/machine/sessions-page.js"></script>
+</head>
+<body>
+    <main id="sessions-root" class="ms-page"></main>
+</body>
+</html>

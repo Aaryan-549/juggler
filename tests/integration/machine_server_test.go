@@ -6,6 +6,7 @@ package integration_test
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -258,6 +259,168 @@ func TestMachineServerDrivesASessionInABrowser(t *testing.T) {
 	}
 }
 
+// TestMachineServerCLI drives a real machine server from the command line, the
+// suite's binary run as `juggler open` and `juggler server …` under the same
+// HOME, so it finds the server through server.json as a user's shell would.
+func TestMachineServerCLI(t *testing.T) {
+	ms, stop := startMachineServer(t)
+	defer stop()
+	project := newProjectDir(t)
+
+	code, out, errOut := ms.cli("open", project)
+	if code != 0 {
+		t.Fatalf("juggler open: exit %d, stderr %q", code, errOut)
+	}
+	list := ms.mustListSessions()
+	if len(list) != 1 || list[0].Project != project {
+		t.Fatalf("sessions after juggler open = %+v, want one for %s", list, project)
+	}
+	ms.noteChild(list[0])
+	if want := "http://" + ms.Addr + "/s/" + list[0].ID + "/"; strings.TrimSpace(out) != want {
+		t.Fatalf("juggler open printed %q, want %q", out, want)
+	}
+
+	if code, out, _ := ms.cli("server", "status"); code != 0 || !strings.Contains(out, ms.Addr) || !strings.Contains(out, "1 session") {
+		t.Errorf("juggler server status: exit %d, output %q", code, out)
+	}
+	if code, out, _ := ms.cli("server", "sessions"); code != 0 || !strings.Contains(out, list[0].ID) || !strings.Contains(out, project) {
+		t.Errorf("juggler server sessions: exit %d, output %q", code, out)
+	}
+	if code, _, errOut := ms.cli("server", "stop", list[0].ID); code != 0 {
+		t.Fatalf("juggler server stop %s: exit %d, stderr %q", list[0].ID, code, errOut)
+	}
+	if left := ms.mustListSessions(); len(left) != 0 {
+		t.Fatalf("sessions after juggler server stop = %+v, want none", left)
+	}
+
+	if code, _, errOut := ms.cli("server", "stop"); code != 0 {
+		t.Fatalf("juggler server stop: exit %d, stderr %q", code, errOut)
+	}
+	select {
+	case <-ms.exited:
+	case <-time.After(15 * time.Second):
+		t.Fatal("the machine server did not exit after juggler server stop")
+	}
+	if code, _, errOut := ms.cli("server", "status"); code != 1 || !strings.Contains(errOut, "juggler serve") {
+		t.Fatalf("juggler server status with no server: exit %d, stderr %q", code, errOut)
+	}
+}
+
+// machineConfigPattern finds the configuration the sessions page hands its
+// script, which carries the control-API token.
+var machineConfigPattern = regexp.MustCompile(`(?s)<script type="application/json" id="machine-config">(.*?)</script>`)
+
+// TestMachineServerLaunchesTwoSessionsFromThePage is M2's exit test, run the
+// way the sessions page runs it. The page is loaded with no credential, and the
+// token comes from the page itself. With that token, and the Origin a browser on
+// the page sends, two projects are opened and offered back as recents. Then a
+// real browser test runs in each session at once, in one browser origin through
+// the proxy, and each must report under its own session's prefix.
+func TestMachineServerLaunchesTwoSessionsFromThePage(t *testing.T) {
+	ms, stop := startMachineServer(t, "--test")
+	defer stop()
+
+	resp, err := http.Get("http://" + ms.Addr + "/") //nolint:noctx // test
+	if err != nil {
+		t.Fatalf("GET the sessions page: %v", err)
+	}
+	page, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	m := machineConfigPattern.FindSubmatch(page)
+	if resp.StatusCode != http.StatusOK || m == nil {
+		t.Fatalf("sessions page: status %d, machine-config found %v", resp.StatusCode, m != nil)
+	}
+	var cfg struct {
+		Token string `json:"token"`
+	}
+	if err := json.Unmarshal(m[1], &cfg); err != nil || cfg.Token != ms.Token {
+		t.Fatalf("the page's token %q (%v) is not the server's", cfg.Token, err)
+	}
+
+	// pageCall is a request as the page's script makes it.
+	pageCall := func(method, path string, body any, out any) int {
+		t.Helper()
+		var rd io.Reader
+		if body != nil {
+			b, _ := json.Marshal(body)
+			rd = strings.NewReader(string(b))
+		}
+		req, _ := http.NewRequest(method, "http://"+ms.Addr+path, rd) //nolint:noctx // test
+		req.Header.Set(machineserver.TokenHeader, cfg.Token)
+		req.Header.Set("Origin", "http://"+ms.Addr)
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("%s %s: %v", method, path, err)
+		}
+		defer resp.Body.Close()
+		if out != nil {
+			_ = json.NewDecoder(resp.Body).Decode(out)
+		}
+		return resp.StatusCode
+	}
+
+	root, err := srcroot.Find(".")
+	if err != nil {
+		t.Fatalf("find project root: %v", err)
+	}
+	var sessions [2]machineserver.Session
+	var fixtures [2]string
+	for i := range sessions {
+		fixtures[i] = newProjectDir(t)
+		if err := copyDir(filepath.Join(root, "tests", "benchmarks", "fixtures", "unit-test-fixture"), fixtures[i]); err != nil {
+			t.Fatalf("copy fixture: %v", err)
+		}
+		if code := pageCall(http.MethodPost, "/api/server/sessions", map[string]string{"project": fixtures[i]}, &sessions[i]); code != http.StatusCreated {
+			t.Fatalf("open %s from the page: status %d", fixtures[i], code)
+		}
+		ms.noteChild(sessions[i])
+	}
+	var recents struct {
+		Paths []string `json:"paths"`
+	}
+	if code := pageCall(http.MethodGet, "/api/server/recents", nil, &recents); code != http.StatusOK ||
+		len(recents.Paths) < 2 || recents.Paths[0] != fixtures[1] || recents.Paths[1] != fixtures[0] {
+		t.Fatalf("recents after two opens: status %d, %v; want %s then %s", code, recents.Paths, fixtures[1], fixtures[0])
+	}
+
+	const name = "integration:read-file-single"
+	type outcome struct {
+		prefix string
+		err    error
+		result struct {
+			Passed      bool     `json:"passed"`
+			Details     string   `json:"details"`
+			Errors      []string `json:"errors"`
+			PostedUnder string   `json:"postedUnder"`
+		}
+	}
+	done := make(chan *outcome, len(sessions))
+	for i, sess := range sessions {
+		go func() {
+			o := &outcome{prefix: "/s/" + sess.ID}
+			child := testServerEntry{addr: ms.Addr, fixture: fixtures[i]}
+			if o.err = postToServer(child, o.prefix+"/api/test/run", map[string]any{"name": name, "projectPath": fixtures[i]}); o.err == nil {
+				o.err = pollServer(child, o.prefix+"/api/test/result?name="+name, 120*time.Second, &o.result)
+			}
+			done <- o
+		}()
+	}
+	for range sessions {
+		o := <-done
+		if o.err != nil {
+			t.Errorf("%s: %v", o.prefix, o.err)
+			continue
+		}
+		if o.result.PostedUnder != o.prefix {
+			t.Errorf("%s: the lane posted under %q: it was not served through its own session", o.prefix, o.result.PostedUnder)
+		}
+		if !o.result.Passed {
+			t.Errorf("%s: %s %v", o.prefix, o.result.Details, o.result.Errors)
+		}
+	}
+}
+
 // pageRefPattern finds the server-relative URLs a page loads: src and href
 // attributes, import-map entries, and the asset prefix. External and
 // protocol-relative URLs don't match.
@@ -285,22 +448,43 @@ func TestMachineServerProxiesWebSocket(t *testing.T) {
 	sess := ms.openSession(newProjectDir(t), http.StatusCreated)
 	prefix := "/s/" + sess.ID
 
+	bootID, closed := ms.greetViewer(prefix, ms.sessionPageToken(prefix))
+	if closed || bootID == "" {
+		t.Fatalf("proxied viewer socket: closed=%v boot id %q, want the child's session greeting", closed, bootID)
+	}
+}
+
+// sessionPageToken loads a session's page through the proxy, as a browser
+// tab would, and returns the API token it carries.
+func (ms *machineServer) sessionPageToken(prefix string) string {
+	ms.t.Helper()
 	resp, err := ms.do(http.MethodGet, prefix+"/", nil)
 	if err != nil {
-		t.Fatalf("proxied GET index: %v", err)
+		ms.t.Fatalf("proxied GET index: %v", err)
 	}
 	page, _ := io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("proxied GET index: status %d", resp.StatusCode)
+		ms.t.Fatalf("proxied GET index: status %d", resp.StatusCode)
 	}
 	m := apiTokenPattern.FindSubmatch(page)
 	if m == nil {
-		t.Fatalf("proxied index.html carries no API token")
+		ms.t.Fatalf("proxied index.html carries no API token")
 	}
+	return string(m[1])
+}
 
+// greetViewer opens a viewer socket through the proxy with token, as a tab
+// under prefix does, and reads what the child says first. It returns the boot
+// id from the child's session greeting, or closed=true when the socket was
+// upgraded and then closed without one — how a child refuses another
+// process's token. Either answer lets the client tell a restarted child from
+// a blip (web/js/services/websocket.js: _resolveReconnect, and the
+// unidentified death in _onTransportClosed).
+func (ms *machineServer) greetViewer(prefix, token string) (bootID string, closed bool) {
+	ms.t.Helper()
 	header := http.Header{"Origin": []string{"http://" + ms.Addr}}
-	wsURL := "ws://" + ms.Addr + prefix + apipaths.WebSocket + "?role=viewer&token=" + string(m[1])
+	wsURL := "ws://" + ms.Addr + prefix + apipaths.WebSocket + "?role=viewer&token=" + token
 	conn, resp, err := websocket.DefaultDialer.Dial(wsURL, header)
 	if resp != nil && resp.Body != nil {
 		_ = resp.Body.Close()
@@ -310,25 +494,30 @@ func TestMachineServerProxiesWebSocket(t *testing.T) {
 		if resp != nil {
 			status = resp.StatusCode
 		}
-		t.Fatalf("proxied WebSocket dial: %v (status %d)", err, status)
+		ms.t.Fatalf("proxied WebSocket dial: %v (status %d)", err, status)
 	}
 	defer conn.Close()
 
 	_ = conn.SetReadDeadline(time.Now().Add(10 * time.Second))
 	_, msg, err := conn.ReadMessage()
 	if err != nil {
-		t.Fatalf("read first frame through the proxy: %v", err)
+		var ne net.Error
+		if errors.As(err, &ne) && ne.Timeout() {
+			ms.t.Fatalf("no first frame through the proxy within 10s")
+		}
+		return "", true
 	}
 	var greeting struct {
 		Type   string `json:"type"`
 		BootID string `json:"bootId"`
 	}
 	if err := json.Unmarshal(msg, &greeting); err != nil {
-		t.Fatalf("decode first frame %s: %v", msg, err)
+		ms.t.Fatalf("decode first frame %s: %v", msg, err)
 	}
-	if greeting.Type != "session" || greeting.BootID == "" {
-		t.Fatalf("first frame = %s, want the child's session greeting", msg)
+	if greeting.Type != "session" {
+		ms.t.Fatalf("first frame = %s, want the child's session greeting", msg)
 	}
+	return greeting.BootID, false
 }
 
 // TestMachineServerReportsSessionActivity runs a real turn in a session's
@@ -539,16 +728,20 @@ func holdTurn(t *testing.T, ms *machineServer, sess machineserver.Session) (rele
 	return func() { send("release-mock", map[string]any{"type": "release-mock"}) }
 }
 
-// TestMachineServerChildCrashIsError kills a session's child out from under
-// the machine server: the session turns to the error state, the proxy stops
-// routing to it, and the next open for that project replaces it with a fresh
-// child.
-func TestMachineServerChildCrashIsError(t *testing.T) {
+// TestMachineServerRestartsACrashedChild kills a real session child out from
+// under the machine server: the session is respawned under the same ID, with a
+// new child, and the proxy routes /s/<id>/ to the new one. The policy's other
+// branches (clean exit, giving up, stop during the backoff) are covered against
+// stand-in children in machineserver/restart_test.go.
+func TestMachineServerRestartsACrashedChild(t *testing.T) {
 	ms, stop := startMachineServer(t)
 	defer stop()
 
 	project := newProjectDir(t)
 	sess := ms.openSession(project, http.StatusCreated)
+	prefix := "/s/" + sess.ID
+	oldToken := ms.sessionPageToken(prefix)
+	oldBoot, _ := ms.greetViewer(prefix, oldToken)
 
 	p, err := os.FindProcess(sess.PID)
 	if err != nil {
@@ -558,26 +751,37 @@ func TestMachineServerChildCrashIsError(t *testing.T) {
 		t.Fatalf("kill child pid %d: %v", sess.PID, err)
 	}
 
-	crashed := ms.waitForSessionState(sess.ID, machineserver.SessionError, 15*time.Second)
-	if crashed.PID != 0 || crashed.Addr != "" || crashed.Error == "" {
-		t.Fatalf("crashed session = %+v, want no pid, no address, and an error", crashed)
+	back := ms.waitForSession(sess.ID, "running in a new child", 30*time.Second, func(s machineserver.Session) bool {
+		return s.State == machineserver.SessionRunning && s.PID != 0 && s.PID != sess.PID
+	})
+	ms.noteChild(back)
+	if back.Restarts != 1 || back.Error != "" {
+		t.Fatalf("restarted session = %+v, want one restart and no error", back)
 	}
 
-	resp, err := ms.do(http.MethodGet, "/s/"+sess.ID+"/api/health", nil)
+	resp, err := ms.do(http.MethodGet, "/s/"+sess.ID+"/api/health/instance", nil)
 	if err != nil {
-		t.Fatalf("GET through a crashed session: %v", err)
+		t.Fatalf("GET through the restarted session: %v", err)
 	}
-	_ = resp.Body.Close()
-	if resp.StatusCode != http.StatusServiceUnavailable {
-		t.Fatalf("proxy to a crashed session: status %d, want 503", resp.StatusCode)
+	defer resp.Body.Close()
+	var inst struct {
+		PID int `json:"pid"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&inst); err != nil || resp.StatusCode != http.StatusOK {
+		t.Fatalf("instance through the restarted session: status %d, %v", resp.StatusCode, err)
+	}
+	if inst.PID != back.PID {
+		t.Fatalf("/s/%s/ reached pid %d, want the new child %d", sess.ID, inst.PID, back.PID)
+	}
+	if list := ms.mustListSessions(); len(list) != 1 || list[0].ID != sess.ID {
+		t.Fatalf("sessions after the restart = %+v, want only %s", list, sess.ID)
 	}
 
-	fresh := ms.openSession(project, http.StatusCreated)
-	if fresh.ID == sess.ID || fresh.PID == sess.PID || fresh.State != machineserver.SessionRunning {
-		t.Fatalf("reopen after crash = %+v, want a new running session replacing %s", fresh, sess.ID)
-	}
-	if list := ms.mustListSessions(); len(list) != 1 || list[0].ID != fresh.ID {
-		t.Fatalf("sessions after reopen = %+v, want only %s", list, fresh.ID)
+	// A tab loaded before the crash reconnects with its page's token. It must
+	// be told this is another server — a different boot id, or a socket closed
+	// before any greeting — so it reloads and picks up the new child's token.
+	if boot, closed := ms.greetViewer(prefix, oldToken); !closed && boot == oldBoot {
+		t.Fatalf("a tab from before the restart reconnected to boot id %q, the same as before: it would carry on with a dead token", boot)
 	}
 }
 
