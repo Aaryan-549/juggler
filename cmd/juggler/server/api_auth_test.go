@@ -540,10 +540,11 @@ func TestEngineWorkerRuntimeInstallsTokenFetchShim(t *testing.T) {
 func TestHostAllowedRemoteIngressBypass(t *testing.T) {
 	base := httptest.NewRequest(http.MethodPost, "/api/ops/call", nil)
 	base.Host = "abc123.trycloudflare.com"
-	if hostAllowed(base) {
+	s := &Server{}
+	if s.hostAllowed(base) {
 		t.Fatal("untagged tunnel-hostname request should fail hostAllowed")
 	}
-	if !hostAllowed(withRemoteIngress(base)) {
+	if !s.hostAllowed(withRemoteIngress(base)) {
 		t.Fatal("remote-ingress request should pass hostAllowed regardless of Host")
 	}
 }

@@ -5,6 +5,7 @@ of changes; this project follows semantic versioning.
 
 ## [Unreleased]
 
+- New --allow-host flag serves Juggler behind a reverse proxy such as tailscale serve
 - New run_code tool: a mutating version of query_code, to give full "code mode" features
 - batch_read's properties panel lists files with open, copy, reveal and pin buttons
 - Turns cut off by a provider's server mid-stream are now retried automatically

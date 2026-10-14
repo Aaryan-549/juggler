@@ -38,6 +38,12 @@ const AddrHeader = "X-Juggler-Ingress-Addr"
 // directly over the network, on its own listening socket.
 const KindLAN = "lan"
 
+// KindProxy is the KindHeader value for a caller that reached the supervisor
+// over loopback through a reverse proxy the user configured — a request on a
+// loopback connection naming one of the server's allowed hosts. Its socket is
+// local but its caller is not.
+const KindProxy = "proxy"
+
 // SecretEnv is the environment variable a session child finds its secret in.
 const SecretEnv = "JUGGLER_INGRESS_SECRET"
 

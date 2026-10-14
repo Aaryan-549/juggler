@@ -19,6 +19,7 @@ import (
 	"juggler/cmd/juggler/core"
 	"juggler/cmd/juggler/providers/provider"
 	"juggler/cmd/juggler/server/handlers"
+	"juggler/internal/hostcheck"
 	"juggler/internal/httpx"
 	"juggler/internal/jlog"
 	"juggler/internal/updatecheck"
@@ -269,6 +270,9 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 	// that provider's complete set, and clearing the last one is an explicit {}.
 	incoming.Models.Hidden = cloneHiddenModels(incoming.Models.Hidden)
 	incoming.Models.Limits = cloneModelLimits(incoming.Models.Limits)
+	// A slice has the same hazard: decoding an array into one with capacity
+	// reuses its backing array, which the stored settings share.
+	incoming.Connectivity.AllowedHosts = slices.Clone(incoming.Connectivity.AllowedHosts)
 	// The ui section is deliberately NOT seeded: emptied first, it decodes to
 	// exactly the keys this request sent, which is the patch the store merges
 	// against the document on disk. Seeding it would both have the decode write
@@ -293,6 +297,9 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 	// never mentioned. Unmarshalling cannot fail — the same bytes decoded into
 	// the stricter types above.
 	var posted struct {
+		Connectivity struct {
+			AllowedHosts *[]string `json:"allowedHosts"`
+		} `json:"connectivity"`
 		Models struct {
 			Hidden map[string]json.RawMessage `json:"hidden"`
 			Limits map[string]json.RawMessage `json:"limits"`
@@ -308,6 +315,16 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 	if incoming.Connectivity.WANOnLaunch != "" && !isRegisteredTunnelMode(incoming.Connectivity.WANOnLaunch) {
 		handlers.WriteError(w, r, http.StatusBadRequest, "invalid WAN launch mode")
 		return
+	}
+	// Allowed hosts the request sends must each be a name the server would
+	// accept at startup, where a bad one is skipped with only a log line. Only
+	// the list this request sends: a bad entry already in the file (a hand edit)
+	// must not reject every later PUT that never mentions it.
+	if posted.Connectivity.AllowedHosts != nil {
+		if _, err := hostcheck.NewAllowList(*posted.Connectivity.AllowedHosts); err != nil {
+			handlers.WriteError(w, r, http.StatusBadRequest, err.Error())
+			return
+		}
 	}
 	// A non-empty UI language must be a language tag: it is written into every
 	// page's markup. "" is the default, English.

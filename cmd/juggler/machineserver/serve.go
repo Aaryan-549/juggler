@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -31,6 +32,11 @@ func RunCommand(args []string) int {
 	verbose := fs.Bool("verbose", false, "Verbose logging (debug level)")
 	fs.BoolVar(verbose, "v", false, "Verbose logging (debug level) (shorthand)")
 	testChildren := fs.Bool("test", false, "Test harness only: spawn session children as test servers driven through this server's proxy")
+	var allowHosts []string
+	fs.Func("allow-host", "Also accept requests for `name`: the name a reverse proxy on this machine (tailscale serve, caddy) serves Juggler under. Its callers count as remote. Repeatable; only name a host whose DNS you control", func(v string) error {
+		allowHosts = append(allowHosts, v)
+		return nil
+	})
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -48,6 +54,12 @@ func RunCommand(args []string) int {
 		LogFilePath:  filepath.Join(logpaths.LogDir(), "serve.log"),
 	})
 	defer jlog.Close()
+
+	allowed, err := resolveAllowedHosts(allowHosts, *testChildren)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "serve: %v\n", err)
+		return 2
+	}
 
 	token := mintToken()
 	lock := NewMachineLock(userpaths.ConfigDir())
@@ -85,6 +97,7 @@ func RunCommand(args []string) int {
 		shutdownReq:  make(chan struct{}, 1),
 		token:        token,
 		testChildren: *testChildren,
+		allowedHosts: allowed,
 	}
 
 	ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", *port))
@@ -102,6 +115,9 @@ func RunCommand(args []string) int {
 	// spawned juggler's address can read the machine server's too.
 	fmt.Printf("JUGGLER_ADDR=%s\n", s.addr)
 	jlog.Info("🚂 Machine server %s listening on http://%s/ (pid %d)", core.Version, s.addr, os.Getpid())
+	if names := allowed.Names(); len(names) > 0 {
+		jlog.Info("🔀 Also serving under %s (reverse proxy on this machine; its callers count as remote)", strings.Join(names, ", "))
+	}
 
 	errCh := make(chan error, 1)
 	go func() { errCh <- s.httpSrv.Serve(ln) }()

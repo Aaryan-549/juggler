@@ -21,6 +21,7 @@ import (
 	"juggler/cmd/juggler/syswake"
 	"juggler/cmd/juggler/worker"
 	"juggler/cmd/juggler/workspace"
+	"juggler/internal/hostcheck"
 	"juggler/internal/jlog"
 	"juggler/internal/updatecheck"
 
@@ -236,6 +237,7 @@ type Server struct {
 	exitWithParent bool                // Config.ExitWithParent: server self-terminates when its parent (the viewer) dies; reported on /api/health/instance
 	loopbackOnly   bool                // Config.LoopbackOnly: bind 127.0.0.1 instead of every interface
 	ingressSecret  string              // Config.IngressSecret: the supervisor's proof that a caller is off loopback ("" when there is no supervisor)
+	allowedHosts   hostcheck.AllowList // Config.AllowedHosts: extra Host names a reverse proxy on this machine serves us under
 
 	// conversationCache holds the per-conversation Provider.Conversation
 	// handles: one handle per (convID, providerName, model), opened lazily
@@ -337,6 +339,14 @@ type Config struct {
 	// remote ingress (see supervisorIngressMiddleware). Empty for any other
 	// server, which then ignores the header.
 	IngressSecret string
+
+	// AllowedHosts are extra Host names this server accepts on top of
+	// hostcheck.NamesThisMachine: the names a reverse proxy on this machine
+	// (tailscale serve, caddy) publishes it under. A loopback request naming
+	// one is that proxy's, and is tagged as remote ingress (see
+	// proxyIngressMiddleware). Empty for a session child, whose supervisor
+	// holds the list.
+	AllowedHosts hostcheck.AllowList
 }
 
 // New creates a new server
@@ -447,6 +457,7 @@ func New(cfg Config) (*Server, error) {
 	s.exitWithParent = cfg.ExitWithParent
 	s.loopbackOnly = cfg.LoopbackOnly
 	s.ingressSecret = cfg.IngressSecret
+	s.allowedHosts = cfg.AllowedHosts
 	s.staticVersion = staticVersion
 	s.apiToken = mintAPIToken()
 	s.bootID = generateClientID()
@@ -492,6 +503,8 @@ func New(cfg Config) (*Server, error) {
 	// First, so the LAN gate, the API auth and every handler after them see a
 	// caller the supervisor vouched for as remote ingress.
 	s.router.Use(s.supervisorIngressMiddleware)
+	// Next, so the same holds for a caller the user's own reverse proxy forwards.
+	s.router.Use(s.proxyIngressMiddleware)
 	s.router.Use(s.lanGateMiddleware)
 	s.router.Use(s.pageHostMiddleware)
 	s.router.Use(s.apiAuthMiddleware)

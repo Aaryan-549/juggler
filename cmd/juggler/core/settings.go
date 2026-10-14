@@ -205,12 +205,20 @@ type ProxySettings struct {
 	URL string `json:"url,omitempty"`
 }
 
-// ConnectivitySettings holds launch-time connectivity preferences. They are
-// applied only on a GUI/desktop-app launch (no controlling terminal); a
-// terminal launch controls connectivity through CLI flags instead, so the saved
-// toggles never interfere there. Additive — like GlobalSettings, unknown keys
-// are tolerated on read.
+// ConnectivitySettings holds launch-time connectivity preferences. The two
+// on-launch toggles are applied only on a GUI/desktop-app launch (no
+// controlling terminal); a terminal launch controls connectivity through CLI
+// flags instead, so they never interfere there. AllowedHosts is the exception,
+// applied on every launch. Additive — like GlobalSettings, unknown keys are
+// tolerated on read.
 type ConnectivitySettings struct {
+	// AllowedHosts are extra Host names a server accepts on top of the names
+	// that always identify this machine — the name a reverse proxy on this
+	// machine (tailscale serve, caddy) publishes it under. Applied on every
+	// launch, terminal included, together with any --allow-host flags, and read
+	// once at startup, so a change takes effect on the next start. See
+	// ResolveAllowedHosts.
+	AllowedHosts []string `json:"allowedHosts,omitempty"`
 	// LANOnLaunch starts LAN access at launch when true.
 	LANOnLaunch bool `json:"lanOnLaunch,omitempty"`
 	// WANOnLaunch names the tunnel-mode id to start at launch, or "" for none.

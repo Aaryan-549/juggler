@@ -61,6 +61,8 @@ The server serves the web UI and prints its URL and a QR code. Type `b` and pres
 
 It listens on localhost by default, so nothing off your machine can reach it. Press `p` in the terminal, or launch with `--public`, to accept connections from your LAN. LAN access has no password: enable it only on networks you trust.
 
+To serve it through a reverse proxy on the same machine, such as `tailscale serve`, launch with `--allow-host <name>` for the name the proxy publishes. The flag is repeatable. Requests under that name count as remote viewers; see [SECURITY.md](SECURITY.md).
+
 A build made from this repository supports local and LAN access. The official binaries from [juggler.studio](https://juggler.studio) also include WAN modes for reaching your server over the internet; see [LICENSING.md](LICENSING.md) for the boundary between this repository and those additional components.
 
 ----------

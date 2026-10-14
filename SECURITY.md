@@ -38,6 +38,24 @@ In LAN mode:
   approve in a connected browser. If you publish the URL, every connected
   client sees and can approve those prompts.
 
+### Behind a reverse proxy (opt-in, by name)
+
+The server refuses requests whose `Host` is a public DNS name. That stops
+DNS rebinding, where a page on a domain the attacker controls points that
+domain at your machine. A reverse proxy on the same machine, such as
+`tailscale serve` or caddy, forwards its own public name as `Host`, so you
+name it explicitly: `--allow-host <name>` (repeatable), or
+`connectivity.allowedHosts` in `~/.juggler/settings.json`. Only exact names
+are accepted, never wildcards. Name only a host whose DNS you control.
+
+The proxy connects over loopback, but a request arriving that way under an
+allowed name is treated as a **remote** viewer. It cannot take the in-process
+engine slot or change this machine's UI preferences, and it needs the API token
+like any other client. LAN access is still opt-in: the name only lets requests
+through the proxy itself, not a LAN client that sends it. Anyone who can reach
+the proxy can drive the agent, so its access control (your tailnet, for
+example) is the access control.
+
 ### WAN access (not in this build)
 
 A build from this repository has no built-in WAN (internet) exposure mechanism

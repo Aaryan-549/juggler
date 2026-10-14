@@ -323,6 +323,11 @@ func parseFlags(hasTerminal bool) (appFlags, bool) {
 	testIframes := flag.Int("test-iframes", 0, "Test-mode only: open the viewer window at /test-pool?n=N (tiled iframes acting as parallel test lanes) instead of the production UI")
 	testWindowURL := flag.String("test-window-url", "", "Test-mode only: the URL the test window loads instead of this server's own (set by `juggler serve --test` to the session's proxied URL)")
 	public := flag.Bool("public", false, "Force LAN access on/off at startup (default: on for a direct terminal server, off otherwise; press 'p' to toggle at runtime)")
+	var allowHosts []string
+	flag.Func("allow-host", "Also accept requests for `name`: the name a reverse proxy on this machine (tailscale serve, caddy) serves Juggler under. Its callers count as remote. Repeatable; only name a host whose DNS you control", func(v string) error {
+		allowHosts = append(allowHosts, v)
+		return nil
+	})
 	// WAN startup flags come from the tunnel-mode registry: each registered
 	// mode with a FlagName contributes one bool flag. A build with no
 	// registered modes has no WAN flags at all.
@@ -393,6 +398,7 @@ func parseFlags(hasTerminal bool) (appFlags, bool) {
 		public:         *public,
 		publicSet:      publicSet,
 		startupWAN:     startupWAN,
+		allowHosts:     allowHosts,
 		sessionChild:   *sessionChild,
 		exitWithParent: *exitWithParent,
 		logFile:        *logFile,

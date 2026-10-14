@@ -38,7 +38,8 @@ func (s *Server) handleSessionProxy(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "session is not running (state: "+string(sess.State)+")", http.StatusServiceUnavailable)
 		return
 	}
-	remote := callerIsRemote(r)
+	kind := s.callerKind(r)
+	remote := kind != ""
 	if remote && secret == "" {
 		// Forwarded untagged, a remote caller would look local to the child.
 		http.Error(w, "session cannot identify a remote caller", http.StatusBadGateway)
@@ -74,10 +75,12 @@ func (s *Server) handleSessionProxy(w http.ResponseWriter, r *http.Request) {
 			pr.Out.Header.Del(ingress.AddrHeader)
 			if remote {
 				pr.Out.Header.Set(ingress.Header, secret)
-				// Every caller off loopback arrives on this server's own
-				// listener, so over the network directly.
-				pr.Out.Header.Set(ingress.KindHeader, ingress.KindLAN)
-				pr.Out.Header.Set(ingress.AddrHeader, pr.In.RemoteAddr)
+				pr.Out.Header.Set(ingress.KindHeader, kind)
+				// A LAN caller's address is its own. A proxied caller's is the
+				// proxy's loopback hop, which says nothing about who it is.
+				if kind == ingress.KindLAN {
+					pr.Out.Header.Set(ingress.AddrHeader, pr.In.RemoteAddr)
+				}
 			}
 		},
 		// Flush streamed responses immediately — the UI relies on
@@ -87,16 +90,31 @@ func (s *Server) handleSessionProxy(w http.ResponseWriter, r *http.Request) {
 	proxy.ServeHTTP(w, r)
 }
 
-// callerIsRemote reports whether a request reached this server from anywhere
-// but loopback. An address that does not parse counts as remote, so a doubt
-// costs the caller local trust rather than granting it.
-func callerIsRemote(r *http.Request) bool {
+// callerKind says how a request reached this server, as the ingress kind the
+// proxy names to a child, or "" for a caller on this machine:
+//
+//   - ingress.KindLAN: off loopback, on this server's own listener. An address
+//     that does not parse counts too, so a doubt costs the caller local trust
+//     rather than granting it.
+//   - ingress.KindProxy: on loopback, but naming one of allowedHosts. That is a
+//     reverse proxy on this machine (tailscale serve) forwarding a caller from
+//     wherever it serves. Its socket is local and its caller is not. A local
+//     process that sends the name only demotes itself to remote.
+//
+// Transports that end on this server over loopback (tunnels) add their kinds
+// here.
+func (s *Server) callerKind(r *http.Request) string {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
-		return true
+		return ingress.KindLAN
 	}
-	ip := net.ParseIP(host)
-	return ip == nil || !ip.IsLoopback()
+	if ip := net.ParseIP(host); ip == nil || !ip.IsLoopback() {
+		return ingress.KindLAN
+	}
+	if s.allowedHosts.Has(r.Host) {
+		return ingress.KindProxy
+	}
+	return ""
 }
 
 // redirectSession normalizes a bare /s/<id> to /s/<id>/ so the child sees "/"

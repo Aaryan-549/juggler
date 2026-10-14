@@ -233,6 +233,24 @@ func TestHandlePutSettingsInvalidWANMode(t *testing.T) {
 	}
 }
 
+// TestHandlePutSettingsAllowedHosts: a valid list is stored, a patch to another
+// connectivity key leaves it alone, and a name the server would skip at
+// startup is refused here instead, leaving the stored list unchanged.
+func TestHandlePutSettingsAllowedHosts(t *testing.T) {
+	userpathstest.Isolate(t)
+	s := &Server{settings: newSettingsStore()}
+	putSettings(t, s, `{"connectivity":{"allowedHosts":["box.tailnet.ts.net"]}}`, http.StatusOK)
+	putSettings(t, s, `{"connectivity":{"lanOnLaunch":true}}`, http.StatusOK)
+	if got := s.settings.get().Connectivity.AllowedHosts; len(got) != 1 || got[0] != "box.tailnet.ts.net" {
+		t.Fatalf("allowedHosts after a lanOnLaunch patch = %q, want [box.tailnet.ts.net]", got)
+	}
+
+	putSettings(t, s, `{"connectivity":{"allowedHosts":["*.ts.net"]}}`, http.StatusBadRequest)
+	if got := s.settings.get().Connectivity.AllowedHosts; len(got) != 1 || got[0] != "box.tailnet.ts.net" {
+		t.Fatalf("rejected PUT changed allowedHosts to %q, want unchanged", got)
+	}
+}
+
 func TestHandlePutSettingsHiddenModelsRoundTrip(t *testing.T) {
 	userpathstest.Isolate(t)
 	const providerName = "settings-hidden-models-provider"

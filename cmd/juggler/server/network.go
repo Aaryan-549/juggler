@@ -134,13 +134,45 @@ func (s *Server) supervisorIngressMiddleware(next http.Handler) http.Handler {
 		r.Header.Del(ingress.AddrHeader)
 		if s.ingressSecret != "" && got != "" && isLoopbackAddr(r.RemoteAddr) &&
 			subtle.ConstantTimeCompare([]byte(got), []byte(s.ingressSecret)) == 1 {
-			r = MarkRemoteIngress(r, supervisorIngressKind)
+			r = MarkRemoteIngress(r, supervisedIngressKind(kind))
 			if ip := supervisedLANCallerIP(kind, addr); ip != "" {
 				r = r.WithContext(context.WithValue(r.Context(), supervisedLANCallerKey{}, ip))
 			}
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// proxyIngressMiddleware tags a request from the user's own reverse proxy as
+// remote ingress of kind ingress.KindProxy. Such a proxy (tailscale serve,
+// caddy) runs on this machine and connects over loopback, so by address its
+// callers — anyone who can reach the proxy — would be local: past the LAN
+// gate, able to claim the engine slot and write this machine's UI preferences.
+// What identifies its traffic is the Host it forwards, one of allowedHosts,
+// which this machine's own clients never send. A request is tagged only when
+// both hold: an off-loopback caller naming an allowed host is left untagged,
+// so the LAN gate still decides it, and the name only passes it through the
+// Host check. A local process sending the name only demotes itself to remote.
+// A request already tagged by a transport keeps its own kind.
+func (s *Server) proxyIngressMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !isRemoteIngress(r) && isLoopbackAddr(r.RemoteAddr) && s.allowedHosts.Has(r.Host) {
+			r = MarkRemoteIngress(r, ingress.KindProxy)
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// supervisedIngressKind is the remote-ingress tag for a caller the supervisor
+// vouched for, given the transport it names. A transport this server titles
+// itself (the user's reverse proxy) keeps its own kind. Any other caller is
+// supervisorIngressKind, including a LAN one, which its address names instead
+// (supervisedLANCallerIP).
+func supervisedIngressKind(kind string) string {
+	if kind == ingress.KindProxy {
+		return ingress.KindProxy
+	}
+	return supervisorIngressKind
 }
 
 // supervisedLANCallerKey carries, on a request the supervisor vouched for, the
@@ -367,6 +399,9 @@ func remoteTransportLabel(kind string) string {
 	}
 	if kind == supervisorIngressKind {
 		return "Via machine server"
+	}
+	if kind == ingress.KindProxy {
+		return "Via reverse proxy"
 	}
 	if spec, ok := findTunnelMode(TunnelMode(kind)); ok {
 		return spec.Title

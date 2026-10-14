@@ -27,6 +27,7 @@ import (
 
 	"juggler/cmd/juggler/core"
 	"juggler/internal/hostcheck"
+	"juggler/internal/ingress"
 	"juggler/internal/jlog"
 )
 
@@ -49,6 +50,10 @@ type Server struct {
 	// test window loads its session through this server's proxy. Test
 	// binaries only: a production-tagged child panics on --test.
 	testChildren bool
+	// allowedHosts are the extra Host names a reverse proxy on this machine
+	// serves this server under (serve --allow-host and the saved setting).
+	// See hostGuard and callerKind.
+	allowedHosts hostcheck.AllowList
 }
 
 // TokenHeader carries the control-API token on a request to /api/server/*.
@@ -83,7 +88,7 @@ func (s *Server) routes() http.Handler {
 	api.HandleFunc("/shutdown", s.handleShutdown).Methods("POST")
 	r.HandleFunc("/s/{id}", s.redirectSession)
 	r.PathPrefix("/s/{id}/").HandlerFunc(s.handleSessionProxy)
-	return s.lanGate(hostGuard(originGuard(r)))
+	return s.lanGate(s.hostGuard(originGuard(r)))
 }
 
 // mintToken returns a fresh random control-API token.
@@ -121,10 +126,12 @@ func (s *Server) tokenGuard(next http.Handler) http.Handler {
 // it asks for, before anything is forwarded. It is the machine server's half
 // of exposure: behind the proxy a child's own LAN gate cannot hold, since every
 // caller reaches the child from here over loopback, and one the proxy vouches
-// for as remote is admitted by the child's gate on that tag.
+// for as remote is admitted by the child's gate on that tag. A caller through
+// the user's own reverse proxy (ingress.KindProxy) is not refused: naming the
+// proxy's host is the user's grant, as opening a tunnel is.
 func (s *Server) lanGate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !s.lan.Load() && callerIsRemote(r) {
+		if !s.lan.Load() && s.callerKind(r) == ingress.KindLAN {
 			http.Error(w, "Forbidden: this Juggler server accepts connections from this machine only", http.StatusForbidden)
 			return
 		}
@@ -140,10 +147,12 @@ func (s *Server) lanGate(next http.Handler) http.Handler {
 // child's API token) and open its WebSocket. Behind the proxy the child cannot
 // make up for it: a caller off loopback reaches it tagged as remote ingress,
 // which skips its own Host check and its viewer-socket token. So the check is
-// made here, once, before anything is forwarded.
-func hostGuard(next http.Handler) http.Handler {
+// made here, once, before anything is forwarded. The user's allowed hosts
+// pass too: a name they list is one whose DNS they control, which is what a
+// rebinding page lacks.
+func (s *Server) hostGuard(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !hostcheck.NamesThisMachine(r.Host) {
+		if !hostcheck.NamesThisMachine(r.Host) && !s.allowedHosts.Has(r.Host) {
 			http.Error(w, "Forbidden: host not allowed", http.StatusForbidden)
 			return
 		}

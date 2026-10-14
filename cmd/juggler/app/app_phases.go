@@ -262,6 +262,12 @@ func (a *App) initServer() error {
 		return fmt.Errorf("assets-from-disk requested but no source checkout found")
 	}
 
+	allowedHosts, err := a.resolveAllowedHosts()
+	if err != nil {
+		jlog.Error("%v", err)
+		return err
+	}
+
 	srv, err := server.New(server.Config{
 		SessionManager: a.session,
 		Host:           a.cfg.Server.Host,
@@ -274,6 +280,7 @@ func (a *App) initServer() error {
 		ExitWithParent: a.flags.exitWithParent,
 		LoopbackOnly:   a.flags.sessionChild,
 		IngressSecret:  a.ingressSecret,
+		AllowedHosts:   allowedHosts,
 	})
 	if err != nil {
 		jlog.Error("Failed to create server: %v", err)
@@ -294,6 +301,9 @@ func (a *App) initServer() error {
 	if err := srv.BindPort(); err != nil {
 		jlog.Error("Failed to bind port: %v", err)
 		return err
+	}
+	if names := allowedHosts.Names(); len(names) > 0 {
+		jlog.Info("🔀 Also serving under %s (reverse proxy on this machine; its callers count as remote)", strings.Join(names, ", "))
 	}
 
 	// Start MCP discovery at the first point the project is known, so servers are

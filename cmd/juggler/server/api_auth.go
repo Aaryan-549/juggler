@@ -100,8 +100,10 @@ func apiAuthExempt(method, path string) bool {
 // admitted on their remote-ingress tag and rely on the token (which their page
 // also carries) as the authenticator instead. A machine server applies the
 // same rule to everything it forwards, so its callers are held to it there.
-func hostAllowed(r *http.Request) bool {
-	return isRemoteIngress(r) || hostcheck.NamesThisMachine(r.Host)
+// The user's allowed hosts pass too: a name they list is one whose DNS they
+// control, which is what a rebinding page lacks.
+func (s *Server) hostAllowed(r *http.Request) bool {
+	return isRemoteIngress(r) || hostcheck.NamesThisMachine(r.Host) || s.allowedHosts.Has(r.Host)
 }
 
 // hostGatedPaths are the routes outside apiAuthMiddleware's Host check that a
@@ -126,7 +128,7 @@ var hostGatedPaths = map[string]bool{
 // carry nothing secret and are left ungated.
 func (s *Server) pageHostMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if hostGatedPaths[r.URL.Path] && !hostAllowed(r) {
+		if hostGatedPaths[r.URL.Path] && !s.hostAllowed(r) {
 			http.Error(w, "Forbidden: host not allowed", http.StatusForbidden)
 			return
 		}
@@ -193,7 +195,7 @@ func (s *Server) apiAuthMiddleware(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		if !hostAllowed(r) {
+		if !s.hostAllowed(r) {
 			http.Error(w, "Forbidden: host not allowed", http.StatusForbidden)
 			return
 		}

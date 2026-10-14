@@ -72,6 +72,7 @@ func TestSupervisorIngressNamesTheTransport(t *testing.T) {
 	}{
 		{"a LAN caller", "right", ingress.KindLAN, "192.168.1.20:54321", "lan", "192.168.1.20", true},
 		{"an IPv6 LAN caller", "right", ingress.KindLAN, "[fe80::1]:54321", "lan", "fe80::1", true},
+		{"a caller through the user's reverse proxy", "right", ingress.KindProxy, "", "remote", "Via reverse proxy", true},
 		{"no transport named", "right", "", "", "remote", "Via machine server", true},
 		{"a transport it does not know", "right", "carrier-pigeon", "192.168.1.20:54321", "remote", "Via machine server", true},
 		{"a LAN caller with no usable address", "right", ingress.KindLAN, "nonsense", "remote", "Via machine server", true},
