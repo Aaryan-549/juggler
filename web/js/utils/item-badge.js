@@ -24,6 +24,7 @@ import { TYPE_ICONS, TYPE_COLORS } from './icon-message-renderer.js';
 import contextItemRegistry from '../registries/context-item-registry.js';
 import { yGet } from '../model/item-accessor.js';
 import { t, markForTranslation } from '../../sdk/lib/i18n.js';
+import { capabilityLabel } from './capability-label.js';
 
 /**
  * The lozenge label every notice wears, in the row and the panel header alike.
@@ -182,18 +183,6 @@ function makeInstance(PluginClass, ctx) {
   } catch {
     return null;
   }
-}
-
-/**
- * Translate a label a capability supplies (its static type label or manifest
- * name) in its own extension's catalogue, then core's.
- * @param {string} label - The capability's English label
- * @param {string|null} pluginId - The capability's registry id, or null
- * @returns {string} The label in the active locale
- */
-function capabilityLabel(label, pluginId) {
-  const namespace = (pluginId && contextItemRegistry.getExtensionId(pluginId)) || undefined;
-  return t(label, undefined, { namespace });
 }
 
 /**

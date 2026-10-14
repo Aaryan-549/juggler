@@ -5,6 +5,7 @@
 
 import SubagentContextItem from './subagents/subagent-item.js';
 import ResearchSubagentStrategyType from './subagents/research-strategy.js';
+import { markForTranslation } from 'juggler/i18n';
 
 /**
  * ResearchAgentContextItem - the `Research` sub-agent.
@@ -57,7 +58,8 @@ class ResearchAgentContextItem extends SubagentContextItem {
     resultSpec:
       'the answer, with a source URL for each claim, and a note of anything that differs from ' +
       'the version installed in this project. Where you found nothing, say so explicitly rather than offering a plausible guess.',
-    verbs: { pending: 'Researching…', done: 'Researched' },
+    label: markForTranslation('Research'),
+    verbs: { pending: markForTranslation('Researching…'), done: markForTranslation('Researched') },
     fallback: 'Search the web directly with WebSearch and WebFetch.'
   };
 }

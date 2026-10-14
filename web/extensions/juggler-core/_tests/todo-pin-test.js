@@ -21,6 +21,14 @@ import pinboardItemRegistry from '../../../js/registries/pinboard-item-registry.
 import { createPinControl } from '../../../js/utils/properties-panel-helpers.js';
 import { assert } from '../../../js-tests/utilities/test-helpers.js';
 import '../../../js/components/properties-panel.js';
+import { underPseudoLocale } from '../../../js-tests/utilities/pseudo-locale.js';
+import { isPseudoLocalized } from '../../../sdk/lib/i18n.js';
+
+/** juggler-core's English for this pin, standing in for its catalogue. */
+const CORE_TEXT = [
+  'No active conversation', 'If the conversation contains a TODO list, this shows its current state',
+  'From {label}', 'From a parent thread', 'Reveal in conversation',
+];
 
 /**
  * @typedef {object} TestResult
@@ -364,6 +372,33 @@ export async function runTests(_ctx) {
     const labels = [...controls.children].map((/** @type {Element} */ c) => c.textContent?.trim());
     assert(labels.length === 1 && labels[0] === 'Pin to Pinboard',
       `the panel's own controls are where it belongs, got [${labels.join(', ')}]`);
+  });
+
+  // --- en-XA ----------------------------------------------------------------
+
+  await test('en-XA: the add reason, empty state, source lines and reveal action are translated', async () => {
+    await underPseudoLocale('todo-pin-test', async () => {
+      /** @type {Record<string, string>} */
+      const shown = {};
+      shown['add reason'] = String(pin.canAdd(/** @type {any} */ ({ conversation: null })));
+
+      const empty = mount(null);
+      shown['empty state'] = (empty.body.textContent || '').trim();
+      shown['reveal label'] = String(empty.controller.getActions()[0]?.label);
+      empty.teardown();
+
+      // The list block itself is `createTodoBlock`'s, shared with the model's
+      // text, and is not this pin's to translate; only the line above it is.
+      const named = mount(todoFound(twoTodos, { threadId: 't1', label: '1', inherited: true }));
+      shown['source line'] = String(named.body.querySelector('.task-list-pin__source')?.textContent);
+      named.teardown();
+      const unnamed = mount(todoFound(twoTodos, { threadId: 't1', label: '', inherited: true }));
+      shown['source line, unnamed thread'] = String(unnamed.body.querySelector('.task-list-pin__source')?.textContent);
+      unnamed.teardown();
+
+      const raw = Object.entries(shown).filter(([, s]) => !isPseudoLocalized(s));
+      assert(raw.length === 0, `plain English under en-XA: ${JSON.stringify(raw)}`);
+    }, { '@juggler/core': CORE_TEXT });
   });
 
   return { passed, failed, errors };

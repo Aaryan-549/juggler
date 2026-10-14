@@ -362,7 +362,9 @@ import { runTests as runPermissionPopupRefreshTests } from '../unit-tests/permis
 import { runTests as runClipboardTests } from '../unit-tests/clipboard-test.js';
 import { runTests as runCopyButtonTests } from '../unit-tests/copy-button-test.js';
 import { runTests as runLiveTaskOutputTests } from '../unit-tests/live-task-output-test.js';
+import { runTests as runPropertiesPanelHelpersTests } from '../unit-tests/properties-panel-helpers-test.js';
 import { runTests as runContextItemBaseTests } from '../unit-tests/context-item-base-test.js';
+import { runTests as runCapabilityNameReadersTests } from '../unit-tests/capability-name-readers-test.js';
 import { runTests as runConnectivityTests } from '../unit-tests/connectivity-test.js';
 import { runTests as runLogsTests } from '../unit-tests/logs-test.js';
 import { runTests as runUpdatesSettingsTests } from '../unit-tests/updates-settings-test.js';
@@ -828,7 +830,9 @@ const UNIT_TEST_SUITES = [
   { name: 'unit:clipboard', run: runClipboardTests },
   { name: 'unit:copy-button', run: runCopyButtonTests },
   { name: 'unit:live-task-output', run: runLiveTaskOutputTests },
+  { name: 'unit:properties-panel-helpers', run: runPropertiesPanelHelpersTests },
   { name: 'unit:context-item-base', run: runContextItemBaseTests },
+  { name: 'unit:capability-name-readers', run: runCapabilityNameReadersTests },
   { name: 'unit:connectivity', run: runConnectivityTests },
   { name: 'unit:logs', run: runLogsTests },
   { name: 'unit:updates-settings', run: runUpdatesSettingsTests },

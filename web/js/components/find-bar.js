@@ -5,6 +5,8 @@
 import FindController from '../services/find-controller.js';
 import { isMac } from '../services/key-shortcut-manager.js';
 import { EXPAND_LESS_SVG, EXPAND_MORE_SVG } from '../utils/icons.js';
+import { t } from '../../sdk/lib/i18n.js';
+import { escapeHtml } from '../../sdk/lib/html.js';
 
 /**
  * The presentational find (⌘F) bar. A panel-mounted singleton (module-level
@@ -44,8 +46,8 @@ const OBSERVER_DEBOUNCE_MS = 150;
  *   scrolling with it, so this is normally `root`'s parent, not `root`.
  * @property {Element} [watch] - A stable ancestor to observe for mutations,
  *   for panels that replace `root` as they re-render. Defaults to `root`.
- * @property {string} label - The query input's `aria-label`, e.g. "Find in
- *   conversation".
+ * @property {string} label - The query input's `aria-label`, already translated,
+ *   e.g. "Find in conversation".
  * @property {() => void} [restoreFocus] - Where focus goes when the bar closes.
  *   Omitted means blur.
  */
@@ -221,7 +223,7 @@ class FindBar {
    */
   _applyTarget(target) {
     this._target = target;
-    if (this._input) this._input.setAttribute('aria-label', target.label || 'Find');
+    if (this._input) this._input.setAttribute('aria-label', target.label || t('Find'));
     if (this._element && this._element.parentElement !== target.mount) {
       target.mount.appendChild(this._element);
     }
@@ -239,15 +241,22 @@ class FindBar {
     const el = document.createElement('div');
     el.className = 'find-bar';
     el.setAttribute('role', 'search');
+    const find = escapeHtml(t('Find'));
+    const prev = escapeHtml(t('Previous match'));
+    const next = escapeHtml(t('Next match'));
+    const matchCase = escapeHtml(t('Match case'));
+    const wholeWord = escapeHtml(t('Match whole word'));
+    // The key caps are the same glyphs on every platform; only the words around
+    // them are translated.
     el.innerHTML = `
-      <input type="text" class="find-bar__input field-input" aria-label="Find"
-        placeholder="Find" spellcheck="false" autocomplete="off" />
+      <input type="text" class="find-bar__input field-input" aria-label="${find}"
+        placeholder="${find}" spellcheck="false" autocomplete="off" />
       <span class="find-bar__counter" aria-live="polite"></span>
-      <button type="button" class="find-bar__btn find-bar__prev" aria-label="Previous match" title="Previous match (⇧⏎)">${EXPAND_LESS_SVG}</button>
-      <button type="button" class="find-bar__btn find-bar__next" aria-label="Next match" title="Next match (⏎)">${EXPAND_MORE_SVG}</button>
-      <button type="button" class="find-bar__btn find-bar__toggle find-bar__case" aria-label="Match case" aria-pressed="false" title="Match case">Aa</button>
-      <button type="button" class="find-bar__btn find-bar__toggle find-bar__word" aria-label="Match whole word" aria-pressed="false" title="Match whole word">W</button>
-      <button type="button" class="find-bar__btn find-bar__close" aria-label="Close find" title="Close (Esc)">&#x2715;</button>
+      <button type="button" class="find-bar__btn find-bar__prev" aria-label="${prev}" title="${escapeHtml(t('Previous match ({keys})', { keys: '⇧⏎' }))}">${EXPAND_LESS_SVG}</button>
+      <button type="button" class="find-bar__btn find-bar__next" aria-label="${next}" title="${escapeHtml(t('Next match ({keys})', { keys: '⏎' }))}">${EXPAND_MORE_SVG}</button>
+      <button type="button" class="find-bar__btn find-bar__toggle find-bar__case" aria-label="${matchCase}" aria-pressed="false" title="${matchCase}">${escapeHtml(t('Aa', undefined, { context: 'match-case toggle glyph' }))}</button>
+      <button type="button" class="find-bar__btn find-bar__toggle find-bar__word" aria-label="${wholeWord}" aria-pressed="false" title="${wholeWord}">${escapeHtml(t('W', undefined, { context: 'whole-word toggle glyph' }))}</button>
+      <button type="button" class="find-bar__btn find-bar__close" aria-label="${escapeHtml(t('Close find'))}" title="${escapeHtml(t('Close ({key})', { key: t('Esc', undefined, { context: 'keyboard key' }) }))}">&#x2715;</button>
     `;
 
     const input = /** @type {HTMLInputElement} */ (el.querySelector('.find-bar__input'));
@@ -381,10 +390,10 @@ class FindBar {
     if (!hasQuery) {
       text = '';
     } else if (result.total === 0) {
-      text = 'No results';
+      text = t('No results');
       empty = true;
     } else {
-      text = `${result.current} of ${result.total}`;
+      text = t('{current} of {total}', { current: result.current, total: result.total });
     }
     this._counter.textContent = text;
     this._counter.classList.toggle('find-bar__counter--empty', empty);

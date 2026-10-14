@@ -41,6 +41,7 @@ import { assembleSystemPrompt, systemPositionItems as systemPositionItemsOf, con
 import { buildExtensionSystemPromptContributions } from '../services/extensions.js';
 import { estimateTokens } from '../utils/token-estimate.js';
 import { t, markForTranslation } from '../../sdk/lib/i18n.js';
+import { capabilityTitle } from '../utils/capability-label.js';
 
 /**
  * Format tool input for display in approval dialog.
@@ -107,6 +108,8 @@ function allowDenyOptions() {
  * The title and message it writes are in the user's language, as the plugin's
  * own `getTitle()`/`getApprovalConfig()` text beside them is: the engine
  * follows the UI locale, and the plugins that show the title show it as it is.
+ * The base `getTitle()` is the capability's English manifest name, which
+ * `capabilityTitle` translates in its extension's catalogue.
  * A validator's error is the model's English and is stored as given.
  * @param {any} session - Session instance
  * @param {*} request - Approval request from the worker
@@ -156,7 +159,7 @@ export async function handleApprovalRequest(session, request, conversationId) {
     const validation = await action.validate(toolInput);
     if (!validation.valid) {
       updateToolActionApprovalOptions(conv, req.toolUseId, {
-        title: t('Invalid: {title}', { title: action.getTitle() }),
+        title: t('Invalid: {title}', { title: capabilityTitle(action) }),
         message: validation.error || t('Invalid parameters'),
         options: [{ label: markForTranslation('Cancel'), value: 'cancel', style: 'secondary' }]
       });
@@ -175,7 +178,7 @@ export async function handleApprovalRequest(session, request, conversationId) {
 
     const approvalConfig = await action.getApprovalConfig(validation.params || toolInput);
     updateToolActionApprovalOptions(conv, req.toolUseId, {
-      title: approvalConfig?.title || action.getTitle(),
+      title: approvalConfig?.title || capabilityTitle(action),
       message: approvalConfig?.message || formatToolInput(toolInput),
       options: approvalConfig?.options || buildApprovalButtons(action, validation.params || toolInput),
       display: approvalConfig?.display

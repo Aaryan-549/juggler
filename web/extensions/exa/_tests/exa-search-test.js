@@ -11,6 +11,8 @@
 
 import ExaSearchContextItem from '../context-items/exa-search-context-item.js';
 import { assert, createTestConversation, createTestSession, initializeRegistries } from '../../../js-tests/utilities/test-helpers.js';
+import { underPseudoLocale } from '../../../js-tests/utilities/pseudo-locale.js';
+import { isPseudoLocalized } from '../../../sdk/lib/i18n.js';
 
 /**
  * @typedef {object} TestResult
@@ -300,6 +302,60 @@ export async function runTests(_ctx) {
     }));
     assert(summary.summary.includes('First snippet') && summary.summary.includes('Second snippet'),
       'summary should include every highlight');
+  });
+
+  // The panel's Query label and the result-section label, under en-XA. The
+  // no-input fallback is checked with the rows below.
+  await test('en-XA: panel labels', async () => {
+    await underPseudoLocale('exa-search-test', () => {
+      const item = createItem(session, conversation);
+      /** @type {Record<string, string>} */
+      const shown = {};
+      item.renderToolActionDetails(document.createElement('div'), /** @type {any} */ ({
+        input: { query: '1' },
+        helpers: { addSubsection: (/** @type {any} */ _w, /** @type {string} */ label) => { shown['query label'] = label; } },
+      }));
+      shown['result label'] = ExaSearchContextItem.getResultSectionLabel();
+      const raw = Object.entries(shown).filter(([, s]) => !isPseudoLocalized(s));
+      assert(raw.length === 0, `plain English under en-XA: ${JSON.stringify(Object.fromEntries(raw))}`);
+    }, { '@juggler/exa': ['Query', 'Results'] });
+  });
+
+  // Every state of the transcript row, under en-XA. Queries and errors are
+  // digits, so they read as data inside a message.
+  await test('en-XA: transcript rows', async () => {
+    await underPseudoLocale('exa-search-test', () => {
+      const item = createItem(session, conversation);
+      /** @type {Record<string, string>} */
+      const shown = {};
+      /**
+       * @param {string} key
+       * @param {any} status
+       * @param {any} [input]
+       */
+      const row = (key, status, input = { query: '1' }) => {
+        const ui = /** @type {any} */ (item.getStatusUI(status, input));
+        shown[`${key} row`] = String(ui?.summary);
+        shown[`${key} type name`] = String(ui?.typeName);
+      };
+      row('pending', { pending: true });
+      row('pending, long query', { pending: true }, { query: '1'.repeat(45) });
+      row('pending, no query', { pending: true }, {});
+      row('one result', { success: true, result: { count: 1 } });
+      row('many results', { success: true, result: { results: [{}, {}] } });
+      row('failed', { success: false, error: '9' });
+      row('cancelled', { cancelled: true });
+      // With no failure prefix, a failed row is the model's error as given.
+      assert(shown['failed row'] === '9', `the failed row should be the error, got ${shown['failed row']}`);
+      delete shown['failed row'];
+      const raw = Object.entries(shown).filter(([, s]) => !isPseudoLocalized(s));
+      assert(raw.length === 0, `plain English under en-XA: ${JSON.stringify(Object.fromEntries(raw))}`);
+    }, {
+      '@juggler/exa': [
+        'unknown', 'Exa Search', 'Searching Exa for "{query}"...',
+        '{count, plural, one {Found {count} Exa result for "{query}"} other {Found {count} Exa results for "{query}"}}',
+      ],
+    });
   });
 
   return { passed, failed, errors };

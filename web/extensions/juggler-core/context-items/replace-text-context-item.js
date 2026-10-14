@@ -444,7 +444,7 @@ class ReplaceTextContextItem extends EditBase {
 
     /** @type {any} */
     const result = actionStatus.result || {};
-    const path = result.path || toolInput?.file_path || toolInput?.path || 'unknown';
+    const path = result.path || toolInput?.file_path || toolInput?.path || t('unknown');
     // Get just the filename for display
     const filename = basename(path) || path;
 

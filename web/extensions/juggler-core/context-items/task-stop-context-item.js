@@ -156,7 +156,7 @@ class TaskStopContextItem extends ContextItem {
   renderToolActionDetails(wrapper, ctx) {
     const { input, helpers } = ctx;
     const id = String(input.task_id || input.shell_id || '');
-    helpers.addSubsection(wrapper, 'Task', id, 'properties-panel-code');
+    helpers.addSubsection(wrapper, t('Task'), id, 'properties-panel-code');
   }
 }
 

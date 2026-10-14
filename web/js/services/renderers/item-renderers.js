@@ -38,6 +38,7 @@ import { renderTaskDeliveryControl } from '../../../sdk/lib/task-delivery-contro
 import apiService from '../../services/api.js';
 import { plain, yGet } from '../../model/item-accessor.js';
 import { itemGoal } from '../../model/thread-alias.js';
+import { t, markForTranslation, formatDate } from '../../../sdk/lib/i18n.js';
 
 /**
  * Normalise a Yjs Y.Map result (or already-plain object) to a plain JS object.
@@ -108,11 +109,35 @@ function badgeCtx(host) {
  * @type {Record<string, {label: string, icon: string, title: string}>}
  */
 const APPROVAL_SOURCE_META = {
-  user: { label: 'User', icon: 'icon-check', title: 'Approved by the user' },
-  rule: { label: 'Permitted', icon: 'icon-checklist', title: 'Allowed by a permission rule' },
-  strategy: { label: 'Strategy', icon: 'icon-auto-awesome', title: 'Approved by the active strategy' },
-  hook: { label: 'Hook', icon: 'icon-checklist', title: 'Approved by a tool hook' }
+  user: { label: markForTranslation('User'), icon: 'icon-check', title: markForTranslation('Approved by the user') },
+  rule: { label: markForTranslation('Permitted'), icon: 'icon-checklist', title: markForTranslation('Allowed by a permission rule') },
+  strategy: { label: markForTranslation('Strategy'), icon: 'icon-auto-awesome', title: markForTranslation('Approved by the active strategy') },
+  hook: { label: markForTranslation('Hook'), icon: 'icon-checklist', title: markForTranslation('Approved by a tool hook') }
 };
+
+/**
+ * The header status of a tool action that is running, with how long it has
+ * run. Shared with the panel's 1s ticker, which repaints it in place.
+ * @param {number} seconds - Whole seconds since the run started
+ * @returns {string} The status text
+ */
+export function runningStatusText(seconds) {
+  return t('Running… {duration}', { duration: formatDuration(seconds) });
+}
+
+/**
+ * The header status of a settled tool action, with its run time when known.
+ * @param {{cancelled?: boolean, isError?: boolean, fullResult?: {durationMs?: number}}} res - The plain result
+ * @returns {string} The status text
+ */
+function settledStatusText(res) {
+  const durationMs = res.fullResult?.durationMs;
+  if (!durationMs) return res.cancelled ? t('Cancelled') : res.isError ? t('Failed') : t('Completed');
+  const duration = formatDuration(Math.round(durationMs / 1000));
+  if (res.cancelled) return t('Cancelled in {duration}', { duration });
+  if (res.isError) return t('Failed in {duration}', { duration });
+  return t('Completed in {duration}', { duration });
+}
 
 /**
  * Build the approval-provenance badge for a tool-action's properties-panel
@@ -128,12 +153,12 @@ export function buildApprovalSourceBadge(source) {
   if (!meta) return null;
   const badge = document.createElement('span');
   badge.className = `context-item-type-badge properties-panel-approval-badge approval-source-${source}`;
-  badge.title = meta.title;
+  badge.title = t(meta.title);
   const icon = document.createElement('span');
   icon.className = meta.icon;
   icon.setAttribute('aria-hidden', 'true');
   badge.appendChild(icon);
-  badge.appendChild(document.createTextNode(meta.label));
+  badge.appendChild(document.createTextNode(t(meta.label)));
   return badge;
 }
 
@@ -147,17 +172,19 @@ export function renderError(host, container, message) {
 
   const data = readItemData(message);
   if (data) {
-    if (data.provider) panelHelpers.addSubsection(wrapper, 'Provider', data.provider, 'properties-panel-code');
-    if (data.model) panelHelpers.addSubsection(wrapper, 'Model', data.model, 'properties-panel-code');
+    if (data.provider) panelHelpers.addSubsection(wrapper, t('Provider'), data.provider, 'properties-panel-code');
+    if (data.model) panelHelpers.addSubsection(wrapper, t('Model'), data.model, 'properties-panel-code');
     if (data.duration !== undefined && data.duration !== null) {
       const sec = (data.duration / 1000).toFixed(1);
-      panelHelpers.addSubsection(wrapper, 'Duration', `${sec}s`, 'properties-panel-code');
+      panelHelpers.addSubsection(wrapper, t('Duration'), t('{sec}s', { sec }), 'properties-panel-code');
     }
   }
 
   const timestamp = message.get('timestamp');
   if (timestamp) {
-    panelHelpers.addSubsection(wrapper, 'Time', new Date(timestamp).toLocaleTimeString(), 'properties-panel-code');
+    // toLocaleTimeString()'s own defaults, in the UI's formatting locale.
+    const time = formatDate(new Date(timestamp), { hour: 'numeric', minute: 'numeric', second: 'numeric' });
+    panelHelpers.addSubsection(wrapper, t('Time'), time, 'properties-panel-code');
   }
 
   const body = document.createElement('properties-panel-body');
@@ -310,7 +337,7 @@ function renderMessageAttachments(host, wrapper, message) {
   if (attachments.length === 0) return;
 
   const section = panelHelpers.labeledSubsection(
-    attachments.length === 1 ? 'Attachment' : `Attachments (${attachments.length})`
+    t('{count, plural, one {Attachment} other {Attachments ({count})}}', { count: attachments.length })
   );
 
   const list = document.createElement('div');
@@ -328,7 +355,7 @@ function renderMessageAttachments(host, wrapper, message) {
     if (isImage && src) {
       figure.appendChild(createImageThumb({
         src,
-        alt: ref.filename || 'attachment',
+        alt: ref.filename || t('attachment'),
         className: 'properties-panel-attachment-thumb',
         width: ref.width,
         height: ref.height,
@@ -340,7 +367,7 @@ function renderMessageAttachments(host, wrapper, message) {
 
     const name = document.createElement('span');
     name.className = 'properties-panel-attachment-name';
-    name.textContent = ref.filename || ref.id || 'attachment';
+    name.textContent = ref.filename || ref.id || t('attachment');
     name.title = name.textContent;
     caption.appendChild(name);
 
@@ -382,7 +409,7 @@ export function renderContextItem(host, container, contextItem) {
       itemContent.appendChild(itemInstance.createPropertiesPanelElement());
     } catch (err) {
       console.error(`[PropertiesPanel] Failed to render context item ${itemInstance.id}:`, err);
-      itemContent.textContent = 'Error rendering context item';
+      itemContent.textContent = t('Error rendering context item');
     }
     wrapper.appendChild(itemContent);
     container.appendChild(wrapper);
@@ -412,7 +439,7 @@ export function renderContextItem(host, container, contextItem) {
   } else {
     const info = document.createElement('p');
     info.className = 'properties-panel-text';
-    info.textContent = `Item ID: ${itemMsg.get('itemId') || 'Unknown'}`;
+    info.textContent = t('Item ID: {id}', { id: itemMsg.get('itemId') || t('Unknown') });
     body.appendChild(info);
   }
   wrapper.appendChild(body);
@@ -438,14 +465,11 @@ export function renderToolAction(host, container, toolAction) {
   let statusText = undefined;
   const result = toolAction.get('result');
   if (result) {
-    const res = resolveResult(result);
-    const state = res.cancelled ? 'Cancelled' : res.isError ? 'Failed' : 'Completed';
-    const durationMs = res.fullResult?.durationMs;
-    statusText = durationMs ? `${state} in ${formatDuration(Math.round(durationMs / 1000))}` : state;
+    statusText = settledStatusText(resolveResult(result));
   } else if (toolAction.get('toolUseId')) {
     const isAwaitingApproval = toolAction.get('state') === TOOL_STATES.PENDING;
     if (isAwaitingApproval) {
-      statusText = 'Awaiting approval';
+      statusText = t('Awaiting approval');
     } else {
       // Render as an element carrying data-elapsed-since so the panel's
       // 1s ticker can refresh just the digit without re-rendering the
@@ -460,9 +484,9 @@ export function renderToolAction(host, container, toolAction) {
       if (Number.isFinite(startMs) && startMs > 0) {
         span.dataset.elapsedSince = String(startMs);
         const seconds = Math.max(0, Math.round((Date.now() - startMs) / 1000));
-        span.textContent = `Running… ${formatDuration(seconds)}`;
+        span.textContent = runningStatusText(seconds);
       } else {
-        span.textContent = 'Running…';
+        span.textContent = t('Running…');
       }
       statusText = span;
     }
@@ -513,7 +537,7 @@ export function renderToolAction(host, container, toolAction) {
   } else {
     const inputText = JSON.stringify(input, null, 2);
     if (inputText !== '{}') {
-      panelHelpers.addSubsection(wrapper, 'Input', inputText, 'properties-panel-code', { language: 'json' });
+      panelHelpers.addSubsection(wrapper, t('Input'), inputText, 'properties-panel-code', { language: 'json' });
     }
   }
 
@@ -523,9 +547,10 @@ export function renderToolAction(host, container, toolAction) {
   if (extraControls.length) controls.prepend(...extraControls);
 
   if (!renderResult?.skipResultSection) {
+    // A plugin's label is its own, already translated.
     const resultLabel = ActionClass
       ? /** @type {any} */ (ActionClass).getResultSectionLabel(toolName)
-      : 'Result';
+      : t('Result');
 
     // Terminal-output plugins (bash) carry ANSI colour codes in their
     // output — render through the ANSI parser so colours show and stray
@@ -539,13 +564,14 @@ export function renderToolAction(host, container, toolAction) {
       const res = resolveResult(r);
       if (res.isError) {
         // fullResult.error has the canonical message; fall back to the
-        // human-readable content string written for the LLM.
-        const errText = res.fullResult?.error || res.content || 'Error';
+        // human-readable content string written for the LLM. Either is the
+        // model's English, shown as it was; only the fallback word is UI.
+        const errText = res.fullResult?.error || res.content || t('Error');
         resultSection.appendChild(panelHelpers.createCopyableText(errText, 'properties-panel-result error'));
       } else if (res.cancelled) {
         const div = document.createElement('div');
         div.className = 'properties-panel-result cancelled';
-        div.textContent = 'Cancelled';
+        div.textContent = t('Cancelled');
         resultSection.appendChild(div);
       } else {
         // A successful result whose `content`/`output` is an empty string is a
@@ -560,7 +586,7 @@ export function renderToolAction(host, container, toolAction) {
         if (resultText === '') {
           const empty = document.createElement('div');
           empty.className = 'properties-panel-result empty';
-          empty.textContent = 'No output';
+          empty.textContent = t('No output');
           resultSection.appendChild(empty);
         } else {
           // ANSI terminal rendering wins; otherwise highlight per the plugin's
@@ -576,7 +602,7 @@ export function renderToolAction(host, container, toolAction) {
       const isAwaitingApproval = toolAction.get('state') === TOOL_STATES.PENDING;
       const displayDataPlain = yGet(toolAction, 'displayData');
       const streamedOutput = displayDataPlain?.output;
-      const streamText = streamedOutput || displayDataPlain?.status || (isAwaitingApproval ? 'Waiting for approval...' : '');
+      const streamText = streamedOutput || displayDataPlain?.status || (isAwaitingApproval ? t('Waiting for approval...') : '');
       if (isTerminal) applyAnsi(outputDiv, streamText);
       else outputDiv.textContent = streamText;
       resultSection.appendChild(outputDiv);
@@ -615,7 +641,7 @@ export function renderToolAction(host, container, toolAction) {
         if (!awaitingApproval) wrapper.setAttribute('data-processing', 'true');
 
         const ddPlain = yGet(msg, 'displayData');
-        const liveText = ddPlain?.output || ddPlain?.status || (awaitingApproval ? 'Waiting for approval...' : '');
+        const liveText = ddPlain?.output || ddPlain?.status || (awaitingApproval ? t('Waiting for approval...') : '');
         if (isTerminal) applyAnsi(outputDiv, liveText);
         else outputDiv.textContent = liveText;
         return true;
@@ -626,7 +652,7 @@ export function renderToolAction(host, container, toolAction) {
   }
 
   const hooksText = describeHookRecords(yGet(toolAction, 'hooks'));
-  if (hooksText) panelHelpers.addSubsection(wrapper, 'Hooks', hooksText, 'properties-panel-text');
+  if (hooksText) panelHelpers.addSubsection(wrapper, t('Hooks'), hooksText, 'properties-panel-text');
 
   container.appendChild(wrapper);
 }
@@ -634,7 +660,8 @@ export function renderToolAction(host, container, toolAction) {
 /**
  * One line per tool hook that acted on a call, then its note or reason —
  * what it ruled, what it told the model, and whether it failed. The notes are
- * shown in full because they are part of what the model was sent.
+ * shown in full because they are part of what the model was sent; the
+ * hook's name, reason, note and error are its own text, and the rest is UI.
  * @param {unknown} records - The tool-action's `hooks` field, as plain JS
  * @returns {string} The section text, or '' when no hook acted
  */
@@ -644,19 +671,22 @@ export function describeHookRecords(records) {
   const blocks = [];
   for (const r of records) {
     if (!r || typeof r !== 'object') continue;
-    const when = r.event === 'beforeTool' ? 'before the call' : 'after the call';
     /** @type {string[]} */
     const did = [];
-    if (r.verdict === 'deny') did.push('blocked it');
-    else if (r.verdict === 'ask') did.push('held it for your approval');
-    else if (r.verdict === 'allow') did.push('allowed it');
-    if (r.markError) did.push('marked it failed');
-    if (r.note) did.push('added a note for the model');
-    if (r.repeatSuppressed) did.push('had a note already given earlier in this thread');
-    if (r.error) did.push(`failed: ${r.error}`);
-    if (!did.length) did.push('had nothing to add');
-    const source = r.source === 'user' ? 'hook file' : 'extension hook';
-    const lines = [`${r.name || r.id} (${source}), ${when}: ${did.join('; ')}`];
+    if (r.verdict === 'deny') did.push(t('blocked it'));
+    else if (r.verdict === 'ask') did.push(t('held it for your approval'));
+    else if (r.verdict === 'allow') did.push(t('allowed it'));
+    if (r.markError) did.push(t('marked it failed'));
+    if (r.note) did.push(t('added a note for the model'));
+    if (r.repeatSuppressed) did.push(t('had a note already given earlier in this thread'));
+    if (r.error) did.push(t('failed: {error}', { error: r.error }));
+    if (!did.length) did.push(t('had nothing to add'));
+    const lines = [t('{name} ({source, select, user {hook file} other {extension hook}}), {event, select, beforeTool {before the call} other {after the call}}: {actions}', {
+      name: r.name || r.id,
+      source: r.source === 'user' ? 'user' : 'extension',
+      event: r.event === 'beforeTool' ? 'beforeTool' : 'afterTool',
+      actions: did.join('; '),
+    })];
     if (r.reason) lines.push(r.reason);
     if (r.note) lines.push(r.note);
     blocks.push(lines.join('\n'));

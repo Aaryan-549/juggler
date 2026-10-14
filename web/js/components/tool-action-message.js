@@ -12,6 +12,8 @@ import { wrapWithIcon, createErrorArticle } from '../utils/icon-message-renderer
 import { iconOptionsForItem } from '../utils/item-badge.js';
 import { plain, yGet } from '../model/item-accessor.js';
 import { guarded } from '../utils/fault-report.js';
+import { capabilityLabel } from '../utils/capability-label.js';
+import { t } from '../../sdk/lib/i18n.js';
 
 /**
  * @typedef {import('../../sdk/lib/message.js').Message} Message
@@ -360,7 +362,7 @@ class ToolActionMessage extends HTMLElement {
     if (result !== null && result !== undefined) return null;
     const toolName = item.get('toolName') || 'tool';
     const label = this._runningLabel(item, toolName);
-    return { message: label || `Running ${toolName}...`, spinner: true };
+    return { message: label || t('Running {tool}...', { tool: toolName }), spinner: true };
   }
 
   /**
@@ -387,8 +389,9 @@ class ToolActionMessage extends HTMLElement {
       );
       if (!config) return '';
       const summary = (typeof config.summary === 'string' ? config.summary : config.summary?.textContent || '').trim();
-      const typeName = config.typeName || ActionClass.MANIFEST?.name || toolName;
-      return summary ? `${typeName}: ${summary}` : typeName;
+      const name = ActionClass.MANIFEST?.name;
+      const typeName = config.typeName || (name ? capabilityLabel(name, ActionClass.MANIFEST?.id) : toolName);
+      return summary ? t('{type}: {summary}', { type: typeName, summary }) : typeName;
     } catch {
       return '';
     }
@@ -482,7 +485,7 @@ class ToolActionMessage extends HTMLElement {
     // Default fallback
     const label = document.createElement('div');
     label.className = 'pending-approval-label';
-    label.textContent = `${actionId}: Waiting for approval…`;
+    label.textContent = t('{action}: Waiting for approval…', { action: actionId });
 
     this._appendApprovalRow(article, label, item);
     this.appendChild(article);
@@ -706,7 +709,8 @@ class ToolActionMessage extends HTMLElement {
         if (statusConfig) {
           // Ensure error states have a typeName (tool name) even if the plugin didn't set one
           if (!statusConfig.typeName && isErrorState && result?.error) {
-            statusConfig.typeName = ActionClass?.MANIFEST?.name || itemToolName || actionId;
+            const name = ActionClass?.MANIFEST?.name;
+            statusConfig.typeName = name ? capabilityLabel(name, ActionClass?.MANIFEST?.id) : itemToolName || actionId;
           }
 
           const customElement = renderResultStatusMessage(statusConfig);
@@ -731,17 +735,21 @@ class ToolActionMessage extends HTMLElement {
       }
     }
 
-    // Default rendering (fallback if plugin doesn't provide custom UI)
+    // Default rendering (fallback if plugin doesn't provide custom UI). The
+    // capability's manifest name is its English, translated in its extension's
+    // catalogue; a tool name or action id is an identifier.
+    const manifest = ActionClass?.MANIFEST?.name ? ActionClass.MANIFEST : ContextItemClass?.MANIFEST;
+    const capabilityName = manifest?.name ? capabilityLabel(manifest.name, manifest.id) : '';
     if (result?.success) {
-      const displayName = ActionClass?.MANIFEST?.name || ContextItemClass?.MANIFEST?.name || itemToolName || actionId;
-      const content = result.formatted?.summary || `${displayName}: Completed`;
+      const displayName = capabilityName || itemToolName || actionId;
+      const content = result.formatted?.summary || t('{name}: Completed', { name: displayName });
       const statusElement = renderResultStatusMessage({
         summary: content,
         status: 'success'
       });
       article.appendChild(this._wrapWithIcon(statusElement));
     } else if (result?.error) {
-      const toolName = result.toolName || itemToolName || ActionClass?.MANIFEST?.name || ContextItemClass?.MANIFEST?.name || actionId;
+      const toolName = result.toolName || itemToolName || capabilityName || actionId;
       const errorElement = renderResultStatusMessage({
         typeName: toolName,
         summary: result.error,

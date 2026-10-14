@@ -5,10 +5,13 @@
 
 import PinboardItemType from 'juggler/pinboard-item-type';
 import { readFile, writeFile } from 'juggler/ops';
+import { translator } from 'juggler/i18n';
 import { createElement, extractErrorMessage, injectStylesOnce } from 'juggler/ui';
 import { parseMemory, removeEntry } from '../lib/memory-format.js';
 import { pinEmpty } from '../lib/pin-empty.js';
 import { pathPinController } from '../lib/path-pin.js';
+
+const t = translator('@juggler/core');
 
 injectStylesOnce('memory-pin-styles', `
 .memory-pin {
@@ -108,7 +111,7 @@ class MemoryPin extends PinboardItemType {
    * @returns {true|string} True when there is a project to read memory from.
    */
   canAdd(active) {
-    return active?.project?.path ? true : 'No project';
+    return active?.project?.path ? true : t('No project');
   }
 
   /**
@@ -120,7 +123,7 @@ class MemoryPin extends PinboardItemType {
    * @returns {import('juggler/pinboard-item-type').PinDescription} The tab's word and the file.
    */
   describe(config, active) {
-    return { title: this.name, path: absoluteMemoryPath(config, active) };
+    return { title: t(this.name), path: absoluteMemoryPath(config, active) };
   }
 
   /**
@@ -173,12 +176,10 @@ class MemoryPin extends PinboardItemType {
       if (!entries.length) {
         // An empty board is where most people meet memory for the first time, so
         // this says what the feature is rather than what the card would contain.
-        body.replaceChildren(pinEmpty(
-          'Facts the assistant keeps about this project, in .juggler/MEMORY.md. '
-          + 'Ask it to remember something — a build command, a convention, a decision '
-          + 'you would rather not explain twice — and every conversation after this one '
-          + 'starts with it already read.',
-        ));
+        body.replaceChildren(pinEmpty(t(
+          'Facts the assistant keeps about this project, in {file}. Ask it to remember something — a build command, a convention, a decision you would rather not explain twice — and every conversation after this one starts with it already read.',
+          { file: DEFAULT_PATH },
+        )));
         return;
       }
 
@@ -191,8 +192,8 @@ class MemoryPin extends PinboardItemType {
         const del = document.createElement('button');
         del.type = 'button';
         del.className = 'memory-delete icon-btn';
-        del.title = 'Forget this';
-        del.setAttribute('aria-label', 'Delete memory item');
+        del.title = t('Forget this');
+        del.setAttribute('aria-label', t('Delete memory item'));
         del.innerHTML = '<span class="icon-trashcan"></span>';
         del.addEventListener('click', async (event) => {
           event.stopPropagation();
@@ -208,7 +209,7 @@ class MemoryPin extends PinboardItemType {
             if (context.signal.aborted) return;
             del.disabled = false;
             body.querySelector('.memory-pin__error')?.remove();
-            body.prepend(createElement('div', 'memory-pin__error', `Couldn't delete it. ${extractErrorMessage(error)}`));
+            body.prepend(createElement('div', 'memory-pin__error', t("Couldn't delete it. {error}", { error: extractErrorMessage(error) })));
           }
         });
         li.appendChild(del);

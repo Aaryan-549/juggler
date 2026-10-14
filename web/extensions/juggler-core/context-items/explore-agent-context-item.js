@@ -5,6 +5,7 @@
 
 import SubagentContextItem from './subagents/subagent-item.js';
 import ExploreSubagentStrategyType from './subagents/explore-strategy.js';
+import { markForTranslation } from 'juggler/i18n';
 
 /**
  * ExploreAgentContextItem - the `Explore` sub-agent.
@@ -61,7 +62,8 @@ class ExploreAgentContextItem extends SubagentContextItem {
     resultSpec:
       'the answer to the task; the evidence as a list of `file:line — what is there`; ' +
       'and the paths worth reading next. Say what you looked for and did not find rather than guessing.',
-    verbs: { pending: 'Exploring…', done: 'Explored' },
+    label: markForTranslation('Explore'),
+    verbs: { pending: markForTranslation('Exploring…'), done: markForTranslation('Explored') },
     fallback: 'Search the code directly with grep, glob and read.'
   };
 }

@@ -26,6 +26,8 @@ import pinboardItemRegistry from '../registries/pinboard-item-registry.js';
 import pinboardStore from '../services/pinboard-store.js';
 import { presentPopup, POPUP_REVEALED_EVENT } from '../utils/popup-surface.js';
 import { attachMenuKeyboard, focusMenuItem } from '../utils/menu-roles.js';
+import { capabilityLabel } from '../utils/capability-label.js';
+import { t } from '../../sdk/lib/i18n.js';
 
 /** Shared popup id, so opening any other menu dismisses this one. */
 const POPUP_ID = 'pinboard-add-picker';
@@ -37,9 +39,9 @@ const FILTER_THRESHOLD = 8;
  * One row's worth of decisions about an item type.
  * @typedef {object} PickerEntry
  * @property {string} id - Item-type id.
- * @property {string} name - What to call it here.
+ * @property {string} name - What to call it here, in the active locale.
  * @property {number} order - The sort key it asked for.
- * @property {string} reason - Why it can't be added, or '' when it can.
+ * @property {string} reason - Why it can't be added (in the active locale), or '' when it can.
  * @property {boolean} pinned - Whether a singleton of this type is already on the board.
  */
 
@@ -61,17 +63,19 @@ function collectEntries(active) {
     if (manifest.addable === false) continue;
     let reason = '';
     try {
+      // A reason the type gives is its own words, already translated by it.
       const allowed = type.canAdd(active);
-      if (allowed !== true) reason = typeof allowed === 'string' ? allowed : 'Unavailable';
+      if (allowed !== true) reason = typeof allowed === 'string' ? allowed : t('Unavailable');
     } catch (err) {
       console.error(`[Pinboard] Item type "${type.id}" failed to answer canAdd:`, err);
-      reason = 'Unavailable';
+      reason = t('Unavailable');
     }
     entries.push({
       id: type.id,
       // What the menu calls it, which is not always what the pin is called: a
       // type that opens a chooser rather than adding on the spot says so here.
-      name: manifest.addLabel || type.name,
+      // Both are the manifest's English, translated in its extension's catalogue.
+      name: capabilityLabel(manifest.addLabel || type.name, type.id, pinboardItemRegistry),
       order: Number.isFinite(manifest.order) ? Number(manifest.order) : 0,
       reason,
       pinned: !type.allowsMultiple && pinnedTypes.has(type.id),
@@ -112,8 +116,8 @@ export function openAddPicker({ anchor, active, onPick }) {
     filter = document.createElement('input');
     filter.type = 'search';
     filter.className = 'pinboard-add-picker__filter field-input';
-    filter.placeholder = 'Search…';
-    filter.setAttribute('aria-label', 'Search pinboard items');
+    filter.placeholder = t('Search…');
+    filter.setAttribute('aria-label', t('Search pinboard items'));
     filter.addEventListener('input', () => render(filter?.value || ''));
     menu.appendChild(filter);
   }
@@ -121,7 +125,7 @@ export function openAddPicker({ anchor, active, onPick }) {
   // The menu is the list alone: the filter field beside it is not an item.
   const list = document.createElement('menu');
   list.setAttribute('role', 'menu');
-  list.setAttribute('aria-label', 'Add to Pinboard');
+  list.setAttribute('aria-label', t('Add to Pinboard'));
   menu.appendChild(list);
   // ArrowDown leaves the filter for the first row it left standing.
   filter?.addEventListener('keydown', (e) => {
@@ -150,7 +154,7 @@ export function openAddPicker({ anchor, active, onPick }) {
       empty.className = 'menu-item unavailable';
       empty.setAttribute('role', 'menuitem');
       empty.setAttribute('aria-disabled', 'true');
-      empty.textContent = needle ? 'Nothing.' : 'Nothing to add.';
+      empty.textContent = needle ? t('Nothing.') : t('Nothing to add.');
       list.appendChild(empty);
       return;
     }

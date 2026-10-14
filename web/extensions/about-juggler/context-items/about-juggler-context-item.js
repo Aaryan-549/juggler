@@ -226,7 +226,7 @@ class AboutJugglerContextItem extends ContextItem {
    * @returns {string} Section label
    */
   static getResultSectionLabel(_toolName) {
-    return 'Manual';
+    return t('Manual');
   }
 }
 

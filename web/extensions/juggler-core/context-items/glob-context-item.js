@@ -228,7 +228,7 @@ class GlobContextItem extends ContextItem {
    * @returns {import('juggler/context-item').ResultStatusMessage|null} Status message config
    */
   getStatusUI(actionStatus, toolInput, context) {
-    const pattern = /** @type {string} */ (toolInput?.pattern) || 'unknown';
+    const pattern = /** @type {string} */ (toolInput?.pattern) || t('unknown');
     const searchPath = /** @type {string|undefined} */ (toolInput?.path);
     const projectPath = /** @type {any} */ (context?.session)?.projectPath || this.session?.projectPath;
     const displayPattern = searchPath ? `${formatPathForStatus(searchPath, projectPath)}/${pattern}` : pattern;
@@ -254,7 +254,7 @@ class GlobContextItem extends ContextItem {
    * @returns {string} Section label
    */
   static getResultSectionLabel(_toolName) {
-    return 'Matches';
+    return t('Matches');
   }
 
   /**
@@ -265,9 +265,9 @@ class GlobContextItem extends ContextItem {
    */
   renderToolActionDetails(wrapper, ctx) {
     const { input, helpers } = ctx;
-    helpers.addSubsection(wrapper, 'Pattern', input.pattern || '', 'properties-panel-code');
+    helpers.addSubsection(wrapper, t('Pattern'), input.pattern || '', 'properties-panel-code');
     if (input.path) {
-      helpers.addSubsection(wrapper, 'Path', input.path, 'properties-panel-code');
+      helpers.addSubsection(wrapper, t('Path'), input.path, 'properties-panel-code');
     }
   }
 }

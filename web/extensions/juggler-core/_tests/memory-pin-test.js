@@ -23,6 +23,14 @@
 import MemoryPin from '../pins/memory-pin.js';
 import { writeFileOp } from '../../../js/services/ops-api.js';
 import { assert } from '../../../js-tests/utilities/test-helpers.js';
+import { underPseudoLocale, shownStrings } from '../../../js-tests/utilities/pseudo-locale.js';
+import { isPseudoLocalized } from '../../../sdk/lib/i18n.js';
+
+/** juggler-core's English for this pin, standing in for its catalogue. */
+const CORE_TEXT = [
+  'No project', 'Memory', 'Forget this', 'Refresh', 'Delete memory item', "Couldn't delete it. {error}",
+  'Facts the assistant keeps about this project, in {file}. Ask it to remember something \u2014 a build command, a convention, a decision you would rather not explain twice \u2014 and every conversation after this one starts with it already read.',
+];
 
 /**
  * @typedef {object} TestResult
@@ -398,6 +406,66 @@ export async function runTests(ctx) {
     assert(!config.includes('make build'),
       'board state is shared and long-lived; it holds a path, never the file');
     m.teardown();
+  });
+
+  // --- en-XA ----------------------------------------------------------------
+
+  await test('en-XA: the add reason, tab title, empty state, entry controls and delete error are translated', async () => {
+    await underPseudoLocale('memory-pin-test', async () => {
+      // Every read and write is answered here: no file is touched.
+      let content = '';
+      const realFetch = window.fetch;
+      window.fetch = /** @type {any} */ (async (/** @type {any} */ url, /** @type {any} */ init) => {
+        if (!String(url).includes('/ops/call')) return realFetch(url, init);
+        const { operation } = JSON.parse(init.body);
+        const reply = operation === 'loadFile'
+          ? { success: true, data: { content } }
+          : { success: false, error: '7' };
+        return new window.Response(JSON.stringify(reply), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      });
+      /**
+       * @param {HTMLElement} body - The pin's body.
+       * @param {string} selector - What to wait for.
+       * @returns {Promise<Element>} The element.
+       */
+      const waitFor = async (body, selector) => {
+        const deadline = Date.now() + 5000;
+        while (Date.now() < deadline) {
+          const el = body.querySelector(selector);
+          if (el) return el;
+          await new Promise((r) => { setTimeout(r, 20); });
+        }
+        throw new Error(`never drew ${selector}: ${JSON.stringify(body.textContent)}`);
+      };
+      /** @type {Record<string, string>} */
+      const shown = {};
+      try {
+        shown['add reason'] = String(pin.canAdd(/** @type {any} */ ({ project: { path: '' } })));
+        shown['tab title'] = String(pin.describe({}, /** @type {any} */ ({ project: { path: '/1' } })).title);
+
+        const empty = mount('/1/2.md');
+        const line = await waitFor(empty.body, '.pin-empty');
+        shown['empty state'] = (line.textContent || '').replace('.juggler/MEMORY.md', '');
+        empty.teardown();
+
+        content = '# Memory\n\n- [2026-06-14] 1\n';
+        const full = mount('/1/3.md');
+        await waitFor(full.body, '.memory-entry');
+        shownStrings(full.body, '.memory-date, .memory-text')
+          .forEach((s, i) => { shown[`entry ${i}`] = s; });
+        // The shared path-pin controller's one action, drawn by the host toolbar.
+        shown['refresh action'] = String(full.controller.getActions()[0]?.label);
+        /** @type {HTMLButtonElement} */ (full.body.querySelector('.memory-delete')).click();
+        const error = await waitFor(full.body, '.memory-pin__error');
+        shown['delete error'] = String(error.textContent);
+        full.teardown();
+      } finally {
+        window.fetch = realFetch;
+      }
+      assert(Object.keys(shown).some((k) => k.startsWith('entry ')), 'the entry drew no controls to check');
+      const raw = Object.entries(shown).filter(([, s]) => !isPseudoLocalized(s));
+      assert(raw.length === 0, `plain English under en-XA: ${JSON.stringify(raw)}`);
+    }, { '@juggler/core': CORE_TEXT });
   });
 
   return { passed, failed, errors };

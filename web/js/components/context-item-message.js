@@ -6,6 +6,7 @@ import BaseMessage from './base-message.js';
 import { renderResultStatusMessage } from '../../sdk/lib/html.js';
 import { wrapWithIcon, TYPE_ICONS } from '../utils/icon-message-renderer.js';
 import { iconOptionsForItem } from '../utils/item-badge.js';
+import { capabilityLabel, capabilityTitle } from '../utils/capability-label.js';
 
 /**
  * Context item message component - icon + custom content with plugin icon support
@@ -43,7 +44,9 @@ class ContextItemMessage extends BaseMessage {
     const messageThread = this._getMessageThread();
     const contextItem = this.itemId ? messageThread?.getContextItem(this.itemId) : null;
     const itemType = contextItem?.type || this.itemType;
-    const manifestName = contextItem?.getManifest?.()?.name || itemType;
+    // The manifest name is the capability's English; a bare type id is an identifier.
+    const manifest = contextItem?.getManifest?.();
+    const manifestName = manifest?.name ? capabilityLabel(manifest.name, manifest.id) : itemType;
 
     // Handle error case
     if (this.error) {
@@ -56,7 +59,7 @@ class ContextItemMessage extends BaseMessage {
       return;
     }
 
-    const title = contextItem?.getTitle?.() || '';
+    const title = contextItem?.getTitle ? capabilityTitle(contextItem) || '' : '';
 
     // Icon + colour from the one shared resolver, so this tile and the
     // properties-panel header always paint the same badge.

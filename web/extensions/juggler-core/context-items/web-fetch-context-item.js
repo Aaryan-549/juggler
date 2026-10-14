@@ -304,7 +304,7 @@ class WebFetchContextItem extends ContextItem {
    * @returns {import('juggler/context-item').ResultStatusMessage|null} Status message config
    */
   getStatusUI(actionStatus, toolInput) {
-    const url = String(toolInput?.url || 'unknown');
+    const url = String(toolInput?.url || t('unknown'));
     // Truncate URL for display
     const displayUrl = url.length > 60 ? url.substring(0, 60) + '...' : url;
 
@@ -329,7 +329,7 @@ class WebFetchContextItem extends ContextItem {
    * @returns {string} Section label
    */
   static getResultSectionLabel(_toolName) {
-    return 'Content';
+    return t('Content');
   }
 
   /**
@@ -341,10 +341,10 @@ class WebFetchContextItem extends ContextItem {
   renderToolActionDetails(wrapper, ctx) {
     const { input, helpers } = ctx;
     const url = input.url !== null && input.url !== undefined ? String(input.url) : '';
-    helpers.addSubsection(wrapper, 'URL', url, 'properties-panel-code');
+    helpers.addSubsection(wrapper, t('URL'), url, 'properties-panel-code');
     if (input.prompt) {
       const p = input.prompt !== null && input.prompt !== undefined ? String(input.prompt) : '';
-      helpers.addSubsection(wrapper, 'Prompt', p, 'properties-panel-code');
+      helpers.addSubsection(wrapper, t('Prompt'), p, 'properties-panel-code');
     }
   }
 }

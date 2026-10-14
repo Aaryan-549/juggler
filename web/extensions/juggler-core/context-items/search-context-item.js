@@ -348,7 +348,7 @@ class SearchContextItem extends ContextItem {
    * @returns {import('juggler/context-item').ResultStatusMessage|null} Status message config
    */
   getStatusUI(actionStatus, toolInput) {
-    const pattern = String(toolInput?.pattern || 'unknown');
+    const pattern = String(toolInput?.pattern || t('unknown'));
     const path = toolInput?.path ? String(toolInput.path) : null;
     const shownPath = path ? formatPathForStatus(path, this.session?.projectPath) : '';
 
@@ -373,7 +373,7 @@ class SearchContextItem extends ContextItem {
    * @returns {string} Section label
    */
   static getResultSectionLabel(_toolName) {
-    return 'Matches';
+    return t('Matches');
   }
 
   /**
@@ -384,16 +384,16 @@ class SearchContextItem extends ContextItem {
    */
   renderToolActionDetails(wrapper, ctx) {
     const { input, helpers } = ctx;
-    helpers.addSubsection(wrapper, 'Pattern', input.pattern || '', 'properties-panel-code');
+    helpers.addSubsection(wrapper, t('Pattern'), input.pattern || '', 'properties-panel-code');
 
     // Show which paths the grep was looking in. An explicit `path` narrows the
     // search; otherwise the search spans the conversation's allowed roots.
     if (input.path) {
-      helpers.addSubsection(wrapper, 'Searched in', String(input.path), 'properties-panel-code');
+      helpers.addSubsection(wrapper, t('Searched in'), String(input.path), 'properties-panel-code');
     } else {
       const allowed = this.getAllowedPaths();
       if (allowed.length > 0) {
-        helpers.addSubsection(wrapper, 'Searched in', allowed.join('\n'), 'properties-panel-code');
+        helpers.addSubsection(wrapper, t('Searched in'), allowed.join('\n'), 'properties-panel-code');
       }
     }
   }

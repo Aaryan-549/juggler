@@ -6,6 +6,9 @@
 import ContextItem from 'juggler/context-item';
 import { effortInstruction, thoroughnessSchema } from './thoroughness.js';
 import strategyRegistry from '../../../../js/registries/strategy-registry.js';
+import { translator, markUntranslated } from 'juggler/i18n';
+
+const t = translator('@juggler/core');
 
 /**
  * What one sub-agent is, stated as data.
@@ -25,7 +28,8 @@ import strategyRegistry from '../../../../js/registries/strategy-registry.js';
  * @property {string} continues - What a session continues, completing "to continue that same …" (e.g. 'investigation')
  * @property {string} lead - Opening line of the child's seed, above the task
  * @property {string} resultSpec - The child's return contract, completing "Your final message must contain …"
- * @property {{pending: string, done: string}} verbs - Status-line wording while running and once finished
+ * @property {string} label - English source (`markForTranslation`) of the name the transcript row shows as its type name and failure prefix; `tool` stays the identifier
+ * @property {{pending: string, done: string}} verbs - English source (`markForTranslation`) of the status-line wording while running and once finished
  * @property {string} fallback - What the caller should do by hand when delegation was impossible
  */
 
@@ -186,7 +190,8 @@ export default class SubagentContextItem extends ContextItem {
    */
   async execute() {
     const { tool, fallback } = /** @type {typeof SubagentContextItem} */ (this.constructor).descriptor();
-    throw new Error(`${tool} couldn't start a sub-agent, so no work was done. ${fallback}`);
+    // Becomes the tool's outcome.error, which the model reads.
+    throw new Error(markUntranslated(`${tool} couldn't start a sub-agent, so no work was done. ${fallback}`));
   }
 
   /**
@@ -197,13 +202,13 @@ export default class SubagentContextItem extends ContextItem {
    * @returns {import('juggler/context-item').ResultStatusMessage|null} Status message config
    */
   getStatusUI(actionStatus, toolInput) {
-    const { tool, verbs } = /** @type {typeof SubagentContextItem} */ (this.constructor).descriptor();
+    const { label, verbs } = /** @type {typeof SubagentContextItem} */ (this.constructor).descriptor();
     const task = String(toolInput?.task || '');
     return this.buildStatusUI(actionStatus, {
-      typeName: tool,
-      pending: task || verbs.pending,
-      success: () => task || verbs.done,
-      failurePrefix: tool
+      typeName: t(label),
+      pending: task || t(verbs.pending),
+      success: () => task || t(verbs.done),
+      failurePrefix: t(label)
     });
   }
 
@@ -215,7 +220,7 @@ export default class SubagentContextItem extends ContextItem {
    */
   renderToolActionDetails(wrapper, ctx) {
     const { input, helpers } = ctx;
-    if (input.task) helpers.addSubsection(wrapper, 'Task', String(input.task), 'properties-panel-code');
-    if (input.thoroughness) helpers.addSubsection(wrapper, 'Thoroughness', String(input.thoroughness));
+    if (input.task) helpers.addSubsection(wrapper, t('Task'), String(input.task), 'properties-panel-code');
+    if (input.thoroughness) helpers.addSubsection(wrapper, t('Thoroughness'), String(input.thoroughness));
   }
 }

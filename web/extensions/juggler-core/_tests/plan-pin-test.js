@@ -23,6 +23,14 @@ import PlanContextItem from '../context-items/plan-context-item.js';
 import pinboardItemRegistry from '../../../js/registries/pinboard-item-registry.js';
 import { createPinControl } from '../../../js/utils/properties-panel-helpers.js';
 import { assert } from '../../../js-tests/utilities/test-helpers.js';
+import { underPseudoLocale } from '../../../js-tests/utilities/pseudo-locale.js';
+import { isPseudoLocalized } from '../../../sdk/lib/i18n.js';
+
+/** juggler-core's English for this pin, standing in for its catalogue. */
+const CORE_TEXT = [
+  'No active conversation', 'If the conversation contains a plan, this shows its current state',
+  'From {label}', 'From a parent thread', 'Reveal in conversation',
+];
 
 /**
  * @typedef {object} TestResult
@@ -405,6 +413,34 @@ export async function runTests(_ctx) {
       `it belongs with Re-run and Delete, not in the body: ${button?.className}`);
     assert((button?.textContent || '').includes('Pin to Pinboard'),
       `a control in that block is labelled, not a bare icon: ${button?.textContent}`);
+  });
+
+  // --- en-XA ----------------------------------------------------------------
+
+  await test('en-XA: the add reason, empty state, source lines and reveal action are translated', async () => {
+    await underPseudoLocale('plan-pin-test', async () => {
+      /** @type {Record<string, string>} */
+      const shown = {};
+      shown['add reason'] = String(pin.canAdd(/** @type {any} */ ({ conversation: null })));
+
+      const empty = mount(null);
+      shown['empty state'] = (empty.body.textContent || '').trim();
+      shown['reveal label'] = String(empty.controller.getActions()[0]?.label);
+      empty.teardown();
+
+      // The plan block itself is `createPlanBlock`'s, shared with the model's
+      // text, and is not this pin's to translate; only the line above it is.
+      const named = mount(planFound(twoSteps, { threadId: 't1', label: '1', inherited: true }));
+      shown['source line'] = String(named.body.querySelector('.task-list-pin__source')?.textContent);
+      shown['reveal label, with a plan'] = String(named.controller.getActions()[0]?.label);
+      named.teardown();
+      const unnamed = mount(planFound(twoSteps, { threadId: 't1', label: '', inherited: true }));
+      shown['source line, unnamed thread'] = String(unnamed.body.querySelector('.task-list-pin__source')?.textContent);
+      unnamed.teardown();
+
+      const raw = Object.entries(shown).filter(([, s]) => !isPseudoLocalized(s));
+      assert(raw.length === 0, `plain English under en-XA: ${JSON.stringify(raw)}`);
+    }, { '@juggler/core': CORE_TEXT });
   });
 
   return { passed, failed, errors };

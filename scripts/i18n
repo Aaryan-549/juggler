@@ -255,10 +255,10 @@ function manifestMessages(manifest) {
 
 /**
  * The text a capability class declares about itself, which the UI shows (the
- * Extensions catalogue, the strategy pickers) with a t() scoped to the owning
- * extension: the `name` and `description` literals of each
- * `static MANIFEST = {…}` in a module. They sit in a class field, where no t()
- * can mark them.
+ * Extensions catalogue, the strategy pickers, the Pinboard's add picker) with a
+ * t() scoped to the owning extension: the `name`, `description` and (a pinboard
+ * item type's) `addLabel` literals of each `static MANIFEST = {…}` in a module.
+ * They sit in a class field, where no t() can mark them.
  * @param {any} ast - A parsed module.
  * @returns {string[]}
  */
@@ -271,7 +271,7 @@ function capabilityMessages(ast) {
     for (const prop of node.value.properties) {
       if (prop.type !== 'Property' || prop.computed) continue;
       const key = prop.key.type === 'Identifier' ? prop.key.name : prop.key.value;
-      if (key !== 'name' && key !== 'description') continue;
+      if (key !== 'name' && key !== 'description' && key !== 'addLabel') continue;
       const value = staticString(prop.value);
       if (value !== null && /[A-Za-z]/.test(value)) out.push(value);
     }

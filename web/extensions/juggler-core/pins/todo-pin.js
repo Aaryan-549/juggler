@@ -6,6 +6,9 @@
 import PinboardItemType from 'juggler/pinboard-item-type';
 import { createTodoBlock } from '../lib/task-lists.js';
 import { mountTaskListPin } from '../lib/task-list-pin.js';
+import { translator, markForTranslation } from 'juggler/i18n';
+
+const t = translator('@juggler/core');
 
 /**
  * TodoPin — the current checklist, kept where it can be watched.
@@ -39,7 +42,7 @@ class TodoPin extends PinboardItemType {
    * @returns {true|string} True when there is a conversation to read a list from.
    */
   canAdd(active) {
-    return active?.conversation ? true : 'No active conversation';
+    return active?.conversation ? true : t('No active conversation');
   }
 
   /**
@@ -72,7 +75,7 @@ class TodoPin extends PinboardItemType {
       itemType: 'todo',
       itemsOf: (data) => data?.todos || [],
       render: (_data, todos) => createTodoBlock(todos),
-      empty: 'If the conversation contains a TODO list, this shows its current state',
+      empty: markForTranslation('If the conversation contains a TODO list, this shows its current state'),
     });
   }
 }

@@ -128,7 +128,7 @@ class TaskOutputContextItem extends ContextItem {
    * @returns {string} Section label
    */
   static getResultSectionLabel() {
-    return 'Output';
+    return t('Output');
   }
 
   /**
@@ -143,7 +143,7 @@ class TaskOutputContextItem extends ContextItem {
    */
   renderToolActionDetails(wrapper, ctx) {
     const { input, helpers } = ctx;
-    helpers.addSubsection(wrapper, 'Task', String(input.task_id || ''), 'properties-panel-code');
+    helpers.addSubsection(wrapper, t('Task'), String(input.task_id || ''), 'properties-panel-code');
   }
 
   /**

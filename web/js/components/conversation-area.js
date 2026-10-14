@@ -58,6 +58,7 @@ import { ReplySuggestionsController } from '../services/reply-suggestions-contro
 import { STARTER_PROMPTS } from '../utils/starter-prompts.js';
 import { areReplySuggestionsEnabled, REPLY_SUGGESTIONS_SETTING_EVENT } from '../services/reply-suggestions-setting.js';
 import { TIPS_CHANGED_EVENT } from '../services/tips-manager.js';
+import { t } from '../../sdk/lib/i18n.js';
 
 /**
  * Duration of the insert/relayout FLIP glide — the eased motion that replaces
@@ -921,7 +922,7 @@ class ConversationArea extends HTMLElement {
       mount: /** @type {HTMLElement} */ (
         this.querySelector('conversation-message-list-wrapper') || this
       ),
-      label: 'Find in conversation',
+      label: t('Find in conversation'),
       restoreFocus: () => {
         const textarea = /** @type {HTMLElement|null} */ (
           this.querySelector('composer-box textarea')

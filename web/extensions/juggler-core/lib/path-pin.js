@@ -11,6 +11,10 @@
  * @module lib/path-pin
  */
 
+import { translator } from 'juggler/i18n';
+
+const t = translator('@juggler/core');
+
 /**
  * How one path pin plugs into the shared controller.
  * @typedef {object} PathPinSpec
@@ -47,7 +51,7 @@ export function pathPinController({ getContext, setContext, targetOf, render, te
     },
     teardown,
     getActions: () => [
-      { id: 'refresh', label: 'Refresh', icon: 'refresh', primary: true, run: () => render() },
+      { id: 'refresh', label: t('Refresh'), icon: 'refresh', primary: true, run: () => render() },
     ],
   };
 }

@@ -401,9 +401,9 @@ class BatchContextItem extends ContextItem {
    * @returns {string} Section label
    */
   static getResultSectionLabel(toolName) {
-    if (toolName === 'batch_grep') return 'Matches';
-    if (toolName === 'batch_read') return 'Content';
-    return 'Result';
+    if (toolName === 'batch_grep') return t('Matches');
+    if (toolName === 'batch_read') return t('Content');
+    return t('Result');
   }
 
   /**
@@ -422,10 +422,10 @@ class BatchContextItem extends ContextItem {
     const entries = Array.isArray(coerced) ? coerced : [];
     if (entries.length === 0) return;
 
-    const label = isGrep ? 'Searches' : 'Files';
-    const section = helpers.labeledSubsection(
-      entries.length === 1 ? label.slice(0, -1) : `${label} (${entries.length})`
-    );
+    const count = entries.length;
+    const section = helpers.labeledSubsection(isGrep
+      ? t('{count, plural, =1 {Searche} other {Searches ({count})}}', { count })
+      : t('{count, plural, =1 {File} other {Files ({count})}}', { count }));
 
     if (isGrep) {
       const lines = entries.map((/** @type {any} */ e, /** @type {number} */ i) =>

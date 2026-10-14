@@ -27,8 +27,14 @@
  */
 
 import { TOOL_STATES } from '../../sdk/lib/message.js';
-import { buildApprovalSourceBadge } from '../../js/services/renderers/item-renderers.js';
+import {
+  buildApprovalSourceBadge, renderError, renderMessage, renderContextItem, renderToolAction,
+} from '../../js/services/renderers/item-renderers.js';
 import contextItemRegistry from '../../js/registries/context-item-registry.js';
+import { isPseudoLocalized } from '../../sdk/lib/i18n.js';
+import { formatDuration } from '../../js/utils/format.js';
+import { assert } from '../utilities/test-helpers.js';
+import { underPseudoLocale, shownStrings } from '../utilities/pseudo-locale.js';
 import '../../js/components/tool-action-message.js'; // registers the custom element
 import '../../js/components/action-confirmation.js'; // registers <action-confirmation>
 
@@ -250,6 +256,155 @@ export async function runTests() {
     }
     passed++;
   } catch (e) { failed++; errors.push(`approval-source badge: ${e.message}`); }
+
+  // F — en-XA: every word the properties panel's item renderers draw follows
+  // the UI language, in every state. The data (provider, model, ids, results,
+  // hook notes) is digits, so a string with no letter at all is data and is
+  // left out; the formatted time is checked only for being there.
+  try {
+    await underPseudoLocale('tool-action-render-test', async () => {
+      /** @type {{where: string, text: string}[]} */
+      const shown = [];
+      const collect = (/** @type {string} */ where, /** @type {string[]} */ strings) => {
+        for (const text of strings) if (/\p{L}/u.test(text)) shown.push({ where, text });
+      };
+      /** @type {any[]} */
+      const threadItems = [];
+      const host = /** @type {any} */ ({
+        _conversation: null,
+        _messageThread: { items: threadItems },
+        _selectedItemId: '1',
+        _liveUpdater: null,
+        // The panel's own chrome (properties-panel.js) is not this file's: the
+        // stand-in draws only the header status this file passes it.
+        _createSectionWithControls: (/** @type {any} */ _title, /** @type {any} */ _badge, /** @type {HTMLElement|null} */ controls, /** @type {string|HTMLElement|undefined} */ statusText) => {
+          const section = document.createElement('properties-panel-section');
+          const header = document.createElement('div');
+          header.className = 'properties-panel-header';
+          if (typeof statusText === 'string') {
+            const span = document.createElement('span');
+            span.textContent = statusText;
+            header.appendChild(span);
+          } else if (statusText) header.appendChild(statusText);
+          section.appendChild(header);
+          if (controls) section.appendChild(controls);
+          return section;
+        },
+        _renderMessageControls: () => document.createElement('properties-panel-controls'),
+        _renderContextItemControls: () => document.createElement('properties-panel-controls'),
+        _renderToolActionControls: () => document.createElement('properties-panel-controls'),
+      });
+      const item = (/** @type {Record<string, any>} */ fields) => ({ get: (/** @type {string} */ k) => fields[k] });
+
+      // An error item with provider, model, duration and time.
+      const errBox = document.createElement('div');
+      renderError(host, errBox, item({
+        type: 'error', content: '7', timestamp: Date.now(),
+        data: { provider: '1', model: '2', duration: 1500 },
+      }));
+      const timeSub = errBox.querySelector('properties-panel-subsection:last-of-type pre');
+      assert(!!timeSub?.textContent?.trim(), 'the Time subsection shows no time');
+      collect('error item', shownStrings(errBox, 'properties-panel-subsection:last-of-type pre'));
+
+      // A user message with one attachment, then with two — the second an
+      // unnamed image, whose thumbnail's alt text is the fallback word.
+      for (const attachments of [
+        [{ id: '1', filename: '1', bytes: 0 }],
+        [{ id: '1', filename: '1', bytes: 0 }, { id: '2', mime: 'image/png', bytes: 0 }],
+      ]) {
+        const box = document.createElement('div');
+        host._conversation = { id: '1' };
+        try {
+          renderMessage(host, box, item({ type: 'user', content: '1', attachments }));
+        } finally { host._conversation = null; }
+        collect(`user message, ${attachments.length} attachment(s)`, shownStrings(box, '.properties-panel-attachment-caption'));
+        if (attachments.length === 2) {
+          const thumb = box.querySelector('img');
+          assert(!!thumb, 'the unnamed image drew no thumbnail');
+          collect('unnamed image alt', [thumb?.alt || '<no alt>']);
+        }
+      }
+
+      // A context item that throws while rendering, and the two marker forms.
+      const throwing = {
+        id: '1', getTitle: () => '1',
+        createPropertiesPanelElement: () => { throw new Error('9'); },
+      };
+      const realConsoleError = console.error;
+      console.error = () => {};
+      try {
+        const box = document.createElement('div');
+        renderContextItem(host, box, /** @type {any} */ (throwing));
+        collect('throwing context item', shownStrings(box));
+      } finally { console.error = realConsoleError; }
+      for (const itemId of ['1', '']) {
+        const box = document.createElement('div');
+        renderContextItem(host, box, item({ type: '1', itemId }));
+        collect(`context marker ${itemId ? 'with' : 'without'} id`, shownStrings(box));
+      }
+
+      // Tool actions in every state, for a tool no plugin claims.
+      const base = { type: 'tool-action', toolName: '1', toolUseId: '2', itemId: '3', toolInput: { 4: 5 } };
+      const states = [
+        ['pending approval', { state: TOOL_STATES.PENDING }],
+        ['running, no start', { state: TOOL_STATES.RUNNING }],
+        ['running, started', { state: TOOL_STATES.RUNNING, runningStartedAt: Date.now() - 3000 }],
+        ['completed', { state: 'completed', result: { content: '6' } }],
+        ['completed, timed', { state: 'completed', result: { content: '6', fullResult: { durationMs: 3000 } } }],
+        ['failed, no text', { state: 'failed', result: { isError: true } }],
+        ['failed, timed', { state: 'failed', result: { isError: true, content: '6', fullResult: { durationMs: 3000 } } }],
+        ['cancelled', { state: 'cancelled', result: { cancelled: true } }],
+        ['cancelled, timed', { state: 'cancelled', result: { cancelled: true, fullResult: { durationMs: 3000 } } }],
+        ['no output', { state: 'completed', result: { content: '' } }],
+        ...['user', 'rule', 'strategy', 'hook'].map((s) => [`approved by ${s}`, { state: 'completed', approvalSource: s, result: { content: '6' } }]),
+      ];
+      for (const [where, fields] of states) {
+        const ta = item({ ...base, ...fields });
+        threadItems.length = 0;
+        threadItems.push(ta);
+        host._liveUpdater = null;
+        const box = document.createElement('div');
+        renderToolAction(host, box, ta);
+        // A run time is formatDuration's Intl output — data, not a message —
+        // so the exact text it gives becomes a digit. The running fixture's
+        // elapsed time is measured from Date.now(), so a loaded lane may read
+        // more than 3s: any whole-second run time up to a minute is accepted,
+        // longest first so "30s" is not read as "3s" plus a stray "0".
+        const timed = /timed|started/.test(/** @type {string} */ (where));
+        const asData = (/** @type {string} */ s) => {
+          for (let n = 60; n >= 3; n--) s = s.replace(formatDuration(n), '9');
+          return s;
+        };
+        collect(/** @type {string} */ (where), shownStrings(box).map((s) => (timed ? asData(s) : s)));
+        // The live updater repaints the waiting text while approval is pending.
+        if (where === 'pending approval') {
+          assert(typeof host._liveUpdater === 'function', 'no live updater for a pending call');
+          assert(host._liveUpdater() === true, 'the live updater gave up on a pending call');
+          collect('pending approval, live', shownStrings(box));
+        }
+      }
+
+      // Hooks: every verb a record can carry. Each line is judged on its own,
+      // since a hook's reason and note (digits here) follow its summary line.
+      const hooks = [
+        { id: '1', source: 'extension', event: 'beforeTool', verdict: 'deny', reason: '2' },
+        { id: '1', source: 'user', event: 'afterTool', verdict: 'ask', markError: true, note: '3', repeatSuppressed: true, error: '4' },
+        { id: '1', source: 'user', event: 'beforeTool', verdict: 'allow' },
+        { id: '1', source: 'extension', event: 'afterTool' },
+      ];
+      const hookBox = document.createElement('div');
+      renderToolAction(host, hookBox, item({ ...base, state: 'completed', result: { content: '6' }, hooks }));
+      const hookSub = [...hookBox.querySelectorAll('properties-panel-subsection')].pop();
+      assert(!!hookSub, 'no Hooks subsection');
+      collect('hooks heading', [hookSub?.querySelector('.properties-panel-subtitle')?.textContent || '']);
+      collect('hooks text', (hookSub?.querySelector('pre')?.textContent || '').split('\n'));
+
+      const raw = shown.filter((s) => !isPseudoLocalized(s.text));
+      assert(shown.length >= 40, `expected at least 40 strings, found ${shown.length}`);
+      assert(raw.length === 0, `plain English under en-XA: ${JSON.stringify(raw)}`);
+    });
+    passed++;
+  } catch (e) { failed++; errors.push(`en-XA item renderers: ${e.message}`); }
 
   return { passed, failed, errors };
 }

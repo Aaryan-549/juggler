@@ -18,7 +18,7 @@ import JugglerSourceContextItem from '../context-items/juggler-source-context-it
 /** This extension's English for these rows, standing in for its catalogue. */
 const ABOUT_TEXT = [
   'About Juggler', 'Looking up Juggler…', 'Failed',
-  'Juggler Source', 'Reading Juggler source…', 'Juggler source',
+  'Juggler Source', 'Reading Juggler source…', 'Juggler source', 'Manual', 'Source',
 ];
 
 /**
@@ -60,6 +60,9 @@ export async function runTests() {
       row('source failed', source.getStatusUI({ success: false, error: '9' }, { path: '4' }));
       row('source pending', source.getStatusUI({ pending: true }, { path: '4' }));
       row('source done without a path', source.getStatusUI({ success: true }, {}));
+
+      shown['about result label'] = AboutJugglerContextItem.getResultSectionLabel('');
+      shown['source result label'] = JugglerSourceContextItem.getResultSectionLabel('');
 
       const raw = Object.entries(shown).filter(([, s]) => !isPseudoLocalized(s));
       if (raw.length) throw new Error(`plain English under en-XA: ${JSON.stringify(Object.fromEntries(raw))}`);

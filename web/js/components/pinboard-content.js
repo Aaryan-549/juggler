@@ -44,6 +44,8 @@ import { THREAD_FOCUS_CHANGED } from './conversation-tab.js';
 import { itemGoal } from '../model/thread-alias.js';
 import { satelliteLink } from '../services/pinboard-link.js';
 import { isPinboardView } from '../utils/view-mode.js';
+import { capabilityLabel } from '../utils/capability-label.js';
+import { t } from '../../sdk/lib/i18n.js';
 
 /** @typedef {import('../services/pinboard-store.js').Pin} Pin */
 /** @typedef {import('juggler/pinboard-item-type').PinActiveContext} PinActiveContext */
@@ -534,7 +536,7 @@ class PinboardContent extends JugglerElement {
     return {
       root,
       mount: this,
-      label: 'Find in pinboard',
+      label: t('Find in pinboard'),
       restoreFocus: () => this.focusBody(),
     };
   }
@@ -1079,7 +1081,8 @@ class PinboardContent extends JugglerElement {
    * @private
    */
   _runAction(action) {
-    const lead = `Couldn't ${action.label.charAt(0).toLowerCase()}${action.label.slice(1)}.`;
+    // The label is the pin's own, already in the active locale.
+    const lead = t("Couldn't {action}.", { action: `${action.label.charAt(0).toLowerCase()}${action.label.slice(1)}` });
     /** @param {any} err - What the action threw or rejected with. */
     const failed = (err) => {
       console.error('[Pinboard] Item action failed:', err);
@@ -2095,7 +2098,10 @@ class PinboardContent extends JugglerElement {
 
 /**
  * What the chrome should say about a pin — the item type's own words where it has
- * an opinion, and the bare type id where nothing is left to ask.
+ * an opinion, and the bare type id where nothing is left to ask. A title that is
+ * the type's English manifest name (the SDK's default describe(), and the
+ * fallback here) is translated in its extension's catalogue; any other title is
+ * the type's own — already translated, or data such as a file name.
  * @param {Pin} pin - The pin.
  * @param {PinActiveContext|null} active - The active-context snapshot.
  * @returns {import('juggler/pinboard-item-type').PinDescription} Title, subtitle and badge.
@@ -2105,11 +2111,15 @@ export function describePin(pin, active) {
   if (!type) return { title: pin.type };
   try {
     const described = type.describe(pin.config, /** @type {PinActiveContext} */ (active));
-    if (described && typeof described.title === 'string' && described.title) return described;
+    if (described && typeof described.title === 'string' && described.title) {
+      return described.title === type.name
+        ? { ...described, title: capabilityLabel(type.name, pin.type, pinboardItemRegistry) }
+        : described;
+    }
   } catch (err) {
     console.error(`[Pinboard] Item type "${pin.type}" failed to describe a pin:`, err);
   }
-  return { title: type.name };
+  return { title: capabilityLabel(type.name, pin.type, pinboardItemRegistry) };
 }
 
 customElements.define('pinboard-content', PinboardContent);

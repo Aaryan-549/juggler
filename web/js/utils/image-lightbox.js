@@ -4,6 +4,7 @@
 
 import { presentModal } from './modal-surface.js';
 import { ADD_SVG, withAttrs } from './icons.js';
+import { t, formatNumber } from '../../sdk/lib/i18n.js';
 
 /**
  * Click-to-expand image lightbox with zoom and pan. Opens the given image
@@ -117,7 +118,7 @@ export function openImageLightbox(src, alt) {
   });
   const root = modal.root;
   root.setAttribute('role', 'dialog');
-  root.setAttribute('aria-label', alt || 'Image');
+  root.setAttribute('aria-label', alt || t('Image'));
 
   const img = document.createElement('img');
   img.className = 'image-lightbox-img';
@@ -128,13 +129,13 @@ export function openImageLightbox(src, alt) {
 
   const toolbar = document.createElement('div');
   toolbar.className = 'image-lightbox-toolbar';
-  const zoomOutBtn = toolbarButton('image-lightbox-zoom-out', 'Zoom out', ZOOM_OUT_SVG);
+  const zoomOutBtn = toolbarButton('image-lightbox-zoom-out', t('Zoom out'), ZOOM_OUT_SVG);
   const levelBtn = document.createElement('button');
   levelBtn.type = 'button';
   levelBtn.className = 'image-lightbox-btn image-lightbox-level';
-  levelBtn.title = 'Fit to window';
-  const zoomInBtn = toolbarButton('image-lightbox-zoom-in', 'Zoom in', ZOOM_IN_SVG);
-  const closeBtn = toolbarButton('image-lightbox-close', 'Close', CLOSE_SVG);
+  levelBtn.title = t('Fit to window');
+  const zoomInBtn = toolbarButton('image-lightbox-zoom-in', t('Zoom in'), ZOOM_IN_SVG);
+  const closeBtn = toolbarButton('image-lightbox-close', t('Close'), CLOSE_SVG);
   toolbar.append(zoomOutBtn, levelBtn, zoomInBtn, closeBtn);
   root.appendChild(toolbar);
 
@@ -173,7 +174,7 @@ export function openImageLightbox(src, alt) {
     // Percent of the image's real pixel size, which is what "how zoomed am I"
     // means to a reader; blank until the image has loaded and has one.
     levelBtn.textContent = img.naturalWidth
-      ? `${Math.round((100 * scale * img.offsetWidth) / img.naturalWidth)}%`
+      ? formatNumber((scale * img.offsetWidth) / img.naturalWidth, { style: 'percent', maximumFractionDigits: 0, useGrouping: false })
       : '';
   };
 

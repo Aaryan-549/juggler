@@ -11,6 +11,9 @@ import { beginProgramReads } from './read-history.js';
 import { renderProgramSdk, describeProgramTool, toolOwnName } from './code/render-sdk.js';
 import { journalCapabilities } from './code/program-journal.js';
 import { pointImageReadsAtImage } from './code/program-images.js';
+import { translator } from 'juggler/i18n';
+
+const t = translator('@juggler/core');
 
 /**
  * What a program keeps each time one of its calls waits on the user, to resume
@@ -717,8 +720,8 @@ class RunCodeContextItem extends QueryCodeContextItem {
     const calls = Array.isArray(data?.nestedCalls) ? data.nestedCalls : [];
     if (calls.length === 0) return;
     const lines = calls.map(callRow);
-    if (data.omitted) lines.push(`…${data.omitted} more not shown`);
-    ctx.helpers.addSubsection(wrapper, 'Tool calls', lines.join('\n'), 'properties-panel-text');
+    if (data.omitted) lines.push(t('…{count} more not shown', { count: data.omitted }));
+    ctx.helpers.addSubsection(wrapper, t('Tool calls'), lines.join('\n'), 'properties-panel-text');
   }
 }
 

@@ -30,6 +30,8 @@ import { __resetPopupManagerForTests, isAnyPopupOpen } from '../../js/utils/popu
 import PinboardItemType from 'juggler/pinboard-item-type';
 import '../../js/components/pinboard-shell.js';
 import { budgetFor } from '../utilities/test-deadline.js';
+import { underPseudoLocale, shownStrings } from '../utilities/pseudo-locale.js';
+import { t, isPseudoLocalized } from '../../sdk/lib/i18n.js';
 
 /**
  * @typedef {object} TestResult
@@ -257,6 +259,84 @@ class BrokenPin extends PinboardItemType {
 
   mount() {
     throw new Error('probe failure');
+  }
+}
+
+/** The stand-in extension the en-XA case's item types are registered under. */
+const I18N_EXT = 'test-i18n-pins';
+
+/**
+ * A type left on the SDK's default describe(), so the tab and toolbar show its
+ * English manifest name; it cannot be added, and its one action fails.
+ */
+class PlainNamePin extends PinboardItemType {
+  static MANIFEST = {
+    id: 'i18n-plain',
+    name: 'Plain probe',
+    version: '1.0.0',
+    description: 'A pin titled by its manifest name',
+  };
+
+  canAdd() {
+    return false;
+  }
+
+  mount(container) {
+    container.textContent = '1';
+    return {
+      teardown: () => {},
+      getActions: () => [
+        // The pin's own label, translated by the pin, as juggler-core's are.
+        { id: 'shine', label: t('Shine', undefined, { namespace: I18N_EXT }), primary: true, run: () => { throw new Error('42'); } },
+      ],
+    };
+  }
+}
+
+/**
+ * A type that describes itself in its own (already translated) words, and says
+ * why it cannot be added, in a reason it translated itself.
+ */
+class SelfNamedPin extends PinboardItemType {
+  static MANIFEST = {
+    id: 'i18n-self',
+    name: 'Self probe',
+    version: '1.0.0',
+    description: 'A pin that names itself',
+    addLabel: 'Add a self probe…',
+    instances: 'multiple',
+  };
+
+  describe() {
+    return { title: t(this.name, undefined, { namespace: I18N_EXT }) };
+  }
+
+  canAdd() {
+    return t('Needs 7', undefined, { namespace: I18N_EXT });
+  }
+
+  mount(container) {
+    container.textContent = '2';
+    return { teardown: () => {} };
+  }
+}
+
+/** A type whose canAdd throws, for the picker's own refusal. */
+class ThrowingAddPin extends PinboardItemType {
+  static MANIFEST = {
+    id: 'i18n-throws',
+    name: 'Throwing probe',
+    version: '1.0.0',
+    description: 'A pin that cannot answer canAdd',
+  };
+
+  canAdd() {
+    throw new Error('3');
+  }
+
+  mount(container) {
+    container.textContent = '3';
+    return { teardown: () => {} };
   }
 }
 
@@ -1676,6 +1756,62 @@ export async function runTests(_ctx) {
       } finally {
         frame.remove();
       }
+    });
+
+    await run('under en-XA the picker, the tabs, the title and a failed action speak the owner\'s language', async () => {
+      pinboardItemRegistry.registerClass(PlainNamePin, { extensionId: I18N_EXT });
+      pinboardItemRegistry.registerClass(SelfNamedPin, { extensionId: I18N_EXT });
+      pinboardItemRegistry.registerClass(ThrowingAddPin, { extensionId: I18N_EXT });
+      /** @type {string[]} */
+      const raw = [];
+      const check = (/** @type {string} */ where, /** @type {string[]} */ shown, atLeast = 1) => {
+        if (shown.length < atLeast) raw.push(`${where}: expected ${atLeast} strings, found ${shown.length}`);
+        for (const s of shown) if (!isPseudoLocalized(s)) raw.push(`${where}: ${s}`);
+      };
+      await underPseudoLocale('pinboard-shell-test', async () => {
+        const { shell, teardown } = await mountShell([
+          { id: 'pin_plain', type: 'i18n-plain', config: {} },
+          { id: 'pin_self', type: 'i18n-self', config: {} },
+        ]);
+        try {
+          pinboardView.open();
+          await settle();
+          // Tab labels: the default describe() is the manifest name in English.
+          const labels = tabLabels(shell);
+          check('tab labels', labels, 2);
+          // The toolbar title of the active (plain) pin.
+          const title = shell.querySelector('.pinboard-item-toolbar__title');
+          check('toolbar title', [title?.textContent || ''], 1);
+
+          // The picker: names, addLabel, reasons (own and given), filter.
+          shell.querySelector('.pinboard-tabbar__add').click();
+          const picker = /** @type {any} */ (document.querySelector('.pinboard-add-picker'));
+          assert(!!picker, 'the + opens the picker');
+          const ids = [...picker.querySelectorAll('.pinboard-add-picker__item')].map((/** @type {any} */ r) => r.dataset.typeId);
+          assert(ids.includes('i18n-plain') && ids.includes('i18n-self') && ids.includes('i18n-throws'),
+            `the stand-in types are offered, got ${ids.join(',')}`);
+          const filter = /** @type {HTMLInputElement|null} */ (picker.querySelector('.pinboard-add-picker__filter'));
+          assert(!!filter, 'nine types earn the filter box');
+          check('picker', shownStrings(picker), 12);
+          /** @type {HTMLInputElement} */ (filter).value = '9';
+          /** @type {HTMLInputElement} */ (filter).dispatchEvent(new Event('input'));
+          check('picker, nothing matched', shownStrings(picker), 1);
+          picker.remove();
+
+          // A failed action: one message around the pin's translated label.
+          shell.querySelector('.pinboard-item-toolbar__action').click();
+          const status = shell.querySelector('.pinboard-panel__status')?.textContent || '';
+          if (!status.endsWith(' 42')) raw.push(`status keeps the error: ${status}`);
+          check('failed action status', [status.replace(/ 42$/, '')], 1);
+        } finally {
+          document.querySelector('.pinboard-add-picker')?.remove();
+          teardown();
+        }
+      }, {
+        [I18N_EXT]: ['Plain probe', 'Self probe', 'Add a self probe…', 'Throwing probe', 'Shine', 'Needs 7'],
+        test: ['Probe', 'Broken', 'Actions', 'Watch something…', 'Keys', 'Tall'],
+      });
+      assert(raw.length === 0, `plain English under en-XA: ${JSON.stringify(raw)}`);
     });
   } finally {
     pinboardItemRegistry.reset();

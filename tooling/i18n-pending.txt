@@ -11,11 +11,8 @@ web/extensions/juggler-core/context-items/system-prompt-context-item.js
 web/extensions/juggler-core/context-items/system-prompt/preset-browser.js
 web/extensions/juggler-core/lib/git-scope.js
 web/extensions/juggler-core/lib/live-file.js
-web/extensions/juggler-core/lib/path-pin.js
-web/extensions/juggler-core/lib/task-list-pin.js
 web/extensions/juggler-core/pins/file-pin.js
 web/extensions/juggler-core/pins/git-pin.js
-web/extensions/juggler-core/pins/memory-pin.js
 web/extensions/juggler-core/pins/project-files-pin.js
 web/extensions/juggler-core/pins/tasks-pin.js
 web/extensions/juggler-core/viewers/binary-file-viewer.js
@@ -41,7 +38,6 @@ web/js/components/conversation-footer.js
 web/js/components/conversation-tab.js
 web/js/components/diff-viewer.js
 web/js/components/empty-hint-tips.js
-web/js/components/find-bar.js
 web/js/components/info-cards-button.js
 web/js/components/info-rail.js
 web/js/components/juggler-spinner.js
@@ -50,7 +46,6 @@ web/js/components/model-picker/model-picker.js
 web/js/components/model-selector.js
 web/js/components/no-conversations-overlay.js
 web/js/components/no-project-overlay.js
-web/js/components/pinboard-add-picker.js
 web/js/components/pinboard-content.js
 web/js/components/pinboard-panel.js
 web/js/components/pinboard-shell.js
@@ -62,7 +57,6 @@ web/js/components/review-panel.js
 web/js/components/strategy-selector.js
 web/js/components/thinking-block.js
 web/js/components/thread-message.js
-web/js/components/token-display.js
 web/js/components/tool-action-message.js
 web/js/components/transaction-detail-renderer.js
 web/js/components/update-button.js
@@ -82,7 +76,6 @@ web/js/services/connection-manager.js
 web/js/services/context-menu-service.js
 web/js/services/escape-behaviour.js
 web/js/services/llm-state.js
-web/js/services/renderers/item-renderers.js
 web/js/services/response-handler.js
 web/js/services/thread-tool-inventory.js
 web/js/services/tips-manager.js
@@ -90,7 +83,5 @@ web/js/services/ui-event-manager.js
 web/js/services/updater-control.js
 web/js/services/workspace-places.js
 web/js/utils/header-controls.js
-web/js/utils/image-lightbox.js
-web/js/utils/properties-panel-helpers.js
 web/js/utils/thread-display.js
 web/sdk/workspace-provider.js

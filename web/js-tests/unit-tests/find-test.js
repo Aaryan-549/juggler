@@ -37,6 +37,8 @@
  */
 
 import { assert } from '../utilities/test-helpers.js';
+import { underPseudoLocale, shownStrings } from '../utilities/pseudo-locale.js';
+import { isPseudoLocalized } from '../../sdk/lib/i18n.js';
 import FindController from '../../js/services/find-controller.js';
 import findBar, { findPanelFor } from '../../js/components/find-bar.js';
 import keyShortcutManager from '../../js/services/key-shortcut-manager.js';
@@ -750,6 +752,81 @@ export async function runTests(_ctx) {
     } finally {
       root.remove();
     }
+  });
+
+  // ── G. Every string the bar shows, under en-XA ──────────────────────
+
+  await run('i18n: every state of the bar, on every panel, is translated under en-XA', async () => {
+    // Digits only, so the search text and the counter's numbers are no English
+    // of their own: "111" matches twice, "333" once, "999" nowhere.
+    const DIGITS = `
+      <div class="msg">111 222</div>
+      <div class="msg">111</div>
+      <div class="msg">333</div>`;
+    /** @type {string[]} */
+    const raw = [];
+    /**
+     * Record every plain-English string the bar shows. The close button's ✕ is a
+     * glyph, so the button is skipped and its labels are read on their own.
+     * @param {Element|null} bar
+     * @param {string} where
+     */
+    const collect = (bar, where) => {
+      assert(!!bar, `the bar is mounted (${where})`);
+      const el = /** @type {Element} */ (bar);
+      const shown = shownStrings(el, '.find-bar__close');
+      assert(shown.length >= 8, `expected the bar's labels (${where}), found ${shown.length}`);
+      for (const s of shown) if (!isPseudoLocalized(s)) raw.push(`${where}: ${s}`);
+      const close = el.querySelector('.find-bar__close');
+      for (const attr of ['aria-label', 'title']) {
+        const v = close?.getAttribute(attr) || '';
+        if (!isPseudoLocalized(v)) raw.push(`${where}: close ${attr} ${v}`);
+      }
+    };
+
+    await underPseudoLocale('find-bar-test', async () => {
+      resetBarState();
+      const col = attachColumn(DIGITS);
+      try {
+        findBar.open(col);
+        const bar = col.querySelector('.find-bar');
+        const input = /** @type {HTMLInputElement} */ (col.querySelector('.find-bar__input'));
+        assert(counterText(col) === '', 'an empty query shows no counter');
+        collect(bar, 'empty');
+        for (const [query, where] of [['111', 'matches'], ['333', 'single match'], ['999', 'no matches']]) {
+          input.value = query;
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+          await sleep(INPUT_WAIT_MS);
+          assert(counterText(col) !== '', `the counter shows something (${where})`);
+          collect(bar, `${where}, counter ${counterText(col)}`);
+        }
+        /** @type {HTMLElement} */ (col.querySelector('.find-bar__case')).click();
+        /** @type {HTMLElement} */ (col.querySelector('.find-bar__word')).click();
+        collect(bar, 'both toggles on');
+      } finally {
+        findBar.close();
+        col.remove();
+      }
+
+      // Each panel names its own search in the input's aria-label.
+      const panel = attachPropertiesPanel(DIGITS);
+      try {
+        findBar.open(panel);
+        collect(panel.querySelector('.find-bar'), 'properties panel');
+      } finally {
+        findBar.close();
+        panel.remove();
+      }
+      const { shell, content } = attachPinboard(DIGITS);
+      try {
+        findBar.open(content);
+        collect(content.querySelector('.find-bar'), 'pinboard');
+      } finally {
+        findBar.close();
+        shell.remove();
+      }
+    });
+    assert(raw.length === 0, `plain English under en-XA: ${JSON.stringify(raw)}`);
   });
 
   return { passed, failed, errors };

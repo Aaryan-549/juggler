@@ -20,7 +20,10 @@
  */
 
 import { createElement, injectStylesOnce } from 'juggler/ui';
+import { translator } from 'juggler/i18n';
 import { pinEmpty } from './pin-empty.js';
+
+const t = translator('@juggler/core');
 
 injectStylesOnce('task-list-pin-styles', `
 .task-list-pin {
@@ -45,7 +48,7 @@ injectStylesOnce('task-list-pin-styles', `
  */
 function sourceLine(source) {
   if (!source?.inherited) return '';
-  return source.label ? `From ${source.label}` : 'From a parent thread';
+  return source.label ? t('From {label}', { label: source.label }) : t('From a parent thread');
 }
 
 /**
@@ -56,7 +59,8 @@ function sourceLine(source) {
  * @property {(data: Record<string, any>, items: Array<Record<string, any>>) => HTMLElement} render - The list as an
  *   element, given the item's whole data (a plan's title and status live there
  *   too) and the list `itemsOf` already took out of it
- * @property {string} empty - What to say when no thread in the chain has one
+ * @property {string} empty - What to say when no thread in the chain has one:
+ *   English source text (`markForTranslation`), translated here where it is drawn
  */
 
 /**
@@ -102,7 +106,7 @@ export function mountTaskListPin(container, pinContext, spec) {
     drawn = signature;
 
     if (!items.length) {
-      body.replaceChildren(pinEmpty(spec.empty));
+      body.replaceChildren(pinEmpty(t(spec.empty)));
       return;
     }
 
@@ -125,7 +129,7 @@ export function mountTaskListPin(container, pinContext, spec) {
     getActions: () => [
       {
         id: 'reveal',
-        label: 'Reveal in conversation',
+        label: t('Reveal in conversation'),
         primary: true,
         disabled: !shown,
         // The row that wrote the list, when there is one. A list of this kind

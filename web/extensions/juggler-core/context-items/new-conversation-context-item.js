@@ -257,17 +257,17 @@ class NewConversationContextItem extends ContextItem {
     const resolvedName = typeof data.name === 'string' ? data.name.trim() : '';
     const requestedName = typeof input.name === 'string' ? input.name.trim() : '';
     const name = (resolvedName && resolvedName !== data.conversationId ? resolvedName : '') || requestedName;
-    helpers.addSubsection(wrapper, 'Name', name || 'Untitled conversation', 'properties-panel-code');
+    helpers.addSubsection(wrapper, t('Name'), name || t('Untitled conversation'), 'properties-panel-code');
 
     const message = input.message !== null && input.message !== undefined ? String(input.message) : '';
-    helpers.addSubsection(wrapper, 'Prompt', message, 'properties-panel-code');
+    helpers.addSubsection(wrapper, t('Prompt'), message, 'properties-panel-code');
 
     // autostart defaults to true when omitted (see the tool schema).
     const autostart = input.autostart !== false;
     const autostartText = autostart
-      ? 'On — the new conversation started working on the prompt immediately.'
-      : 'Off — the prompt is parked in the new conversation, waiting for the user to press Send.';
-    helpers.addSubsection(wrapper, 'Autostart', autostartText, 'properties-panel-text');
+      ? t('On — the new conversation started working on the prompt immediately.')
+      : t('Off — the prompt is parked in the new conversation, waiting for the user to press Send.');
+    helpers.addSubsection(wrapper, t('Autostart'), autostartText, 'properties-panel-text');
 
     return { skipResultSection: true };
   }

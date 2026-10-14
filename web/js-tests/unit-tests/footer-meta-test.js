@@ -31,6 +31,8 @@ import '../../js/components/conversation-footer.js';
 import '../../js/components/token-display.js';
 import { registerSettingsOpener } from '../../js/services/settings-launcher.js';
 import { formatRelativeDateTime, formatTokens } from '../../js/utils/format.js';
+import { isPseudoLocalized } from '../../sdk/lib/i18n.js';
+import { underPseudoLocale, shownStrings } from '../utilities/pseudo-locale.js';
 
 /**
  * Run the footer readings-row test suite.
@@ -175,6 +177,83 @@ export async function runTests() {
   } finally {
     if (restoreOpener) restoreOpener();
     logFooter.remove();
+  }
+
+  // --- 5: every state of the meter, under en-XA ----------------------------
+  // Last, because it switches the locale. The pill sets its own title and
+  // aria-label, so it is walked from a host element that contains it.
+  const host = document.createElement('div');
+  const xaPill = /** @type {any} */ (document.createElement('token-display'));
+  host.appendChild(xaPill);
+  document.body.appendChild(host);
+  try {
+    /** @type {string[]} */
+    const raw = [];
+    // A bare figure — the total, `~` for an estimate, the `/ window` — is data.
+    const DATA = /^[~\d,.\s/\u00A0]+$/;
+    /**
+     * Record every plain-English string the meter shows.
+     * @param {string} where - The state, for the failure.
+     * @param {(s: string) => string} [normalize] - Strips data the fixture could not keep letter-free.
+     */
+    const collect = (where, normalize = (s) => s) => {
+      const shown = shownStrings(host);
+      assert(shown.length >= 2, `expected the count and the aria-label (${where}), found ${shown.length}`);
+      for (const s of shown) {
+        const v = normalize(s);
+        if (!DATA.test(v) && !isPseudoLocalized(v)) raw.push(`${where}: ${s}`);
+      }
+    };
+    /**
+     * @param {string} sel
+     * @returns {boolean} True when the pill draws that part.
+     */
+    const has = (sel) => !!xaPill.querySelector(sel);
+
+    await underPseudoLocale('footer-meta-test', () => {
+      xaPill.setUsage({ total: 1500, cached: null });
+      assert(!!xaPill.title, 'an unreported cache says so in the tooltip');
+      collect('cache unreported');
+
+      xaPill.setUsage({ total: 1500, cached: 500 });
+      assert(has('.token-cached') && !xaPill.title, 'a cached count draws its parenthetical');
+      collect('cached, no window');
+
+      xaPill.setUsage({ total: 1000, cached: 500, budget: 1900 });
+      assert(has('.token-denominator'), 'a known window draws the meter');
+      collect('within the window');
+
+      xaPill.setUsage({ total: 1850, cached: 1000, budget: 1900 });
+      assert(!!xaPill.title, 'a nearly-full window says so in the tooltip');
+      collect('nearly full');
+
+      xaPill.setUsage({ total: 1950, cached: 1000, budget: 1000 });
+      assert(!!xaPill.title, 'a passed window states the overrun');
+      collect('over the window');
+
+      xaPill.setUsage({ total: 1500, cached: 500, budget: 1900, processing: true });
+      collect('processing');
+
+      xaPill.setUsage({ total: 1500, cached: null, approximate: true });
+      collect('approximate');
+
+      // The warning needs over 5000 uncached tokens, so the figures carry a
+      // `k`; each is stripped back to a digit before judging the words.
+      xaPill.setUsage({ total: 7000, cached: 1000 });
+      assert(has('.token-new'), 'a large uncached delta draws the warning');
+      collect('cache warn', (s) => s.replace(/\d+(\.\d)?[kM]/g, '0'));
+
+      xaPill.clear();
+      assert(!xaPill.hasAttribute('aria-label') && !xaPill.title && !xaPill.textContent,
+        'a cleared pill shows nothing');
+    });
+    assert(raw.length === 0, `plain English under en-XA: ${JSON.stringify(raw)}`);
+    passed++;
+  } catch (e) {
+    failed++;
+    errors.push(`en-XA: ${msg(e)}`);
+  } finally {
+    host.remove();
   }
 
   return { passed, failed, errors };

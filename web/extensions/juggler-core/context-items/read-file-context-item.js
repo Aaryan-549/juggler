@@ -10,6 +10,9 @@ import { fileSourceFromReadResult } from 'juggler/file-source';
 import { extractFileSource } from 'juggler/registry';
 import { toolInputPath, dirname, isPathAllowed, folderGrantSuggestions, stripInjectedApprovalFlags, absolutePathKey } from './path-approval.js';
 import { creditProgramRead } from './read-history.js';
+import { translator } from 'juggler/i18n';
+
+const t = translator('@juggler/core');
 
 injectFileContentStyles();
 
@@ -375,9 +378,9 @@ class ReadFileContextItem extends ContextItem {
     const container = document.createElement('div');
     container.className = 'file-content-expanded';
     const info = (data.exists !== false && data.size)
-      ? [formatFileSize(data.size), data.totalLines ? `${data.totalLines} lines` : ''].filter(Boolean).join(' | ')
+      ? [formatFileSize(data.size), data.totalLines ? t('{count} lines', { count: data.totalLines }) : ''].filter(Boolean).join(' | ')
       : undefined;
-    addFilePath(container, absolutePath || data.path || 'No file', info, { pin: absolutePath });
+    addFilePath(container, absolutePath || data.path || t('No file'), info, { pin: absolutePath });
 
     const view = /** @type {any} */ (document.createElement('file-view'));
     view.showPath = false;
@@ -401,12 +404,12 @@ class ReadFileContextItem extends ContextItem {
    * @returns {import('juggler/context-item').ResultStatusMessage|null} Status message config
    */
   getStatusUI(actionStatus, toolInput) {
-    const path = /** @type {string} */ (toolInput?.file_path || toolInput?.path) || 'unknown';
+    const path = /** @type {string} */ (toolInput?.file_path || toolInput?.path) || t('unknown');
     // Get just the filename for display
     const filename = basename(path) || path;
 
     return this.buildStatusUI(actionStatus, {
-      typeName: 'Read',
+      typeName: t('Read'),
       pending: `${filename}...`,
       success: () => {
         const result = /** @type {ReadFileResult} */ (actionStatus?.result);
@@ -414,12 +417,15 @@ class ReadFileContextItem extends ContextItem {
         // A missing file is a successful call with a failed read — the only
         // success branch that styles itself as an error.
         if (result.exists === false) {
-          return { summary: `File not found: ${filename}`, status: /** @type {const} */ ('error') };
+          return { summary: t('File not found: {filename}', { filename }), status: /** @type {const} */ ('error') };
         }
         if (result.attachment) {
           const ref = result.attachment;
-          return (ref.width && ref.height) ? `${filename} (${ref.width}×${ref.height})` : `${filename} (image)`;
+          return (ref.width && ref.height)
+            ? t('{filename} ({width}×{height})', { filename, width: ref.width, height: ref.height })
+            : t('{filename} (image)', { filename });
         }
+        // The warning is the viewer layer's own text, shown as data.
         const warning = result.extracted?.warning || result.warning;
         if (warning) return `${filename} (${warning})`;
 
@@ -427,8 +433,8 @@ class ReadFileContextItem extends ContextItem {
         const endLine = lineOffset + (result.lineCount || 0) - 1;
         const isFullFile = lineOffset === 1 && endLine === result.totalLines;
         return isFullFile
-          ? `${filename} (${result.totalLines} lines)`
-          : `${filename} (lines ${lineOffset}-${endLine} of ${result.totalLines})`;
+          ? t('{filename} ({count} lines)', { filename, count: result.totalLines })
+          : t('{filename} (lines {start}-{end} of {total})', { filename, start: lineOffset, end: endLine, total: result.totalLines });
       },
       failurePrefix: `'${path}'`
     });
@@ -440,7 +446,7 @@ class ReadFileContextItem extends ContextItem {
    * @returns {string} Section label
    */
   static getResultSectionLabel(_toolName) {
-    return 'Content';
+    return t('Content');
   }
 
   /**

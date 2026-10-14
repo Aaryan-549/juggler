@@ -5,7 +5,10 @@
 
 import ContextItem from 'juggler/context-item';
 import { webSearch } from 'juggler/ops';
+import { translator } from 'juggler/i18n';
 import { parseDuckDuckGoResponse, looksLikeNoResults, filterResults } from './web-search/ddg-parser.js';
+
+const t = translator('@juggler/core');
 
 /**
  * @typedef {object} WebSearchParams
@@ -267,17 +270,20 @@ class WebSearchContextItem extends ContextItem {
    * @returns {import('juggler/context-item').ResultStatusMessage|null} Status message config
    */
   getStatusUI(actionStatus, toolInput) {
-    const query = String(toolInput?.query || 'unknown');
+    const query = String(toolInput?.query || t('unknown'));
     const displayQuery = query.length > 40 ? query.substring(0, 40) + '...' : query;
 
     return this.buildStatusUI(actionStatus, {
-      typeName: 'Web Search',
-      pending: `Searching for "${displayQuery}"...`,
+      typeName: t('Web Search'),
+      pending: t('Searching for "{query}"...', { query: displayQuery }),
       success: () => {
         const result = /** @type {WebSearchResult} */ (actionStatus?.result);
         const count = result.count || result.results?.length || 0;
-        const provider = result.provider || 'search';
-        return `Found ${count} result${count === 1 ? '' : 's'} for "${displayQuery}" (${provider})`;
+        const provider = result.provider || t('search');
+        return t(
+          '{count, plural, one {Found {count} result for "{query}" ({provider})} other {Found {count} results for "{query}" ({provider})}}',
+          { count, query: displayQuery, provider }
+        );
       }
     });
   }
@@ -288,7 +294,7 @@ class WebSearchContextItem extends ContextItem {
    * @returns {string} Section label
    */
   static getResultSectionLabel(_toolName) {
-    return 'Results';
+    return t('Results');
   }
 
   /**
@@ -300,7 +306,7 @@ class WebSearchContextItem extends ContextItem {
   renderToolActionDetails(wrapper, ctx) {
     const { input, helpers } = ctx;
     const q = input.query !== null && input.query !== undefined ? String(input.query) : '';
-    helpers.addSubsection(wrapper, 'Query', q, 'properties-panel-code');
+    helpers.addSubsection(wrapper, t('Query'), q, 'properties-panel-code');
   }
 }
 

@@ -363,7 +363,7 @@ class QueryCodeContextItem extends ContextItem {
    * @returns {string} Section label
    */
   static getResultSectionLabel(_toolName) {
-    return 'Output';
+    return t('Output');
   }
 
   /**
@@ -386,11 +386,11 @@ class QueryCodeContextItem extends ContextItem {
   renderToolActionDetails(wrapper, ctx) {
     const { input, helpers } = ctx;
     if (input.description) {
-      helpers.addLlmDescription(wrapper, 'Description', String(input.description));
+      helpers.addLlmDescription(wrapper, t('Description'), String(input.description));
     }
     const rawCode = input.code !== null && input.code !== undefined ? String(input.code) : '';
     const code = QueryCodeContextItem._prettyPrintCode(rawCode);
-    helpers.addSubsection(wrapper, 'Code', code, 'properties-panel-code', { language: 'javascript' });
+    helpers.addSubsection(wrapper, t('Code'), code, 'properties-panel-code', { language: 'javascript' });
   }
 
   /**

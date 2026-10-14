@@ -6,6 +6,9 @@
 import PinboardItemType from 'juggler/pinboard-item-type';
 import { createPlanBlock } from '../lib/task-lists.js';
 import { mountTaskListPin } from '../lib/task-list-pin.js';
+import { translator, markForTranslation } from 'juggler/i18n';
+
+const t = translator('@juggler/core');
 
 /**
  * PlanPin — the current plan, kept where it can be followed.
@@ -44,7 +47,7 @@ class PlanPin extends PinboardItemType {
    * @returns {true|string} True when there is a conversation to read a plan from.
    */
   canAdd(active) {
-    return active?.conversation ? true : 'No active conversation';
+    return active?.conversation ? true : t('No active conversation');
   }
 
   /**
@@ -77,7 +80,7 @@ class PlanPin extends PinboardItemType {
       itemType: 'plan',
       itemsOf: (data) => data?.steps || [],
       render: (data) => createPlanBlock(data),
-      empty: 'If the conversation contains a plan, this shows its current state',
+      empty: markForTranslation('If the conversation contains a plan, this shows its current state'),
     });
   }
 }

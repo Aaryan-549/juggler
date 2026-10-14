@@ -16,6 +16,7 @@
  *      not reach the app's own font-size zoom while it is open.
  *   6. A click on the image toggles fit ⇄ zoomed; a click on the backdrop
  *      closes it.
+ *   7. Under en-XA every label it draws is translated.
  * @module unit-tests/image-lightbox-test
  */
 
@@ -23,6 +24,8 @@
 
 import { assert, waitFor } from '../utilities/test-helpers.js';
 import { openImageLightbox } from '../../js/utils/image-lightbox.js';
+import { underPseudoLocale, shownStrings } from '../utilities/pseudo-locale.js';
+import { isPseudoLocalized } from '../../sdk/lib/i18n.js';
 
 /**
  * A 400×300 PNG data URL.
@@ -199,6 +202,61 @@ export async function runTests() {
     root.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
     assert(!root.isConnected, 'a backdrop click closes the lightbox');
   });
+
+  // en-XA: every label the lightbox draws, fitted, zoomed and at the zoom
+  // limit, and the dialog's name with and without caller alt text. The zoom
+  // level is a lone Intl-formatted number, so its text is skipped and its
+  // tooltip checked on its own; caller alt text is data.
+  try {
+    /** @type {string[]} */
+    const raw = [];
+    await underPseudoLocale('image-lightbox-test', async () => {
+      /**
+       * @param {HTMLElement} root - The lightbox.
+       * @param {string} where - The state, for the failure.
+       */
+      const collect = (root, where) => {
+        const shown = shownStrings(root, '.image-lightbox-level');
+        assert(shown.length >= 6, `expected the toolbar's labels (${where}), found ${shown.length}`);
+        const level = /** @type {HTMLElement} */ (root.querySelector('.image-lightbox-level'));
+        shown.push(level.title);
+        for (const s of shown) if (!isPseudoLocalized(s)) raw.push(`${where}: ${s}`);
+        assert(/^\d+%$/.test(level.textContent || ''), `the level reads as a percentage (${where}), got ${level.textContent}`);
+      };
+
+      const close = openImageLightbox(src);
+      try {
+        const root = /** @type {HTMLElement} */ (document.querySelector('.image-lightbox'));
+        const img = /** @type {HTMLImageElement} */ (root.querySelector('.image-lightbox-img'));
+        await waitFor(() => img.complete && img.naturalWidth > 0, { description: 'lightbox image to load' });
+        img.dispatchEvent(new Event('load'));
+        const name = root.getAttribute('aria-label') || '';
+        if (!isPseudoLocalized(name)) raw.push(`no alt: dialog aria-label ${name}`);
+        collect(root, 'fitted');
+        /** @type {HTMLElement} */ (root.querySelector('.image-lightbox-zoom-in')).click();
+        collect(root, 'zoomed');
+        for (let i = 0; i < 12; i++) /** @type {HTMLElement} */ (root.querySelector('.image-lightbox-zoom-in')).click();
+        assert(/** @type {HTMLButtonElement} */ (root.querySelector('.image-lightbox-zoom-in')).disabled, 'zoom in is disabled at the limit');
+        collect(root, 'at the zoom limit');
+      } finally {
+        close();
+      }
+
+      const close2 = openImageLightbox(src, '123');
+      try {
+        const root = /** @type {HTMLElement} */ (document.querySelector('.image-lightbox'));
+        assert(root.getAttribute('aria-label') === '123', 'caller alt text names the dialog as given');
+        collect(root, 'with alt');
+      } finally {
+        close2();
+      }
+    });
+    assert(raw.length === 0, `plain English under en-XA: ${JSON.stringify(raw)}`);
+    passed++;
+  } catch (e) {
+    failed++;
+    errors.push(`en-XA: every label is translated: ${e instanceof Error ? `${e.message}\n${e.stack}` : String(e)}`);
+  }
 
   return { passed, failed, errors };
 }

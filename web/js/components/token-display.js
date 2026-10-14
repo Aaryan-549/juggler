@@ -3,6 +3,8 @@
 //   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
 
 import { formatTokens as fmtTokens } from '../utils/format.js';
+import { t, htmlSlots, withHtml, formatNumber } from '../../sdk/lib/i18n.js';
+import { escapeHtml } from '../../sdk/lib/html.js';
 
 /** Uncached delta above this earns the `cache-warn` treatment (tokens). */
 const UNCACHED_WARN_TOKENS = 5000;
@@ -126,7 +128,7 @@ class TokenDisplay extends HTMLElement {
     // than one that isn't there.
     this.setAttribute('role', 'button');
     this.setAttribute('tabindex', '0');
-    this.setAttribute('aria-label', 'View transaction');
+    this.setAttribute('aria-label', t('View transaction'));
 
     // The cached count the render works from: null wherever there is nothing
     // trustworthy to say about the cache, whether because the provider did not
@@ -161,8 +163,17 @@ class TokenDisplay extends HTMLElement {
     // "cached" starting the next) is a worse read than a longer line.
     let leftText = `${this.approximate ? '~' : ''}${fmtTokens(this.total)}`;
     if (cached !== null && cached > 0) {
-      const newPart = warn ? ` · <span class="token-new">+${fmtTokens(uncached)}\u00A0new</span>` : '';
-      leftText += ` <span class="token-cached">(${fmtTokens(cached)}\u00A0cached${newPart})</span>`;
+      const cachedCount = fmtTokens(cached);
+      let cachedHTML;
+      if (warn) {
+        const markup = {
+          uncached: `<span class="token-new">${escapeHtml(t('+{count}\u00A0new', { count: fmtTokens(uncached) }))}</span>`
+        };
+        cachedHTML = withHtml(t('({count}\u00A0cached · {uncached})', htmlSlots(markup, { count: cachedCount })), markup);
+      } else {
+        cachedHTML = escapeHtml(t('({count}\u00A0cached)', { count: cachedCount }));
+      }
+      leftText += ` <span class="token-cached">${cachedHTML}</span>`;
     }
 
     const meterHTML = hasBudget
@@ -180,11 +191,11 @@ class TokenDisplay extends HTMLElement {
     // the news, and a warning repeated on every hover of a state the user chose
     // is not.
     if (hasBudget && truePct > 100) {
-      this.title = `${fmtTokens(this.total - this.budget)} over the window.`;
+      this.title = t('{count} over the window.', { count: fmtTokens(this.total - this.budget) });
     } else if (hasBudget && totalPct >= NEARLY_FULL_PCT) {
-      this.title = `${Math.round(totalPct)}% full. Something’s got to give.`;
+      this.title = t('{percent}% full. Something’s got to give.', { percent: formatNumber(Math.round(totalPct)) });
     } else if (!this.processing && this.cached === null) {
-      this.title = 'Cache use not reported for this turn.';
+      this.title = t('Cache use not reported for this turn.');
     } else {
       this.removeAttribute('title');
     }

@@ -21,12 +21,12 @@ import { createPinControl } from '../utils/properties-panel-helpers.js';
 import { TOOL_STATES } from '../../sdk/lib/message.js';
 import { findNeighborItemId } from '../services/context-item-utilities.js';
 import { renderTransactionDetail } from './transaction-detail-renderer.js';
-import { dispatchItemRenderer, renderContextItem } from '../services/renderers/item-renderers.js';
+import { dispatchItemRenderer, renderContextItem, runningStatusText } from '../services/renderers/item-renderers.js';
 import workerManager from '../services/worker-manager.js';
 import { openSettings } from '../services/settings-launcher.js';
 import { setupColumnResize } from '../utils/column-resize.js';
-import { formatDuration, formatRelativeDateTime, formatTokens } from '../utils/format.js';
-import { formatNumber as formatLocaleNumber } from '../../sdk/lib/i18n.js';
+import { formatRelativeDateTime, formatTokens } from '../utils/format.js';
+import { t, formatNumber as formatLocaleNumber } from '../../sdk/lib/i18n.js';
 import { plain } from '../model/item-accessor.js';
 import { estimateTokens, llmTextForItem } from '../utils/token-estimate.js';
 import { FormattingHelpers } from '../../sdk/lib/formatting-helpers.js';
@@ -423,7 +423,7 @@ class PropertiesPanel extends HTMLElement {
     const root = this.querySelector('properties-panel-section');
     const watch = this.querySelector('properties-panel-content');
     if (!root || !watch) return null;
-    return { root, watch, mount: this, label: 'Find in properties' };
+    return { root, watch, mount: this, label: t('Find in properties') };
   }
 
   /**
@@ -590,7 +590,7 @@ class PropertiesPanel extends HTMLElement {
       const startMs = Number(/** @type {HTMLElement} */ (el).dataset.elapsedSince);
       if (!Number.isFinite(startMs)) return;
       const seconds = Math.max(0, Math.round((now - startMs) / 1000));
-      el.textContent = `Running… ${formatDuration(seconds)}`;
+      el.textContent = runningStatusText(seconds);
     });
   }
 

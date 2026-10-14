@@ -5,8 +5,10 @@
 
 import ContextItem from 'juggler/context-item';
 import { extensionConfigResolve, httpRequest } from 'juggler/ops';
+import { translator, markUntranslated } from 'juggler/i18n';
 
 const EXTENSION_ID = '@juggler/exa';
+const t = translator(EXTENSION_ID);
 const SEARCH_URL = 'https://api.exa.ai/search';
 const SEARCH_TYPES = new Set(['instant', 'fast', 'auto', 'deep-lite', 'deep', 'deep-reasoning']);
 const CONTENTS_MODES = new Set(['highlights', 'text', 'none']);
@@ -181,7 +183,8 @@ class ExaSearchContextItem extends ContextItem {
     );
     const apiKey = typeof config.api_key === 'string' ? config.api_key.trim() : '';
     if (!apiKey) {
-      throw new Error('Exa API key is not configured. Set it in Settings → Extensions → Exa Search.');
+      // Becomes the tool's outcome.error, which the model reads.
+      throw new Error(markUntranslated('Exa API key is not configured. Set it in Settings → Extensions → Exa Search.'));
     }
 
     const numResults = searchParams.numResults ?? 10;
@@ -215,17 +218,17 @@ class ExaSearchContextItem extends ContextItem {
       payload = JSON.parse(response.body);
     } catch {
       if (response.status < 200 || response.status >= 300) {
-        const message = response.body.trim() || response.statusText || 'Unknown error';
-        throw new Error(`Exa request failed (HTTP ${response.status}): ${message}`);
+        const message = response.body.trim() || response.statusText || markUntranslated('Unknown error');
+        throw new Error(markUntranslated(`Exa request failed (HTTP ${response.status}): ${message}`));
       }
-      throw new Error(`Exa returned invalid JSON (HTTP ${response.status})`);
+      throw new Error(markUntranslated(`Exa returned invalid JSON (HTTP ${response.status})`));
     }
     if (response.status < 200 || response.status >= 300) {
       const message = payload?.error?.message || payload?.error || payload?.message || response.statusText;
-      throw new Error(`Exa request failed (HTTP ${response.status}): ${String(message || 'Unknown error')}`);
+      throw new Error(markUntranslated(`Exa request failed (HTTP ${response.status}): ${String(message || 'Unknown error')}`));
     }
     if (!Array.isArray(payload?.results)) {
-      throw new Error('Exa response is missing a results array');
+      throw new Error(markUntranslated('Exa response is missing a results array'));
     }
 
     return {
@@ -270,23 +273,26 @@ class ExaSearchContextItem extends ContextItem {
    * @returns {import('juggler/context-item').ResultStatusMessage|null} Status message
    */
   getStatusUI(actionStatus, toolInput) {
-    const query = String(toolInput?.query || 'unknown');
+    const query = String(toolInput?.query || t('unknown'));
     const displayQuery = query.length > 40 ? query.substring(0, 40) + '...' : query;
 
     return this.buildStatusUI(actionStatus, {
-      typeName: 'Exa Search',
-      pending: `Searching Exa for "${displayQuery}"...`,
+      typeName: t('Exa Search'),
+      pending: t('Searching Exa for "{query}"...', { query: displayQuery }),
       success: () => {
         const result = /** @type {ExaSearchResult} */ (actionStatus?.result);
         const count = result.count ?? result.results?.length ?? 0;
-        return `Found ${count} Exa result${count === 1 ? '' : 's'} for "${displayQuery}"`;
+        return t(
+          '{count, plural, one {Found {count} Exa result for "{query}"} other {Found {count} Exa results for "{query}"}}',
+          { count, query: displayQuery }
+        );
       }
     });
   }
 
   /** @returns {string} Result section label */
   static getResultSectionLabel() {
-    return 'Results';
+    return t('Results');
   }
 
   /**
@@ -295,7 +301,7 @@ class ExaSearchContextItem extends ContextItem {
    */
   renderToolActionDetails(wrapper, ctx) {
     const query = ctx.input.query !== null && ctx.input.query !== undefined ? String(ctx.input.query) : '';
-    ctx.helpers.addSubsection(wrapper, 'Query', query, 'properties-panel-code');
+    ctx.helpers.addSubsection(wrapper, t('Query'), query, 'properties-panel-code');
   }
 }
 
