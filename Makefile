@@ -663,7 +663,7 @@ fmt:
 
 # Pin golangci-lint to the same version the CI workflow installs, so local
 # and CI runs see the same rule set and the same false-positive surface.
-GOLANGCI_LINT_VERSION=v2.13.2
+GOLANGCI_LINT_VERSION=v2.14.0
 
 ## lint: Run all linters (Go + JavaScript type checking + JavaScript linting + CSS)
 ## This and `lint-files` are the ONLY sanctioned ways to lint. Never invoke

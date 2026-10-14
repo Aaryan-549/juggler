@@ -13,6 +13,16 @@
 # copy the lint targets invoke by absolute path. A golangci-lint elsewhere on
 # PATH (Homebrew, distro package) is irrelevant to them and is ignored here.
 #
+# The binary must also have been built with the same Go release (major.minor)
+# as the installed toolchain: golangci-lint supports only Go versions up to the
+# one it was compiled with, so a Go upgrade with the pinned linter version
+# already present needs a rebuild, not just a version match.
+#
+# A rebuild does not fix "(typecheck) ... export data version N is greater than
+# maximum supported version M". That decoder is golang.org/x/tools' copy of
+# pkgbits, fixed by golangci-lint's go.mod rather than by the Go it is built
+# with, so the cure is a newer GOLANGCI_LINT_VERSION.
+#
 # Used by the Makefile's lint-go / fix-go and by scripts/lint-files. Never
 # install golangci-lint by hand -- go through this, or the pin drifts.
 
@@ -26,13 +36,23 @@ fi
 bin="$(go env GOPATH)/bin/golangci-lint"
 want="${GOLANGCI_LINT_VERSION#v}"
 have=""
+built=""
+
+# "go1.26.3", "go1.27rc1", "go1.26.3 X:nocoverageredesign" -> "1.26" / "1.27"
+go_minor() { sed -n 's/^go\([0-9]*\.[0-9]*\).*/\1/p'; }
+toolchain="$(go env GOVERSION | go_minor)"
 
 # "golangci-lint has version 2.13.2 built with go1.26.3 from ... on ..."
 if [ -x "$bin" ]; then
-	have="$("$bin" version 2>/dev/null | sed -n 's/.*has version \([^ ]*\).*/\1/p')"
+	version_line="$("$bin" version 2>/dev/null || true)"
+	have="$(printf '%s\n' "$version_line" | sed -n 's/.*has version \([^ ]*\).*/\1/p')"
+	built="$(printf '%s\n' "$version_line" | sed -n 's/.*built with \(go[^ ]*\).*/\1/p' | go_minor)"
 fi
 
 if [ "$have" != "$want" ]; then
 	echo "Installing golangci-lint $GOLANGCI_LINT_VERSION (found: ${have:-none})..."
+	go install "github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$GOLANGCI_LINT_VERSION"
+elif [ "$built" != "$toolchain" ]; then
+	echo "Rebuilding golangci-lint $GOLANGCI_LINT_VERSION with go$toolchain (built with: go${built:-unknown})..."
 	go install "github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$GOLANGCI_LINT_VERSION"
 fi
