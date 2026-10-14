@@ -44,6 +44,8 @@ import { formatRelativeDateTime } from '../utils/format.js';
 import providersCache from '../services/providers-cache.js';
 import { openSettings } from '../services/settings-launcher.js';
 import { FORK_SVG, UNDO_SVG } from '../utils/icons.js';
+import { createCopyButton } from '../../sdk/lib/copy-button.js';
+import { conversationToMarkdown } from '../utils/conversation-markdown.js';
 
 const TOKEN_UPDATE_DEBOUNCE_MS = 2000;
 
@@ -791,6 +793,14 @@ class ConversationFooter extends HTMLElement {
         const conversationId = this._messageThread?.conversation?.id;
         if (conversationId) openSettings('logs', { conversationLog: conversationId });
       });
+
+      // Its neighbour copies the whole conversation as Markdown — the whole
+      // conversation even from a sub-thread's column, like the log beside it.
+      logBtn.before(createCopyButton(
+        () => conversationToMarkdown(this._messageThread?.conversation),
+        'properties-panel-header-icon-btn footer-copy-btn',
+        'Copy conversation to clipboard'
+      ));
     }
 
     const duplicateTabBtn = this.querySelector('.duplicate-to-tab-btn');

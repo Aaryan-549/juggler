@@ -55,6 +55,8 @@ import JugglerElement from './juggler-element.js';
 import { showAlert, showConfirm, showNotice } from './modal-dialog.js';
 import { whyNotRebind, moveNeedsConfirmation, rebindConversation } from '../services/workspace-rebinding.js';
 import { extractErrorMessage } from '../../sdk/lib/error-utils.js';
+import { copyToClipboard } from '../../sdk/lib/clipboard.js';
+import { conversationToMarkdown } from '../utils/conversation-markdown.js';
 import './bin-modal.js';
 import './info-rail.js';
 import './workspace-box-header.js';
@@ -2116,6 +2118,27 @@ class ConversationBar extends JugglerElement {
   }
 
   /**
+   * Copy a conversation to the clipboard as a Markdown transcript. The
+   * right-clicked tab may be one not opened this session, whose items are not
+   * loaded yet, so it is loaded first.
+   * @param {string} conversationId
+   * @private
+   * @async
+   */
+  async _copyConversationMarkdown(conversationId) {
+    if (!this._session) return;
+    try {
+      await this._session.ensureConversationLoaded(conversationId);
+      const conversation = this._session.getConversation(conversationId);
+      if (!conversation) return;
+      await copyToClipboard(conversationToMarkdown(conversation));
+      showNotice('Conversation copied to clipboard');
+    } catch (error) {
+      await showAlert(extractErrorMessage(error), 'Copy Failed');
+    }
+  }
+
+  /**
    * Detach the tab from layout and fly it toward the Bin button.
    * No-op if motion is reduced or either element is missing. The tab is
    * removed from `_cachedElements` so the next render() cleanup pass
@@ -2850,6 +2873,7 @@ registerContextMenuProvider({
     const items = [
       { label: 'Rename', onClick: () => bar._enterRenameMode(convId) },
       { label: 'Duplicate', onClick: () => { void bar._duplicateConversation(convId); } },
+      { label: 'Copy Conversation to Clipboard', onClick: () => { void bar._copyConversationMarkdown(convId); } },
     ];
     // Omit "Move to Bin" mid-loop — same intent as the CSS that hides the
     // per-tab bin button while running. _binConversation enforces this too;

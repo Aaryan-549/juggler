@@ -299,14 +299,18 @@ conversation-empty-hint.no-room-for-tips .empty-hint-tips {
 }
 
 
-/* Conversation Footer - Shows spinner when processing, continue button when idle */
+/* Conversation Footer - Shows spinner when processing, continue button when idle.
+   Clipped sideways only, so a long row cannot widen the column. Vertically it
+   stays open: the copy button's "Copied" bubble rises out of the footer's top
+   edge over the transcript, and a vertical clip cuts it off there. `clip`
+   rather than `hidden` because only `clip` leaves the other axis visible. */
 conversation-footer {
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
     padding: 0.75rem 0.5rem;
     min-width: 0;
-    overflow: hidden;
+    overflow: clip visible;
 }
 
 footer-processing {
@@ -436,6 +440,14 @@ conversation-footer token-display {
     align-items: center;
     gap: 0.5rem;
     margin-left: auto;
+}
+
+/* The footer is the column's bottom edge, so the copy button's "Copied" bubble
+   opens upward, into the transcript, instead of below the clip edge. */
+.footer-copy-btn.copied::after {
+    top: auto;
+    bottom: calc(100% + 0.25rem);
+    transform-origin: bottom right;
 }
 
 /* Typeset as the token count beside it — same size, weight and muted colour, so
