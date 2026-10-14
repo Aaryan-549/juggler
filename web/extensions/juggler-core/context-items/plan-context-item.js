@@ -8,7 +8,27 @@ import { createElement } from 'juggler/ui';
 import {
   createEmptyState
 } from 'juggler/item-utils';
+import { translator, markUntranslated, markForTranslation } from 'juggler/i18n';
 import { createPlanBlock, renderPlanMarkdown } from '../lib/task-lists.js';
+
+const t = translator('@juggler/core');
+
+/**
+ * A step status as the transcript row and the status line show it. The model
+ * reads the raw status in its tool results.
+ * @param {unknown} status - Step status
+ * @returns {string} The status in the viewer's language, or the raw value for an unknown one
+ */
+function statusLabel(status) {
+  switch (status) {
+    case 'pending': return t('pending');
+    case 'in_progress': return t('in_progress');
+    case 'completed': return t('completed');
+    case 'failed': return t('failed');
+    case 'skipped': return t('skipped');
+    default: return String(status ?? '');
+  }
+}
 
 /**
  * Plan step with status and thread tracking
@@ -91,6 +111,7 @@ class PlanContextItem extends ContextItem {
     contextPosition: 'none',
     syntheticToolName: 'plan',
     exampleData: {
+      // i18n-ignore: example data, not drawn as UI text
       title: 'Implement User Authentication',
       status: 'executing',
       steps: [
@@ -130,7 +151,7 @@ class PlanContextItem extends ContextItem {
    * @returns {string} Display title
    */
   static getToolActionTitle(toolInput) {
-    return (toolInput?.action || 'submit') === 'submit' ? 'Plan' : 'Update plan';
+    return (toolInput?.action || 'submit') === 'submit' ? t('Plan') : t('Update plan');
   }
 
   // ============================================================================
@@ -252,9 +273,9 @@ class PlanContextItem extends ContextItem {
    */
   getTitle() {
     if (this.data.title) {
-      return `Plan: ${this.data.title}`;
+      return t('Plan: {title}', { title: this.data.title });
     }
-    return 'Plan';
+    return t('Plan');
   }
 
   /**
@@ -300,10 +321,10 @@ class PlanContextItem extends ContextItem {
     const completed = this._countByStatus('completed');
 
     if (total === 0) {
-      return 'No steps';
+      return t('No steps');
     }
 
-    return `${completed}/${total} completed`;
+    return t('{completed}/{total} completed', { completed, total });
   }
 
   /**
@@ -315,7 +336,7 @@ class PlanContextItem extends ContextItem {
 
     const steps = this.data.steps || [];
     if (steps.length === 0) {
-      const empty = createEmptyState('No plan steps yet', '');
+      const empty = createEmptyState(t('No plan steps yet'), '');
       container.appendChild(empty);
       return container;
     }
@@ -377,7 +398,7 @@ class PlanContextItem extends ContextItem {
     const action = /** @type {string|undefined} */ (toolInput.action);
 
     if (!action) {
-      return { valid: false, error: 'Missing required parameter: action' };
+      return { valid: false, error: markUntranslated('Missing required parameter: action') };
     }
 
     if (action === 'submit') {
@@ -400,7 +421,7 @@ class PlanContextItem extends ContextItem {
       return this._validateStepAction(toolInput, 'skip_step');
     }
 
-    return { valid: false, error: `Unknown action: ${action}. Must be one of: submit, start_step, complete_step, fail_step, skip_step.` };
+    return { valid: false, error: markUntranslated(`Unknown action: ${action}. Must be one of: submit, start_step, complete_step, fail_step, skip_step.`) };
   }
 
   /**
@@ -413,7 +434,7 @@ class PlanContextItem extends ContextItem {
     // Title: weaker models sometimes omit it or name it differently. A plan
     // without a title is still a usable plan, so default rather than reject.
     const rawTitle = toolInput.title ?? toolInput.name ?? toolInput.plan_title;
-    const title = typeof rawTitle === 'string' && rawTitle.trim() ? rawTitle : 'Implementation Plan';
+    const title = typeof rawTitle === 'string' && rawTitle.trim() ? rawTitle : markUntranslated('Implementation Plan'); // stored, and read by the model in its tool result
 
     // Items: the tool param is `items`, but the stored shape, the PlanData
     // typedef, and the rendered plan context all call them `steps`, so a model
@@ -425,16 +446,16 @@ class PlanContextItem extends ContextItem {
       try {
         items = JSON.parse(items);
       } catch {
-        return { valid: false, error: 'Items parameter is not valid JSON' };
+        return { valid: false, error: markUntranslated('Items parameter is not valid JSON') };
       }
     }
 
     if (!items || !Array.isArray(items)) {
-      return { valid: false, error: 'Missing required parameter: items (must be array)' };
+      return { valid: false, error: markUntranslated('Missing required parameter: items (must be array)') };
     }
 
     if (items.length === 0) {
-      return { valid: false, error: 'Plan must have at least one step' };
+      return { valid: false, error: markUntranslated('Plan must have at least one step') };
     }
 
     // Validate each item and normalize to step format
@@ -442,7 +463,7 @@ class PlanContextItem extends ContextItem {
     for (const [i, item] of items.entries()) {
       const content = PlanContextItem._resolveStepContent(item);
       if (!content) {
-        return { valid: false, error: `Step ${i} is missing content` };
+        return { valid: false, error: markUntranslated(`Step ${i} is missing content`) };
       }
       normalizedSteps.push({
         content,
@@ -498,11 +519,11 @@ class PlanContextItem extends ContextItem {
     // undocumented aliases kept for resilience.
     const rawIndex = toolInput.index ?? toolInput.id ?? toolInput.item;
     if (rawIndex === undefined || rawIndex === null) {
-      return { valid: false, error: 'Missing required parameter: index' };
+      return { valid: false, error: markUntranslated('Missing required parameter: index') };
     }
 
     if (!Number.isInteger(rawIndex) || /** @type {number} */ (rawIndex) < 1) {
-      return { valid: false, error: `index must be a positive integer (1-based), got: ${rawIndex}` };
+      return { valid: false, error: markUntranslated(`index must be a positive integer (1-based), got: ${rawIndex}`) };
     }
 
     /** @type {Record<string, unknown>} */
@@ -541,11 +562,12 @@ class PlanContextItem extends ContextItem {
     };
 
     return {
-      title: `Plan: ${planParams.title}`,
-      message: `${planParams.items.length} step${planParams.items.length !== 1 ? 's' : ''} - Review and approve to begin execution`,
+      title: t('Plan: {title}', { title: planParams.title }),
+      message: t('{count, plural, one {# step} other {# steps}} - Review and approve to begin execution', { count: planParams.items.length }),
+      // English source, drawn through <action-confirmation>'s t(opt.label).
       options: [
-        { label: 'Approve', value: 'yes', style: 'primary' },
-        { label: 'Discuss further', value: 'no', style: 'secondary' }
+        { label: markForTranslation('Approve'), value: 'yes', style: 'primary' },
+        { label: markForTranslation('Discuss further'), value: 'no', style: 'secondary' }
       ],
       display: { planData }
     };
@@ -653,7 +675,7 @@ class PlanContextItem extends ContextItem {
       case 'skip_step':
         return this._executeSkipStep(params);
       default:
-        throw new Error(`Unknown action: ${params.action}`);
+        throw new Error(markUntranslated(`Unknown action: ${params.action}`));
     }
   }
 
@@ -766,12 +788,12 @@ class PlanContextItem extends ContextItem {
     );
 
     if (!planContextItem) {
-      throw new Error('No plan exists. Submit a plan first using action: "submit".');
+      throw new Error(markUntranslated('No plan exists. Submit a plan first using action: "submit".'));
     }
 
     const steps = planContextItem.data.steps || [];
     if (oneBasedIndex > steps.length) {
-      throw new Error(`Invalid index: ${oneBasedIndex}. Plan has ${steps.length} steps (1-${steps.length}).`);
+      throw new Error(markUntranslated(`Invalid index: ${oneBasedIndex}. Plan has ${steps.length} steps (1-${steps.length}).`));
     }
     const index = oneBasedIndex - 1; // Convert to 0-based
 
@@ -811,7 +833,7 @@ class PlanContextItem extends ContextItem {
 
     // Surface the step transition via the conversation's status spinner.
     this.conversation.setStatusMessage(
-      `Step ${oneBasedIndex} \u2192 ${newStatus} (${completed}/${total} completed)`
+      t('Step {index} \u2192 {status} ({completed}/{total} completed)', { index: oneBasedIndex, status: statusLabel(newStatus), completed, total })
     );
 
     return {
@@ -886,24 +908,24 @@ class PlanContextItem extends ContextItem {
     }
 
     // Submit action summary
-    const prepTitle = prepParams.title || 'Plan';
+    const prepTitle = prepParams.title || markUntranslated('Plan');
 
     if (outcome.cancelled) {
-      return this.failureSummary(`Plan cancelled: ${prepTitle}`, {
-        details: 'You can revise the plan and resubmit.',
-        feedbackForLLM: 'The user wants to discuss the plan further. Ask them what changes they would like, then revise and resubmit.'
+      return this.failureSummary(markUntranslated(`Plan cancelled: ${prepTitle}`), {
+        details: markUntranslated('You can revise the plan and resubmit.'),
+        feedbackForLLM: markUntranslated('The user wants to discuss the plan further. Ask them what changes they would like, then revise and resubmit.')
       });
     }
 
     if (!outcome.success) {
-      return this.failureSummary(`Plan submission failed: ${outcome.error}`);
+      return this.failureSummary(markUntranslated(`Plan submission failed: ${outcome.error}`));
     }
 
     const result = /** @type {SubmitPlanResult} */ (outcome.result);
 
-    return this.successSummary(`Plan approved: ${result.title}`, {
-      details: `${result.stepCount} steps - Execution will begin automatically`,
-      feedbackForLLM: `Plan "${result.title}" was approved with ${result.stepCount} steps. Execution will begin automatically. Use plan(action: 'start_step', index: N) before working on each step, then plan(action: 'complete_step', index: N, result: '...') when done. Use create_thread for complex steps, or work inline for simple ones.`
+    return this.successSummary(markUntranslated(`Plan approved: ${result.title}`), {
+      details: markUntranslated(`${result.stepCount} steps - Execution will begin automatically`),
+      feedbackForLLM: markUntranslated(`Plan "${result.title}" was approved with ${result.stepCount} steps. Execution will begin automatically. Use plan(action: 'start_step', index: N) before working on each step, then plan(action: 'complete_step', index: N, result: '...') when done. Use create_thread for complex steps, or work inline for simple ones.`)
     });
   }
 
@@ -915,12 +937,12 @@ class PlanContextItem extends ContextItem {
    */
   _getStepActionSummary(outcome) {
     if (!outcome.success) {
-      return this.failureSummary(`Step update failed: ${outcome.error}`);
+      return this.failureSummary(markUntranslated(`Step update failed: ${outcome.error}`));
     }
 
     const result = /** @type {StepActionResult} */ (outcome.result);
     return this.successSummary(
-      `Step ${result.index + 1}: ${result.oldStatus} \u2192 ${result.newStatus} (${result.completed}/${result.total} completed)`,
+      markUntranslated(`Step ${result.index + 1}: ${result.oldStatus} \u2192 ${result.newStatus} (${result.completed}/${result.total} completed)`),
       {
         details: result.result || '',
         // The plan is contextPosition:'none' \u2014 it is NOT re-rendered into the
@@ -945,7 +967,7 @@ class PlanContextItem extends ContextItem {
    */
   static _renderPlanEcho(snapshot) {
     const content = renderPlanMarkdown(snapshot, { statusWords: true });
-    return content ? `Current plan state:\n${content}` : '';
+    return content ? markUntranslated(`Current plan state:\n${content}`) : '';
   }
 
   /**
@@ -961,8 +983,8 @@ class PlanContextItem extends ContextItem {
     // Context-item-message rendering (no args) — the persistent "Current Plan" item
     if (!actionStatus) {
       return {
-        typeName: 'Plan',
-        summary: this.data.title || 'Implementation Plan'
+        typeName: t('Plan'),
+        summary: this.data.title || t('Implementation Plan')
       };
     }
 
@@ -970,7 +992,8 @@ class PlanContextItem extends ContextItem {
     const isStepAction = action !== 'submit';
     // "submit" creates/replaces the plan; the step actions change it. Badge each
     // for what it does so creation and update aren't both just "Plan".
-    const typeName = isStepAction ? 'Update plan' : 'Plan';
+    // Drawn by the viewer at render time, so it follows the viewer's language.
+    const typeName = isStepAction ? t('Update plan') : t('Plan');
 
     // Get plan data from displayData (set during prepare)
     const planData = /** @type {any} */ (actionStatus)?.displayData?.planData ||
@@ -982,7 +1005,7 @@ class PlanContextItem extends ContextItem {
         typeName,
         summary: isStepAction
           ? this._stepActionSummary(action, toolInput?.index)
-          : (planData?.title || 'Implementation Plan')
+          : (planData?.title || t('Implementation Plan'))
       };
     }
 
@@ -990,7 +1013,7 @@ class PlanContextItem extends ContextItem {
     if (actionStatus?.cancelled) {
       return {
         typeName,
-        summary: `cancelled: ${planData?.title || 'Plan'}`,
+        summary: t('cancelled: {title}', { title: planData?.title || t('Plan') }),
         status: /** @type {import('juggler/context-item').ResultStatus} */ ('cancelled')
       };
     }
@@ -1001,14 +1024,20 @@ class PlanContextItem extends ContextItem {
         const result = /** @type {StepActionResult} */ (actionStatus.result);
         return {
           typeName,
-          summary: `Step ${(result?.index ?? 0) + 1}: ${result?.oldStatus} \u2192 ${result?.newStatus} (${result?.completed}/${result?.total})`,
+          summary: t('Step {index}: {from} \u2192 {to} ({completed}/{total})', {
+            index: (result?.index ?? 0) + 1,
+            from: statusLabel(result?.oldStatus),
+            to: statusLabel(result?.newStatus),
+            completed: result?.completed,
+            total: result?.total
+          }),
           status: /** @type {import('juggler/context-item').ResultStatus} */ ('success')
         };
       }
       const result = /** @type {SubmitPlanResult} */ (actionStatus.result);
       return {
         typeName,
-        summary: `approved: ${result?.title || 'Plan'}`,
+        summary: t('approved: {title}', { title: result?.title || t('Plan') }),
         status: /** @type {import('juggler/context-item').ResultStatus} */ ('success')
       };
     }
@@ -1016,7 +1045,8 @@ class PlanContextItem extends ContextItem {
     // For error state
     if (actionStatus?.error) {
       const errorSummary = isStepAction
-        ? `Step ${toolInput?.index || '?'} failed: ${actionStatus.error}`
+        ? t('Step {index} failed: {error}', { index: toolInput?.index || '?', error: actionStatus.error })
+        // The error is the tool result the model read, shown as it was.
         : actionStatus.error;
       return {
         typeName,
@@ -1037,13 +1067,21 @@ class PlanContextItem extends ContextItem {
    * @private
    */
   _stepActionSummary(action, index) {
-    const n = index ? ` ${index}` : '';
+    if (index) {
+      switch (action) {
+        case 'start_step': return t('Starting step {index}', { index });
+        case 'complete_step': return t('Completing step {index}', { index });
+        case 'fail_step': return t('Failing step {index}', { index });
+        case 'skip_step': return t('Skipping step {index}', { index });
+        default: return t('Updating step {index}', { index });
+      }
+    }
     switch (action) {
-      case 'start_step': return `Starting step${n}`;
-      case 'complete_step': return `Completing step${n}`;
-      case 'fail_step': return `Failing step${n}`;
-      case 'skip_step': return `Skipping step${n}`;
-      default: return `Updating step${n}`;
+      case 'start_step': return t('Starting step');
+      case 'complete_step': return t('Completing step');
+      case 'fail_step': return t('Failing step');
+      case 'skip_step': return t('Skipping step');
+      default: return t('Updating step');
     }
   }
 
@@ -1095,8 +1133,16 @@ class PlanContextItem extends ContextItem {
       }));
       planData = { title: input.title || '', status: 'planning', steps: items };
     } else {
-      const stepLabel = `${(input.action || '').replace(/_/g, ' ')}: Step ${input.index || '?'}`;
-      helpers.addSubsection(wrapper, 'Action', stepLabel, 'properties-panel-code');
+      const index = input.index || '?';
+      let stepLabel;
+      switch (input.action) {
+        case 'start_step': stepLabel = t('start step: Step {index}', { index }); break;
+        case 'complete_step': stepLabel = t('complete step: Step {index}', { index }); break;
+        case 'fail_step': stepLabel = t('fail step: Step {index}', { index }); break;
+        case 'skip_step': stepLabel = t('skip step: Step {index}', { index }); break;
+        default: stepLabel = t('{action}: Step {index}', { action: String(input.action || '').replace(/_/g, ' '), index });
+      }
+      helpers.addSubsection(wrapper, t('Action'), stepLabel, 'properties-panel-code');
       // The step's result summary is rendered inline within the plan view
       // (each completed step shows its own result), so no separate trailing
       // "Result" section is needed — it would just duplicate it.
@@ -1131,7 +1177,7 @@ class PlanContextItem extends ContextItem {
     } else if (action !== 'submit') {
       return { skipResultSection: true };
     } else {
-      helpers.addSubsection(wrapper, 'Action', 'Submit plan', 'properties-panel-code');
+      helpers.addSubsection(wrapper, t('Action'), t('Submit plan'), 'properties-panel-code');
     }
   }
 }

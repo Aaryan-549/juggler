@@ -9,6 +9,9 @@ import { createSummaryWithSubtitle } from 'juggler/ui';
 import { renderLiveTaskOutput } from '../../../sdk/lib/live-task-output.js';
 import { renderTaskDeliveryControl } from '../../../sdk/lib/task-delivery-control.js';
 import { isShellCommandPermitted, isShellCommandCatastrophic } from './execute/command-permission.js';
+import { translator, markUntranslated } from 'juggler/i18n';
+
+const t = translator('@juggler/core');
 
 /**
  * MonitorContextItem — start a long-running background command whose output is
@@ -43,7 +46,7 @@ class MonitorContextItem extends ContextItem {
 
   /** @returns {string} Short type label shown on item cards and the permissions popup */
   static getTypeName() {
-    return 'Monitor';
+    return t('Monitor');
   }
 
   /**
@@ -142,9 +145,11 @@ class MonitorContextItem extends ContextItem {
    */
   async getApprovalConfig(params) {
     const command = /** @type {string} */ (params.command);
-    const description = params.description ? ` (${params.description})` : '';
+    const description = params.description ? String(params.description) : '';
     return {
-      message: `Start monitor${description}:\n\n${command}\n\nThis runs in the background; its output streams into the conversation.`
+      message: description
+        ? t('Start monitor ({description}):\n\n{command}\n\nThis runs in the background; its output streams into the conversation.', { description, command })
+        : t('Start monitor:\n\n{command}\n\nThis runs in the background; its output streams into the conversation.', { command })
     };
   }
 
@@ -157,18 +162,18 @@ class MonitorContextItem extends ContextItem {
   async validate(toolInput) {
     const params = toolInput;
     if (!params.command) {
-      return { valid: false, error: 'Missing required parameter: command' };
+      return { valid: false, error: markUntranslated('Missing required parameter: command') };
     }
     if (typeof params.command !== 'string') {
-      return { valid: false, error: 'Parameter "command" must be a string' };
+      return { valid: false, error: markUntranslated('Parameter "command" must be a string') };
     }
     if (params.timeout_ms !== undefined) {
-      const t = Number(params.timeout_ms);
+      const timeout = Number(params.timeout_ms);
       // Accept any non-negative value and clamp to the backend cap at execute
       // time (below) rather than rejecting, so a generous timeout_ms still runs
       // (capped) instead of failing validation.
-      if (isNaN(t) || t < 0) {
-        return { valid: false, error: 'Parameter "timeout_ms" must be a non-negative number' };
+      if (isNaN(timeout) || timeout < 0) {
+        return { valid: false, error: markUntranslated('Parameter "timeout_ms" must be a non-negative number') };
       }
     }
     return { valid: true, params: toolInput };
@@ -200,8 +205,9 @@ class MonitorContextItem extends ContextItem {
 
     // Ask the worker (via the generic task-output delivery binding) to stream
     // this task's stdout into the conversation. Fire-and-forget: the binding
-    // outlives this tool call and ends when the task does.
-    const label = description ? `monitor: ${description}` : 'monitor';
+    // outlives this tool call and ends when the task does. The label heads each
+    // delivered message, which the model reads, so it stays English.
+    const label = description ? markUntranslated(`monitor: ${description}`) : markUntranslated('monitor');
     this.messageThread?.requestTaskOutputDelivery({ taskId: result.task_id, label });
 
     return {
@@ -225,18 +231,18 @@ class MonitorContextItem extends ContextItem {
     const command = prepParams.command || '';
 
     if (outcome.cancelled) {
-      return this.failureSummary('Monitor cancelled', { details: command ? `$ ${command}` : '' });
+      return this.failureSummary(markUntranslated('Monitor cancelled'), { details: command ? `$ ${command}` : '' });
     }
     if (!outcome.success) {
-      return this.failureSummary(`Failed to start monitor: ${outcome.error}`);
+      return this.failureSummary(markUntranslated(`Failed to start monitor: ${outcome.error}`));
     }
 
     const result = /** @type {{task_id?: string, persistent?: boolean}} */ (outcome.result);
     const taskId = result.task_id || '';
     const persistentNote = result.persistent
-      ? ' It is persistent and runs until you call TaskStop or the session ends.'
+      ? markUntranslated(' It is persistent and runs until you call TaskStop or the session ends.')
       : '';
-    const summary = `Monitor started (task ${taskId}). Matching output lines will be delivered into this conversation as they arrive — you keep working and they surface when you next yield, so don't wait for them.${persistentNote} Read full output with TaskOutput(${taskId}); stop it with TaskStop(${taskId}).`;
+    const summary = markUntranslated(`Monitor started (task ${taskId}). Matching output lines will be delivered into this conversation as they arrive — you keep working and they surface when you next yield, so don't wait for them.${persistentNote} Read full output with TaskOutput(${taskId}); stop it with TaskStop(${taskId}).`);
 
     return this.successSummary(summary, { details: `$ ${command}` });
   }
@@ -297,9 +303,9 @@ class MonitorContextItem extends ContextItem {
    */
   renderToolActionDetails(wrapper, ctx) {
     const { input, helpers, toolAction, messageThread } = ctx;
-    helpers.addSubsection(wrapper, 'Command', input.command || '', 'properties-panel-code');
+    helpers.addSubsection(wrapper, t('Command'), input.command || '', 'properties-panel-code');
     if (input.description) {
-      helpers.addLlmDescription(wrapper, 'Description', String(input.description));
+      helpers.addLlmDescription(wrapper, t('Description'), String(input.description));
     }
 
     const taskId = MonitorContextItem._taskIdFromToolAction(toolAction);

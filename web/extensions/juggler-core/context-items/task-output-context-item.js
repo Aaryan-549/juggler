@@ -5,6 +5,9 @@
 
 import ContextItem from 'juggler/context-item';
 import { shellOutputDelta } from 'juggler/ops';
+import { translator } from 'juggler/i18n';
+
+const t = translator('@juggler/core');
 
 /**
  * TaskOutputContextItem — read the captured output of a background task started
@@ -29,7 +32,7 @@ class TaskOutputContextItem extends ContextItem {
 
   /** @returns {string} Short type label */
   static getTypeName() {
-    return 'TaskOutput';
+    return t('TaskOutput');
   }
 
   /**
@@ -114,9 +117,9 @@ class TaskOutputContextItem extends ContextItem {
     const taskId = String(toolInput?.task_id || '');
     return this.buildStatusUI(actionStatus, {
       typeName: TaskOutputContextItem.getTypeName(),
-      pending: `Reading output of ${taskId}...`,
-      success: `Read output of ${taskId}`,
-      failurePrefix: 'Failed to read task output'
+      pending: t('Reading output of {taskId}...', { taskId }),
+      success: t('Read output of {taskId}', { taskId }),
+      failurePrefix: t('Failed to read task output')
     });
   }
 

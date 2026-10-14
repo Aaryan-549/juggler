@@ -84,7 +84,21 @@ export async function runTests() {
       assert(!!single.querySelector('.pattern-edit-btn'), 'the single-pattern option drew no pencil');
       assertPseudoLocalized(single, { atLeast: 4, where: 'one command pattern, editable' });
 
+      // Lanes share one window's focus, and a blur of the edit input cancels the
+      // edit (hiding the notice for good), so a sibling lane's focus() would
+      // fail this case. The input's focus and select calls (WebKit's select()
+      // focuses too) are observed rather than made; the decoy stands in for the
+      // sibling.
+      const input = /** @type {HTMLInputElement} */ (single.querySelector('.pattern-edit-input'));
+      let focusAsked = false;
+      input.focus = () => { focusAsked = true; };
+      input.select = () => {};
+      const decoy = document.createElement('button');
+      document.body.appendChild(decoy);
+      made.push(decoy);
       single.querySelector('.pattern-edit-btn').click();
+      decoy.focus();
+      assert(focusAsked, 'editing did not put the cursor in the pattern input');
       await waitFor(() => !single.querySelector('.pattern-edit-notice')?.hidden,
         { description: 'the invalid-pattern notice' });
       assertPseudoLocalized(/** @type {Element} */ (single.querySelector('.pattern-edit-field')),

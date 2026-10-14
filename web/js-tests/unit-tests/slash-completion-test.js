@@ -37,6 +37,10 @@ import { initializeRegistries, assert } from '../utilities/test-helpers.js';
 import slashCommandHandler from '../../js/services/slash-command-handler.js';
 import { slashCommandProvider } from '../../js/components/slash-command-provider.js';
 import { extractFileMentionsAsync } from '../../js/components/file-mention-provider.js';
+import commandRegistry from '../../js/registries/command-registry.js';
+import { menuOrderedCommands, buildCommandRow } from '../../js/services/command-manager-entry.js';
+import { isPseudoLocalized } from '../../sdk/lib/i18n.js';
+import { underPseudoLocale, assertPseudoLocalized } from '../utilities/pseudo-locale.js';
 import '../../js/components/composer.js';
 
 /**
@@ -345,6 +349,86 @@ export async function runTests() {
       box._messageThread = null;
       box._completions.close();
       container.remove();
+    }
+  }
+
+  // ── Test 6: en-XA — the menus and the handler's own messages ─────────────
+  // Every row the `/` menu and the button-opened lists draw, the pinned
+  // buttons, the "New command" row, a user command's scope badge, and the three
+  // messages the handler itself returns or asks. A built-in command's name and
+  // description are its extension's text, so they stand in under the id that
+  // owns each command. `/name` glyphs are identifiers, not text.
+  {
+    const realConfirm = /** @type {any} */ (window).showConfirm;
+    try {
+      /** @type {Record<string, string[]>} */
+      const extensionText = {};
+      for (const { id, class: Cmd } of commandRegistry.getAll()) {
+        const m = /** @type {any} */ (Cmd).MANIFEST;
+        const ext = commandRegistry.getExtensionId(id);
+        if (m.userDefined || !ext) continue;
+        (extensionText[ext] ??= []).push(...[m.name, m.description].filter(Boolean));
+      }
+      assert(Object.keys(extensionText).length > 0, 'no built-in command has an owning extension');
+
+      await underPseudoLocale('slash-completion-test', async () => {
+        const builtIn = (/** @type {any[]} */ items) => items.filter((c) => !c.userDefined);
+        const glyphs = 'li:not(.slash-command-new) > code';
+
+        const menu = document.createElement('ul');
+        for (const item of builtIn(await slashCommandProvider.fetch(''))) menu.appendChild(slashCommandProvider.renderItem(item));
+        menu.appendChild(slashCommandProvider.renderItem((await slashCommandProvider.fetch('9')).at(-1)));
+        assert(!!menu.querySelector('.slash-command-new') && !!menu.querySelector('.slash-command-pinned'),
+          'the menu drew no "New command" row or pinned buttons');
+        assertPseudoLocalized(menu, { skip: glyphs, atLeast: 6, where: 'slash menu' });
+
+        // A user command's description is the user's own; its badge is ours.
+        const user = slashCommandProvider.renderItem({ name: '1', userDefined: true, scope: 'project', description: '2' });
+        const badge = user.querySelector('.slash-command-scope-badge')?.textContent ?? '';
+        assert(isPseudoLocalized(badge), `the scope badge reads ${JSON.stringify(badge)}`);
+
+        const list = document.createElement('ul');
+        for (const cmd of menuOrderedCommands(builtIn(slashCommandHandler.getCommands()))) list.appendChild(buildCommandRow(cmd));
+        assertPseudoLocalized(list, { skip: glyphs, atLeast: 3, where: 'button-opened list' });
+
+        /** @type {string[]} */
+        const shown = [];
+        const unknown = await slashCommandHandler.execute('/q');
+        shown.push(String(unknown.message).replace('/q', ''));
+        const busy = { conversation: { isTurnActive: () => true, cancelAndSettle: async () => {} } };
+        const rejected = await slashCommandHandler.execute('/thread', /** @type {any} */ (busy));
+        shown.push(String(rejected.message));
+        /** @type {any[]} */
+        let asked = [];
+        /** @type {any} */ (window).showConfirm = async (/** @type {any[]} */ ...args) => { asked = args; return false; };
+        await slashCommandHandler.execute('/clear', /** @type {any} */ (busy));
+        assert(asked.length === 3, 'stopping a turn asked nothing');
+        shown.push(String(asked[0]).replace('/clear', ''), asked[1], asked[2].confirmText, asked[2].cancelText);
+        // The menu's "no matches" row, for each provider the composer wires.
+        const { box, container } = mountComposer();
+        try {
+          const completions = box._completions;
+          for (const provider of completions._providers) {
+            completions._provider = provider;
+            completions._open([]);
+            const empty = document.querySelector('.completions-menu .menu-item-empty');
+            assert(!!empty, `${provider.id}: no empty row was drawn`);
+            shown.push(String(empty?.textContent));
+            completions.close();
+          }
+        } finally {
+          container.remove();
+        }
+
+        const raw = shown.filter((s) => !isPseudoLocalized(s));
+        assert(raw.length === 0, `plain English under en-XA: ${JSON.stringify(raw)}`);
+      }, extensionText);
+      passed++;
+    } catch (e) {
+      failed++;
+      errors.push('en-XA: ' + (e instanceof Error ? e.message : String(e)));
+    } finally {
+      /** @type {any} */ (window).showConfirm = realConfirm;
     }
   }
 

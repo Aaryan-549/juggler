@@ -7,6 +7,9 @@ import ContextItem from 'juggler/context-item';
 import { formatDisplayPath } from 'juggler/item-utils';
 import { isPathInsideAllowedRoots, canonicalRoot } from 'juggler/utils/path-containment';
 import { renderWriteFilePermissionSection } from './edit/permission-section.js';
+import { translator, markUntranslated } from 'juggler/i18n';
+
+const t = translator('@juggler/core');
 
 /**
  * The single `itemType` used by every edit-family plugin. The rule shape is
@@ -230,6 +233,9 @@ class EditBase extends ContextItem {
    *      out-of-root writes; the label says so.
    *
    * Returns `[]` when the write is already permitted (no prompt appears).
+   *
+   * The labels are UI text: the buttons are built in the engine, which follows
+   * the UI language, and stored with the item, so they are translated here.
    * @override
    * @param {Record<string, unknown>} toolInput - Tool input parameters
    * @returns {import('juggler/context-item').ApprovalSuggestion[]} Suggestions, narrowest first
@@ -243,7 +249,7 @@ class EditBase extends ContextItem {
     // In-root (toggle merely off) or path unknown: the write only needs the
     // file-edit toggle.
     if (!path || this._isPathAllowed(path)) {
-      return [{ itemType: EDIT_ITEM_TYPE, rules: [allowRule], label: 'file edits' }];
+      return [{ itemType: EDIT_ITEM_TYPE, rules: [allowRule], label: t('file edits') }];
     }
 
     // Out-of-root: two tiers.
@@ -256,13 +262,13 @@ class EditBase extends ContextItem {
         itemType: EDIT_ITEM_TYPE,
         rules: [allowRule],
         allowedPaths: [folder],
-        label: `file edits + allow ${EditBase._tildeify(folder, home)}`
+        label: t('file edits + allow {folder}', { folder: EditBase._tildeify(folder, home) })
       });
     }
     suggestions.push({
       itemType: EDIT_ITEM_TYPE,
       rules: [allowRule],
-      label: 'file edits (writes outside the project still prompt)'
+      label: t('file edits (writes outside the project still prompt)')
     });
     return suggestions;
   }
@@ -294,7 +300,7 @@ class EditBase extends ContextItem {
     const outOfRoot = path && !this._isPathAllowed(path);
     return {
       title: outOfRoot ? path : formatDisplayPath(path),
-      message: outOfRoot ? `⚠ Write outside the project folder: ${path}` : '',
+      message: outOfRoot ? t('⚠ Write outside the project folder: {path}', { path }) : '',
       display: {
         diffData: {
           oldContent: diffData.oldContent,
@@ -314,7 +320,7 @@ class EditBase extends ContextItem {
    * @returns {import('juggler/context-item').ItemSummary} Formatted result object for display
    */
   _formatEditResult(path, details) {
-    return this.successSummary(`Edited file: ${path}`, { details });
+    return this.successSummary(markUntranslated(`Edited file: ${path}`), { details });
   }
 
   /**

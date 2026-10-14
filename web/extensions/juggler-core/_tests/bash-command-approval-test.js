@@ -2287,7 +2287,7 @@ export async function runTests() {
       'Executing: {command}', 'Waiting for filesystem-access permission — check for a system dialog',
       'Running… (no output yet)', 'Command cancelled: {command}', '{command} — failed', 'Background',
       'Bash', 'Output', 'Command', 'Description', 'Timeout', 'Background task', '(starting…)', 'Result',
-      'Stop task',
+      'Stop task', '… (truncated)',
     ];
     await underPseudoLocale('bash-command-approval-test', async () => {
       /** @type {Record<string, string>} */
@@ -2358,6 +2358,28 @@ export async function runTests() {
       await item.execute({ command: '1' });
       assertTrue(progress.length === 3, `expected three status lines, got ${JSON.stringify(progress)}`);
       progress.forEach((m, i) => { shown[`progress ${i}`] = m; });
+
+      // The streamed preview the properties panel draws, capped with a prefix
+      // once the output outgrows it. Only its first line is text; the rest is data.
+      /** @type {string[]} */
+      const previews = [];
+      const streamThread = {
+        ...mt,
+        items: [{ get: (/** @type {string} */ k) => (k === 'toolUseId' ? '6' : undefined) }],
+        updateItemField: (/** @type {number} */ _i, /** @type {string} */ _f, /** @type {any} */ v) => { previews.push(v.output); },
+      };
+      const streamer = new ExecuteContextItem({ id: 'xa3', session, conversation: { id: 'c1', session }, messageThread: streamThread });
+      streamer.toolUseId = '6';
+      /** @type {any} */ (streamer)._ops = {
+        shellStreaming: async (/** @type {any} */ _p, /** @type {(c: any) => void} */ onChunk) => {
+          onChunk({ data: '7'.repeat(100_001) });
+          return { command: '1', stdout: '', exitCode: 0, success: true };
+        },
+      };
+      await streamer.execute({ command: '1' });
+      const capped = previews.find((p) => p.length > 100_000);
+      assertTrue(!!capped, `no capped preview was written: ${JSON.stringify(previews.map((p) => p.length))}`);
+      shown['capped preview'] = String(capped).split('\n')[0];
 
       // Properties panel: a background run whose task id has not landed, then
       // one that has (its live output section is never mounted, so it stops

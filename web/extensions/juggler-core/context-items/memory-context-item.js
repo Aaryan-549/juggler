@@ -14,7 +14,10 @@ import ContextItem from 'juggler/context-item';
 // eslint-disable-next-line no-restricted-imports
 import { readFile, writeFile, stat } from 'juggler/ops';
 import { createElement, injectStylesOnce } from 'juggler/ui';
+import { translator, markUntranslated } from 'juggler/i18n';
 import { parseMemory, appendEntry, removeEntry, removeMatching } from '../lib/memory-format.js';
+
+const t = translator('@juggler/core');
 
 /**
  * Last-known-good memory content per path. A transient read failure on an
@@ -185,7 +188,7 @@ class MemoryContextItem extends ContextItem {
 
   /** @returns {string} Item title */
   getTitle() {
-    return 'Project Memory';
+    return t('Project Memory');
   }
 
   /**
@@ -365,17 +368,17 @@ class MemoryContextItem extends ContextItem {
   async validate(toolInput) {
     const action = toolInput.action;
     if (action !== 'remember' && action !== 'forget') {
-      return { valid: false, error: 'Parameter "action" must be "remember" or "forget"' };
+      return { valid: false, error: markUntranslated('Parameter "action" must be "remember" or "forget"') };
     }
     if (action === 'remember') {
       const fact = toolInput.fact;
       if (typeof fact !== 'string' || fact.trim() === '') {
-        return { valid: false, error: 'remember requires a non-empty "fact"' };
+        return { valid: false, error: markUntranslated('remember requires a non-empty "fact"') };
       }
     } else {
       const match = toolInput.match;
       if (typeof match !== 'string' || match === '') {
-        return { valid: false, error: 'forget requires a "match" string' };
+        return { valid: false, error: markUntranslated('forget requires a "match" string') };
       }
     }
     return { valid: true, params: toolInput };
@@ -416,7 +419,7 @@ class MemoryContextItem extends ContextItem {
       return { action: 'forget', match, removed, entryCount: parseMemory(content).entries.length };
     }
 
-    throw new Error(`Unknown memory action: ${params.action}`);
+    throw new Error(markUntranslated(`Unknown memory action: ${params.action}`));
   }
 
   /**
@@ -427,17 +430,17 @@ class MemoryContextItem extends ContextItem {
    */
   getSummary(outcome) {
     if (!outcome.success) {
-      return this.failureSummary(`Memory update failed: ${outcome.error}`);
+      return this.failureSummary(markUntranslated(`Memory update failed: ${outcome.error}`));
     }
     const r = /** @type {{action?: string, fact?: string, match?: string, removed?: string[]}} */ (outcome.result || {});
     if (r.action === 'forget') {
       if (!r.removed || r.removed.length === 0) {
-        return this.successSummary(`No memory entry matched "${r.match}"`);
+        return this.successSummary(markUntranslated(`No memory entry matched "${r.match}"`));
       }
       const noun = r.removed.length === 1 ? 'entry' : 'entries';
-      return this.successSummary(`Forgot ${r.removed.length} memory ${noun}: ${r.removed.join('; ')}`);
+      return this.successSummary(markUntranslated(`Forgot ${r.removed.length} memory ${noun}: ${r.removed.join('; ')}`));
     }
-    return this.successSummary(`Remembered: ${r.fact}`);
+    return this.successSummary(markUntranslated(`Remembered: ${r.fact}`));
   }
 
   /**
@@ -456,7 +459,7 @@ class MemoryContextItem extends ContextItem {
       return '';
     }
     const lines = entries.map((e) => (e.date ? `- [${e.date}] ${e.text}` : `- ${e.text}`));
-    return (
+    return markUntranslated(
       '=== Project Memory ===\n' +
 			'Durable facts you have recorded for this project (maintained via the memory tool):\n\n' +
 			lines.join('\n')
@@ -474,22 +477,34 @@ class MemoryContextItem extends ContextItem {
     // Standing store card: state, not an event. Names what it is and that it
     // reaches the model, so it never reads as a duplicate of the action below.
     if (!actionStatus) {
-      return { typeName: 'Project Memory', summary: 'Durable facts — in context since this conversation began' };
+      return { typeName: t('Project Memory'), summary: t('Durable facts — in context since this conversation began') };
     }
     // Tool-action row: the write event. A verb typeName ('Remember'/'Forget')
     // plus the edit badge distinguishes it from the 'Project Memory' store.
+    // Built from the structured `result` (what `execute` returned, as stored),
+    // never from `content`, which is the model's English. Storage keeps a
+    // `removed` list of more than five as `removedCount` alone.
     if (actionStatus.success) {
-      const r = /** @type {{action?: string, fact?: string, match?: string, removed?: string[]}} */ (actionStatus.result || {});
+      const r = /** @type {{action?: string, fact?: string, match?: string, removed?: string[], removedCount?: number}} */ (actionStatus.result || {});
       if (r.action === 'forget') {
-        const summary = r.removed && r.removed.length ? r.removed.join('; ') : `No match for “${r.match}”`;
-        return { typeName: 'Forget', summary, status: /** @type {const} */ ('success') };
+        const match = r.match ?? '';
+        let summary;
+        if (r.removed && r.removed.length) {
+          summary = r.removed.join('; ');
+        } else if (typeof r.removedCount === 'number' && r.removedCount > 0) {
+          summary = t('Removed {count, plural, one {# entry} other {# entries}} matching “{match}”.', { count: r.removedCount, match });
+        } else {
+          summary = t('No match for “{match}”', { match });
+        }
+        return { typeName: t('Forget'), summary, status: /** @type {const} */ ('success') };
       }
-      return { typeName: 'Remember', summary: `${r.fact}`, status: /** @type {const} */ ('success') };
+      return { typeName: t('Remember'), summary: `${r.fact}`, status: /** @type {const} */ ('success') };
     }
     if (actionStatus.error) {
-      return { typeName: 'Memory', summary: actionStatus.error, status: /** @type {const} */ ('error') };
+      // The model's English error, shown as it was.
+      return { typeName: t('Memory'), summary: actionStatus.error, status: /** @type {const} */ ('error') };
     }
-    return { typeName: 'Memory', summary: 'Memory' };
+    return { typeName: t('Memory'), summary: t('Memory') };
   }
 
   /**
@@ -532,7 +547,8 @@ class MemoryContextItem extends ContextItem {
       const banner = createElement(
         'div',
         `memory-action-banner ${result.cancelled ? 'cancelled' : 'error'}`,
-        result.cancelled ? 'Cancelled' : (fullResult.error || result.content || 'Memory update failed')
+        // An error is the model's English, shown as it was.
+        result.cancelled ? t('Cancelled') : (fullResult.error || result.content || t('Memory update failed'))
       );
       panel.appendChild(banner);
       wrapper.appendChild(panel);
@@ -546,29 +562,29 @@ class MemoryContextItem extends ContextItem {
         : (typeof data.removedCount === 'number' ? data.removedCount : null);
 
       if (removedCount === 0) {
-        panel.appendChild(verbChip('No change', 'remove'));
-        panel.appendChild(factBlock(`No memory entry matched “${match}”.`, 'muted'));
+        panel.appendChild(verbChip(t('No change'), 'remove'));
+        panel.appendChild(factBlock(t('No memory entry matched “{match}”.', { match }), 'muted'));
       } else {
-        panel.appendChild(verbChip('Forgot', 'remove'));
+        panel.appendChild(verbChip(t('Forgot'), 'remove'));
         if (removed) {
           const ul = createElement('ul', 'memory-action-removed');
           for (const text of removed) ul.appendChild(createElement('li', '', text));
           panel.appendChild(ul);
         } else {
-          const n = removedCount ?? 0;
-          panel.appendChild(factBlock(`Removed ${n} ${n === 1 ? 'entry' : 'entries'} matching “${match}”.`));
+          const count = removedCount ?? 0;
+          panel.appendChild(factBlock(t('Removed {count, plural, one {# entry} other {# entries}} matching “{match}”.', { count, match })));
         }
       }
     } else {
       // remember (default)
-      panel.appendChild(verbChip('Remembered', 'add'));
+      panel.appendChild(verbChip(t('Remembered'), 'add'));
       panel.appendChild(factBlock(input.fact ?? data.fact ?? ''));
     }
 
     const entryCount = typeof data.entryCount === 'number' ? data.entryCount : null;
     const note = entryCount === null
-      ? 'Project memory is carried into every new conversation.'
-      : `Project memory now holds ${entryCount} ${entryCount === 1 ? 'fact' : 'facts'}. New conversations start with all of them.`;
+      ? t('Project memory is carried into every new conversation.')
+      : t('Project memory now holds {count, plural, one {# fact} other {# facts}}. New conversations start with all of them.', { count: entryCount });
     panel.appendChild(createElement('div', 'memory-action-note', note));
 
     wrapper.appendChild(panel);
@@ -600,12 +616,12 @@ class MemoryContextItem extends ContextItem {
     container.textContent = '';
 
     container.appendChild(
-      createElement('div', 'memory-panel-note', 'Durable facts the assistant maintains across conversations. Shown live from .juggler/MEMORY.md; each conversation is given the list as it stood when that conversation began, so changes here reach new conversations. Delete entries here, or edit the file by hand.')
+      createElement('div', 'memory-panel-note', t('Durable facts the assistant maintains across conversations. Shown live from {file}; each conversation is given the list as it stood when that conversation began, so changes here reach new conversations. Delete entries here, or edit the file by hand.', { file: MemoryContextItem.DEFAULT_PATH }))
     );
 
     if (entries.length === 0) {
       container.appendChild(
-        createElement('div', 'memory-empty', 'No facts recorded yet.')
+        createElement('div', 'memory-empty', t('No facts recorded yet.'))
       );
       return;
     }
@@ -620,7 +636,7 @@ class MemoryContextItem extends ContextItem {
 
       const del = document.createElement('button');
       del.className = 'memory-delete icon-btn';
-      del.title = 'Forget this';
+      del.title = t('Forget this');
       del.innerHTML = '<span class="icon-trashcan"></span>';
       del.addEventListener('click', async (ev) => {
         ev.stopPropagation();

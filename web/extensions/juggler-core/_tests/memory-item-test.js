@@ -25,6 +25,20 @@ import {
   createTestConversation,
   assert
 } from '../../../js-tests/utilities/test-helpers.js';
+import { underPseudoLocale, assertPseudoLocalized } from '../../../js-tests/utilities/pseudo-locale.js';
+import { isPseudoLocalized } from '../../../sdk/lib/i18n.js';
+
+/** juggler-core's English for this plugin, standing in for its catalogue. */
+const CORE_TEXT = [
+  'Project Memory', 'Durable facts — in context since this conversation began',
+  'Remember', 'Forget', 'Memory', 'No match for “{match}”',
+  'Removed {count, plural, one {# entry} other {# entries}} matching “{match}”.',
+  'Cancelled', 'Memory update failed', 'No change', 'No memory entry matched “{match}”.',
+  'Forgot', 'Remembered', 'Project memory is carried into every new conversation.',
+  'Project memory now holds {count, plural, one {# fact} other {# facts}}. New conversations start with all of them.',
+  'Durable facts the assistant maintains across conversations. Shown live from {file}; each conversation is given the list as it stood when that conversation began, so changes here reach new conversations. Delete entries here, or edit the file by hand.',
+  'No facts recorded yet.', 'Forget this',
+];
 
 /**
  * @typedef {object} TestResult
@@ -363,6 +377,95 @@ export async function runTests(ctx) {
     const merge = MemoryContextItem.mergeOrReplace({}, [item]);
     assert(merge && merge.action === 'reuse' && merge.item === item, `should reuse existing singleton: ${JSON.stringify(merge)}`);
     assert(MemoryContextItem.mergeOrReplace({}, []) === null, 'no existing → create new');
+  });
+
+  // ---- en-XA: what the user sees is translated, what the model reads is not ----
+
+  await test('en-XA: the card, every row, both panels translated; the model\u2019s result English', async () => {
+    const { item } = makeItem();
+    await underPseudoLocale('memory-item-test', async () => {
+      /** @type {Record<string, string>} */
+      const shown = {};
+      shown.title = item.getTitle();
+
+      const card = /** @type {any} */ (item.getStatusUI(null));
+      shown['card type name'] = String(card?.typeName);
+      shown['card summary'] = String(card?.summary);
+
+      // The row is rebuilt from the structured result. Facts and matches are
+      // digits, so a summary that is only data is checked by its type name.
+      /** @type {Array<[string, any, boolean]>} */
+      const rows = [
+        ['remember', { success: true, result: { action: 'remember', fact: '1', entryCount: 1 } }, false],
+        ['forget, removed', { success: true, result: { action: 'forget', match: '1', removed: ['1'], entryCount: 0 } }, false],
+        ['forget, no match', { success: true, result: { action: 'forget', match: '1', removed: [], entryCount: 1 } }, true],
+        // More than five removed facts are stored as a count only.
+        ['forget, removed count', { success: true, result: { action: 'forget', match: '1', removedCount: 6, entryCount: 0 } }, true],
+        ['cancelled', { success: false, cancelled: true }, true],
+      ];
+      for (const [name, status, summaryIsText] of rows) {
+        const ui = /** @type {any} */ (item.getStatusUI(status));
+        shown[`row ${name} type name`] = String(ui?.typeName);
+        if (summaryIsText) shown[`row ${name}`] = String(ui?.summary);
+      }
+      const errorRow = /** @type {any} */ (item.getStatusUI(/** @type {any} */ ({ success: false, error: 'Memory update failed: 1' })));
+      shown['row error type name'] = String(errorRow?.typeName);
+      assert(errorRow?.summary === 'Memory update failed: 1', `an error row shows the model's English as it was: ${errorRow?.summary}`);
+
+      /**
+       * @param {any} result - The stored tool result
+       * @param {Record<string, unknown>} input - The tool input
+       * @returns {HTMLElement} The rendered panel
+       */
+      const details = (result, input) => {
+        const wrapper = document.createElement('div');
+        item.renderToolActionDetails(wrapper, /** @type {any} */ ({ toolAction: { get: () => result }, input }));
+        return wrapper;
+      };
+      /** @type {Array<[string, HTMLElement, number]>} */
+      const panels = [
+        ['cancelled', details({ cancelled: true }, { action: 'remember', fact: '1' }), 1],
+        ['failed, no text', details({ isError: true, fullResult: {} }, { action: 'remember', fact: '1' }), 1],
+        ['remember', details({ fullResult: { result: { action: 'remember', fact: '1', entryCount: 2 } } }, { action: 'remember', fact: '1' }), 2],
+        ['remember, no count', details({ fullResult: { result: { action: 'remember', fact: '1' } } }, { action: 'remember', fact: '1' }), 2],
+        ['forget, no match', details({ fullResult: { result: { action: 'forget', match: '1', removed: [], entryCount: 1 } } }, { action: 'forget', match: '1' }), 3],
+        ['forget, removed', details({ fullResult: { result: { action: 'forget', match: '1', removed: ['1'], entryCount: 0 } } }, { action: 'forget', match: '1' }), 2],
+      ];
+      for (const [name, panel, atLeast] of panels) {
+        assertPseudoLocalized(panel, { skip: '.memory-action-fact:not(.muted), .memory-action-removed', atLeast, where: `details, ${name}` });
+      }
+      // A count stands in for the list, and is a sentence rather than a fact.
+      const counted = details({ fullResult: { result: { action: 'forget', match: '1', removedCount: 6, entryCount: 0 } } }, { action: 'forget', match: '1' });
+      assertPseudoLocalized(counted, { atLeast: 3, where: 'details, forget, removed count' });
+      const failedPanel = details({ isError: true, content: 'Memory update failed: 1' }, { action: 'remember', fact: '1' });
+      assert(failedPanel.textContent === 'Memory update failed: 1', `a failed write shows the model's English: ${failedPanel.textContent}`);
+
+      // The store's properties panel, empty and then holding one fact.
+      const empty = document.createElement('div');
+      await item._renderPanel(empty);
+      const full = document.createElement('div');
+      await item.execute({ action: 'remember', fact: '1' });
+      await item._renderPanel(full);
+      for (const [name, panel] of /** @type {Array<[string, HTMLElement]>} */ ([['empty', empty], ['one fact', full]])) {
+        const note = panel.querySelector('.memory-panel-note')?.textContent ?? '';
+        shown[`store ${name}, note`] = note.replace('.juggler/MEMORY.md', '');
+        assertPseudoLocalized(panel, { skip: '.memory-panel-note, .memory-date, .memory-text', atLeast: name === 'empty' ? 1 : 0, where: `store, ${name}` });
+      }
+      const del = full.querySelector('.memory-delete');
+      assert(del, 'the one fact has a delete button');
+      shown['delete button title'] = String(del?.getAttribute('title'));
+
+      const raw = Object.entries(shown).filter(([, s]) => !isPseudoLocalized(s));
+      assert(raw.length === 0, `plain English under en-XA: ${JSON.stringify(raw)}`);
+
+      // The model's result is unchanged English under any UI language.
+      const summary = item.getSummary(/** @type {any} */ ({ success: true, result: { action: 'remember', fact: '1' } }));
+      assert(summary.summary === 'Remembered: 1', `the model's result changed: ${JSON.stringify(summary.summary)}`);
+      const block = await item.createContextText({});
+      assert(block.startsWith('=== Project Memory ===\nDurable facts you have recorded'), `the injected block changed: ${block}`);
+      const invalid = await item.validate({ action: 'forget' });
+      assert(invalid.error === 'forget requires a "match" string', `the validation error changed: ${invalid.error}`);
+    }, { '@juggler/core': CORE_TEXT });
   });
 
   return { passed, failed, errors };

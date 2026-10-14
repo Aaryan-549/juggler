@@ -4,6 +4,7 @@
 
 import { fetchFileCompletions, fetchPathCompletions, fetchExistingPaths } from '../services/completions-api.js';
 import { longestCommonPrefix } from './completion-menu.js';
+import { markForTranslation } from '../../sdk/lib/i18n.js';
 
 /**
  * The `@` file-mention completion source for {@link CompletionMenu}, plus the
@@ -78,7 +79,7 @@ export function createFileMentionProvider(getWorkspaceId = () => '') {
  */
 const fileMentionProviderBase = {
   id: 'file-mention',
-  emptyLabel: 'No matches',
+  emptyLabel: markForTranslation('No matches'),
 
   detect(textBefore) {
     // Quoted path: @"..." — handles spaces.

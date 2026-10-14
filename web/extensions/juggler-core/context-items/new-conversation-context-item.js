@@ -4,8 +4,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import ContextItem from 'juggler/context-item';
+import { translator } from 'juggler/i18n';
 import { createUserMessage } from '../../../sdk/lib/message.js';
 import { decodeHtmlEntities } from '../../../sdk/lib/html.js';
+
+const t = translator('@juggler/core');
 
 /**
  * NewConversationContextItem — the `new_conversation` tool.
@@ -68,7 +71,7 @@ class NewConversationContextItem extends ContextItem {
 
   /** @returns {string} Short type label shown on the item badge and panel header */
   static getTypeName() {
-    return 'New Conversation';
+    return t('New Conversation');
   }
 
   /**
@@ -210,7 +213,7 @@ class NewConversationContextItem extends ContextItem {
     if (name && name !== result.conversationId) {
       return name;
     }
-    return 'Untitled conversation';
+    return t('Untitled conversation');
   }
 
   /**
@@ -221,16 +224,16 @@ class NewConversationContextItem extends ContextItem {
    * @returns {import('juggler/context-item').ResultStatusMessage|null} Status message config
    */
   getStatusUI(actionStatus) {
-    const typeName = 'created conversation';
+    const typeName = t('created conversation');
     if (!actionStatus || actionStatus.pending) {
-      const summary = actionStatus ? 'Creating…' : 'New conversation';
+      const summary = actionStatus ? t('Creating…') : t('New conversation');
       return { typeName, summary, status: actionStatus ? /** @type {const} */ ('running') : undefined };
     }
     if (actionStatus.success) {
       const result = /** @type {{name?: string, conversationId?: string}} */ (actionStatus.result || {});
       return { typeName, summary: NewConversationContextItem._nameLabel(result), status: /** @type {const} */ ('success') };
     }
-    const { summary, status } = this.resolveTerminalStatus(actionStatus, 'Failed to create conversation');
+    const { summary, status } = this.resolveTerminalStatus(actionStatus, t('Failed to create conversation'));
     return { typeName, summary, status };
   }
 

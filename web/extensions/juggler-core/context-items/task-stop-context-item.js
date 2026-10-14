@@ -5,6 +5,9 @@
 
 import ContextItem from 'juggler/context-item';
 import { shellKill } from 'juggler/ops';
+import { translator } from 'juggler/i18n';
+
+const t = translator('@juggler/core');
 
 /**
  * TaskStopContextItem — stop a background task started by `Monitor` or by `bash`
@@ -34,7 +37,7 @@ class TaskStopContextItem extends ContextItem {
 
   /** @returns {string} Short type label */
   static getTypeName() {
-    return 'TaskStop';
+    return t('TaskStop');
   }
 
   /**
@@ -135,9 +138,9 @@ class TaskStopContextItem extends ContextItem {
     const taskId = String(toolInput?.task_id || toolInput?.shell_id || '');
     return this.buildStatusUI(actionStatus, {
       typeName: TaskStopContextItem.getTypeName(),
-      pending: `Stopping ${taskId}...`,
-      success: `Stopped ${taskId}`,
-      failurePrefix: 'Failed to stop task'
+      pending: t('Stopping {taskId}...', { taskId }),
+      success: t('Stopped {taskId}', { taskId }),
+      failurePrefix: t('Failed to stop task')
     });
   }
 

@@ -4,7 +4,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import ContextItem from 'juggler/context-item';
+import { translator, markUntranslated, markForTranslation } from 'juggler/i18n';
 import { buildMultiQuestionForm } from './ask-user-question/question-form.js';
+
+const t = translator('@juggler/core');
 
 
 /**
@@ -31,7 +34,7 @@ function optionRow(label, description, selected, extraClass = '') {
   const tick = document.createElement('span');
   tick.className = selected ? 'tick-box option-tick checked' : 'tick-box option-tick';
   tick.setAttribute('role', 'img');
-  tick.setAttribute('aria-label', selected ? 'Chosen' : 'Not chosen');
+  tick.setAttribute('aria-label', selected ? t('Chosen') : t('Not chosen'));
   const tickIcon = document.createElement('span');
   tickIcon.className = 'tick-box-mark icon-check';
   tick.appendChild(tickIcon);
@@ -205,33 +208,33 @@ class AskUserQuestionContextItem extends ContextItem {
     const params = /** @type {AskUserQuestionParams} */ (toolInput);
 
     if (!params.questions || !Array.isArray(params.questions)) {
-      return { valid: false, error: 'Missing required parameter: questions' };
+      return { valid: false, error: markUntranslated('Missing required parameter: questions') };
     }
 
     if (params.questions.length === 0) {
-      return { valid: false, error: 'At least one question is required' };
+      return { valid: false, error: markUntranslated('At least one question is required') };
     }
 
     if (params.questions.length > 4) {
-      return { valid: false, error: 'Maximum 4 questions allowed' };
+      return { valid: false, error: markUntranslated('Maximum 4 questions allowed') };
     }
 
     // Validate each question
     for (const [i, q] of params.questions.entries()) {
       if (!q.question || typeof q.question !== 'string') {
-        return { valid: false, error: `Question ${i + 1}: missing question text` };
+        return { valid: false, error: markUntranslated(`Question ${i + 1}: missing question text`) };
       }
       if (!q.header || typeof q.header !== 'string') {
-        return { valid: false, error: `Question ${i + 1}: missing header` };
+        return { valid: false, error: markUntranslated(`Question ${i + 1}: missing header`) };
       }
       if (q.header.length > AskUserQuestionContextItem.MAX_HEADER_LENGTH) {
-        return { valid: false, error: `Question ${i + 1}: header must be max ${AskUserQuestionContextItem.MAX_HEADER_LENGTH} characters` };
+        return { valid: false, error: markUntranslated(`Question ${i + 1}: header must be max ${AskUserQuestionContextItem.MAX_HEADER_LENGTH} characters`) };
       }
       if (!q.options || !Array.isArray(q.options) || q.options.length < 2) {
-        return { valid: false, error: `Question ${i + 1}: at least 2 options required` };
+        return { valid: false, error: markUntranslated(`Question ${i + 1}: at least 2 options required`) };
       }
       if (q.options.length > 4) {
-        return { valid: false, error: `Question ${i + 1}: maximum 4 options allowed` };
+        return { valid: false, error: markUntranslated(`Question ${i + 1}: maximum 4 options allowed`) };
       }
     }
 
@@ -250,12 +253,18 @@ class AskUserQuestionContextItem extends ContextItem {
     const questionParams = /** @type {AskUserQuestionParams} */ (params);
     const questions = questionParams.questions;
 
-    // Always use custom form — single path for 1 or N questions
-    const title = questions.length === 1 ? /** @type {Question} */ (questions[0]).header : `${questions.length} questions`;
+    // Always use custom form — single path for 1 or N questions. The title is
+    // stored with the approval options and never drawn beside the form; it is
+    // in the user's language like the engine's own titles. The Cancel label is
+    // English source, drawn through `t(opt.label)` by action-confirmation
+    // only when a row has no form.
+    const title = questions.length === 1
+      ? /** @type {Question} */ (questions[0]).header
+      : t('{count, plural, one {# question} other {# questions}}', { count: questions.length });
     return {
       title,
       message: '',
-      options: [{ label: 'Cancel', value: 'cancel', style: 'secondary' }],
+      options: [{ label: markForTranslation('Cancel'), value: 'cancel', style: 'secondary' }],
       display: { questions }
     };
   }
@@ -282,7 +291,8 @@ class AskUserQuestionContextItem extends ContextItem {
     } catch {
       // Single-question: response is the selected label.
       const questions = /** @type {Array<{header?: string}>|undefined} */ (toolInput.questions);
-      const header = questions?.[0]?.header || 'Answer';
+      // The key the model reads the answer under.
+      const header = questions?.[0]?.header || markUntranslated('Answer');
       answers = { [header]: response };
     }
     return { ...toolInput, answers };
@@ -308,13 +318,14 @@ class AskUserQuestionContextItem extends ContextItem {
    */
   getSummary(outcome) {
     if (!outcome.success) {
-      return this.failureSummary(outcome.error || 'Failed to get user response');
+      return this.failureSummary(outcome.error || markUntranslated('Failed to get user response'));
     }
 
     const result = /** @type {AskUserQuestionResult} */ (outcome.result);
     const answers = result.answers || {};
 
-    // Format answers for LLM
+    // Format answers for LLM: the headers and answers are data; the empty
+    // case is the model's English.
     const lines = [];
     for (const [header, answer] of Object.entries(answers)) {
       if (Array.isArray(answer)) {
@@ -324,7 +335,7 @@ class AskUserQuestionContextItem extends ContextItem {
       }
     }
 
-    return this.successSummary(lines.join('\n') || 'No answers provided');
+    return this.successSummary(lines.join('\n') || markUntranslated('No answers provided'));
   }
 
   /**
@@ -346,26 +357,28 @@ class AskUserQuestionContextItem extends ContextItem {
     const questions = (displayData?.questions?.length ? displayData.questions : params.questions) || [];
 
     return this.buildStatusUI(actionStatus, {
-      typeName: 'Question',
+      typeName: t('Question'),
+      cancelledMessage: t('Cancelled'),
       pending: () => ({
         // Title is the short `header` chip, not the full question — the question
         // text is rendered in full inside the form below, so repeating it here
         // would duplicate it.
         summary: questions.length === 1
-          ? (questions[0]?.header || 'Waiting for user response...')
-          : `Answering ${questions.length} questions...`,
+          ? (questions[0]?.header || t('Waiting for user response...'))
+          : t('{count, plural, one {Answering # question...} other {Answering # questions...}}', { count: questions.length }),
         customFormElement: context ? this._buildMultiQuestionForm(questions, context) : undefined
       }),
       success: () => {
         const result = /** @type {AskUserQuestionResult} */ (actionStatus?.result);
         const answerEntries = Object.entries(result.answers || {});
+        // One answer is shown as the user gave it, under its header: all data.
         if (answerEntries.length === 1) {
           const [header, answer] = /** @type {[string, string | string[]]} */ (answerEntries[0]); // bounded: length===1
           return `${header}: ${Array.isArray(answer) ? answer.join(', ') : answer}`;
         }
         return answerEntries.length > 1
-          ? `Answered ${answerEntries.length} questions`
-          : 'No answer provided';
+          ? t('{count, plural, one {Answered # question} other {Answered # questions}}', { count: answerEntries.length })
+          : t('No answer provided');
       }
     });
   }
@@ -424,7 +437,7 @@ class AskUserQuestionContextItem extends ContextItem {
       // model's labels. Render it as one more ticked option carrying the text.
       const optionLabels = new Set(q.options.map(o => o.label));
       for (const custom of selectedLabels.filter(l => l && !optionLabels.has(l))) {
-        optionsList.appendChild(optionRow(custom, 'Your own answer', true, 'custom-answer'));
+        optionsList.appendChild(optionRow(custom, t('Your own answer'), true, 'custom-answer'));
       }
 
       questionBlock.appendChild(optionsList);
@@ -463,7 +476,7 @@ class AskUserQuestionContextItem extends ContextItem {
         answers[key] = (multiByHeader.get(key) && value.includes(', ')) ? value.split(', ') : value;
       }
     }
-    const section = ctx.helpers.labeledSubsection('Questions');
+    const section = ctx.helpers.labeledSubsection(t('Questions'));
     section.appendChild(this._buildDetailsElement(questions, answers));
     wrapper.appendChild(section);
     return { skipResultSection: true };

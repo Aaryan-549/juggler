@@ -8,6 +8,7 @@
  */
 
 import commandRegistry from '../registries/command-registry.js';
+import { t } from '../../sdk/lib/i18n.js';
 
 /**
  * @typedef {object} SlashCommandResult
@@ -27,6 +28,8 @@ import commandRegistry from '../registries/command-registry.js';
  * @property {boolean} [userDefined] - Whether this is a user-defined (declarative) command
  * @property {string} [scope] - Provenance scope of a user command ('user' | 'project')
  * @property {string} [argsHint] - Ghost-text hint shown after accepting the command
+ * @property {string} [extensionId] - Id of the extension that provides the command; its
+ *   `label` and `description` are that extension's English, translated in its namespace
  */
 
 /**
@@ -72,9 +75,9 @@ async function confirmStoppingTurn(commandName) {
     return true;
   }
   const answer = await showConfirm(
-    `/${commandName} can't run while a turn is in flight. Running it now stops the turn.`,
-    'Stop the current turn?',
-    { confirmText: 'Stop turn', cancelText: 'Leave it running', danger: true }
+    t('/{command} can\'t run while a turn is in flight. Running it now stops the turn.', { command: commandName }),
+    t('Stop the current turn?'),
+    { confirmText: t('Stop turn'), cancelText: t('Leave it running'), danger: true }
   );
   return !!answer;
 }
@@ -120,7 +123,7 @@ class SlashCommandHandler {
     if (!CommandClass) {
       return {
         handled: true,
-        message: `Unknown command: /${commandName}`,
+        message: t('Unknown command: /{command}', { command: commandName }),
         error: true
       };
     }
@@ -135,7 +138,7 @@ class SlashCommandHandler {
     if (CommandClass.MANIFEST?.rejectWhileBusy && conv?.isTurnActive()) {
       return {
         handled: true,
-        message: 'Wait for the current turn to finish before creating a new thread.',
+        message: t('Wait for the current turn to finish before creating a new thread.'),
         error: true
       };
     }
@@ -207,7 +210,8 @@ class SlashCommandHandler {
         icon: manifest.icon || '',
         userDefined: manifest.userDefined || false,
         scope: manifest.scope || '',
-        argsHint: manifest.argsHint || ''
+        argsHint: manifest.argsHint || '',
+        extensionId: commandRegistry.getExtensionId(item.id) || undefined
       };
     });
   }

@@ -828,7 +828,7 @@ class ExecuteContextItem extends ContextItem {
       displayDataDirty = false;
       if (this.messageThread && this.toolUseId) {
         const preview = this.output.length > DISPLAY_DATA_MAX
-          ? '… (truncated)\n' + this.output.slice(-DISPLAY_DATA_MAX)
+          ? t('… (truncated)') + '\n' + this.output.slice(-DISPLAY_DATA_MAX)
           : this.output;
         const items = this.messageThread.items;
         for (let i = 0; i < items.length; i++) {

@@ -1,6 +1,11 @@
 {
   "About Juggler": "About Juggler",
   "Answer questions about the Juggler application itself": "Answer questions about the Juggler application itself",
+  "Failed": "Failed",
+  "Juggler Source": "Juggler Source",
+  "Juggler source": "Juggler source",
+  "Looking up Juggler…": "Looking up Juggler…",
   "Read Juggler SDK base classes and example-extension source": "Read Juggler SDK base classes and example-extension source",
-  "Read Juggler Source": "Read Juggler Source"
+  "Read Juggler Source": "Read Juggler Source",
+  "Reading Juggler source…": "Reading Juggler source…"
 }

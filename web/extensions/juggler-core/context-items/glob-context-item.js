@@ -5,8 +5,11 @@
 
 import ContextItem from 'juggler/context-item';
 import { formatPathForStatus } from 'juggler/item-utils';
+import { translator } from 'juggler/i18n';
 import { toolInputPath, isPathAllowed, folderGrantSuggestions, stripInjectedApprovalFlags, gitignoreDisabled } from './path-approval.js';
 import { buildGitignoreSection } from './search-scope-section.js';
+
+const t = translator('@juggler/core');
 
 /**
  * @typedef {object} GlobParams
@@ -231,16 +234,17 @@ class GlobContextItem extends ContextItem {
     const displayPattern = searchPath ? `${formatPathForStatus(searchPath, projectPath)}/${pattern}` : pattern;
 
     return this.buildStatusUI(actionStatus, {
-      typeName: 'Glob',
+      typeName: t('Glob'),
       pending: `${displayPattern}...`,
       success: () => {
         const result = /** @type {GlobResult} */ (actionStatus?.result);
         const count = result
           ? (result.count ?? /** @type {any} */ (result).filesCount ?? result.files?.length ?? 0)
           : 0;
-        return `${count} file${count === 1 ? '' : 's'} matching ${displayPattern}`;
+        return t('{count, plural, one {{count} file matching {pattern}} other {{count} files matching {pattern}}}',
+          { count, pattern: displayPattern });
       },
-      failurePrefix: 'failed'
+      failurePrefix: t('failed')
     });
   }
 

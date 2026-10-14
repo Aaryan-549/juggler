@@ -16,7 +16,20 @@
 
 import { labeledSubsection } from 'juggler/ui';
 import { assert } from '../../../js-tests/utilities/test-helpers.js';
+import { underPseudoLocale, shownStrings } from '../../../js-tests/utilities/pseudo-locale.js';
+import { isPseudoLocalized } from '../../../sdk/lib/i18n.js';
 import AskUserQuestionContextItem from '../context-items/ask-user-question-context-item.js';
+
+/** juggler-core's English for this plugin, standing in for its catalogue. */
+const CORE_TEXT = [
+  'Chosen', 'Not chosen', 'Your own answer', 'Questions', 'Question',
+  'Waiting for user response...',
+  '{count, plural, one {Answering # question...} other {Answering # questions...}}',
+  '{count, plural, one {Answered # question} other {Answered # questions}}',
+  'No answer provided', 'Cancelled',
+  '{count, plural, one {# question} other {# questions}}',
+  'Submit', 'Cancel', 'Type another answer…', 'Type a different answer…',
+];
 
 /**
  * @typedef {object} TestResult
@@ -435,6 +448,93 @@ export async function runTests() {
     const out = AskUserQuestionContextItem.applyApprovalResponse(askInput, '');
     assert(out === askInput, 'an empty response must return the input unchanged');
   });
+
+  // ==========================================================================
+  // en-XA: everything the tool shows the user is translated; the questions,
+  // headers, options and answers are the model's (or the user's) data, and the
+  // model's result and validation errors stay English.
+  // ==========================================================================
+  try {
+    await underPseudoLocale('ask-user-question-test', async () => {
+      const item = new AskUserQuestionContextItem(/** @type {any} */ ({
+        id: 'test', session: {}, conversation: {}, messageThread: {}
+      }));
+      /** @type {Record<string, string>} */
+      const shown = {};
+      /**
+       * @param {string} where - State name
+       * @param {Element} root - What it drew
+       * @param {string} skip - Selector for the model's data
+       */
+      const collect = (where, root, skip) => {
+        const strings = shownStrings(root, skip);
+        assert(strings.length > 0, `${where} drew nothing`);
+        strings.forEach((s, i) => { shown[`${where} #${i}`] = s; });
+      };
+      const data = '.option-btn-label, .option-btn-desc, .option-label, .question-text';
+
+      // Digit-only data; no option descriptions, so every description shown is ours.
+      const qs = [
+        { question: '1', header: '2', multiSelect: false, options: [{ label: '3', description: '' }, { label: '4', description: '' }] },
+        { question: '5', header: '6', multiSelect: true, options: [{ label: '7', description: '' }, { label: '8', description: '' }] },
+      ];
+      const ctx = { conversation: null, messageThread: makeThread(), toolUseId: 'tu_xa' };
+
+      const approval = await item.getApprovalConfig({ questions: qs });
+      shown['approval title, two questions'] = String(approval?.title);
+
+      // Pending, header missing: the waiting line.
+      const waiting = /** @type {any} */ (item.getStatusUI(/** @type {any} */ ({ pending: true }),
+        { questions: [{ ...qs[0], header: '' }] }));
+      shown['pending, no header'] = String(waiting?.summary);
+      shown['type name'] = String(waiting?.typeName);
+
+      // Pending, two questions (single- and multi-select): the line and the form.
+      const pending = /** @type {any} */ (item.getStatusUI(/** @type {any} */ ({ pending: true }), { questions: qs }, ctx));
+      shown['pending, two questions'] = String(pending?.summary);
+      assert(pending?.customFormElement, 'pending row with a context must carry the form');
+      collect('form', pending.customFormElement, data);
+
+      // Answered: several, none; cancelled.
+      const answered = /** @type {any} */ (item.getStatusUI(/** @type {any} */ ({ success: true, result: { answers: { 2: '3', 6: ['7'] } } }), { questions: qs }));
+      shown['answered two'] = String(answered?.summary);
+      const none = /** @type {any} */ (item.getStatusUI(/** @type {any} */ ({ success: true, result: { answers: {} } }), { questions: qs }));
+      shown['answered none'] = String(none?.summary);
+      const cancelled = /** @type {any} */ (item.getStatusUI(/** @type {any} */ ({ cancelled: true }), { questions: qs }));
+      shown['cancelled'] = String(cancelled?.summary);
+
+      // Properties panel: picked, unpicked and typed answers.
+      const wrapper = document.createElement('div');
+      /** @type {any} */ (item).renderToolActionDetails(wrapper, {
+        toolAction: { get: (/** @type {string} */ key) => (key === 'result' ? { content: '2: 3\n6: 7, 9' } : undefined) },
+        toolName: 'askuserquestion',
+        input: { questions: qs },
+        helpers: { labeledSubsection },
+        conversation: null, messageThread: null, session: null, selectedItemId: 'test'
+      });
+      assert(wrapper.querySelector('.custom-answer'), 'details must draw the typed answer');
+      collect('details', wrapper, data);
+
+      // The model's side stays English under any UI language.
+      const model = {
+        answers: item.getSummary(/** @type {any} */ ({ success: true, result: { answers: { 2: '3', 6: ['7', '8'] } } })).summary,
+        noAnswers: item.getSummary(/** @type {any} */ ({ success: true, result: { answers: {} } })).summary,
+        failed: item.getSummary(/** @type {any} */ ({ success: false })).summary,
+        invalid: (await item.validate({ questions: [] })).error,
+      };
+      assert(model.answers === '2: 3\n6: 7, 8', `the model's answers changed: ${JSON.stringify(model.answers)}`);
+      assert(model.noAnswers === 'No answers provided', `the model's empty result changed: ${JSON.stringify(model.noAnswers)}`);
+      assert(String(model.failed).includes('Failed to get user response'), `the model's failure changed: ${JSON.stringify(model.failed)}`);
+      assert(model.invalid === 'At least one question is required', `the validation error changed: ${JSON.stringify(model.invalid)}`);
+
+      const raw = Object.entries(shown).filter(([, s]) => !isPseudoLocalized(s));
+      assert(raw.length === 0, `plain English under en-XA: ${JSON.stringify(raw)}`);
+    }, { '@juggler/core': CORE_TEXT });
+    passed++;
+  } catch (e) {
+    failed++;
+    errors.push(`en-XA: ${e instanceof Error ? e.message : String(e)}`);
+  }
 
   return { passed, failed, errors };
 }

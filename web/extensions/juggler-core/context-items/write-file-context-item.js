@@ -9,6 +9,9 @@ import { labeledSubsection } from 'juggler/ui';
 import { fileSourceFromText } from 'juggler/file-source';
 import { recordWrittenHash, restageBaseline, acquirePathLock } from './read-history.js';
 import { absolutePathKey } from './path-approval.js';
+import { translator, markUntranslated } from 'juggler/i18n';
+
+const t = translator('@juggler/core');
 
 /** @type {Record<string, string>} */
 const LANG_MAP = {
@@ -123,16 +126,16 @@ class WriteFileContextItem extends EditBase {
     // Validation - accept both file_path and path
     const path = params.path;
     if (!path) {
-      return { valid: false, error: 'Missing required parameter: file_path' };
+      return { valid: false, error: markUntranslated('Missing required parameter: file_path') };
     }
     if (params.content === undefined || params.content === null) {
-      return { valid: false, error: 'Missing required parameter: content' };
+      return { valid: false, error: markUntranslated('Missing required parameter: content') };
     }
     if (typeof path !== 'string') {
-      return { valid: false, error: 'Parameter "file_path" must be a string' };
+      return { valid: false, error: markUntranslated('Parameter "file_path" must be a string') };
     }
     if (typeof params.content !== 'string') {
-      return { valid: false, error: 'Parameter "content" must be a string' };
+      return { valid: false, error: markUntranslated('Parameter "content" must be a string') };
     }
 
     // Load existing content (if any) so the approval UI can show a diff, and
@@ -172,7 +175,7 @@ class WriteFileContextItem extends EditBase {
     } catch (err) {
       return {
         valid: false,
-        error: `Error: ${err instanceof Error ? err.message : 'Unknown error'}`
+        error: markUntranslated(`Error: ${err instanceof Error ? err.message : 'Unknown error'}`)
       };
     }
 
@@ -197,7 +200,7 @@ class WriteFileContextItem extends EditBase {
     // title (not `./`-prefixed, which reads as project-relative) plus a warning.
     const outOfRoot = path && !this._isPathAllowed(path);
     const title = outOfRoot ? path : formatDisplayPath(path);
-    const message = outOfRoot ? `⚠ Write outside the project folder: ${path}` : '';
+    const message = outOfRoot ? t('⚠ Write outside the project folder: {path}', { path }) : '';
 
     if (existingContent !== undefined) {
       // File exists - show diff
@@ -323,9 +326,9 @@ class WriteFileContextItem extends EditBase {
     // Handle non-success cases (check !success first for type narrowing)
     if (!outcome.success) {
       if (outcome.cancelled) {
-        return this.failureSummary(`Write file cancelled: ${prepPath}`);
+        return this.failureSummary(markUntranslated(`Write file cancelled: ${prepPath}`));
       }
-      return this.failureSummary(`Write file failed: ${outcome.error}`);
+      return this.failureSummary(markUntranslated(`Write file failed: ${outcome.error}`));
     }
 
     // Success case
@@ -337,8 +340,8 @@ class WriteFileContextItem extends EditBase {
     // Generate feedback for LLM
     const feedbackForLLM = this._generateFeedbackForLLM(path);
 
-    return this.successSummary(`${action} file: ${path}`, {
-      details: `${action} ${path} (${size} bytes)`,
+    return this.successSummary(markUntranslated(`${action} file: ${path}`), {
+      details: markUntranslated(`${action} ${path} (${size} bytes)`),
       icon: result.created ? '✓' : '↻',
       feedbackForLLM
     });
@@ -355,12 +358,12 @@ class WriteFileContextItem extends EditBase {
 
     // Suggest testing for source files
     if (/\.(js|ts|py|go|java|rb|php|cs|rs)$/.test(path)) {
-      hints.push('Consider running tests to verify your changes');
+      hints.push(markUntranslated('Consider running tests to verify your changes'));
     }
 
     // Warn about missing build for compiled languages
     if (/\.(go|java|cs|cpp|c|rs)$/.test(path)) {
-      hints.push('Remember to rebuild before testing');
+      hints.push(markUntranslated('Remember to rebuild before testing'));
     }
 
     return hints.length > 0 ? hints.join('. ') : undefined;
@@ -391,15 +394,15 @@ class WriteFileContextItem extends EditBase {
     const filename = basename(path) || path;
 
     return this.buildStatusUI(actionStatus, {
-      typeName: 'Write',
+      typeName: t('Write'),
       // Pending/approval state - use title from display data
       pending: displayData?.title || `${filename}`,
       success: () => {
-        const action = result.created ? 'Created' : 'Updated';
-        return EditBase._editStatSummary(`${action} ${filename}`, EditBase._editStats(displayData, result));
+        const label = result.created ? t('Created {file}', { file: filename }) : t('Updated {file}', { file: filename });
+        return EditBase._editStatSummary(label, EditBase._editStats(displayData, result));
       },
       failurePrefix: filename,
-      cancelledMessage: `cancelled: ${filename}`
+      cancelledMessage: t('cancelled: {file}', { file: filename })
     });
   }
 
@@ -410,10 +413,11 @@ class WriteFileContextItem extends EditBase {
    * @private
    */
   _appendOutcomeBanner(wrapper, result) {
-    const section = labeledSubsection('Result');
+    const section = labeledSubsection(t('Result'));
     const div = document.createElement('div');
     div.className = result.cancelled ? 'properties-panel-result cancelled' : 'properties-panel-result error';
-    div.textContent = result.cancelled ? 'Cancelled' : (result.fullResult?.error || result.content || 'Error');
+    // An error is the model's English, shown as it was.
+    div.textContent = result.cancelled ? t('Cancelled') : (result.fullResult?.error || result.content || t('Error'));
     section.appendChild(div);
     wrapper.appendChild(section);
   }

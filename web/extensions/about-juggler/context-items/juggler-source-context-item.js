@@ -4,7 +4,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import ContextItem from 'juggler/context-item';
+import { translator } from 'juggler/i18n';
 import { resolveAssetUrl } from '../../../js/utils/asset-url.js';
+
+const t = translator('@juggler/about');
 
 /**
  * Normalise a caller-supplied path to a served, root-relative asset URL, or
@@ -188,10 +191,10 @@ class JugglerSourceContextItem extends ContextItem {
     const path = toolInput && typeof toolInput.path === 'string' ? toolInput.path : '';
 
     return this.buildStatusUI(actionStatus, {
-      typeName: 'Juggler Source',
-      pending: 'Reading Juggler source\u2026',
-      success: path || 'Juggler source',
-      failurePrefix: 'Failed'
+      typeName: t('Juggler Source'),
+      pending: t('Reading Juggler source\u2026'),
+      success: path || t('Juggler source'),
+      failurePrefix: t('Failed')
     });
   }
 

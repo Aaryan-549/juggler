@@ -6,6 +6,9 @@
 import ContextItem from 'juggler/context-item';
 import { pinToPinboard, loadPinAgentDescriptors } from 'juggler/pinboard';
 import { createShowPinControl, injectStylesOnce, showPin } from 'juggler/ui';
+import { translator, markUntranslated } from 'juggler/i18n';
+
+const t = translator('@juggler/core');
 
 // The card's label is a link to the pin: it reads as the summary text it
 // replaces until the pointer is over it.
@@ -153,7 +156,7 @@ class PinToPinboardContextItem extends ContextItem {
   }
 
   static getTypeName() {
-    return 'Pin to Pinboard';
+    return t('Pin to Pinboard');
   }
 
   /**
@@ -226,11 +229,11 @@ class PinToPinboardContextItem extends ContextItem {
   async validate(toolInput) {
     const type = typeof toolInput?.type === 'string' ? toolInput.type.trim() : '';
     if (!type) {
-      return { valid: false, error: 'Which pin type? Name one of the installed types.' };
+      return { valid: false, error: markUntranslated('Which pin type? Name one of the installed types.') };
     }
     const parameters = normalizeParameters(catalog.get(type) || null, toolInput.parameters);
     if (!parameters) {
-      return { valid: false, error: `${type} parameters are invalid` };
+      return { valid: false, error: markUntranslated(`${type} parameters are invalid`) };
     }
     return { valid: true, params: { type, parameters } };
   }
@@ -243,12 +246,12 @@ class PinToPinboardContextItem extends ContextItem {
   async execute(params) {
     const descriptor = catalog.get(params.type) || null;
     const parameters = normalizeParameters(descriptor, params.parameters);
-    if (!parameters) throw new Error(`${params.type} parameters are invalid`);
+    if (!parameters) throw new Error(markUntranslated(`${params.type} parameters are invalid`));
 
     const config = pinConfig(parameters);
     const pin = await pinIdFor(params.type, identityOf(descriptor, parameters));
     const from = this.conversation?.id || '';
-    if (!from) throw new Error('No conversation available to attribute the Pinboard request');
+    if (!from) throw new Error(markUntranslated('No conversation available to attribute the Pinboard request'));
     const data = await pinToPinboard({
       id: pin,
       type: params.type,
@@ -260,7 +263,7 @@ class PinToPinboardContextItem extends ContextItem {
       ? data.pins.find((candidate) => candidate?.id === pin)
       : null;
     if (!kept || kept.type !== params.type || JSON.stringify(kept.config) !== JSON.stringify(config)) {
-      throw new Error('The pinboard did not keep the requested pin');
+      throw new Error(markUntranslated('The pinboard did not keep the requested pin'));
     }
     return { pin, type: params.type, parameters };
   }
@@ -271,11 +274,11 @@ class PinToPinboardContextItem extends ContextItem {
    */
   getSummary(outcome) {
     if (!outcome.success) {
-      return this.failureSummary(outcome.error || 'Could not pin that');
+      return this.failureSummary(outcome.error || markUntranslated('Could not pin that'));
     }
     const result = /** @type {{type?: string, parameters?: Record<string, any>}} */ (outcome.result) || {};
     const label = result.type ? pinLabel(result.type, result.parameters) : '';
-    return this.successSummary(`Pinned ${label || 'the item'} and asked the user’s Pinboard to show it.`);
+    return this.successSummary(markUntranslated(`Pinned ${label || 'the item'} and asked the user’s Pinboard to show it.`));
   }
 
   /**
@@ -283,20 +286,21 @@ class PinToPinboardContextItem extends ContextItem {
    * @returns {import('juggler/context-item').ResultStatusMessage} Status row.
    */
   getStatusUI(actionStatus) {
-    const typeName = 'pinned';
+    const typeName = t('pinned');
     if (!actionStatus || actionStatus.pending) {
-      return { typeName, summary: actionStatus ? 'Pinning…' : 'Pin to Pinboard', status: actionStatus ? 'running' : undefined };
+      return { typeName, summary: actionStatus ? t('Pinning…') : t('Pin to Pinboard'), status: actionStatus ? 'running' : undefined };
     }
     if (actionStatus.success) {
       const result = /** @type {{type?: string, parameters?: Record<string, any>}} */ (actionStatus.result || {});
-      const label = (result.type ? pinLabel(result.type, result.parameters) : '') || 'item';
+      const label = (result.type ? pinLabel(result.type, result.parameters) : '') || t('item');
       const ref = pinRefOf(result);
       if (!ref) return { typeName, summary: label, status: 'success' };
       const link = this.createPinLink(label, ref);
       if (!catalog.has(ref.type)) relabelOnceCatalogIsRead(link, ref.type, result.parameters);
       return { typeName, summary: link, status: 'success' };
     }
-    const terminal = this.resolveTerminalStatus(actionStatus, 'Could not pin that');
+    // The prefix is ours; the error after it is the model's English, shown as it was.
+    const terminal = this.resolveTerminalStatus(actionStatus, t('Could not pin that'));
     return { typeName, summary: terminal.summary, status: terminal.status };
   }
 
@@ -313,7 +317,7 @@ class PinToPinboardContextItem extends ContextItem {
     link.type = 'button';
     link.className = 'pinned-summary-link';
     link.textContent = label;
-    link.title = 'Show on Pinboard';
+    link.title = t('Show on Pinboard');
     link.addEventListener('click', () => { void showPin(ref); });
     return link;
   }
@@ -335,7 +339,7 @@ class PinToPinboardContextItem extends ContextItem {
     const data = (result.fullResult && result.fullResult.result) || {};
 
     const type = String(data.type || input.type || '').trim();
-    helpers.addSubsection(wrapper, 'Type', type || 'unknown', 'properties-panel-code');
+    helpers.addSubsection(wrapper, t('Type'), type || t('unknown'), 'properties-panel-code');
 
     // Prefer the normalized parameters the pin was actually created with.
     const parameters = (data.parameters && typeof data.parameters === 'object' ? data.parameters : input.parameters) || {};
@@ -343,7 +347,7 @@ class PinToPinboardContextItem extends ContextItem {
       ? Object.entries(parameters)
       : [];
     if (!entries.length) {
-      helpers.addSubsection(wrapper, 'Parameters', 'None.', 'properties-panel-text');
+      helpers.addSubsection(wrapper, t('Parameters'), t('None.'), 'properties-panel-text');
     }
     for (const [name, value] of entries) {
       const label = name.charAt(0).toUpperCase() + name.slice(1);

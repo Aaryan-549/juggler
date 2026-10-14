@@ -5,6 +5,7 @@
 import { presentPopup } from '../utils/popup-surface.js';
 import { caretViewportRect } from '../utils/textarea-caret.js';
 import { applyListboxRoles, linkListbox, setActiveOption } from '../utils/listbox-roles.js';
+import { t } from '../../sdk/lib/i18n.js';
 
 /**
  * Returns the longest string that is a prefix of every element in strs.
@@ -42,7 +43,8 @@ export function longestCommonPrefix(strs) {
  *   for one item. The menu adds the `menu-item` class and pointer wiring.
  * @property {(item: any, meta: any) => string} insert - The text that replaces
  *   the span from `anchorPos` to the caret when `item` is accepted.
- * @property {string} [emptyLabel] - Row text when there are no matches.
+ * @property {string} [emptyLabel] - Row text when there are no matches, as English
+ *   source (`markForTranslation`); translated where the row is drawn.
  * @property {(item: any) => boolean} [reopenAfterAccept] - Re-run detection
  *   after accepting (e.g. stepping into a directory).
  * @property {(item: any) => boolean} [expandForward] - Whether ArrowRight on a
@@ -352,7 +354,7 @@ export class CompletionMenu {
     if (results.length === 0) {
       const li = document.createElement('li');
       li.className = 'menu-item menu-item-empty';
-      li.textContent = provider.emptyLabel ?? 'No matches';
+      li.textContent = provider.emptyLabel ? t(provider.emptyLabel) : t('No matches');
       menu.appendChild(li);
     }
 

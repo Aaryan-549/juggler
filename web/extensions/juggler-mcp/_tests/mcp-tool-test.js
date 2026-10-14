@@ -22,6 +22,26 @@ import {
   storeMcpImages
 } from '../context-items/mcp-tool-context-item.js';
 import McpToolContextItem from '../context-items/mcp-tool-context-item.js';
+import McpCommandType from '../commands/mcp-command-type.js';
+import { underPseudoLocale } from '../../../js-tests/utilities/pseudo-locale.js';
+import { isPseudoLocalized } from '../../../sdk/lib/i18n.js';
+
+/** This extension's English for what the en-XA case draws, standing in for its catalogue. */
+const MCP_TEXT = [
+  'MCP', 'MCP tool', 'Calling {label}…', '{label} — tool reported an error', '{label} failed',
+  'Result', 'Server', 'Tool', 'Arguments', 'MCP: {server} / {tool}', 'tool',
+  '{description}\n\nArguments:\n\n{arguments}', 'Arguments:\n\n{arguments}',
+  'all read-only tools on "{server}"', 'all tools on "{server}" (trust this server)',
+  'Usage: /mcp {subcommand} <server>', 'MCP "{server}" recent output:\n\n{log}',
+  'No recent output for "{server}".',
+  'Unknown subcommand "{subcommand}". Try: /mcp, /mcp start|stop|restart <server>, /mcp reload, /mcp logs <server>',
+  'MCP command failed: {error}',
+  'No MCP servers configured. Add them to ~/.juggler/mcp.json or <project>/.juggler/mcp.json.',
+  'MCP servers:',
+  '• {server} — {status}{version} · {count, plural, one {{count} tool} other {{count} tools}}',
+  '• {server} — {status}{version} · {count, plural, one {{count} tool} other {{count} tools}} · ~{tokens} tokens/request',
+  'running', 'starting', 'stopped', 'failed', 'disabled',
+];
 
 /**
  * @typedef {object} TestResult
@@ -172,6 +192,138 @@ export async function runTests(_ctx) {
     }));
     assert(summary.attachments?.length === 1 && summary.attachments[0].id === ref.id, `attachments: ${JSON.stringify(summary.attachments)}`);
     assert(String(summary.summary) === 'took a screenshot\n[image: image/png, 3×4, attached below]', `text: ${summary.summary}`);
+  });
+
+  // Under en-XA everything the user reads is translated: the rows, the details
+  // labels, the approval text and buttons, and every /mcp message. What the
+  // model reads stays English. Server and tool names are digits, so they read
+  // as data inside a message. A fresh copy of the module loads a stubbed
+  // snapshot, so the known-tool branches run without a real MCP server.
+  await run('en-XA: rows, labels, approval text and /mcp messages are translated; the model reads English', async () => {
+    const originalFetch = window.fetch;
+    try {
+      await underPseudoLocale('mcp-tool-test', async () => {
+        /** @type {Record<string, string>} */
+        const shown = {};
+        let failOp = '';
+        /** @type {any[]} */
+        let servers = [];
+        let log = '';
+        /**
+         * @param {any} data
+         * @returns {any} A stub fetch response carrying it
+         */
+        const reply = (data) => ({ ok: true, status: 200, json: async () => data });
+        window.fetch = /** @type {any} */ (async (/** @type {any} */ url, /** @type {any} */ init) => {
+          const u = String(url);
+          if (!u.includes('/ops/call')) throw new Error(`unexpected fetch in test: ${u}`);
+          const { operation } = JSON.parse(init.body);
+          if (operation === failOp) return reply({ success: false, error: '7' });
+          switch (operation) {
+            case 'snapshot':
+              return reply({ success: true, data: { complete: true, tools: [{
+                server: '1', name: '2', title: '', description: '5', inputSchema: {},
+                readOnly: true, destructive: false, schemaTokens: 1
+              }] } });
+            case 'listServers':
+            case 'serverControl':
+              return reply({ success: true, data: { servers } });
+            case 'getLog':
+              return reply({ success: true, data: { log } });
+          }
+          throw new Error(`unexpected op in test: ${operation}`);
+        });
+
+        const url = new URL('../context-items/mcp-tool-context-item.js', import.meta.url);
+        url.search = '?en-xa';
+        /** @type {any} */
+        const fresh = await import(url.href);
+        const Cls = fresh.default;
+        await Cls.prepareToolDefinitions();
+        assert(Cls.getToolDefinitions().length === 1, 'the stubbed snapshot did not load');
+
+        const stubSession = { platform: 'darwin', home: '/1', projectPath: '/2' };
+        const thread = { getAllowedPaths: () => ['/2'], getRulesFor: () => [], items: [] };
+        const make = (/** @type {string} */ toolName) => new Cls({
+          id: 'x', session: stubSession, conversation: { id: 'c', session: stubSession }, messageThread: thread, toolName
+        });
+        const item = make('mcp__1__2');
+        const row = (/** @type {string} */ name, /** @type {any} */ ui) => {
+          shown[`${name} row`] = String(ui?.summary);
+          shown[`${name} type name`] = String(ui?.typeName);
+        };
+        row('pending', item.getStatusUI({ pending: true }, {}));
+        row('tool reported an error', item.getStatusUI({ success: true, result: { isError: true } }, {}));
+        row('failed', item.getStatusUI({ success: false, error: '9' }, {}));
+        row('cancelled', item.getStatusUI({ cancelled: true }, {}));
+        row('pending, no tool name', make('').getStatusUI({ pending: true }, {}));
+        shown['getTypeName'] = Cls.getTypeName();
+        shown['result section'] = Cls.getResultSectionLabel('mcp__1__2');
+
+        /** @type {string[]} */
+        const labels = [];
+        item.renderToolActionDetails(document.createElement('div'), {
+          input: { 3: 4 }, toolName: 'mcp__1__2',
+          helpers: { addSubsection: (/** @type {any} */ _w, /** @type {string} */ label) => labels.push(label) }
+        });
+        assert(labels.length === 3, `details labels: ${JSON.stringify(labels)}`);
+        labels.forEach((l, i) => { shown[`details label ${i}`] = l; });
+
+        const approval = await item.getApprovalConfig({ 3: 4 });
+        shown['approval title'] = String(approval?.title);
+        shown['approval message'] = String(approval?.message);
+        const bare = await make('').getApprovalConfig({});
+        shown['approval title, unknown tool'] = String(bare?.title);
+        shown['approval message, no description'] = String(bare?.message);
+        const suggestions = item.getApprovalSuggestions({});
+        assert(suggestions.length === 3, `suggestions: ${JSON.stringify(suggestions)}`);
+        suggestions.forEach((/** @type {any} */ s, /** @type {number} */ i) => { if (s.label) shown[`suggestion ${i}`] = s.label; });
+
+        // The model's side stays English.
+        const failedSummary = item.getSummary({ success: false });
+        assert(String(failedSummary.summary) === 'MCP tool call failed', `failure summary: ${failedSummary.summary}`);
+        const empty = item.getSummary({ success: true, result: { content: [], text: '', isError: false } });
+        assert(String(empty.summary) === '(no content)', `empty summary: ${empty.summary}`);
+        const invalid = await make('mcp__9__9').validate({});
+        assert(String(invalid.error).startsWith('Unknown MCP tool "mcp__9__9"'), `validate error: ${invalid.error}`);
+        const def = fresh.buildToolDefinition({ server: '1', name: '2', title: '', description: '', inputSchema: {}, readOnly: false, destructive: true, schemaTokens: 0 });
+        assert(def.description === '2 (via MCP server "1")', `tool description: ${def.description}`);
+
+        const cmd = new McpCommandType(/** @type {any} */ ({ messageThread: {} }));
+        const say = async (/** @type {string} */ name, /** @type {string[]} */ args) => {
+          shown[name] = String((await cmd.execute(args))?.message);
+        };
+        await say('/mcp, no servers', []);
+        servers = [
+          { name: '1', status: 'running', serverName: '3', serverVersion: '4', toolCount: 1, schemaTokens: 500 },
+          { name: '2', status: 'failed', toolCount: 2, error: '6\n7' },
+          { name: '8', status: 'stopped', toolCount: 0 },
+        ];
+        const list = String((await cmd.execute(['restart', '1']))?.message);
+        // Each line is its own message; the error line under a server is data.
+        list.split('\n').forEach((line, i) => { if (/[A-Za-z]/.test(line)) shown[`/mcp list line ${i}`] = line; });
+        assert(list.split('\n').length === 5, `list: ${JSON.stringify(list)}`);
+        await say('/mcp start, no server', ['start']);
+        await say('/mcp logs, no server', ['logs']);
+        // The subcommand is the identifier the user typed, inserted as data.
+        for (const [name, sub] of [['/mcp start, no server', 'start'], ['/mcp logs, no server', 'logs']]) {
+          assert(shown[name].includes(` ${sub} `), `${name}: ${shown[name]}`);
+          shown[name] = shown[name].replace(` ${sub} `, ' ');
+        }
+        log = '8';
+        await say('/mcp logs', ['logs', '1']);
+        log = '';
+        await say('/mcp logs, empty', ['logs', '1']);
+        await say('/mcp, unknown subcommand', ['9']);
+        failOp = 'serverControl';
+        await say('/mcp, failed', ['reload']);
+
+        const raw = Object.entries(shown).filter(([, s]) => !isPseudoLocalized(s));
+        if (raw.length) throw new Error(`plain English under en-XA: ${JSON.stringify(Object.fromEntries(raw))}`);
+      }, { '@juggler/mcp': MCP_TEXT });
+    } finally {
+      window.fetch = originalFetch;
+    }
   });
 
   return { passed, failed, errors };

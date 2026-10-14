@@ -5,8 +5,9 @@
 import slashCommandHandler from '../services/slash-command-handler.js';
 import { longestCommonPrefix } from './completion-menu.js';
 import { openCommandEditor, openCommandManager } from './command-editor-dialog.js';
-import { withoutManagerCommand, buildManageCommandsRow, buildBrowseCommandsRow } from '../services/command-manager-entry.js';
+import { withoutManagerCommand, buildManageCommandsRow, buildBrowseCommandsRow, commandText } from '../services/command-manager-entry.js';
 import { openSettings } from '../services/settings-launcher.js';
+import { markForTranslation, t } from '../../sdk/lib/i18n.js';
 
 /**
  * The `/` slash-command completion source for {@link CompletionMenu}.
@@ -62,12 +63,23 @@ function isSynthetic(item) {
 }
 
 /**
+ * A user command's provenance badge: the word for where it is defined.
+ * @param {string} scope - 'user' | 'project'
+ * @returns {string} The badge text
+ */
+function scopeBadgeText(scope) {
+  if (scope === 'user') return t('user', undefined, { context: 'command scope' });
+  if (scope === 'project') return t('project', undefined, { context: 'command scope' });
+  return scope;
+}
+
+/**
  * The `/` slash-command completion provider.
  * @type {import('./completion-menu.js').CompletionProvider}
  */
 export const slashCommandProvider = {
   id: 'slash-command',
-  emptyLabel: 'No commands',
+  emptyLabel: markForTranslation('No commands'),
 
   detect(textBefore) {
     // Start-anchored: the `/` must be the first character of the message and
@@ -115,7 +127,7 @@ export const slashCommandProvider = {
       li.dataset.command = '__new__';
       const code = document.createElement('code');
       code.className = 'menu-item-command';
-      code.textContent = cmd.query ? `New command “/${cmd.query}”…` : 'New command…';
+      code.textContent = cmd.query ? t('New command “/{name}”…', { name: cmd.query }) : t('New command…');
       li.appendChild(code);
       return li;
     }
@@ -133,13 +145,14 @@ export const slashCommandProvider = {
     if (cmd.userDefined && cmd.scope) {
       const badge = document.createElement('span');
       badge.className = 'slash-command-scope-badge slash-command-scope-' + cmd.scope;
-      badge.textContent = cmd.scope;
+      badge.textContent = scopeBadgeText(cmd.scope);
       li.appendChild(badge);
     }
 
     const desc = document.createElement('span');
     desc.className = 'menu-item-desc';
-    desc.textContent = cmd.description || cmd.label || (cmd.name.charAt(0).toUpperCase() + cmd.name.slice(1));
+    const own = cmd.description || cmd.label;
+    desc.textContent = own ? commandText(cmd, own) : cmd.name.charAt(0).toUpperCase() + cmd.name.slice(1);
     li.appendChild(desc);
 
     return li;

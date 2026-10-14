@@ -19,8 +19,17 @@
  * the Stop button's click handler — the action site; the render path never writes.
  */
 
+import { t, markForTranslation } from './i18n.js';
+
+/** What a binding with no known status shows. */
+const ENDED_LABEL = markForTranslation('Ended');
+
 /** @type {Record<string, string>} */
-const STATUS_LABELS = { active: 'Active', ended: 'Ended', stopped: 'Stopped' };
+const STATUS_LABELS = {
+  active: markForTranslation('Active'),
+  ended: ENDED_LABEL,
+  stopped: markForTranslation('Stopped'),
+};
 
 /**
  * Append a labelled status row + Stop button bound to `taskId`'s delivery.
@@ -41,13 +50,15 @@ export function renderTaskDeliveryControl(wrapper, { messageThread, taskId, labe
 
   const labelEl = document.createElement('h4');
   labelEl.className = 'properties-panel-subtitle';
-  labelEl.textContent = 'Monitor';
+  labelEl.textContent = t('Monitor');
   section.appendChild(labelEl);
 
   // Self-describing when a label rides along (the chunk has no command shown).
+  // The label is the plugin's, the same English the model reads in each
+  // delivered message's header, so it is shown as data.
   if (label) {
     const labelText = document.createElement('div');
-    labelText.className = 'properties-panel-text';
+    labelText.className = 'properties-panel-text task-delivery-label';
     labelText.textContent = label;
     section.appendChild(labelText);
   }
@@ -59,7 +70,7 @@ export function renderTaskDeliveryControl(wrapper, { messageThread, taskId, labe
   const stopBtn = document.createElement('button');
   stopBtn.type = 'button';
   stopBtn.className = 'properties-panel-btn danger';
-  stopBtn.textContent = 'Stop monitor';
+  stopBtn.textContent = t('Stop monitor');
   // Shrink to fit its label: `.properties-panel-btn` is `display:flex` and the
   // subsection is a column flex container, so without this the button would
   // stretch to the full panel width. Scoped inline so the global rule (relied
@@ -77,7 +88,7 @@ export function renderTaskDeliveryControl(wrapper, { messageThread, taskId, labe
   // Pure read of the binding status → DOM; performs NO state changes.
   const paint = () => {
     const status = messageThread.getTaskDeliveryStatus(taskId);
-    statusEl.textContent = (status && STATUS_LABELS[status]) || 'Ended';
+    statusEl.textContent = t((status && STATUS_LABELS[status]) || ENDED_LABEL);
     // Toggle inline `display` rather than the `hidden` attribute: `[hidden]` is
     // defeated by the more specific `.properties-panel-btn { display:flex }`
     // rule, so the button would never actually disappear. An inline value wins.

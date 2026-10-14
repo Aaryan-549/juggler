@@ -361,6 +361,8 @@ import { runTests as runStrategyMenuRefreshTests } from '../unit-tests/strategy-
 import { runTests as runPermissionPopupRefreshTests } from '../unit-tests/permission-popup-refresh-test.js';
 import { runTests as runClipboardTests } from '../unit-tests/clipboard-test.js';
 import { runTests as runCopyButtonTests } from '../unit-tests/copy-button-test.js';
+import { runTests as runLiveTaskOutputTests } from '../unit-tests/live-task-output-test.js';
+import { runTests as runContextItemBaseTests } from '../unit-tests/context-item-base-test.js';
 import { runTests as runConnectivityTests } from '../unit-tests/connectivity-test.js';
 import { runTests as runLogsTests } from '../unit-tests/logs-test.js';
 import { runTests as runUpdatesSettingsTests } from '../unit-tests/updates-settings-test.js';
@@ -825,6 +827,8 @@ const UNIT_TEST_SUITES = [
   { name: 'unit:permission-popup-refresh', run: runPermissionPopupRefreshTests },
   { name: 'unit:clipboard', run: runClipboardTests },
   { name: 'unit:copy-button', run: runCopyButtonTests },
+  { name: 'unit:live-task-output', run: runLiveTaskOutputTests },
+  { name: 'unit:context-item-base', run: runContextItemBaseTests },
   { name: 'unit:connectivity', run: runConnectivityTests },
   { name: 'unit:logs', run: runLogsTests },
   { name: 'unit:updates-settings', run: runUpdatesSettingsTests },

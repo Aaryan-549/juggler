@@ -7,6 +7,9 @@ import EditBase from './edit-base.js';
 import { normalizeFilePath, basename } from 'juggler/item-utils';
 import { checkFileFreshness, recordWrittenHash, restageBaseline, acquirePathLock } from './read-history.js';
 import { absolutePathKey } from './path-approval.js';
+import { translator, markUntranslated } from 'juggler/i18n';
+
+const t = translator('@juggler/core');
 
 /**
  * @typedef {object} ReplaceTextParams
@@ -147,22 +150,22 @@ class ReplaceTextContextItem extends EditBase {
 
     // Validation - use current-style names in error messages
     if (params.path === undefined || params.path === null) {
-      return { valid: false, error: 'Missing required parameter: file_path' };
+      return { valid: false, error: markUntranslated('Missing required parameter: file_path') };
     }
     if (typeof params.path !== 'string') {
-      return { valid: false, error: 'Parameter "file_path" must be a string' };
+      return { valid: false, error: markUntranslated('Parameter "file_path" must be a string') };
     }
     if (params.old_str === undefined || params.old_str === null) {
-      return { valid: false, error: 'Missing required parameter: old_string' };
+      return { valid: false, error: markUntranslated('Missing required parameter: old_string') };
     }
     if (typeof params.old_str !== 'string') {
-      return { valid: false, error: 'Parameter "old_string" must be a string' };
+      return { valid: false, error: markUntranslated('Parameter "old_string" must be a string') };
     }
     if (params.new_str === undefined || params.new_str === null) {
-      return { valid: false, error: 'Missing required parameter: new_string' };
+      return { valid: false, error: markUntranslated('Missing required parameter: new_string') };
     }
     if (typeof params.new_str !== 'string') {
-      return { valid: false, error: 'Parameter "new_string" must be a string' };
+      return { valid: false, error: markUntranslated('Parameter "new_string" must be a string') };
     }
 
     // Read-before-edit guard (Claude Code-style): refuse to edit a file the
@@ -194,7 +197,7 @@ class ReplaceTextContextItem extends EditBase {
       // Ambiguous matches, a missing file, and the rest.
       return {
         valid: false,
-        error: `Error: ${err instanceof Error ? err.message : 'Unknown error'}`
+        error: markUntranslated(`Error: ${err instanceof Error ? err.message : 'Unknown error'}`)
       };
     }
 
@@ -389,23 +392,23 @@ class ReplaceTextContextItem extends EditBase {
 
     // Handle non-success cases
     if (outcome.cancelled) {
-      return this.failureSummary(`Replace text cancelled: ${prepPath}`);
+      return this.failureSummary(markUntranslated(`Replace text cancelled: ${prepPath}`));
     }
     if (!outcome.success) {
       // A failed match carries the file and an explanation (execute's SearchNotFoundResult)
       const result = /** @type {SearchNotFoundResult|undefined} */ (outcome.result);
       if (result && result.path) {
         const { userMessage, llmMessage } = this.formatError(result, 'edit');
-        return this.failureSummary(`Replace text failed: ${userMessage}`, { feedbackForLLM: llmMessage });
+        return this.failureSummary(markUntranslated(`Replace text failed: ${userMessage}`), { feedbackForLLM: llmMessage });
       }
-      return this.failureSummary(`Replace text failed: ${outcome.error}`);
+      return this.failureSummary(markUntranslated(`Replace text failed: ${outcome.error}`));
     }
 
     // Success case
     const result = /** @type {ReplaceTextResult} */ (outcome.result);
     return this._formatEditResult(
       result.path,
-      `Modified ${result.path} using ${result.method || 'edit'}`
+      markUntranslated(`Modified ${result.path} using ${result.method || 'edit'}`)
     );
   }
 
@@ -419,7 +422,7 @@ class ReplaceTextContextItem extends EditBase {
   formatError(result, _toolName) {
     const failed = /** @type {SearchNotFoundResult} */ (/** @type {unknown} */ (result));
     const filename = failed.path ? basename(failed.path) || failed.path : 'unknown';
-    return { userMessage: `failed in ${filename}`, llmMessage: failed.message };
+    return { userMessage: markUntranslated(`failed in ${filename}`), llmMessage: failed.message };
   }
 
   /**
@@ -458,7 +461,7 @@ class ReplaceTextContextItem extends EditBase {
       summary = EditBase._editStatSummary(filename, EditBase._editStats(displayData, result));
       status = 'success';
     } else if (actionStatus.cancelled) {
-      summary = `cancelled: ${filename}`;
+      summary = t('cancelled: {file}', { file: filename });
       status = 'cancelled';
     } else {
       // When no path is available (e.g. validation rejected the call
@@ -466,12 +469,12 @@ class ReplaceTextContextItem extends EditBase {
       // surface the raw error message instead.
       const hasPath = result.path || toolInput?.file_path || toolInput?.path;
       summary = hasPath
-        ? `failed in ${filename}`
-        : (actionStatus.error || /** @type {any} */ (actionStatus).content || 'failed');
+        ? t('failed in {file}', { file: filename })
+        : (actionStatus.error || /** @type {any} */ (actionStatus).content || t('failed'));
       status = 'error';
     }
 
-    return { typeName: 'Replace', summary, status };
+    return { typeName: t('Replace'), summary, status };
   }
 
   /**
@@ -499,24 +502,24 @@ class ReplaceTextContextItem extends EditBase {
 
     if (isError) {
       if (input.old_string !== undefined) {
-        helpers.addSubsection(wrapper, 'Search', input.old_string, 'properties-panel-code');
+        helpers.addSubsection(wrapper, t('Search'), input.old_string, 'properties-panel-code');
       }
       if (input.new_string !== undefined) {
-        helpers.addSubsection(wrapper, 'Replace', input.new_string, 'properties-panel-code');
+        helpers.addSubsection(wrapper, t('Replace'), input.new_string, 'properties-panel-code');
       }
       const fullResult = result.get ? result.get('fullResult') : result?.fullResult;
       const fullObj = fullResult?.toJSON ? fullResult.toJSON() : fullResult;
-      const errorText = fullObj?.llmFeedback || fullObj?.error || 'Edit failed';
+      const errorText = fullObj?.llmFeedback || fullObj?.error || t('Edit failed');
       const errorDiv = document.createElement('div');
       errorDiv.className = 'properties-panel-result error';
       errorDiv.textContent = errorText;
       wrapper.appendChild(errorDiv);
     } else if (!helpers.addDiffViewer(wrapper, toolAction, filePath)) {
       if (input.old_string !== undefined) {
-        helpers.addSubsection(wrapper, 'Search', input.old_string, 'properties-panel-code');
+        helpers.addSubsection(wrapper, t('Search'), input.old_string, 'properties-panel-code');
       }
       if (input.new_string !== undefined) {
-        helpers.addSubsection(wrapper, 'Replace', input.new_string, 'properties-panel-code');
+        helpers.addSubsection(wrapper, t('Replace'), input.new_string, 'properties-panel-code');
       }
     }
     return { skipResultSection: true };

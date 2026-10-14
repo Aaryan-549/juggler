@@ -6,8 +6,10 @@
 import ContextItem from 'juggler/context-item';
 import { formatFileSize } from 'juggler/item-utils';
 import { smartTruncate, createElement, renderMarkdown, decorateCodeBlocks } from 'juggler/ui';
-import { markUntranslated } from 'juggler/i18n';
+import { translator, markUntranslated } from 'juggler/i18n';
 import { getAvailableSkills, fetchSkillBody } from '../../../js/services/skills.js';
+
+const t = translator('@juggler/core');
 
 /**
  * Agent Skills — progressive-disclosure instruction sets the model loads on
@@ -215,7 +217,7 @@ class SkillContextItem extends ContextItem {
 
   /** @returns {string} Item title */
   getTitle() {
-    return 'Skills';
+    return t('Skills');
   }
 
   /**
@@ -263,7 +265,7 @@ class SkillContextItem extends ContextItem {
   async validate(toolInput) {
     const name = toolInput.name;
     if (typeof name !== 'string' || name.trim() === '') {
-      return { valid: false, error: 'The "name" parameter is required — the exact name of the skill to load.' };
+      return { valid: false, error: markUntranslated('The "name" parameter is required — the exact name of the skill to load.') };
     }
     return { valid: true, params: { name: name.trim() } };
   }
@@ -292,9 +294,9 @@ class SkillContextItem extends ContextItem {
     // this conversation — so the tool loads what the "## Skills" block listed.
     const skill = (await this._effectiveSkills()).find((s) => s.name === name) || null;
     if (!skill) {
-      throw new Error(
+      throw new Error(markUntranslated(
         `No skill named "${name}" is available. Use an exact name from the "## Skills" list in the system prompt.`
-      );
+      ));
     }
     if (this._loadedSet().has(name)) {
       return { name, scope: skill.scope, source: skill.source, alreadyLoaded: true };
@@ -332,20 +334,20 @@ class SkillContextItem extends ContextItem {
    */
   getSummary(outcome) {
     if (!outcome.success) {
-      return this.failureSummary(outcome.error || 'Failed to load skill');
+      return this.failureSummary(outcome.error || markUntranslated('Failed to load skill'));
     }
     const r = /** @type {{name: string, scope?: string, source?: string, alreadyLoaded?: boolean, body?: string, files?: any[]}} */ (
       outcome.result || {}
     );
     if (r.alreadyLoaded) {
-      return this.successSummary(
+      return this.successSummary(markUntranslated(
         `Skill "${r.name}" is already loaded in this conversation — its instructions are already in context.`
-      );
+      ));
     }
     // The body is embedded in a formatted block, so no truncation note: it
     // would read as part of the skill's own instructions.
     const body = this.truncateForLLM(r.body || '', { note: false });
-    return this.successSummary(SkillContextItem._formatLoaded({ ...r, body }));
+    return this.successSummary(markUntranslated(SkillContextItem._formatLoaded({ ...r, body })));
   }
 
   /**
@@ -379,14 +381,14 @@ class SkillContextItem extends ContextItem {
     }
     const shown = skills.slice(0, SkillContextItem.MAX_LISTED);
     const lines = shown.map((s) => `- ${s.name}: ${SkillContextItem._oneLine(s.description || '')}`);
-    let block =
+    let block = markUntranslated(
       '## Skills\n' +
       'Specialized instruction sets you can load with the skill tool when a task matches one. ' +
       'Load a skill BEFORE attempting a task it covers.\n' +
-      lines.join('\n');
+      lines.join('\n'));
     const overflow = skills.slice(SkillContextItem.MAX_LISTED);
     if (overflow.length > 0) {
-      block += `\n- …and ${overflow.length} more, loadable by exact name: ${overflow.map((s) => s.name).join(', ')}`;
+      block += markUntranslated(`\n- …and ${overflow.length} more, loadable by exact name: ${overflow.map((s) => s.name).join(', ')}`);
     }
     return block;
   }
@@ -401,15 +403,15 @@ class SkillContextItem extends ContextItem {
    */
   static _formatLoaded(r) {
     const origin = r.scope && r.source ? ` (${r.scope}/${r.source})` : '';
-    const parts = [`Skill: ${r.name}${origin}`, '', r.body || ''];
+    const parts = [markUntranslated(`Skill: ${r.name}${origin}`), '', r.body || ''];
     // SKILL.md itself is what we just injected — list only the other resources.
     const files = (r.files || []).filter((f) => f && f.path && f.path !== 'SKILL.md');
     if (files.length > 0) {
       const list = files.map((f) => `- ${f.path} (${formatFileSize(f.size)})`).join('\n');
       parts.push(
         '',
-        'Resources bundled with this skill — read a file with the read tool, or run a script with ' +
-          'the execute tool (your normal approval rules apply):',
+        markUntranslated('Resources bundled with this skill — read a file with the read tool, or run a script with ' +
+          'the execute tool (your normal approval rules apply):'),
         list
       );
     }
@@ -464,11 +466,11 @@ class SkillContextItem extends ContextItem {
 
     container.appendChild(SkillContextItem._explainer());
 
-    const heading = skills.length ? `Available skills (${skills.length})` : 'Available skills';
+    const heading = skills.length ? t('Available skills ({count})', { count: skills.length }) : t('Available skills');
     container.appendChild(createElement('div', 'skill-panel-heading', heading));
 
     if (!Array.isArray(skills) || skills.length === 0) {
-      container.appendChild(createElement('div', 'skills-empty', 'No skills yet.'));
+      container.appendChild(createElement('div', 'skills-empty', t('No skills yet.')));
     } else {
       const loaded = this._loadedSet();
       const list = createElement('div', 'skills-manage-list');
@@ -497,8 +499,7 @@ class SkillContextItem extends ContextItem {
       createElement(
         'p',
         'skill-panel-lead',
-        'Agent Skills are specialized instruction sets the LLM can load on demand as extra ' +
-          'guidance for a particular kind of task, but kept out of the way until needed.'
+        t('Agent Skills are specialized instruction sets the LLM can load on demand as extra guidance for a particular kind of task, but kept out of the way until needed.')
       )
     );
     const how = createElement('ul', 'skill-panel-how');
@@ -506,23 +507,21 @@ class SkillContextItem extends ContextItem {
       createElement(
         'li',
         '',
-        'The skills below are listed (name + description) in the system prompt, so the LLM ' +
-          'knows what it can reach for.'
+        t('The skills below are listed (name + description) in the system prompt, so the LLM knows what it can reach for.')
       )
     );
     how.appendChild(
       createElement(
         'li',
         '',
-        'The LLM can choose to load a particular skill with a tool-call if it decides it\'s useful during the chat.'
+        t('The LLM can choose to load a particular skill with a tool-call if it decides it\'s useful during the chat.')
       )
     );
     how.appendChild(
       createElement(
         'li',
         '',
-        'Loading a skill only adds text. Any scripts or files it bundles are read or run later through ' +
-          'the normal tools, under your usual approval rules.'
+        t('Loading a skill only adds text. Any scripts or files it bundles are read or run later through the normal tools, under your usual approval rules.')
       )
     );
     note.appendChild(how);
@@ -536,7 +535,7 @@ class SkillContextItem extends ContextItem {
    * @private
    */
   static _manageSkillsButton() {
-    const btn = /** @type {HTMLButtonElement} */ (createElement('button', 'skills-btn skill-manage-btn', 'Manage skills'));
+    const btn = /** @type {HTMLButtonElement} */ (createElement('button', 'skills-btn skill-manage-btn', t('Manage skills')));
     btn.type = 'button';
     btn.addEventListener('click', () => {
       const open = /** @type {any} */ (window).openSettings;
@@ -561,23 +560,23 @@ class SkillContextItem extends ContextItem {
     const row = createElement('div', 'skills-manage-row skill-panel-card');
     const main = createElement('div', 'skills-manage-main');
     const head = createElement('div', 'skills-card-head');
-    head.appendChild(createElement('span', 'skills-card-name', skill.name || '(unnamed)'));
+    head.appendChild(createElement('span', 'skills-card-name', skill.name || t('(unnamed)')));
     if (skill.scope && skill.source) {
       head.appendChild(createElement('span', 'skills-scope-badge', `${skill.scope}-${skill.source}`));
     }
     if (skill.hasScripts) {
-      const b = createElement('span', 'skills-badge tint-blue', 'scripts');
-      b.title = 'Bundles scripts that can be run through the normal tools';
+      const b = createElement('span', 'skills-badge tint-blue', t('scripts'));
+      b.title = t('Bundles scripts that can be run through the normal tools');
       head.appendChild(b);
     }
     if (loaded) {
-      const b = createElement('span', 'skills-badge tint-green', 'loaded');
-      b.title = 'Already loaded into this conversation';
+      const b = createElement('span', 'skills-badge tint-green', t('loaded'));
+      b.title = t('Already loaded into this conversation');
       head.appendChild(b);
     }
     main.appendChild(head);
     const desc = SkillContextItem._oneLine(skill.description || '');
-    main.appendChild(createElement('div', 'skills-card-desc', desc || 'No description.'));
+    main.appendChild(createElement('div', 'skills-card-desc', desc || t('No description.')));
     row.appendChild(main);
     // The Details button opens the same modal the settings Installed tab uses — the frozen
     // snapshot carries scope/source/name, which is all the popup needs to fetch
@@ -586,9 +585,9 @@ class SkillContextItem extends ContextItem {
     // runs in the viewer, never in the engine worker that also loads this module.
     if (withPreview && skill.name && skill.scope && skill.source) {
       const actions = createElement('div', 'skills-manage-actions');
-      const btn = /** @type {HTMLButtonElement} */ (createElement('button', 'skills-btn', 'Details'));
+      const btn = /** @type {HTMLButtonElement} */ (createElement('button', 'skills-btn', t('Details')));
       btn.type = 'button';
-      btn.title = "View this skill's SKILL.md and files";
+      btn.title = t('View this skill\'s SKILL.md and files');
       btn.addEventListener('click', () => {
         import('../../../js/components/settings/skill-preview.js')
           .then((m) => m.openInstalledSkillPreview(/** @type {any} */ (skill)))
@@ -650,21 +649,25 @@ class SkillContextItem extends ContextItem {
     }
 
     host.textContent = '';
-    host.appendChild(SkillContextItem._skillCard(skill || { name: name || '(unknown skill)' }, false));
+    host.appendChild(SkillContextItem._skillCard(skill || { name: name || t('(unknown skill)') }, false));
 
-    // "already loaded" is a one-line notice from getSummary — surface it, and
-    // skip the (absent) body in that case.
+    // "already loaded" comes from the structured result `execute` returned —
+    // surface it, and skip the (absent) body in that case. A stored result
+    // without one falls back to recognising the model's one-line English notice.
+    // `content` is the model's tool result, shown below only as a fallback.
     const raw = ctx && ctx.toolAction && ctx.toolAction.get ? ctx.toolAction.get('result') : null;
     const result = raw && raw.toJSON ? raw.toJSON() : (raw || {});
     const content = (result && (result.content || result.output)) || '';
-    const alreadyLoaded =
-      typeof content === 'string' && /already loaded/i.test(content) && content.indexOf('\n') === -1;
+    const data = result && result.fullResult && result.fullResult.result;
+    const alreadyLoaded = data && typeof data === 'object'
+      ? data.alreadyLoaded === true
+      : typeof content === 'string' && /already loaded/i.test(content) && content.indexOf('\n') === -1;
     if (alreadyLoaded) {
       host.appendChild(
         createElement(
           'div',
           'skill-load-note',
-          'These instructions were already loaded earlier in this conversation, so they weren\u2019t added again.'
+          t('These instructions were already loaded earlier in this conversation, so they weren\u2019t added again.')
         )
       );
     }
@@ -685,7 +688,7 @@ class SkillContextItem extends ContextItem {
     // SKILL.md itself is the body we render below — list only the other resources.
     const resources = (files || []).filter((f) => f && f.path && f.path !== 'SKILL.md');
     if (resources.length > 0) {
-      host.appendChild(SkillContextItem._sectionTitle(`Files (${resources.length})`));
+      host.appendChild(SkillContextItem._sectionTitle(t('Files ({count})', { count: resources.length })));
       const list = createElement('div', 'skills-files-list');
       for (const f of resources) {
         const fileEl = createElement('div', 'skills-file');
@@ -698,14 +701,14 @@ class SkillContextItem extends ContextItem {
 
     if (body) {
       const { content: capped } = smartTruncate(body, { maxChars: 20000 });
-      host.appendChild(SkillContextItem._sectionTitle('Instructions'));
+      host.appendChild(SkillContextItem._sectionTitle(t('Instructions')));
       const md = createElement('div', 'skill-load-body markdown');
       md.innerHTML = renderMarkdown(capped, { escapeXml: true });
       decorateCodeBlocks(md);
       host.appendChild(md);
     } else if (!alreadyLoaded && content) {
       // Couldn't re-fetch the body — show the raw injected text as-is.
-      host.appendChild(SkillContextItem._sectionTitle('Instructions'));
+      host.appendChild(SkillContextItem._sectionTitle(t('Instructions')));
       host.appendChild(createElement('pre', 'skill-load-raw surface-well', content));
     }
 
@@ -723,20 +726,22 @@ class SkillContextItem extends ContextItem {
    */
   getStatusUI(actionStatus) {
     if (!actionStatus) {
-      return { typeName: 'Skills', summary: 'Loadable instruction sets — listed for the assistant' };
+      return { typeName: t('Skills'), summary: t('Loadable instruction sets — listed for the assistant') };
     }
     if (actionStatus.pending) {
-      return { typeName: 'Skill', summary: 'Loading…', status: /** @type {const} */ ('running') };
+      return { typeName: t('Skill'), summary: t('Loading…'), status: /** @type {const} */ ('running') };
     }
     if (actionStatus.success) {
       const r = /** @type {{name?: string, alreadyLoaded?: boolean}} */ (actionStatus.result || {});
-      const suffix = r.alreadyLoaded ? ' (already loaded)' : '';
-      return { typeName: 'Skill', summary: `${r.name || 'skill'}${suffix}`, status: /** @type {const} */ ('success') };
+      const name = r.name || t('skill');
+      const summary = r.alreadyLoaded ? t('{name} (already loaded)', { name }) : name;
+      return { typeName: t('Skill'), summary, status: /** @type {const} */ ('success') };
     }
     if (actionStatus.error) {
-      return { typeName: 'Skill', summary: actionStatus.error, status: /** @type {const} */ ('error') };
+      // The model's English error, shown as it was.
+      return { typeName: t('Skill'), summary: actionStatus.error, status: /** @type {const} */ ('error') };
     }
-    return { typeName: 'Skill', summary: 'Skill' };
+    return { typeName: t('Skill'), summary: t('Skill') };
   }
 }
 

@@ -5,9 +5,12 @@
 
 import ContextItem from 'juggler/context-item';
 import { createTextBlock, formatFileContentForLLM } from 'juggler/item-utils';
+import { translator } from 'juggler/i18n';
 import { formatGrepResults } from './search/grep-format.js';
 import { creditProgramRead } from './read-history.js';
 import { absolutePathKey } from './path-approval.js';
+
+const t = translator('@juggler/core');
 
 /**
  * Wrap a value as markdown inline code, widening the fence when the value
@@ -383,13 +386,12 @@ class BatchContextItem extends ContextItem {
     const count = isBatchRead
       ? /** @type {any[]} */ (files).length
       : /** @type {any[]} */ (Array.isArray(searches) ? searches : []).length;
-    const noun = isBatchRead ? 'files' : 'searches';
 
     return this.buildStatusUI(actionStatus, {
-      typeName: isBatchRead ? 'BatchRead' : 'BatchGrep',
-      pending: `${count} ${noun}...`,
-      success: `${count} ${noun} completed`,
-      failurePrefix: 'failed'
+      typeName: isBatchRead ? t('BatchRead') : t('BatchGrep'),
+      pending: isBatchRead ? t('{count} files...', { count }) : t('{count} searches...', { count }),
+      success: isBatchRead ? t('{count} files completed', { count }) : t('{count} searches completed', { count }),
+      failurePrefix: t('failed')
     });
   }
 

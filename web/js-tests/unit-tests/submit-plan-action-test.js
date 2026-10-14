@@ -21,6 +21,9 @@ import {
   assertContextGolden
 } from '../utilities/test-helpers.js';
 import contextItemRegistry from '../../js/registries/context-item-registry.js';
+import { addSubsection } from '../../js/utils/properties-panel-helpers.js';
+import { underPseudoLocale, shownStrings } from '../utilities/pseudo-locale.js';
+import { t, isPseudoLocalized } from '../../sdk/lib/i18n.js';
 
 /**
  * The conversation the previous case created, still to be released.
@@ -1021,6 +1024,137 @@ export async function runTests(ctx) {
   } catch (e) {
     failed++;
     errors.push(`alias-aware match: ${e instanceof Error ? e.message : String(e)}`);
+  }
+
+  // Test 22: under en-XA every row state, the title, the approval, the status
+  // line and the panel are translated, and what the model reads (tool results,
+  // validation and execution errors) stays English. The row is getStatusUI's,
+  // which the viewer runs at render time. Plan data is digits so it passes the
+  // pseudo-locale check; every miss is collected and reported at once.
+  try {
+    /** @type {string[]} */
+    const misses = [];
+    /**
+     * @param {string} where - What is being checked
+     * @param {unknown} text - The text shown
+     */
+    const expectPseudo = (where, text) => {
+      if (!isPseudoLocalized(String(text))) misses.push(`${where}: ${JSON.stringify(text)}`);
+    };
+    await underPseudoLocale('submit-plan-action-test', async () => {
+      const conversation = await freshConversation(session);
+      const mt = conversation.rootMessageThread;
+      /** @type {string[]} */
+      const statusLines = [];
+      const originalSetStatus = conversation.setStatusMessage;
+      conversation.setStatusMessage = (/** @type {string} */ text) => {
+        statusLines.push(text);
+        return originalSetStatus.call(conversation, text);
+      };
+
+      // What the model reads stays English.
+      const failedStep = await executeToolsAndGetContext(conversation, session, [createToolCall('plan', { action: 'start_step', index: 1 })]);
+      const submit = await executeToolsAndGetContext(conversation, session, [createToolCall('plan', {
+        action: 'submit', title: '3', items: [{ content: '1', status: 'pending' }, { content: '2', status: 'pending' }]
+      })]);
+      const step = await executeToolsAndGetContext(conversation, session, [createToolCall('plan', { action: 'start_step', index: 1 })]);
+      conversation.setStatusMessage = originalSetStatus;
+      assert(String(failedStep.outcomes[0].result).includes('Step update failed: No plan exists. Submit a plan first'),
+        `the model's step error is not English: ${failedStep.outcomes[0].result}`);
+      const submitText = String(submit.outcomes[0].result);
+      assert(submitText.includes('Plan approved: 3') && submitText.includes('was approved with 2 steps. Execution will begin automatically.'),
+        `the model's submit result is not English: ${submitText}`);
+      const stepText = String(step.outcomes[0].result);
+      assert(stepText.includes('Step 1: pending \u2192 in_progress (0/2 completed)') && stepText.includes('Current plan state:'),
+        `the model's step result is not English: ${stepText}`);
+
+      const PlanClass = /** @type {any} */ (contextItemRegistry.getByToolName('plan'));
+      const action = new PlanClass({ id: PlanClass.MANIFEST.id, session, conversation, messageThread: mt });
+      const invalid = await action.validate({});
+      assert(invalid.error === 'Missing required parameter: action', `validate error is not English: ${invalid.error}`);
+      const noSteps = await action.validate({ action: 'submit', title: '3', items: [] });
+      assert(noSteps.error === 'Plan must have at least one step', `validate error is not English: ${noSteps.error}`);
+
+      for (const line of statusLines) expectPseudo('status line', line);
+      if (statusLines.length === 0) misses.push('no status line was set');
+
+      const item = /** @type {any} */ (mt.contextItems.find(f => f.type === 'plan'));
+      assert(!!item, 'no plan item');
+      expectPseudo('title', item.getTitle());
+      expectPseudo('brief summary', item.getBriefSummary());
+      expectPseudo('tool-action title (submit)', PlanClass.getToolActionTitle({ action: 'submit' }));
+      expectPseudo('tool-action title (step)', PlanClass.getToolActionTitle({ action: 'start_step' }));
+
+      const approval = await action.getApprovalConfig({ action: 'submit', title: '3', items: [{ content: '1' }, { content: '2' }] });
+      expectPseudo('approval title', approval.title);
+      expectPseudo('approval message', approval.message);
+      for (const opt of approval.options) {
+        assert(!isPseudoLocalized(opt.label), `approval label ${opt.label} is stored translated; it is drawn through t()`);
+        expectPseudo(`approval label ${opt.label}`, t(opt.label));
+      }
+
+      const planData = { title: '3', status: 'planning', steps: [{ content: '1', status: 'pending' }] };
+      const stepResult = { index: 1, oldStatus: 'pending', newStatus: 'in_progress', completed: 0, total: 2 };
+      /** @type {Array<[string, any]>} */
+      const rows = [
+        ['standing, untitled', new PlanClass({ id: 'PLAN_x', session, conversation, messageThread: mt }).getStatusUI(null)],
+        ['pending submit, untitled', item.getStatusUI({ pending: true }, { action: 'submit' })],
+        ['cancelled', item.getStatusUI({ cancelled: true, displayData: { planData } }, { action: 'submit' })],
+        ['cancelled, untitled', item.getStatusUI({ cancelled: true }, { action: 'submit' })],
+        ['submit success', item.getStatusUI({ success: true, result: { title: '3', stepCount: 2 } }, { action: 'submit' })],
+        ['step success', item.getStatusUI({ success: true, result: stepResult }, { action: 'start_step', index: 2 })],
+        ['step error', item.getStatusUI({ error: '4' }, { action: 'fail_step', index: 2 })],
+        ['step error, no index', item.getStatusUI({ error: '4' }, { action: 'fail_step' })],
+      ];
+      for (const stepAction of ['start_step', 'complete_step', 'fail_step', 'skip_step', 'other_step']) {
+        rows.push([`pending ${stepAction}`, item.getStatusUI({ pending: true }, { action: stepAction, index: 2 })]);
+        rows.push([`pending ${stepAction}, no index`, item.getStatusUI({ pending: true }, { action: stepAction })]);
+      }
+      for (const [state, ui] of rows) {
+        expectPseudo(`${state}: type name`, ui.typeName);
+        expectPseudo(`${state}: summary`, ui.summary);
+      }
+      // A submit's error row is the model's English error, shown as it was.
+      const submitError = item.getStatusUI({ error: 'model-facing English' }, { action: 'submit' });
+      assert(submitError.summary === 'model-facing English', `submit error row: ${submitError.summary}`);
+      expectPseudo('submit error: type name', submitError.typeName);
+
+      // Properties panel: the step action's label, the empty submit, the empty item.
+      const helpers = { addSubsection };
+      const noResult = { get: () => undefined };
+      for (const stepAction of ['start_step', 'complete_step', 'fail_step', 'skip_step']) {
+        const wrapper = document.createElement('div');
+        item.renderToolActionDetails(wrapper, { toolAction: noResult, input: { action: stepAction, index: 2 }, helpers, messageThread: { contextItems: [] } });
+        for (const s of shownStrings(wrapper)) expectPseudo(`${stepAction} panel`, s);
+      }
+      const submitPanel = document.createElement('div');
+      item.renderToolActionDetails(submitPanel, { toolAction: noResult, input: { action: 'submit' }, helpers, messageThread: mt });
+      for (const s of shownStrings(submitPanel)) expectPseudo('empty submit panel', s);
+
+      item.setPlan({ title: '', steps: [] });
+      expectPseudo('untitled title', item.getTitle());
+      expectPseudo('empty brief summary', item.getBriefSummary());
+      for (const s of shownStrings(item.createPropertiesPanelElement())) expectPseudo('empty panel', s);
+    }, {
+      '@juggler/core': [
+        'Plan', 'Update plan', 'Plan: {title}', 'No steps', '{completed}/{total} completed', 'No plan steps yet',
+        'Implementation Plan', '{count, plural, one {# step} other {# steps}} - Review and approve to begin execution',
+        'Approve', 'Discuss further', 'Step {index} \u2192 {status} ({completed}/{total} completed)',
+        'cancelled: {title}', 'Step {index}: {from} \u2192 {to} ({completed}/{total})', 'approved: {title}',
+        'Step {index} failed: {error}',
+        'Starting step {index}', 'Starting step', 'Completing step {index}', 'Completing step',
+        'Failing step {index}', 'Failing step', 'Skipping step {index}', 'Skipping step',
+        'Updating step {index}', 'Updating step',
+        'pending', 'in_progress', 'completed', 'failed', 'skipped',
+        'Action', 'Submit plan', 'start step: Step {index}', 'complete step: Step {index}',
+        'fail step: Step {index}', 'skip step: Step {index}',
+      ]
+    });
+    assert(misses.length === 0, `not translated:\n  ${misses.join('\n  ')}`);
+    passed++;
+  } catch (e) {
+    failed++;
+    errors.push(`en-XA: ${e instanceof Error ? e.message : String(e)}`);
   }
 
   // The last case has no successor to release it.

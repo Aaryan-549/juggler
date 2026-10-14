@@ -19,14 +19,29 @@
  * @module services/command-manager-entry
  */
 
+import { markForTranslation, t } from '../../sdk/lib/i18n.js';
+
 /** Id of the built-in command that opens the manager. */
 export const MANAGER_COMMAND_ID = 'commands';
 
 /** Label of the button opening the custom-command manager. */
-export const MANAGE_COMMANDS_LABEL = 'Edit custom slash commands…';
+export const MANAGE_COMMANDS_LABEL = markForTranslation('Edit custom slash commands…');
 
 /** Label of the button opening the built-ins in the Extensions settings. */
-export const BROWSE_COMMANDS_LABEL = 'Browse built-in commands…';
+export const BROWSE_COMMANDS_LABEL = markForTranslation('Browse built-in commands…');
+
+/**
+ * A command's own text (its label or description) in the user's language. A
+ * built-in's is its extension's English, looked up in that extension's
+ * catalogue; a user-defined command's is whatever its author wrote, shown as
+ * written.
+ * @param {{userDefined?: boolean, extensionId?: string}} cmd - The command
+ * @param {string} text - Its label or description
+ * @returns {string} The text to show
+ */
+export function commandText(cmd, text) {
+  return cmd.userDefined ? text : t(text, undefined, { namespace: cmd.extensionId });
+}
 
 /**
  * The fixed lead of the button-opened command lists: tab operations first (new,
@@ -56,7 +71,7 @@ export function menuOrderedCommands(commands) {
  * Build one command row of a button-opened list: the mono `/name`, then its
  * label (or the name capitalised). The caller owns the click wiring, since each
  * surface dismisses itself differently.
- * @param {{name: string, label?: string, danger?: boolean}} cmd - The command
+ * @param {{name: string, label?: string, danger?: boolean, userDefined?: boolean, extensionId?: string}} cmd - The command
  * @param {object} [opts]
  * @param {string} [opts.extraClass] - Surface-specific class alongside `menu-item`
  * @param {string} [opts.labelClass] - Class of the label span
@@ -73,7 +88,7 @@ export function buildCommandRow(cmd, { extraClass = '', labelClass = 'menu-item-
 
   const label = document.createElement('span');
   label.className = labelClass;
-  label.textContent = cmd.label || cmd.name.charAt(0).toUpperCase() + cmd.name.slice(1);
+  label.textContent = cmd.label ? commandText(cmd, cmd.label) : cmd.name.charAt(0).toUpperCase() + cmd.name.slice(1);
   row.appendChild(label);
 
   return row;
@@ -96,7 +111,7 @@ export function withoutManagerCommand(commands) {
  * beside "Edit custom slash commands…" only reads as a command name that went
  * missing. The caller owns the click wiring, since each surface dismisses itself
  * differently.
- * @param {string} label - Button text
+ * @param {string} label - Button text, as English source
  * @param {string} extraClass - Surface-specific class alongside the shared ones
  * @param {boolean} last - True for the final button of the pair, which carries
  *   the rule separating the pair from the commands below it
@@ -108,7 +123,7 @@ function buildPinnedRow(label, extraClass, last) {
 
   const text = document.createElement('span');
   text.className = 'slash-command-pinned-label';
-  text.textContent = label;
+  text.textContent = t(label);
   row.appendChild(text);
 
   return row;

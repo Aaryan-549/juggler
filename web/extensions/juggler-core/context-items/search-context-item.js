@@ -5,9 +5,12 @@
 
 import ContextItem from 'juggler/context-item';
 import { formatPathForStatus } from 'juggler/item-utils';
+import { translator } from 'juggler/i18n';
 import { toolInputPath, isPathAllowed, folderGrantSuggestions, stripInjectedApprovalFlags, gitignoreDisabled } from './path-approval.js';
 import { buildGitignoreSection } from './search-scope-section.js';
 import { formatGrepResults } from './search/grep-format.js';
+
+const t = translator('@juggler/core');
 
 /**
  * @typedef {object} GrepParams
@@ -347,18 +350,20 @@ class SearchContextItem extends ContextItem {
   getStatusUI(actionStatus, toolInput) {
     const pattern = String(toolInput?.pattern || 'unknown');
     const path = toolInput?.path ? String(toolInput.path) : null;
-    const pathSuffix = path ? ` in ${formatPathForStatus(path, this.session?.projectPath)}` : '';
+    const shownPath = path ? formatPathForStatus(path, this.session?.projectPath) : '';
 
     return this.buildStatusUI(actionStatus, {
-      typeName: 'Grep',
-      pending: `${pattern}${pathSuffix}...`,
+      typeName: t('Grep'),
+      pending: shownPath ? t('{pattern} in {path}...', { pattern, path: shownPath }) : `${pattern}...`,
       success: () => {
         const result = /** @type {SearchResult|undefined} */ (actionStatus?.result);
-        return result
-          ? `${pattern}${pathSuffix} (${result.matchCount} matches in ${result.fileCount} files)`
-          : `${pattern}${pathSuffix}`;
+        if (!result) return shownPath ? t('{pattern} in {path}', { pattern, path: shownPath }) : pattern;
+        const counts = { pattern, matchCount: result.matchCount, fileCount: result.fileCount };
+        return shownPath
+          ? t('{pattern} in {path} ({matchCount} matches in {fileCount} files)', { ...counts, path: shownPath })
+          : t('{pattern} ({matchCount} matches in {fileCount} files)', counts);
       },
-      failurePrefix: `failed${pathSuffix}`
+      failurePrefix: shownPath ? t('failed in {path}', { path: shownPath }) : t('failed')
     });
   }
 

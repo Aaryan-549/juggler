@@ -7,6 +7,14 @@ import PinToPinboardContextItem from '../context-items/pin-to-pinboard-context-i
 import { assert } from '../../../js-tests/utilities/test-helpers.js';
 import pinboardStore from '../../../js/services/pinboard-store.js';
 import pinboardView from '../../../js/services/pinboard-view.js';
+import { underPseudoLocale } from '../../../js-tests/utilities/pseudo-locale.js';
+import { isPseudoLocalized } from '../../../sdk/lib/i18n.js';
+
+/** juggler-core's English for this plugin, standing in for its catalogue. */
+const CORE_TEXT = [
+  'Pin to Pinboard', 'pinned', 'Pinning…', 'item', 'Could not pin that', 'Show on Pinboard',
+  'Type', 'unknown', 'Parameters', 'None.', 'Cancelled',
+];
 
 /**
  * Test the agent-facing contract and its realm-neutral pinboard request.
@@ -262,6 +270,61 @@ export async function runTests(_ctx) {
       toolAction: { get: () => ({ isError: true, fullResult: {} }) },
     }));
     assert(unmade.controls.length === 0, 'a call that made no pin has nothing to show');
+  });
+
+  // What the tool shows the user is translated; what the model reads is not.
+  // Types, ids and errors are digits, so they read as data inside a message.
+  await test('en-XA: every row state, the link and the panel are translated; the model\'s text stays English', async () => {
+    await underPseudoLocale('pin-to-pinboard-test', async () => {
+      /** @type {Record<string, string>} */
+      const shown = {};
+      /**
+       * @param {string} name
+       * @param {any} ui
+       */
+      const row = (name, ui) => {
+        shown[`${name} row`] = String(ui?.summary);
+        shown[`${name} type name`] = String(ui?.typeName);
+      };
+      row('unstarted', item.getStatusUI(null));
+      row('pending', item.getStatusUI(/** @type {any} */ ({ pending: true })));
+      row('done, nothing named', item.getStatusUI(/** @type {any} */ ({ success: true, result: {} })));
+      row('failed', item.getStatusUI(/** @type {any} */ ({ success: false, error: '9' })));
+      row('cancelled', item.getStatusUI(/** @type {any} */ ({ success: false, cancelled: true })));
+      shown['type name (static)'] = PinToPinboardContextItem.getTypeName();
+
+      // The link's text is the pin's own label (data); its tooltip is ours.
+      const linked = item.getStatusUI(/** @type {any} */ ({ success: true, result: { pin: 'agent_1', type: '2', parameters: {} } }));
+      shown['linked type name'] = String(linked.typeName);
+      shown['link tooltip'] = /** @type {HTMLElement} */ (linked.summary).title;
+
+      // The panel with no type and no parameters draws only our own words.
+      const wrapper = document.createElement('div');
+      item.renderToolActionDetails(wrapper, /** @type {any} */ ({
+        input: { type: '', parameters: {} },
+        helpers: {
+          addSubsection: (/** @type {any} */ _w, /** @type {string} */ label, /** @type {string} */ text) => {
+            shown[`panel heading ${label}`] = label;
+            shown[`panel body under ${label}`] = text;
+          },
+        },
+        toolAction: { get: () => null },
+      }));
+
+      const raw = Object.entries(shown).filter(([, s]) => !isPseudoLocalized(s));
+      assert(!raw.length, `plain English under en-XA: ${JSON.stringify(Object.fromEntries(raw))}`);
+      assert(String(shown['failed row']).includes('9'), 'the failed row should still carry the model\'s error');
+
+      // The model's text is unchanged English under any UI language.
+      const pinned = item.getSummary(/** @type {any} */ ({ success: true, result: {} }));
+      assert(pinned.summary === 'Pinned the item and asked the user’s Pinboard to show it.',
+        `the model's result changed: ${JSON.stringify(pinned.summary)}`);
+      const notPinned = item.getSummary(/** @type {any} */ ({ success: false }));
+      assert(notPinned.summary.includes('Could not pin that'), `the model's failure changed: ${JSON.stringify(notPinned.summary)}`);
+      const invalid = await item.validate({ type: '' });
+      assert(invalid.error === 'Which pin type? Name one of the installed types.',
+        `the model's validation error changed: ${JSON.stringify(invalid.error)}`);
+    }, { '@juggler/core': CORE_TEXT });
   });
 
   return { passed, failed, errors };

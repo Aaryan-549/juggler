@@ -6,6 +6,9 @@
 import ContextItem from 'juggler/context-item';
 import { webFetch, uploadAssetBase64 } from 'juggler/ops';
 import { formatFileSize } from 'juggler/item-utils';
+import { translator } from 'juggler/i18n';
+
+const t = translator('@juggler/core');
 
 /**
  * @typedef {object} WebFetchParams
@@ -306,16 +309,17 @@ class WebFetchContextItem extends ContextItem {
     const displayUrl = url.length > 60 ? url.substring(0, 60) + '...' : url;
 
     return this.buildStatusUI(actionStatus, {
-      typeName: 'Web Fetch',
-      pending: `Fetching ${displayUrl}...`,
+      typeName: t('Web Fetch'),
+      pending: t('Fetching {url}...', { url: displayUrl }),
       success: () => {
         const result = /** @type {WebFetchResult} */ (actionStatus?.result);
-        if (result.redirect) return `Redirect to: ${result.redirect_url}`;
-        const cacheStr = result.cached ? ' (cached)' : '';
-        const truncStr = result.truncated ? ' (truncated)' : '';
-        return `${displayUrl}${cacheStr}${truncStr}`;
+        if (result.redirect) return t('Redirect to: {url}', { url: result.redirect_url });
+        if (result.cached && result.truncated) return t('{url} (cached) (truncated)', { url: displayUrl });
+        if (result.cached) return t('{url} (cached)', { url: displayUrl });
+        if (result.truncated) return t('{url} (truncated)', { url: displayUrl });
+        return displayUrl;
       },
-      failurePrefix: 'Failed'
+      failurePrefix: t('Failed')
     });
   }
 

@@ -460,10 +460,20 @@ export async function runTests(_ctx) {
         assert(!host.querySelector(`[data-model="${id}"] .model-window-assumed`), `${id} is marked assumed`);
       }
       const box = host.querySelector('[data-model="guessed-model"] .model-visibility-check');
+      // Lanes share one window's focus, so a sibling lane's focus() can take it
+      // from the field before this lane looks. The field's focus and select
+      // calls (WebKit's select() focuses too) are observed rather than made; the
+      // decoy stands in for the sibling.
+      const field = limitInput(host, 'guessed-model', 'contextWindow');
+      let focusAsked = false;
+      field.focus = () => { focusAsked = true; };
+      field.select = () => {};
+      const decoy = document.createElement('button');
+      host.appendChild(decoy);
       marker.click();
+      decoy.focus();
       await settle();
-      assert(document.activeElement === limitInput(host, 'guessed-model', 'contextWindow'),
-        'the marker did not lead to the window field');
+      assert(focusAsked, 'the marker did not lead to the window field');
       assert(box && box.checked, 'clicking the marker hid the model');
     });
   });

@@ -32,6 +32,7 @@ import { shellOutput } from 'juggler/ops';
 import { ansiToFragment, applyAnsi, stripAnsi } from './ansi.js';
 import { createCopyButton } from './copy-button.js';
 import { extractErrorMessage } from './error-utils.js';
+import { t } from './i18n.js';
 
 /** Default gap between polls of a running task, in ms. */
 const DEFAULT_POLL_MS = 1000;
@@ -76,12 +77,12 @@ const DEFAULT_POLL_MS = 1000;
 export function renderLiveTaskOutput(wrapper, {
   taskId,
   helpers,
-  label = 'Output',
+  label = t('Output'),
   pollMs = DEFAULT_POLL_MS,
   isRunning = (state) => state.status === 'running',
   describeStatus,
   onStop,
-  stopLabel = 'Stop',
+  stopLabel = t('Stop'),
   initialState,
   convId,
   readOutput = shellOutput
@@ -121,7 +122,7 @@ export function renderLiveTaskOutput(wrapper, {
           await stopTask();
         } catch (err) {
           stopError.hidden = false;
-          stopError.textContent = `Couldn't stop the task — ${extractErrorMessage(err)}`;
+          stopError.textContent = t('Couldn\'t stop the task — {error}', { error: extractErrorMessage(err) });
           stopBtn.disabled = false;
           return;
         }
@@ -148,7 +149,7 @@ export function renderLiveTaskOutput(wrapper, {
   // Same class the finished-result box uses, so live terminal output is laid out
   // monospaced and column-aligned rather than as prose.
   pre.className = 'properties-panel-result';
-  pre.textContent = '(no output yet)';
+  pre.textContent = t('(no output yet)');
   copyable.appendChild(pre);
   section.appendChild(copyable);
 
@@ -184,11 +185,11 @@ export function renderLiveTaskOutput(wrapper, {
   /** @param {TaskOutputState} state */
   const paintState = (state) => {
     applyOutput(typeof state.output === 'string' ? state.output : '');
-    if (placeholderShown && state.status === 'not_found') pre.textContent = '(no output available)';
+    if (placeholderShown && state.status === 'not_found') pre.textContent = t('(no output available)');
     if (statusEl && describeStatus) statusEl.textContent = describeStatus(state);
     if (state.truncated && state.outputFile) {
       spillNote.hidden = false;
-      spillNote.textContent = `Middle dropped — the complete output is in ${state.outputFile}`;
+      spillNote.textContent = t('Middle dropped — the complete output is in {file}', { file: state.outputFile });
     }
   };
 

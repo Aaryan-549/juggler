@@ -29,7 +29,8 @@ import {
   createTestConversation,
   assert
 } from '../../../js-tests/utilities/test-helpers.js';
-import { underPseudoLocale } from '../../../js-tests/utilities/pseudo-locale.js';
+import { underPseudoLocale, assertPseudoLocalized } from '../../../js-tests/utilities/pseudo-locale.js';
+import { isPseudoLocalized } from '../../../sdk/lib/i18n.js';
 import { HttpError } from '../../../js/services/http.js';
 
 /**
@@ -344,6 +345,124 @@ export async function runTests(_ctx) {
         assert(message === expected, `expected ${JSON.stringify(expected)}, got ${JSON.stringify(message)}`);
       }
     });
+  });
+
+  // Everything the item draws for the user is translated: the title, the row in
+  // every state, the standing Skills card (full and empty) and the load panel
+  // (fresh, already loaded, unknown skill, body not re-fetched). What the model
+  // reads — the tool result, the validate error, the system-prompt block — stays
+  // English. Skill names, descriptions, scope badges, file paths/sizes and the
+  // model's text are data, so the fixture uses digits and the walk skips them.
+  await test('under en-XA every state the item draws is translated, and the model\'s text is English', async () => {
+    const CORE_TEXT = [
+      'Skills', 'Skill', 'skill', 'Loading…', '{name} (already loaded)',
+      'Loadable instruction sets — listed for the assistant',
+      'Available skills', 'Available skills ({count})', 'No skills yet.',
+      'Agent Skills are specialized instruction sets the LLM can load on demand as extra guidance for a particular kind of task, but kept out of the way until needed.',
+      'The skills below are listed (name + description) in the system prompt, so the LLM knows what it can reach for.',
+      'The LLM can choose to load a particular skill with a tool-call if it decides it\'s useful during the chat.',
+      'Loading a skill only adds text. Any scripts or files it bundles are read or run later through the normal tools, under your usual approval rules.',
+      'Manage skills', '(unnamed)', '(unknown skill)', 'scripts', 'Bundles scripts that can be run through the normal tools',
+      'loaded', 'Already loaded into this conversation', 'No description.', 'Details',
+      'View this skill\'s SKILL.md and files', 'Files ({count})', 'Instructions',
+      'These instructions were already loaded earlier in this conversation, so they weren\u2019t added again.',
+    ];
+    const DATA = '.skills-card-name, .skills-scope-badge, .skills-file-path, .skills-file-size, .skill-load-body, .skill-load-raw';
+    const skills = [
+      { name: '1', description: '', scope: 'project', source: 'juggler', hasScripts: true },
+      { name: '2', description: '', scope: 'user', source: 'agents' },
+    ];
+    const bodies = { 1: { body: '3', files: [{ path: 'SKILL.md', size: 4 }, { path: '5', size: 6 }] } };
+    /**
+     * A tool-action stand-in whose stored result is what the engine keeps.
+     * @param {any} data - What `execute` returned
+     * @param {string} content - The model's tool result
+     * @returns {any} Render context
+     */
+    const ctxFor = (data, content) => ({
+      toolAction: { get: () => ({ content, fullResult: { success: true, result: data } }) },
+    });
+
+    await underPseudoLocale('skill-item-test', async () => {
+      /** @type {Record<string, string>} */
+      const shown = {};
+      /** @type {string[]} */
+      const failures = [];
+      /**
+       * @param {string} where - State name
+       * @param {() => void} fn - Assertion
+       */
+      const check = (where, fn) => {
+        try { fn(); } catch (e) { failures.push(`${where}: ${e instanceof Error ? e.message : String(e)}`); }
+      };
+
+      const item = makeItem(skills, bodies);
+      shown.title = item.getTitle();
+
+      /** @type {Array<[string, any]>} */
+      const states = [
+        ['standing card', null],
+        ['pending', { pending: true }],
+        ['loaded', { success: true, result: { name: '1', alreadyLoaded: false } }],
+        ['already loaded', { success: true, result: { name: '1', alreadyLoaded: true } }],
+        ['loaded, no name', { success: true, result: {} }],
+        ['neither', { success: false }],
+      ];
+      for (const [name, status] of states) {
+        const ui = /** @type {any} */ (item.getStatusUI(status));
+        // A plain load's row is the skill's name alone: data.
+        if (name === 'loaded') check('loaded row', () => assert(ui?.summary === '1', `loaded row changed: ${JSON.stringify(ui?.summary)}`));
+        else shown[`row ${name}`] = String(ui?.summary);
+        shown[`type name ${name}`] = String(ui?.typeName);
+      }
+      // An error row is the model's English error, shown as it was.
+      const errorRow = /** @type {any} */ (item.getStatusUI(/** @type {any} */ ({ success: false, error: 'No skill named "9"' })));
+      check('error row', () => assert(errorRow.summary === 'No skill named "9"', `error row changed: ${JSON.stringify(errorRow.summary)}`));
+      shown['type name error'] = String(errorRow.typeName);
+
+      // Standing card, with one skill loaded so both badges show.
+      await item.execute({ name: '1' });
+      const panel = document.createElement('div');
+      await item._renderPanel(panel);
+      check('standing card', () => assertPseudoLocalized(panel, { skip: DATA, atLeast: 10, where: 'standing card' }));
+      check('standing card badges', () => assert(panel.querySelectorAll('.skills-badge').length === 2, 'expected the scripts and loaded badges'));
+      const empty = document.createElement('div');
+      await makeItem([])._renderPanel(empty);
+      check('empty card', () => assertPseudoLocalized(empty, { skip: DATA, atLeast: 6, where: 'empty card' }));
+
+      /** @type {Array<[string, any, string, string, string]>} */
+      const loads = [
+        ['fresh load', makeItem(skills, bodies), '1', '.skill-load-body', ''],
+        ['already loaded', makeItem(skills, bodies), '1', '.skill-load-note', ''],
+        ['unknown skill', makeItem([], {}), '', '.skill-load-raw', '7'],
+        ['body not re-fetched', makeItem(skills, {}), '2', '.skill-load-raw', '8'],
+      ];
+      for (const [where, loader, name, expect, content] of loads) {
+        const host = document.createElement('div');
+        const data = where === 'already loaded' ? { name, alreadyLoaded: true } : { name, alreadyLoaded: false, body: content };
+        await loader._renderLoadPanel(host, name, ctxFor(data, content));
+        check(where, () => assert(host.querySelector(expect), `${where}: expected ${expect}`));
+        check(where, () => assertPseudoLocalized(host, { skip: DATA, atLeast: 2, where }));
+        if (!name) shown['unknown skill name'] = String(host.querySelector('.skills-card-name')?.textContent);
+      }
+      shown['unnamed skill'] = String(SkillContextItem._skillCard({}).querySelector('.skills-card-name')?.textContent);
+
+      const raw = Object.entries(shown).filter(([, s]) => !isPseudoLocalized(s));
+      if (raw.length) failures.push(`plain English under en-XA: ${JSON.stringify(raw)}`);
+
+      // What the model reads is English under any UI language.
+      const fresh = makeItem(skills, bodies);
+      const summary = fresh.getSummary({ success: true, result: await fresh.execute({ name: '1' }) }).summary;
+      check('model result', () => assert(summary.startsWith('Skill: 1 (project/juggler)\n\n3\n\nResources bundled with this skill'), `the model's result changed: ${JSON.stringify(summary)}`));
+      const again = fresh.getSummary({ success: true, result: await fresh.execute({ name: '1' }) }).summary;
+      check('model repeat', () => assert(again === 'Skill "1" is already loaded in this conversation — its instructions are already in context.', `repeat notice changed: ${JSON.stringify(again)}`));
+      const bad = await fresh.validate({});
+      check('validate', () => assert(bad.error === 'The "name" parameter is required — the exact name of the skill to load.', `validate error changed: ${JSON.stringify(bad.error)}`));
+      const block = await fresh.createContextText({});
+      check('system block', () => assert(block.startsWith('## Skills\nSpecialized instruction sets'), `block changed: ${JSON.stringify(block)}`));
+
+      if (failures.length) throw new Error(failures.join(' | '));
+    }, { '@juggler/core': CORE_TEXT });
   });
 
   return { passed, failed, errors };

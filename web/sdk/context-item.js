@@ -10,6 +10,7 @@ import { coerceToolInputToSchema } from './coerce-schema-types.js';
 import { smartTruncate } from './lib/smart-truncate.js';
 import { validateManifest } from './lib/manifest.js';
 import { createBoundOps } from './ops.js';
+import { t, markUntranslated, markForTranslation } from './lib/i18n.js';
 
 /**
  * Fallback character budget for LLM-facing tool output (~7500 tokens). The live
@@ -228,7 +229,7 @@ class ContextItem {
   static validateSummary(summary) {
     if (!summary || typeof summary !== 'object') {
       console.error('[ContextItem] getSummary returned non-object:', summary);
-      return { summary: 'Error formatting result', details: '', success: false, icon: '✗' };
+      return { summary: markUntranslated('Error formatting result'), details: '', success: false, icon: '✗' };
     }
 
     const validated = { ...summary };
@@ -670,14 +671,14 @@ class ContextItem {
   getSummary(outcome) {
     if (!outcome.success) {
       if (outcome.denied) {
-        return this.failureSummary('Action denied by user');
+        return this.failureSummary(markUntranslated('Action denied by user'));
       }
       if (outcome.cancelled) {
-        return this.failureSummary('Action cancelled');
+        return this.failureSummary(markUntranslated('Action cancelled'));
       }
-      return this.failureSummary(`Action failed: ${outcome.error}`);
+      return this.failureSummary(markUntranslated(`Action failed: ${outcome.error}`));
     }
-    return this.successSummary('Action completed');
+    return this.successSummary(markUntranslated('Action completed'));
   }
 
   /**
@@ -738,7 +739,7 @@ class ContextItem {
     });
     if (!wasTruncated) return text;
     if (options.note === false) return truncated;
-    return `${truncated}\n\n(Output truncated from ${text.length} to ${truncated.length} chars)`;
+    return markUntranslated(`${truncated}\n\n(Output truncated from ${text.length} to ${truncated.length} chars)`);
   }
 
   /**
@@ -877,7 +878,7 @@ class ContextItem {
    * @returns {string} Short type label
    */
   static getTypeName() {
-    return /** @type {any} */ (this).MANIFEST?.name || 'Item';
+    return /** @type {any} */ (this).MANIFEST?.name || markForTranslation('Item');
   }
 
   /**
@@ -1015,7 +1016,7 @@ class ContextItem {
    */
   createPropertiesPanelElement() {
     const el = document.createElement('div');
-    el.textContent = this.type || 'Unknown item';
+    el.textContent = this.type || t('Unknown item');
     return el;
   }
 
@@ -1047,7 +1048,7 @@ class ContextItem {
   renderToolActionDetails(wrapper, ctx) {
     const inputText = JSON.stringify(ctx.input ?? {}, null, 2);
     if (inputText !== '{}') {
-      ctx.helpers.addSubsection(wrapper, 'Input', inputText, 'properties-panel-code', { language: 'json' });
+      ctx.helpers.addSubsection(wrapper, t('Input'), inputText, 'properties-panel-code', { language: 'json' });
     }
   }
 
@@ -1061,7 +1062,7 @@ class ContextItem {
    * @returns {string} Section label for the result/output area
    */
   static getResultSectionLabel(_toolName) {
-    return 'Result';
+    return t('Result');
   }
 
   /**
@@ -1114,10 +1115,10 @@ class ContextItem {
    */
   resolveTerminalStatus(actionStatus, failurePrefix, cancelledMessage) {
     if (actionStatus.cancelled) {
-      return { summary: cancelledMessage || 'Cancelled', status: /** @type {ResultStatus} */ ('cancelled') };
+      return { summary: cancelledMessage || t('Cancelled'), status: /** @type {ResultStatus} */ ('cancelled') };
     }
-    const error = actionStatus.error || 'unknown error';
-    const summary = failurePrefix ? `${failurePrefix}: ${error}` : error;
+    const error = actionStatus.error || t('unknown error');
+    const summary = failurePrefix ? t('{prefix}: {error}', { prefix: failurePrefix, error }) : error;
     return { summary, status: /** @type {ResultStatus} */ ('error') };
   }
 
@@ -1388,7 +1389,7 @@ class ContextItem {
 
     return {
       id: manifest?.id || 'unknown',
-      name: manifest?.name || 'Unknown Item',
+      name: manifest?.name || markForTranslation('Unknown Item'),
       version: manifest?.version || '0.0.0',
       description: manifest?.description || '',
       requiresApproval: manifest?.requiresApproval ?? false,

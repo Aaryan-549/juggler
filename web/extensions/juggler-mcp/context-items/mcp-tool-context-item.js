@@ -5,10 +5,13 @@
 
 import ContextItem from 'juggler/context-item';
 import { mcpSnapshot, mcpCallTool, uploadAssetBase64 } from 'juggler/ops';
+import { translator, markUntranslated } from 'juggler/i18n';
 // First-party builtin reaching a core singleton, the same way @juggler/core
 // reaches ../../../js/services/*. This is the websocket the engine already uses;
 // importing the module by its stable URL yields that same singleton instance.
 import wsService from '../../../js/services/websocket.js';
+
+const t = translator('@juggler/mcp');
 
 /**
  * @typedef {object} McpToolInfo
@@ -114,19 +117,19 @@ export function mcpRuleValues(server, tool) {
  * Escalating "don't ask again" suggestions, narrowest breadth first: this exact
  * tool, then (only if the tool is read-only) all read-only tools on the server,
  * then every tool on the server. Pure — exported for unit testing.
- * @param {{server: string, tool: string, readOnly: boolean}} t - Target tool
+ * @param {{server: string, tool: string, readOnly: boolean}} target - Target tool
  * @returns {import('juggler/context-item').ApprovalSuggestion[]} Suggestions, narrowest first
  */
-export function mcpApprovalSuggestions(t) {
-  const rv = mcpRuleValues(t.server, t.tool);
+export function mcpApprovalSuggestions(target) {
+  const rv = mcpRuleValues(target.server, target.tool);
   /** @type {import('juggler/context-item').ApprovalSuggestion[]} */
   const out = [
-    { itemType: ITEM_TYPE, rules: [{ kind: 'glob', value: rv.exact }], patterns: [`${t.server}/${t.tool}`] }
+    { itemType: ITEM_TYPE, rules: [{ kind: 'glob', value: rv.exact }], patterns: [`${target.server}/${target.tool}`] }
   ];
-  if (t.readOnly) {
-    out.push({ itemType: ITEM_TYPE, rules: [{ kind: 'glob', value: rv.readonly }], label: `all read-only tools on "${t.server}"` });
+  if (target.readOnly) {
+    out.push({ itemType: ITEM_TYPE, rules: [{ kind: 'glob', value: rv.readonly }], label: t('all read-only tools on "{server}"', { server: target.server }) });
   }
-  out.push({ itemType: ITEM_TYPE, rules: [{ kind: 'glob', value: rv.all }], label: `all tools on "${t.server}" (trust this server)` });
+  out.push({ itemType: ITEM_TYPE, rules: [{ kind: 'glob', value: rv.all }], label: t('all tools on "{server}" (trust this server)', { server: target.server }) });
   return out;
 }
 
@@ -285,7 +288,7 @@ class McpToolContextItem extends ContextItem {
 
   /** @returns {string} Short type label shown on item cards and the permissions popup */
   static getTypeName() {
-    return 'MCP';
+    return t('MCP');
   }
 
   /**
@@ -354,7 +357,7 @@ class McpToolContextItem extends ContextItem {
   async validate(toolInput) {
     const { info, llm } = this._target();
     if (!info) {
-      return { valid: false, error: `Unknown MCP tool "${llm}" (its server may be stopped or reconfigured)` };
+      return { valid: false, error: markUntranslated(`Unknown MCP tool "${llm}" (its server may be stopped or reconfigured)`) };
     }
     return { valid: true, params: toolInput };
   }
@@ -410,15 +413,17 @@ class McpToolContextItem extends ContextItem {
    */
   async getApprovalConfig(params) {
     const { server, info } = this._target();
-    const title = `MCP: ${server} / ${info?.title || info?.name || 'tool'}`;
-    const desc = info?.description ? `${info.description}\n\n` : '';
+    const title = t('MCP: {server} / {tool}', { server, tool: info?.title || info?.name || t('tool') });
     let argStr = '';
     try {
       argStr = JSON.stringify(params ?? {}, null, 2);
     } catch {
       argStr = String(params);
     }
-    return { title, message: `${desc}Arguments:\n\n${argStr}` };
+    const message = info?.description
+      ? t('{description}\n\nArguments:\n\n{arguments}', { description: info.description, arguments: argStr })
+      : t('Arguments:\n\n{arguments}', { arguments: argStr });
+    return { title, message };
   }
 
   /**
@@ -429,7 +434,7 @@ class McpToolContextItem extends ContextItem {
   async execute(params) {
     const { server, tool, info, llm } = this._target();
     if (!info) {
-      throw new Error(`Unknown MCP tool "${llm}"`);
+      throw new Error(markUntranslated(`Unknown MCP tool "${llm}"`));
     }
     const result = await mcpCallTool({ server, tool, args: /** @type {object} */ (params) }, this.signal);
     const raw = Array.isArray(result?.content) ? result.content : [];
@@ -482,7 +487,7 @@ class McpToolContextItem extends ContextItem {
    */
   getSummary(outcome) {
     if (!outcome.success) {
-      return this.failureSummary(outcome.error || 'MCP tool call failed');
+      return this.failureSummary(outcome.error || markUntranslated('MCP tool call failed'));
     }
     const result = /** @type {{content: any[], isError: boolean, text: string, images?: any[]}} */ (outcome.result || {});
     const blocks = Array.isArray(result.content) ? result.content : [];
@@ -490,7 +495,7 @@ class McpToolContextItem extends ContextItem {
     const refOf = (/** @type {any} */ b) => images.find((r) => r.id === b?.attached);
     let text = result.text || '';
     if (!text) {
-      text = blocks.map((b) => McpToolContextItem._describeBlock(b, refOf(b))).join('\n') || '(no content)';
+      text = blocks.map((b) => McpToolContextItem._describeBlock(b, refOf(b))).join('\n') || markUntranslated('(no content)');
     } else {
       // Beside text, the images are still named, so the model knows what is
       // attached and what could not be.
@@ -514,19 +519,19 @@ class McpToolContextItem extends ContextItem {
   getStatusUI(actionStatus, toolInput) {
     void toolInput;
     const info = this._target().info;
-    const label = info ? `${info.server}: ${info.title || info.name}` : (this.toolName || 'MCP tool');
+    const label = info ? `${info.server}: ${info.title || info.name}` : (this.toolName || t('MCP tool'));
 
     return this.buildStatusUI(actionStatus, {
-      typeName: 'MCP',
-      pending: `Calling ${label}…`,
+      typeName: t('MCP'),
+      pending: t('Calling {label}…', { label }),
       success: () => {
         const result = /** @type {{isError?: boolean}} */ (actionStatus?.result || {});
         // A completed call whose result the server flagged as an error.
         return result.isError
-          ? { summary: `${label} — tool reported an error`, status: /** @type {const} */ ('error') }
+          ? { summary: t('{label} — tool reported an error', { label }), status: /** @type {const} */ ('error') }
           : label;
       },
-      failurePrefix: `${label} failed`
+      failurePrefix: t('{label} failed', { label })
     });
   }
 
@@ -536,7 +541,7 @@ class McpToolContextItem extends ContextItem {
    * @returns {string} Result value
    */
   static getResultSectionLabel(_toolName) {
-    return 'Result';
+    return t('Result');
   }
 
   /**
@@ -551,8 +556,8 @@ class McpToolContextItem extends ContextItem {
     const { input, helpers, toolName } = ctx;
     const info = toolByLLMName.get(toolName);
     if (info) {
-      helpers.addSubsection(wrapper, 'Server', info.server, 'properties-panel-code');
-      helpers.addSubsection(wrapper, 'Tool', info.name, 'properties-panel-code');
+      helpers.addSubsection(wrapper, t('Server'), info.server, 'properties-panel-code');
+      helpers.addSubsection(wrapper, t('Tool'), info.name, 'properties-panel-code');
     }
     let argStr = '';
     try {
@@ -561,7 +566,7 @@ class McpToolContextItem extends ContextItem {
       argStr = String(input);
     }
     if (argStr && argStr !== '{}') {
-      helpers.addSubsection(wrapper, 'Arguments', argStr, 'properties-panel-code');
+      helpers.addSubsection(wrapper, t('Arguments'), argStr, 'properties-panel-code');
     }
   }
 }

@@ -15,6 +15,10 @@
  * `_tests/ask-user-question-details-test.js` drives.
  */
 
+import { translator } from 'juggler/i18n';
+
+const t = translator('@juggler/core');
+
 /** @typedef {import('../ask-user-question-context-item.js').Question} Question */
 /** @typedef {import('../ask-user-question-context-item.js').QuestionOption} QuestionOption */
 
@@ -109,14 +113,14 @@ function buildActionsRow(onSubmit, onCancel) {
   const submitBtn = document.createElement('button');
   submitBtn.className = 'action-confirmation-button secondary multi-question-submit';
   submitBtn.type = 'button';
-  submitBtn.textContent = 'Submit';
+  submitBtn.textContent = t('Submit');
   submitBtn.disabled = true;
   submitBtn.addEventListener('click', onSubmit);
 
   const cancelBtn = document.createElement('button');
   cancelBtn.className = 'action-confirmation-button secondary';
   cancelBtn.type = 'button';
-  cancelBtn.textContent = 'Cancel';
+  cancelBtn.textContent = t('Cancel');
   cancelBtn.addEventListener('click', onCancel);
 
   actions.appendChild(submitBtn);
@@ -218,15 +222,15 @@ function buildCustomAnswerOption(q, optionLabels, btnGroup, form) {
 
   const customLabel = document.createElement('span');
   customLabel.className = 'option-btn-label';
-  customLabel.textContent = 'Your own answer';
+  customLabel.textContent = t('Your own answer');
   customOption.appendChild(customLabel);
 
   const customField = document.createElement('textarea');
   customField.className = 'question-custom-field';
   customField.rows = 1;
   customField.placeholder = q.multiSelect
-    ? 'Type another answer…'
-    : 'Type a different answer…';
+    ? t('Type another answer…')
+    : t('Type a different answer…');
   customOption.appendChild(customField);
 
   /** @param {boolean} on - Whether the typed answer counts as selected */

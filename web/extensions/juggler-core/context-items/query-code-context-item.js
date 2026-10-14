@@ -9,8 +9,11 @@ import ContextItem from 'juggler/context-item';
 import { runInSandbox } from 'juggler/sandbox';
 import { createLlmDescription } from 'juggler/ui';
 import { uploadAssetBase64 } from 'juggler/ops';
+import { translator } from 'juggler/i18n';
 import { gitignoreDisabled } from './path-approval.js';
 import { createProgramImages, imagePathLoader, attachedImagesNote, pointImageReadsAtImage } from './code/program-images.js';
+
+const t = translator('@juggler/core');
 
 /**
  * QueryCodeContextItem - Run JavaScript against a read-only filesystem SDK
@@ -347,10 +350,10 @@ class QueryCodeContextItem extends ContextItem {
       : '';
 
     return this.buildStatusUI(actionStatus, {
-      typeName: 'Script',
-      pending: () => (desc ? createLlmDescription(desc) : 'Running…'),
+      typeName: t('Script'),
+      pending: () => (desc ? createLlmDescription(desc) : t('Running…')),
       success: () => (desc ? createLlmDescription(desc) : ''),
-      failurePrefix: 'failed'
+      failurePrefix: t('failed')
     });
   }
 

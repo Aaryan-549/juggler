@@ -6,6 +6,9 @@
 import ContextItem from 'juggler/context-item';
 import keyShortcutManager, { isMac, formatBindingForPlatform } from '../../../js/services/key-shortcut-manager.js';
 import CORPUS from '../corpus.js';
+import { translator } from 'juggler/i18n';
+
+const t = translator('@juggler/about');
 
 /**
  * The platform's real log directory, mirroring internal/logpaths/logpaths.go so
@@ -210,10 +213,10 @@ class AboutJugglerContextItem extends ContextItem {
     const question = toolInput && typeof toolInput.question === 'string' ? toolInput.question : '';
 
     return this.buildStatusUI(actionStatus, {
-      typeName: 'About Juggler',
-      pending: 'Looking up Juggler\u2026',
-      success: question || 'About Juggler',
-      failurePrefix: 'Failed'
+      typeName: t('About Juggler'),
+      pending: t('Looking up Juggler\u2026'),
+      success: question || t('About Juggler'),
+      failurePrefix: t('Failed')
     });
   }
 
