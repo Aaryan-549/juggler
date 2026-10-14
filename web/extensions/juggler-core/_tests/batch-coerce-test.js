@@ -23,7 +23,7 @@
  * @module unit-tests/batch-coerce-test
  */
 
-import { labeledSubsection } from 'juggler/ui';
+import { addFilePath, labeledSubsection } from 'juggler/ui';
 import { assert } from '../../../js-tests/utilities/test-helpers.js';
 import BatchContextItem from '../context-items/batch-context-item.js';
 
@@ -155,10 +155,12 @@ export async function runTests(_ctx) {
    */
   const renderDetails = (toolName, input) => {
     const wrapper = document.createElement('div');
-    item.renderToolActionDetails(wrapper, { toolName, input, helpers: { labeledSubsection } });
+    item.renderToolActionDetails(wrapper, { toolName, input, helpers: { labeledSubsection, addFilePath } });
+    // Searches are a markdown list; files are the shared file-path rows.
+    const entrySelector = toolName === 'batch_read' ? '.properties-panel-filepath-row' : '.markdown li';
     return {
       heading: wrapper.querySelector('.properties-panel-subtitle')?.textContent ?? '',
-      entries: Array.from(wrapper.querySelectorAll('.markdown li')).map((li) => li.textContent.trim())
+      entries: Array.from(wrapper.querySelectorAll(entrySelector)).map((li) => li.textContent.trim())
     };
   };
 
@@ -176,6 +178,22 @@ export async function runTests(_ctx) {
     assert(heading === 'Files (2)', `expected a "Files (2)" heading, got "${heading}"`);
     assert(entries.length === 2, `expected 2 listed files, got ${entries.length}`);
     assert(entries[1].includes('/b.txt'), `expected the second path listed, got "${entries[1]}"`);
+  });
+
+  // Each file is the shared path row, so it carries the same controls and
+  // right-click menu as a path anywhere else, rather than plain text.
+  await run('renderToolActionDetails shows each file as a file-path row with actions', () => {
+    const wrapper = document.createElement('div');
+    const input = { files: [{ file_path: '/a.txt' }, { file_path: '/b.txt', offset: 10, limit: 5 }] };
+    item.renderToolActionDetails(wrapper, { toolName: 'batch_read', input, helpers: { labeledSubsection, addFilePath } });
+    const paths = Array.from(wrapper.querySelectorAll('.properties-panel-filepath'))
+      .map((el) => /** @type {HTMLElement} */ (el).dataset.filePath);
+    assert(paths.join(',') === '/a.txt,/b.txt', `expected both paths as file-path rows, got "${paths.join(',')}"`);
+    const actionRows = wrapper.querySelectorAll('.properties-panel-filepath-row .properties-panel-filepath-actions');
+    assert(actionRows.length === 2, `expected file actions on both rows, got ${actionRows.length}`);
+    const infos = Array.from(wrapper.querySelectorAll('.properties-panel-filepath-info')).map((el) => el.textContent);
+    assert(infos.length === 1 && infos[0] === 'lines 10–14',
+      `expected only the ranged read annotated "lines 10–14", got ${JSON.stringify(infos)}`);
   });
 
   return { passed, failed, errors };

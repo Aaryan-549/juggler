@@ -6,6 +6,7 @@ of changes; this project follows semantic versioning.
 ## [Unreleased]
 
 - New run_code tool: a mutating version of query_code, to give full "code mode" features
+- batch_read's properties panel lists files with open, copy, reveal and pin buttons
 - Turns cut off by a provider's server mid-stream are now retried automatically
 - Git pin reviews any scope: staged, unstaged, branch, last commit, or a git diff range
 - Fixed a turn started while a conversation loaded getting the wrong strategy's tools

@@ -7,6 +7,7 @@ import ContextItem from 'juggler/context-item';
 import { createTextBlock, formatFileContentForLLM } from 'juggler/item-utils';
 import { formatGrepResults } from './search/grep-format.js';
 import { creditProgramRead } from './read-history.js';
+import { absolutePathKey } from './path-approval.js';
 
 /**
  * Wrap a value as markdown inline code, widening the fence when the value
@@ -412,23 +413,56 @@ class BatchContextItem extends ContextItem {
   renderToolActionDetails(wrapper, ctx) {
     const { toolName, input, helpers } = ctx;
 
-    // One numbered list rather than a subsection per entry: a batch is a list
-    // of like things, and a ten-file read used to stack ten "File" headings.
+    // One subsection for the whole batch rather than one per entry: a batch is
+    // a list of like things, and ten "File" headings would bury the list.
     const isGrep = toolName === 'batch_grep';
     const coerced = BatchContextItem._coerceArray(isGrep ? input.searches : input.files);
     const entries = Array.isArray(coerced) ? coerced : [];
     if (entries.length === 0) return;
 
-    const lines = entries.map((/** @type {any} */ e, /** @type {number} */ i) =>
-      `${i + 1}. ${isGrep ? BatchContextItem._grepLine(e) : BatchContextItem._readLine(e)}`
-    );
-
     const label = isGrep ? 'Searches' : 'Files';
     const section = helpers.labeledSubsection(
       entries.length === 1 ? label.slice(0, -1) : `${label} (${entries.length})`
     );
-    section.appendChild(createTextBlock(lines.join('\n') + '\n'));
+
+    if (isGrep) {
+      const lines = entries.map((/** @type {any} */ e, /** @type {number} */ i) =>
+        `${i + 1}. ${BatchContextItem._grepLine(e)}`
+      );
+      section.appendChild(createTextBlock(lines.join('\n') + '\n'));
+    } else {
+      // Each file is the shared path row, so it offers the same open, copy,
+      // reveal and pin controls — and right-click menu — as a path anywhere
+      // else. The row and its range annotation share a box so the subsection's
+      // gap falls between files rather than between a path and its range.
+      const outcomes = BatchContextItem._readOutcomes(ctx.toolAction);
+      entries.forEach((/** @type {any} */ e, /** @type {number} */ i) => {
+        const filePath = String(e.file_path || '');
+        const absolute = absolutePathKey(ctx.session, filePath);
+        const outcome = outcomes?.[i];
+        const unreadable = outcome && (!outcome.success || outcome.result?.exists === false);
+        const entry = document.createElement('div');
+        helpers.addFilePath(entry, absolute || filePath, BatchContextItem._readRange(e),
+          unreadable ? {} : { pin: absolute });
+        section.appendChild(entry);
+      });
+    }
     wrapper.appendChild(section);
+  }
+
+  /**
+   * The per-file outcomes of a finished batch_read, in input order, or null
+   * while it has none to give.
+   * @param {any} toolAction - The tool action (a Y.Map, a plain object, or absent)
+   * @returns {Array<{success: boolean, result?: any}>|null} Outcomes, or null
+   * @private
+   */
+  static _readOutcomes(toolAction) {
+    const result = toolAction?.get ? toolAction.get('result') : toolAction?.result;
+    const full = result?.get ? result.get('fullResult') : result?.fullResult;
+    const obj = full?.toJSON ? full.toJSON() : full;
+    const results = obj?.success ? obj.result?.results : null;
+    return Array.isArray(results) ? results : null;
   }
 
   /**
@@ -446,18 +480,15 @@ class BatchContextItem extends ContextItem {
   }
 
   /**
-   * One file as a markdown line: the path, and the line range when it is not
-   * being read whole.
-   * @param {{file_path?: string, offset?: number, limit?: number}} file - A batch_read entry
-   * @returns {string} Markdown for a single list item
+   * The line range of a batch_read entry, or undefined when it is read whole.
+   * @param {{offset?: number, limit?: number}} file - A batch_read entry
+   * @returns {string|undefined} e.g. "lines 10–14" or "from line 10"
    * @private
    */
-  static _readLine(file) {
-    const path = code(file.file_path || '');
-    if (file.offset === undefined && file.limit === undefined) return path;
+  static _readRange(file) {
+    if (file.offset === undefined && file.limit === undefined) return undefined;
     const start = file.offset || 1;
-    const range = file.limit ? `lines ${start}–${start + file.limit - 1}` : `from line ${start}`;
-    return `${path} (${range})`;
+    return file.limit ? `lines ${start}–${start + file.limit - 1}` : `from line ${start}`;
   }
 }
 
