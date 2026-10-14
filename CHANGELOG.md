@@ -12,6 +12,7 @@ of changes; this project follows semantic versioning.
 - Fixed a turn started while a conversation loaded getting the wrong strategy's tools
 - Fixed tools briefly "unavailable" after toggling a plugin or reloading an extension
 - Denying a tool call also stops approved calls still waiting their turn
+- Remote viewers keep their own sound, Escape and diff settings instead of changing the desktop's
 - Fixed Claude Code cutting long tool descriptions short; the model now sees them whole
 - query_code says what is already in scope when a script reaches for Node's modules
 - LAN servers answer to local names like `juggler` or `mymac.local`, not just IPs

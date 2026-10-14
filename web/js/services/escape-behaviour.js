@@ -57,11 +57,15 @@
  * @module services/escape-behaviour
  */
 
-import { cachedUserPref, setUserPref, notifyPrefChanged, reconcilePref } from './prefs.js';
+import { cachedMachinePref, setMachinePref, notifyPrefChanged, reconcilePref } from './prefs.js';
 import { isMac, formatBindingLabel } from './key-shortcut-manager.js';
 import { postWindowControl, hasNativeHost } from '../../sdk/lib/window-control.js';
 
-/** The user preference holding the chosen preset id. */
+/**
+ * The preference holding the chosen preset id. A machine preference
+ * (services/prefs.js): what Escape should do depends on the keyboard in front of
+ * the user, so a remote viewer keeps its own.
+ */
 const PREF_KEY = 'juggler-escape-behaviour';
 
 /** Fired on window whenever the preference changes, so open views re-render. */
@@ -184,7 +188,7 @@ const DEFAULT_PRESET_ID = 'stop';
  * @returns {EscapePreset} The active preset.
  */
 export function getEscapePreset() {
-  const id = cachedUserPref(PREF_KEY, DEFAULT_PRESET_ID);
+  const id = cachedMachinePref(PREF_KEY, DEFAULT_PRESET_ID);
   return ESCAPE_PRESETS.find((p) => p.id === id)
     ?? /** @type {EscapePreset} */ (ESCAPE_PRESETS.find((p) => p.id === DEFAULT_PRESET_ID));
 }
@@ -200,7 +204,7 @@ export function setEscapePreset(id) {
   // Switching away mid-gesture would strand the armed state (and its cue) under
   // a preset that can never consume it.
   disarm();
-  void setUserPref(PREF_KEY, id);
+  void setMachinePref(PREF_KEY, id);
   notifyPrefChanged(ESCAPE_BEHAVIOUR_EVENT);
 }
 
@@ -667,9 +671,9 @@ export function buildEscapeBehaviourRow() {
   return row;
 }
 
-// Ask for this person's chosen preset at boot. A keypress in the first few
+// Ask for this machine's chosen preset at boot. A keypress in the first few
 // milliseconds gets the default preset, which is the shipped behaviour rather
 // than a wrong one.
 if (typeof document !== 'undefined') {
-  void reconcilePref('user', PREF_KEY, ESCAPE_BEHAVIOUR_EVENT);
+  void reconcilePref('machine', PREF_KEY, ESCAPE_BEHAVIOUR_EVENT);
 }

@@ -77,11 +77,11 @@ export function buildToggleRow(name, description, checked, onChange) {
 }
 
 /**
- * Notifications tab: per-window attention prefs (sound, notify) with abstract
+ * Notifications tab: this machine's attention prefs (sound, notify) with abstract
  * rotary controls for the chime voice, plus a Tabs section for what a
  * conversation's tab may do to get noticed (flash, move to the top). All values
- * come from localStorage (the attention-manager), so it renders eagerly with no
- * server fetch, and keeps its controls in sync with the header bell via
+ * are read synchronously from the attention-manager's cache, so it renders
+ * eagerly with no server fetch, and keeps its controls in sync with the header bell via
  * ATTENTION_PREFS_EVENT.
  */
 export class NotificationsTab {
@@ -111,9 +111,9 @@ export class NotificationsTab {
   }
 
   /**
-   * Render the Notifications tab: per-window attention prefs (sound, notify),
-   * abstract rotary controls for the chime voice, and the Tabs section below
-   * them. Reads initial values from {@link getAttentionPrefs} (localStorage, no
+   * Render the Notifications tab: this machine's attention prefs (sound,
+   * notify), abstract rotary controls for the chime voice, and the Tabs section
+   * below them. Reads initial values from {@link getAttentionPrefs} (cached, no
    * server fetch) and keeps every control in sync with prefs changed elsewhere
    * via {@link ATTENTION_PREFS_EVENT} — so the sound toggle and the header bell
    * always reflect the same `sound` pref.
@@ -181,7 +181,7 @@ export class NotificationsTab {
 
   /**
    * Render the Tabs section: what a conversation's tab in the sidebar is allowed
-   * to do to get noticed. Both toggles are per-window, like the alert prefs above
+   * to do to get noticed. Both toggles are per-machine, like the alert prefs above
    * them, and both are on by default — a tab announcing itself is the norm, and
    * these opt out of it.
    * @param {import('../../utils/attention-manager.js').AttentionPrefs} prefs

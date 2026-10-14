@@ -49,13 +49,13 @@ import { renderUsageRow } from '../../utils/usage-renderer.js';
 import { escapeHtml } from '../../../sdk/lib/html.js';
 import { CHECK_SVG } from '../../utils/icons.js';
 import JugglerElement from '../juggler-element.js';
-import { cachedUserPref, setUserPref } from '../../services/prefs.js';
+import { cachedMachinePref, setMachinePref } from '../../services/prefs.js';
 import { openSettings } from '../../services/settings-launcher.js';
 import providersCache from '../../services/providers-cache.js';
 import { httpErrorText } from '../../services/http.js';
 import './model-tuning.js';
 
-/** The user preference holding the per-provider list view-state override map. */
+/** The machine preference (services/prefs.js) holding the per-provider list view-state override map. */
 const VIEW_STATE_PREF = 'juggler-model-view-state';
 
 /** The list view-states a provider header toggle cycles through. */
@@ -142,7 +142,7 @@ class ModelPicker extends JugglerElement {
      * shows. Tri-state, cycled from the toggle in each provider's header: 'none'
      * (collapsed, no rows) → 'top' (recommended shortlist) → 'all' (full list).
      * Unset defaults to 'top' for providers with a shortlist, else 'all'. Kept
-     * as a sparse map of user overrides against this person (services/prefs.js)
+     * as a sparse map of user overrides against this machine (services/prefs.js)
      * — untouched providers stay absent and fall back to the default.
      * @type {Record<string, 'none'|'top'|'all'>} @private
      */
@@ -384,7 +384,7 @@ class ModelPicker extends JugglerElement {
    */
   _loadViewState() {
     try {
-      const raw = cachedUserPref(VIEW_STATE_PREF, {}) || {};
+      const raw = cachedMachinePref(VIEW_STATE_PREF, {}) || {};
       /** @type {Record<string, 'none'|'top'|'all'>} */
       const clean = {};
       for (const [name, state] of Object.entries(raw)) {
@@ -403,7 +403,7 @@ class ModelPicker extends JugglerElement {
    * @private
    */
   _saveViewState() {
-    void setUserPref(VIEW_STATE_PREF, this._viewState);
+    void setMachinePref(VIEW_STATE_PREF, this._viewState);
   }
 
   /**

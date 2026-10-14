@@ -199,6 +199,22 @@ Key invariants:
 - **CSS has a contract: `web/css/README.md`.** Layers, which file owns a rule,
   token rules, and what an extension may style. Read it before adding CSS —
   `make lint` enforces most of it.
+- **Every UI preference goes through `web/js/services/prefs.js`** — never
+  localStorage directly (lint enforces it). A setting the server itself reads
+  (proxy, update mode) is a `settings.json` field instead. Pick the realm by who
+  the value belongs to; the realm decides who shares it, and a
+  wrong choice means one client changes it for others:
+  | Realm | Shared by | For |
+  |---|---|---|
+  | `Tab` | one browser tab | transient per-tab state |
+  | `Device` | one origin (one port) | per-device view state (scroll positions) |
+  | `Window` | one desktop window of a project | geometry: column widths, panels |
+  | `Project` | every window of a project | what a project's windows agree on |
+  | `Machine` | every desktop window on this computer; a remote viewer keeps its own | hardware and screen: sound, notifications, keys, diff layout |
+  | `User` | **every client, remote ones included** | facts about the person (tips seen) |
+
+  If a phone viewing remotely should not be able to change it for the desktop,
+  it is not `User`. The full rules are in the module header.
 - **Event feeds are not interchangeable** — `onLLMStatusChange` and
   `conversation:changed` answer different questions. Which to use, and why
   handlers on the latter stay read-only and unbatched: `session.js`.

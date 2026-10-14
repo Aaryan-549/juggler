@@ -34,7 +34,7 @@
 
 import { assert, styledProbeFrame } from '../utilities/test-helpers.js';
 import recentModels from '../../js/services/recent-models.js';
-import { cachedUserPref, setUserPref } from '../../js/services/prefs.js';
+import { cachedMachinePref, setMachinePref } from '../../js/services/prefs.js';
 import usageStatsCache from '../../js/services/usage-stats-cache.js';
 import { SHEET_QUERY } from '../../js/utils/popup-surface.js';
 import { presentPopup } from '../../js/utils/popup-surface.js';
@@ -51,9 +51,9 @@ import '../../js/components/model-picker/model-picker.js';
 const FAST = { id: 'priority', name: 'Fast', description: '1.5x speed, increased usage' };
 
 /**
- * The user preference holding the per-provider list view-state override map.
+ * The machine preference holding the per-provider list view-state override map.
  * Seeded through the pref API rather than localStorage: the preference belongs
- * to the user realm, and localStorage is only that realm's cache — a write
+ * to the machine realm, and localStorage is only that realm's cache — a write
  * straight to it is ignored the moment the realm answers.
  */
 const VIEW_STATE_KEY = 'juggler-model-view-state';
@@ -386,8 +386,8 @@ export async function runTests(_ctx) {
   await clearRecents();
   // Pin every provider expanded: the tri-state view is persisted per provider,
   // and a leftover 'none' from another session would empty the list.
-  const savedViewState = cachedUserPref(VIEW_STATE_KEY, null);
-  void setUserPref(VIEW_STATE_KEY, { p: 'all' });
+  const savedViewState = cachedMachinePref(VIEW_STATE_KEY, null);
+  void setMachinePref(VIEW_STATE_KEY, { p: 'all' });
 
   try {
     await run('the bottom row wears the label the host gave it', () => {
@@ -636,7 +636,7 @@ export async function runTests(_ctx) {
       // providers, and the LAST one's toggle parked near the top of the visible
       // box — collapsing it takes away the very rows the list was scrolled
       // through, so holding the toggle still means scrolling past the end.
-      void setUserPref(VIEW_STATE_KEY, { a: 'all', b: 'all', c: 'all', d: 'all' });
+      void setMachinePref(VIEW_STATE_KEY, { a: 'all', b: 'all', c: 'all', d: 'all' });
       const { picker, release } = await presentAnchoredPicker(['a', 'b', 'c', 'd'].map(crowdedProvider));
       try {
         const rows = picker.querySelector('.model-picker-rows');
@@ -661,7 +661,7 @@ export async function runTests(_ctx) {
           `the room the collapse borrowed must go back when the rows do — left ${rows.style.paddingBottom}`);
       } finally {
         release();
-        void setUserPref(VIEW_STATE_KEY, { p: 'all' });
+        void setMachinePref(VIEW_STATE_KEY, { p: 'all' });
       }
     });
 
@@ -708,7 +708,7 @@ export async function runTests(_ctx) {
     });
 
     await run('typing reaches a model inside a collapsed provider', () => {
-      void setUserPref(VIEW_STATE_KEY, { p: 'none' });
+      void setMachinePref(VIEW_STATE_KEY, { p: 'none' });
       const picker = makePicker({ connect: true });
       try {
         assert(picker.querySelectorAll('.menu-item[data-model]').length === 0,
@@ -721,7 +721,7 @@ export async function runTests(_ctx) {
           `a query must expand the provider to reach its match, got ${JSON.stringify(ids)}`);
       } finally {
         picker.remove();
-        void setUserPref(VIEW_STATE_KEY, { p: 'all' });
+        void setMachinePref(VIEW_STATE_KEY, { p: 'all' });
       }
     });
 
@@ -948,7 +948,7 @@ export async function runTests(_ctx) {
       }
     });
   } finally {
-    void setUserPref(VIEW_STATE_KEY, savedViewState);
+    void setMachinePref(VIEW_STATE_KEY, savedViewState);
   }
 
   return { passed, failed, errors };

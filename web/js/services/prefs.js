@@ -5,7 +5,7 @@
 /**
  * prefs — where a UI preference is kept, and who it belongs to.
  *
- * Five realms, one function family apiece:
+ * Six realms, one function family apiece:
  *
  * | Realm     | Store                                   | Belongs to                     |
  * |-----------|-----------------------------------------|--------------------------------|
@@ -13,7 +13,19 @@
  * | `Device`  | localStorage, key scoped by project     | one origin — so one port       |
  * | `Window`  | the session, under this window's role   | one window of one project      |
  * | `Project` | the session, at the top level           | every window of one project    |
- * | `User`    | settings.json                           | this person, in every project  |
+ * | `Machine` | settings.json; a remote viewer's own    | the screen, speakers and keys  |
+ * |           | copy in its localStorage                | in front of the user           |
+ * | `User`    | settings.json                           | this person, in every project, |
+ * |           |                                         | on every device                |
+ *
+ * **Choosing one.** Ask who would be surprised if another client changed it. A
+ * preference about the hardware being looked at — sound, the Escape key, how a
+ * diff is laid out on this screen — is `Machine`: every desktop window on this
+ * computer shares it, and a phone or laptop viewing remotely keeps its own,
+ * because muting a phone must not mute the desktop it dialled into. `User` is
+ * for what is true of the person whatever they are holding (a tip they have
+ * already seen). Geometry is `Window`; what one project's windows should agree
+ * on is `Project`.
  *
  * **Why three of them are server-side.** localStorage is partitioned by ORIGIN,
  * and a Juggler window's origin is `http://localhost:<port>`. The port is not
@@ -48,6 +60,12 @@
  * document for everyone who can reach the server, its route takes a remote write,
  * so it ranks the same way for every client.
  *
+ * The `Machine` realm keeps its values in that same document, in the same `ui`
+ * section, but ranks like `Window`. Since its route accepts remote writes, the
+ * rule is enforced here: a remote viewer's value never leaves the device. It is
+ * kept under a key of its own, so the user realm's mirror writes do not
+ * overwrite it.
+ *
  * Theme and zoom do NOT go through here. They are injected into the page before
  * it paints (index.html, filled by serveIndex) because a late correction to a
  * root font size reflows everything visibly; they use {@link scopedKey} and
@@ -71,7 +89,7 @@ import { apiUrl } from '../utils/api-url.js';
  */
 const WRITE_DELAY_MS = 300;
 
-/** @typedef {'window'|'project'|'user'} ServerRealm */
+/** @typedef {'window'|'project'|'user'|'machine'} ServerRealm */
 
 /**
  * Where each server-side realm lives and what its mirror is keyed by.
@@ -80,7 +98,9 @@ const WRITE_DELAY_MS = 300;
  * it can be: a window's is scoped to this project AND this window, a project's
  * to this project, and a user's not at all — the last of which also means the
  * preferences that were already stored under a bare key (tips, the bell) find
- * their own values there on the first frame after an upgrade.
+ * their own values there on the first frame after an upgrade. A machine
+ * preference shares the user's key on the desktop, where the two are one
+ * document; a remote viewer's is its own store and gets a key of its own.
  * @type {Record<ServerRealm, {url: () => string, key: (name: string) => string}>}
  */
 const REALMS = {
@@ -96,7 +116,34 @@ const REALMS = {
     url: () => apiUrl('/settings'),
     key: (name) => name,
   },
+  machine: {
+    url: () => apiUrl('/settings'),
+    key: (name) => (isDesktopWindow() ? name : `${name}@viewer`),
+  },
 };
+
+/**
+ * The realm whose server document holds `realm`'s values. Only `machine`
+ * borrows: it lives in the user realm's settings document, so the two share one
+ * read, one cache and one write queue.
+ * @param {ServerRealm} realm
+ * @returns {ServerRealm} The realm that owns the document.
+ * @private
+ */
+function home(realm) {
+  return realm === 'machine' ? 'user' : realm;
+}
+
+/**
+ * Whether this client keeps its own copy of a machine preference instead of
+ * sharing the desktop's: true in anything that is not a desktop window.
+ * @param {ServerRealm} realm
+ * @returns {boolean} True for a machine preference in a remote viewer.
+ * @private
+ */
+function keepsOwnCopy(realm) {
+  return realm === 'machine' && !isDesktopWindow();
+}
 
 /**
  * Each realm's document once read, plus anything written since.
@@ -304,7 +351,8 @@ export function setDevicePref(name, value) {
  * found once and promoted by {@link getRealmPref}. Nothing is deleted, and it
  * only ever reaches the origin the user happens to boot on — a value stranded in
  * another port's store is unreachable, because a page cannot enumerate other
- * origins.
+ * origins. A remote viewer's machine preference has no such past: its bare key
+ * is the user realm's mirror of the desktop's value, not a choice of its own.
  * @param {ServerRealm} realm
  * @param {string} name
  * @returns {any} The mirrored value, or null.
@@ -315,7 +363,7 @@ function readMirror(realm, name) {
   const key = REALMS[realm].key(name);
   const mirrored = readStore(store, key, null);
   if (mirrored !== null) return mirrored;
-  return key === name ? null : readStore(store, name, null);
+  return key === name || realm === 'machine' ? null : readStore(store, name, null);
 }
 
 /**
@@ -371,17 +419,17 @@ function readRealm(realm) {
  */
 async function getRealmPref(realm, name, fallback) {
   const device = readMirror(realm, name);
-  const stored = await readRealm(realm);
+  const stored = await readRealm(home(realm));
   const value = stored[name] === undefined ? null : stored[name];
   // The user realm is one document for every client that can reach it, so there
-  // is no device-first ordering to apply; the other two are the desktop's own.
+  // is no device-first ordering to apply; the other three are the desktop's own.
   const desktop = realm === 'user' || isDesktopWindow();
 
   // Nothing in the realm but something on this device: a value an older build
   // left in localStorage. Adopt it and write it up, so the next launch — on
   // whatever port — finds it in the realm. One way, and only once, since the
   // write puts it in this realm's document too.
-  if (desktop && value === null && device !== null && reachable.get(realm)) {
+  if (desktop && value === null && device !== null && reachable.get(home(realm))) {
     void setRealmPref(realm, name, device);
     return device;
   }
@@ -398,11 +446,15 @@ async function getRealmPref(realm, name, fallback) {
  * @private
  */
 function cachedRealmPref(realm, name, fallback) {
-  const stored = documents.get(realm);
+  const stored = documents.get(home(realm));
   // A null reads as "not stored", here and everywhere else: it is what a
   // forgotten preference leaves behind, and what a corrupt one degrades to.
-  if (stored && stored[name] !== undefined && stored[name] !== null) return stored[name];
+  const value = stored && stored[name] !== undefined && stored[name] !== null ? stored[name] : null;
   const mirrored = readMirror(realm, name);
+  // A remote viewer's own copy outranks the desktop's, which is only where a
+  // viewer that has never chosen starts.
+  if (keepsOwnCopy(realm)) return mirrored ?? value ?? fallback;
+  if (value !== null) return value;
   return mirrored === null ? fallback : mirrored;
 }
 
@@ -416,10 +468,14 @@ function cachedRealmPref(realm, name, fallback) {
  */
 function setRealmPref(realm, name, value) {
   writeMirror(realm, name, value);
-  const stored = documents.get(realm) || {};
+  // The settings route takes a remote write, so it is this check, not the
+  // server, that keeps a phone's choice off the desktop.
+  if (keepsOwnCopy(realm)) return Promise.resolve();
+  const doc = home(realm);
+  const stored = documents.get(doc) || {};
   stored[name] = value;
-  documents.set(realm, stored);
-  return queueWrite(realm, name, value);
+  documents.set(doc, stored);
+  return queueWrite(doc, name, value);
 }
 
 /**
@@ -598,6 +654,40 @@ export function cachedUserPref(name, fallback = null) {
 }
 
 /**
+ * This machine's value for a preference: the desktop's, shared by every window
+ * on this computer, or a remote viewer's own.
+ * @param {string} name - The preference name.
+ * @param {any} [fallback] - Returned when nothing is stored anywhere.
+ * @returns {Promise<any>} The value this client should use.
+ */
+export function getMachinePref(name, fallback = null) {
+  return getRealmPref('machine', name, fallback);
+}
+
+/**
+ * Store a preference for the machine this client is running on. From a desktop
+ * window it reaches every desktop window on this computer; from a remote viewer
+ * it stays on that device. A null forgets it.
+ * @param {string} name - The preference name.
+ * @param {any} value - Any JSON-serialisable value, or null to forget it.
+ * @returns {Promise<void>} Resolves when the write has been sent, or at once in
+ *   a remote viewer, which sends nothing.
+ */
+export function setMachinePref(name, value) {
+  return setRealmPref('machine', name, value);
+}
+
+/**
+ * This machine's value as it is known right now. See {@link cachedWindowPref}.
+ * @param {string} name - The preference name.
+ * @param {any} [fallback] - Returned when nothing is known yet.
+ * @returns {any} The cached value, or `fallback`.
+ */
+export function cachedMachinePref(name, fallback = null) {
+  return cachedRealmPref('machine', name, fallback);
+}
+
+/**
  * Read a preference from its realm and announce it if the realm knew something
  * the cache did not.
  *
@@ -750,9 +840,11 @@ function adoptUserPrefs(ui) {
   }
   // One event can speak for several preferences (diff-view-prefs has two), so it
   // is fired once however many of its keys moved.
+  // A machine preference lives in this document too. A remote viewer holding its
+  // own copy is told anyway: the event only asks it to re-sync.
   const events = new Set();
   for (const name of changed) {
-    const eventName = announcements.get(`${realm}:${name}`);
+    const eventName = announcements.get(`${realm}:${name}`) ?? announcements.get(`machine:${name}`);
     if (eventName) events.add(eventName);
   }
   for (const eventName of events) notifyPrefChanged(eventName);

@@ -5,7 +5,7 @@
 /**
  * UI preference store unit test.
  *
- * services/prefs.js keeps a preference in one of five realms. Three of them are
+ * services/prefs.js keeps a preference in one of six realms. Three of them are
  * server-side, because localStorage is partitioned by origin and a window's
  * origin is its port — which is not stable per project, so a relaunch onto
  * another port hands the window an empty store and every setting appears to have
@@ -18,6 +18,9 @@
  * value left behind in localStorage by an older build is adopted and promoted
  * exactly once, that a drag's worth of writes makes ONE request, and that a
  * remote viewer's refused write still leaves it its own copy.
+ *
+ * The machine realm shares the user realm's document but not its ranking: a
+ * remote viewer's sound or Escape key is its own, and is never written back.
  *
  * The user realm has a second rule of its own: settings.json is one file for
  * every project's server, so a change made in another window has to reach a
@@ -302,6 +305,62 @@ export async function runTests(_ctx) {
       const name = uniqueName();
       await setUserPref(name, true);
       eq(localStorage.getItem(name), 'true', 'cached under the bare name');
+    });
+
+    // --- the machine realm ---------------------------------------------------
+    //
+    // The same settings document as the user realm, ranked like the session
+    // realms: the desktop's windows share it, and a remote viewer keeps its own.
+    // What it exists to stop is one phone muting the desktop it dialled into.
+
+    await run('a machine preference rides the settings document from a desktop window', async () => {
+      reset();
+      const name = uniqueName();
+      await prefs.setMachinePref(name, { sound: false });
+      const put = calls.filter((x) => x.method === 'PUT');
+      eq(put.length, 1, 'one PUT');
+      eq(put[0].url, '/api/settings', 'to the settings route');
+      eq(put[0].body, { ui: { [name]: { sound: false } } }, 'PUT body');
+      eq(prefs.cachedMachinePref(name, null), { sound: false }, 'cached');
+      eq(localStorage.getItem(name), '{"sound":false}', 'cached under the bare name, so it is warm on any port');
+    });
+
+    await run('a value the user realm stored is the machine realm\u2019s on the desktop', async () => {
+      reset();
+      const name = uniqueName();
+      respond = () => ({ status: 200, body: { ui: { [name]: 'set before the realm existed' } } });
+      eq(await prefs.getMachinePref(name, null), 'set before the realm existed', 'the stored value');
+    });
+
+    await run('a remote viewer\u2019s machine preference never reaches the server', async () => {
+      reset(false);
+      const name = uniqueName();
+      await prefs.setMachinePref(name, 'muted on the phone');
+      eq(calls.filter((c) => c.method === 'PUT').length, 0, 'no write');
+      eq(prefs.cachedMachinePref(name, null), 'muted on the phone', 'kept on the device');
+    });
+
+    await run('a remote viewer keeps its machine preference across a reload and a broadcast', async () => {
+      reset(false);
+      const name = uniqueName();
+      await prefs.setMachinePref(name, 'mine');
+      // A fresh page: the module's cache is gone, and the desktop's document
+      // arrives with its own value — which must not overwrite this device's.
+      __resetPrefsForTests();
+      respond = () => ({ status: 200, body: { ui: { [name]: 'the desktop\u2019s' } } });
+      eq(await prefs.getMachinePref(name, null), 'mine', 'after the reload');
+      eq(prefs.cachedMachinePref(name, null), 'mine', 'and synchronously');
+      adoptGlobalSettings({ ui: { [name]: 'the desktop\u2019s, changed again' } });
+      eq(prefs.cachedMachinePref(name, null), 'mine', 'after the desktop changed it');
+      __resetPrefsForTests();
+      eq(await prefs.getMachinePref(name, null), 'mine', 'and after another reload');
+    });
+
+    await run('a remote viewer with nothing of its own starts from the desktop\u2019s', async () => {
+      reset(false);
+      const name = uniqueName();
+      respond = () => ({ status: 200, body: { ui: { [name]: 'the desktop\u2019s' } } });
+      eq(await prefs.getMachinePref(name, null), 'the desktop\u2019s', 'the starting value');
     });
 
     // --- a document written in another window ------------------------------

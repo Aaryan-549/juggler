@@ -11,15 +11,16 @@
  * it stops following these — see `diff-viewer.js`, which holds that override for
  * as long as the element lives.
  *
- * They belong to the person (the `user` realm, services/prefs.js), beside the
- * bell and the tips they have seen: how you like a diff drawn is a fact about
- * you, and it should hold in every project and every window. Nothing on the
+ * They belong to the machine (the `machine` realm, services/prefs.js), beside
+ * the bell: side by side suits a wide desktop screen and not a phone viewing it
+ * remotely, so every desktop window on this computer shares them and a remote
+ * viewer keeps its own. Nothing on the
  * server reads either of them — git is asked for a context width per request,
  * and what it is asked for comes from the viewer, not from here.
  * @module utils/diff-view-prefs
  */
 
-import { cachedUserPref, setUserPref, notifyPrefChanged, reconcilePref } from '../services/prefs.js';
+import { cachedMachinePref, setMachinePref, notifyPrefChanged, reconcilePref } from '../services/prefs.js';
 import { t } from '../../sdk/lib/i18n.js';
 
 const VIEW_KEY = 'juggler-diff-view';
@@ -76,7 +77,7 @@ export function contextToRender(lines) {
  * @returns {'inline'|'split'} The layout a new viewer starts in.
  */
 export function defaultDiffView() {
-  return cachedUserPref(VIEW_KEY, 'inline') === 'split' ? 'split' : 'inline';
+  return cachedMachinePref(VIEW_KEY, 'inline') === 'split' ? 'split' : 'inline';
 }
 
 /**
@@ -85,7 +86,7 @@ export function defaultDiffView() {
  * @returns {void}
  */
 export function setDefaultDiffView(view) {
-  void setUserPref(VIEW_KEY, view === 'split' ? 'split' : 'inline');
+  void setMachinePref(VIEW_KEY, view === 'split' ? 'split' : 'inline');
   notifyPrefChanged(DIFF_VIEW_PREFS_EVENT);
 }
 
@@ -96,7 +97,7 @@ export function setDefaultDiffView(view) {
  * @returns {number} The width, `-1` for the whole file.
  */
 export function defaultDiffContext() {
-  const stored = cachedUserPref(CONTEXT_KEY, DEFAULT_CONTEXT_LINES);
+  const stored = cachedMachinePref(CONTEXT_KEY, DEFAULT_CONTEXT_LINES);
   return CONTEXT_CHOICES.includes(stored) ? stored : DEFAULT_CONTEXT_LINES;
 }
 
@@ -107,13 +108,13 @@ export function defaultDiffContext() {
  */
 export function setDefaultDiffContext(lines) {
   const next = CONTEXT_CHOICES.includes(lines) ? lines : DEFAULT_CONTEXT_LINES;
-  void setUserPref(CONTEXT_KEY, next);
+  void setMachinePref(CONTEXT_KEY, next);
   notifyPrefChanged(DIFF_VIEW_PREFS_EVENT);
 }
 
-// Ask for this person's choices at boot; diffs already drawn re-draw on the event
+// Ask for this machine's choices at boot; diffs already drawn re-draw on the event
 // when an answer differs from what was cached.
 if (typeof document !== 'undefined') {
-  void reconcilePref('user', VIEW_KEY, DIFF_VIEW_PREFS_EVENT);
-  void reconcilePref('user', CONTEXT_KEY, DIFF_VIEW_PREFS_EVENT);
+  void reconcilePref('machine', VIEW_KEY, DIFF_VIEW_PREFS_EVENT);
+  void reconcilePref('machine', CONTEXT_KEY, DIFF_VIEW_PREFS_EVENT);
 }

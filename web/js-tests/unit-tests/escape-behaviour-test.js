@@ -23,7 +23,7 @@
  */
 
 import { assert } from '../utilities/test-helpers.js';
-import { cachedUserPref, setUserPref } from '../../js/services/prefs.js';
+import { cachedMachinePref, setMachinePref } from '../../js/services/prefs.js';
 import { markPopupOpen, isAnyPopupOpen } from '../../js/utils/popup-manager.js';
 import {
   ESCAPE_PRESETS,
@@ -48,7 +48,7 @@ import {
  */
 
 /**
- * The user preference the module stores the chosen preset under. Seeded through
+ * The machine preference the module stores the chosen preset under. Seeded through
  * the pref API rather than localStorage, which is only that realm's cache.
  */
 const PREF_KEY = 'juggler-escape-behaviour';
@@ -141,7 +141,7 @@ export async function runTests(_ctx) {
 
   // The suite stubs a global and writes a shared pref; restore both whatever happens.
   const priorApp = /** @type {any} */ (window).jugglerApp;
-  const priorPref = cachedUserPref(PREF_KEY, null);
+  const priorPref = cachedMachinePref(PREF_KEY, null);
 
   /** @type {any} */
   let app;
@@ -172,10 +172,10 @@ export async function runTests(_ctx) {
   try {
     // ── The preference itself ──────────────────────────────────────────
     await run('defaults to the shipped stop-immediately preset', () => {
-      void setUserPref(PREF_KEY, null);
+      void setMachinePref(PREF_KEY, null);
       assert(getEscapePreset().id === 'stop', 'missing pref must default to "stop"');
       // A retired or hand-edited id must not strand the key in a fallback loop.
-      void setUserPref(PREF_KEY, 'not-a-preset');
+      void setMachinePref(PREF_KEY, 'not-a-preset');
       assert(getEscapePreset().id === 'stop', 'unknown stored id must fall back to "stop"');
       setEscapePreset('not-a-preset');
       assert(getEscapePreset().id === 'stop', 'an unknown id must never be stored');
@@ -509,7 +509,7 @@ export async function runTests(_ctx) {
   } finally {
     resetEscapeGesture();
     __setEscapeHostForTests(null);
-    void setUserPref(PREF_KEY, priorPref);
+    void setMachinePref(PREF_KEY, priorPref);
     if (priorApp === undefined) delete (/** @type {any} */ (window).jugglerApp);
     else /** @type {any} */ (window).jugglerApp = priorApp;
   }

@@ -50,15 +50,16 @@
  * dropped when its conversation is binned or deleted, which is the one way a
  * flag can outlive the thing it points at.
  *
- * These preferences follow the person, not the window or the project (see
- * services/prefs.js): whether you want to be chimed at is a fact about you, and
- * it should not have to be set again in the next project. Every toggle is
- * independent. The header bell is the on/off for notification sounds — the same
+ * These preferences belong to the machine (the `machine` realm,
+ * services/prefs.js): every desktop window on this computer shares them, so they
+ * need not be set again in the next project, and a phone or laptop viewing
+ * remotely keeps its own — muting a phone must not mute the desktop it dialled
+ * into. Every toggle is independent. The header bell is the on/off for notification sounds — the same
  * `sound` pref the settings checkbox drives.
  *
  * One pref here isn't an alert surface at all: `tabReorder` governs whether this
  * window floats a conversation's tab up the list. It lives with the alert prefs
- * because it's the same kind of per-window "how much may a tab demand of me"
+ * because it's the same kind of "how much may a tab demand of me"
  * choice, shares their settings section, and — since the bump fires on the same
  * two edges above — is decided in the same place; the gate itself is read by
  * {@link module:model/session~Session#bumpConversation}.
@@ -72,7 +73,7 @@
 import { hasUnattendedPendingApprovalInTree } from '../model/thread-navigation.js';
 import { playChime, unlockAudio, rearmAudio, CHIME_DEFAULTS, chimePatterns, chimeSounds, randomChimeVoice } from './chime-synth.js';
 import { isDesktopWindow, postWindowControl } from '../../sdk/lib/window-control.js';
-import { cachedUserPref, setUserPref, reconcilePref } from '../services/prefs.js';
+import { cachedMachinePref, setMachinePref, reconcilePref } from '../services/prefs.js';
 
 const PREFS_KEY = 'juggler-attention';
 /** Fired on window whenever prefs change, so the bell + settings stay in sync. */
@@ -125,7 +126,7 @@ export const DEFAULT_ATTENTION_PREFS = Object.freeze({
  * @returns {AttentionPrefs} The merged, complete prefs object.
  */
 export function getAttentionPrefs() {
-  const stored = cachedUserPref(PREFS_KEY, {}) || {};
+  const stored = cachedMachinePref(PREFS_KEY, {}) || {};
   // Validate each chime field against its live schema, so a stale value from an
   // older build (the pre-menu `pitch`/`length`/numeric-`pattern` knobs, or a
   // removed pattern/sound id) is dropped for the default rather than riding
@@ -151,7 +152,7 @@ export function getAttentionPrefs() {
 function savePrefs(patch) {
   const next = { ...getAttentionPrefs(), ...patch };
   if (patch.chime) next.chime = { ...getAttentionPrefs().chime, ...patch.chime };
-  void setUserPref(PREFS_KEY, next);
+  void setMachinePref(PREFS_KEY, next);
   window.dispatchEvent(new CustomEvent(ATTENTION_PREFS_EVENT, { detail: next }));
   return next;
 }
@@ -650,9 +651,9 @@ function armAudioOnFirstGesture() {
  */
 export function initAttention(sess) {
   session = sess;
-  // Ask for this person's alert preferences; the bell and the settings rows
+  // Ask for this machine's alert preferences; the bell and the settings rows
   // re-read on the event when the answer differs from what was cached.
-  void reconcilePref('user', PREFS_KEY, ATTENTION_PREFS_EVENT);
+  void reconcilePref('machine', PREFS_KEY, ATTENTION_PREFS_EVENT);
   // Sound is on by default, so the unlock gesture has to come from ordinary use
   // rather than from the user finding the switch.
   armAudioOnFirstGesture();

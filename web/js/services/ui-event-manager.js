@@ -274,7 +274,7 @@ class UIEventManager {
 
   /**
    * Setup the bell button — the header on/off for notification sounds. Mirrors
-   * the theme button: a header toggle backed by a per-window localStorage pref.
+   * the theme button: a header toggle backed by a per-machine pref.
    * The click toggles the `sound` pref (and unlocks audio for the session); the
    * crossed-bell styling stays in sync with the settings panel's checkbox via
    * the shared prefs-changed event. Crossed bell = sounds off.

@@ -202,6 +202,28 @@ export async function runTests() {
   setSoundEnabled(false);
 
   try {
+    // The attention prefs are machine preferences: a remote viewer's sound
+    // toggle is its own and must not mute the desktop it is viewing.
+    await run('a remote viewer\u2019s sound setting is kept on its own device', () => {
+      const root = document.documentElement;
+      const wasMode = root.dataset.windowMode;
+      delete root.dataset.windowMode;
+      const ownKey = 'juggler-attention@viewer';
+      const wasOwn = localStorage.getItem(ownKey);
+      try {
+        setSoundEnabled(true);
+        assert(JSON.parse(localStorage.getItem(ownKey) || 'null')?.sound === true,
+          'a remote viewer\u2019s choice must be stored under its own key, not shared through settings.json');
+        setSoundEnabled(false);
+        assert(getAttentionPrefs().sound === false, 'and read back from there');
+      } finally {
+        if (wasMode === undefined) delete root.dataset.windowMode;
+        else root.dataset.windowMode = wasMode;
+        if (wasOwn === null) localStorage.removeItem(ownKey);
+        else localStorage.setItem(ownKey, wasOwn);
+      }
+    });
+
     await run('highlight on: the tab gets both the standing mark and the one-shot animation', () => {
       setTabHighlightEnabled(true);
       const convId = 'conv_flashon01';

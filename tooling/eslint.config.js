@@ -314,6 +314,46 @@ export default [
     },
   },
   // ===================================================================
+  // Web Storage is reached through services/prefs.js
+  // ===================================================================
+  // A preference belongs to a realm (tab, device, window, project, machine,
+  // user), and the realm decides who shares it. Writing localStorage directly
+  // picks one without saying so, and per port, which is not per project. The
+  // files listed are the deliberate exceptions, each for a reason prefs.js
+  // cannot serve:
+  //   prefs.js                  — the realms themselves
+  //   theme-manager, zoom-manager — applied before first paint (see prefs.js)
+  //   viewer-id                 — a tab's identity, not a preference
+  //   websocket                 — a reload throttle, not a preference
+  //   scheduled-send-service    — a claim lock between same-origin windows
+  {
+    files: ['web/js/**/*.js', 'web/sdk/**/*.js', 'web/extensions/**/*.js'],
+    ignores: [
+      'web/extensions/**/_tests/**/*.js',
+      'web/js/services/prefs.js',
+      'web/js/utils/theme-manager.js',
+      'web/js/utils/zoom-manager.js',
+      'web/js/utils/viewer-id.js',
+      'web/js/services/websocket.js',
+      'web/js/services/scheduled-send-service.js',
+    ],
+    rules: {
+      'no-restricted-globals': ['error',
+        ...['localStorage', 'sessionStorage'].map((name) => ({
+          name,
+          message: 'Store preferences through services/prefs.js, choosing the realm by who the value belongs to (its header explains each). A non-preference use goes on the exceptions list in tooling/eslint.config.js, with its reason.',
+        })),
+      ],
+      'no-restricted-properties': ['error',
+        ...['window', 'globalThis', 'self'].flatMap((object) => ['localStorage', 'sessionStorage'].map((property) => ({
+          object,
+          property,
+          message: 'Store preferences through services/prefs.js, choosing the realm by who the value belongs to (its header explains each).',
+        }))),
+      ],
+    },
+  },
+  // ===================================================================
   // UI text goes through t() (juggler/no-raw-ui-string)
   // ===================================================================
   // Every UI file is checked for t() at module scope. Raw user-visible
