@@ -4,6 +4,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import CommandType from 'juggler/command-type';
+import { translator } from 'juggler/i18n';
+
+const t = translator('@juggler/core');
 
 /**
  * Clear command - clears conversation messages
@@ -36,7 +39,7 @@ class ClearCommandType extends CommandType {
     await conversation?.session?.seedConversationAutoItems(conversation, mt);
     return {
       handled: true,
-      message: 'Conversation cleared'
+      message: t('Conversation cleared')
     };
   }
 }

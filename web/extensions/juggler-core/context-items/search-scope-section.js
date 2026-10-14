@@ -12,11 +12,15 @@
  * @module juggler-core/context-items/search-scope-section
  */
 
+import { translator } from 'juggler/i18n';
+import { escapeHtml } from 'juggler/ui';
 import {
   GITIGNORE_DISABLED_KEY,
   conversationGitignoreDisabled,
   setGitignoreDisabled,
 } from './path-approval.js';
+
+const t = translator('@juggler/core');
 
 /** Material "check" glyph — shown when .gitignore is being respected. */
 const TICK_SVG = '<svg viewBox="0 -960 960 960" aria-hidden="true"><path d="M382-240 154-468l57-57 171 171 367-367 57 57-424 424Z"/></svg>';
@@ -44,9 +48,9 @@ export function buildGitignoreSection(messageThread) {
     section.innerHTML = `
       <button class="search-scope-btn ${respected ? 'allowed' : 'ask'}"
               role="switch" aria-checked="${respected}"
-              title="When on, file search tools (grep, glob, tree) skip files matched by .gitignore.">
+              title="${escapeHtml(t('When on, file search tools (grep, glob, tree) skip files matched by .gitignore.'))}">
         <span class="search-scope-icon">${respected ? TICK_SVG : CROSS_SVG}</span>
-        <span class="search-scope-label">${respected ? 'Respecting .gitignore in file searches' : 'Searching all files (.gitignore off)'}</span>
+        <span class="search-scope-label">${escapeHtml(respected ? t('Respecting .gitignore in file searches') : t('Searching all files (.gitignore off)'))}</span>
       </button>
     `;
     const btn = section.querySelector('.search-scope-btn');

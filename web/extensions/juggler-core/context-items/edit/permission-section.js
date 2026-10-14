@@ -8,11 +8,15 @@
  * @module juggler-core/context-items/edit/permission-section
  */
 
+import { translator } from 'juggler/i18n';
+import { escapeHtml } from 'juggler/ui';
 import {
   WRITE_FILE_ITEM_TYPE as ITEM_TYPE,
   isFileEditingAllowed,
   toggleFileEditing,
 } from '../../../../js/services/file-editing-permission.js';
+
+const t = translator('@juggler/core');
 
 /** Material "check" glyph — shown when file editing is allowed. Matches the pill's CHECK_ICON. */
 const TICK_SVG = '<svg viewBox="0 -960 960 960" aria-hidden="true"><path d="M382-240 154-468l57-57 171 171 367-367 57 57-424 424Z"/></svg>';
@@ -34,9 +38,9 @@ export function renderWriteFilePermissionSection(messageThread) {
     section.innerHTML = `
       <button class="permission-btn input-ctrl-btn write-file-btn ${allowed ? 'allowed' : 'ask'}"
               role="switch" aria-checked="${allowed}"
-              title="Toggle file write permission for this conversation. Writes outside the project and allowed paths always prompt." data-shortcut-id="toggle-file-editing">
+              title="${escapeHtml(t('Toggle file write permission for this conversation. Writes outside the project and allowed paths always prompt.'))}" data-shortcut-id="toggle-file-editing">
         <span class="write-file-icon">${allowed ? TICK_SVG : LOCK_SVG}</span>
-        <span class="write-file-label">${allowed ? 'File editing allowed in allowed paths' : 'File edits prompt for confirmation'}</span>
+        <span class="write-file-label">${escapeHtml(allowed ? t('File editing allowed in allowed paths') : t('File edits prompt for confirmation'))}</span>
       </button>
     `;
     const btn = section.querySelector('.write-file-btn');

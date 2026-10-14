@@ -18,6 +18,7 @@
  */
 
 import { assert } from '../utilities/test-helpers.js';
+import { underPseudoLocale, assertPseudoLocalized } from '../utilities/pseudo-locale.js';
 import '../../js/components/error-message.js';
 import { registerSettingsOpener } from '../../js/services/settings-launcher.js';
 import {
@@ -289,6 +290,31 @@ export async function runTests() {
       elsewhere.remove();
     }
   });
+
+  // Under en-XA everything the row adds to the provider's text is translated:
+  // the unreachable lead and every action. The provider's text is data.
+  try {
+    await underPseudoLocale('auth-error-action-test', () => {
+      const { list, render, teardown } = mountList();
+      try {
+        const unreachable = item({ itemId: 'ERR_NET', type: 'error', content: 'dial tcp: connection refused',
+          data: JSON.stringify(SETUP_DATA) });
+        render([unreachable]);
+        const row = /** @type {Element} */ (list.querySelector('error-message[message-id="ERR_NET"]'));
+        assert(!!row.querySelector('.error-message-lead'), 'no unreachable lead');
+        for (const cls of ['error-model-btn', 'error-settings-btn', 'error-retry-btn']) {
+          assert(!!actionButton(list, 'ERR_NET', cls), `no ${cls}`);
+        }
+        assertPseudoLocalized(row, { skip: '.message-text', atLeast: 7, where: 'unreachable setup failure, last' });
+      } finally {
+        teardown();
+      }
+    });
+    passed++;
+  } catch (e) {
+    failed++;
+    errors.push(`en-XA: ${e instanceof Error ? e.message : String(e)}`);
+  }
 
   return { passed, failed, errors };
 }

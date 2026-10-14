@@ -23,14 +23,16 @@
 import { TYPE_ICONS, TYPE_COLORS } from './icon-message-renderer.js';
 import contextItemRegistry from '../registries/context-item-registry.js';
 import { yGet } from '../model/item-accessor.js';
+import { t, markForTranslation } from '../../sdk/lib/i18n.js';
 
 /**
  * The lozenge label every notice wears, in the row and the panel header alike.
  * A notice's own text is a sentence explaining what happened, not a title, so
- * the lozenge names the kind of item and nothing else.
+ * the lozenge names the kind of item and nothing else. English; translated
+ * where it is drawn.
  * @type {string}
  */
-export const NOTICE_TYPE_NAME = 'Warning';
+export const NOTICE_TYPE_NAME = markForTranslation('Warning');
 
 const USER_AVATAR_SVG = '<svg xmlns="http://www.w3.org/2000/svg" height="14" viewBox="0 -960 960 960" width="14" fill="white"><path d="M480-480q-66 0-113-47t-47-113q0-66 47-113t113-47q66 0 113 47t47 113q0 66-47 113t-113 47ZM160-160v-112q0-34 17.5-62.5T224-378q62-31 126-46.5T480-440q66 0 130 15.5T736-378q29 15 46.5 43.5T800-272v112H160Z"/></svg>';
 
@@ -183,23 +185,51 @@ function makeInstance(PluginClass, ctx) {
 }
 
 /**
+ * Translate a label a capability supplies (its static type label or manifest
+ * name) in its own extension's catalogue, then core's.
+ * @param {string} label - The capability's English label
+ * @param {string|null} pluginId - The capability's registry id, or null
+ * @returns {string} The label in the active locale
+ */
+function capabilityLabel(label, pluginId) {
+  const namespace = (pluginId && contextItemRegistry.getExtensionId(pluginId)) || undefined;
+  return t(label, undefined, { namespace });
+}
+
+/**
  * The type-name lozenge label, pulled from the plugin's own getStatusUI so it
  * reads exactly like the tile (e.g. "Read", not "readFile"/"Read File").
  * getStatusUI is a pure viewer-side config builder; the call is guarded because
  * a plugin may read result fields we can't reconstruct, falling back to its
- * static type label then the supplied fallback.
+ * static type label then the supplied fallback. getStatusUI's typeName is
+ * already in the user's language; the static label and manifest name are the
+ * capability's English, translated here.
  * @param {any} instance - Plugin instance, or null
  * @param {any} PluginClass - Plugin class, or null
  * @param {any[]} statusArgs - Arguments forwarded to getStatusUI
- * @param {string} fallback - Last-resort label
+ * @param {string} fallback - Last-resort label, already in the user's language
+ * @param {string|null} [pluginId] - Registry id whose extension owns the static labels
  * @returns {string} The lozenge label
  */
-function pluginTypeName(instance, PluginClass, statusArgs, fallback) {
+function pluginTypeName(instance, PluginClass, statusArgs, fallback, pluginId = classPluginId(PluginClass)) {
   try {
     const cfg = instance?.getStatusUI?.(...statusArgs);
     if (cfg?.typeName) return cfg.typeName;
   } catch { /* plugin needs richer status than we have; use the static label */ }
-  return PluginClass?.getTypeName?.() || PluginClass?.MANIFEST?.name || fallback;
+  const label = PluginClass?.getTypeName?.() || PluginClass?.MANIFEST?.name;
+  return label ? capabilityLabel(label, pluginId) : fallback;
+}
+
+/**
+ * The lozenge fallback for a context-item instance: its manifest name, else its
+ * type id, else the generic label.
+ * @param {any} inst - Context-item plugin instance
+ * @returns {string} The fallback label
+ */
+function contextItemFallback(inst) {
+  const name = inst.getManifest?.()?.name;
+  if (name) return capabilityLabel(name, instancePluginId(inst));
+  return inst.type || t('Context Item');
 }
 
 /**
@@ -234,50 +264,47 @@ function toolActionStatusArgs(item, ctx) {
  */
 export function typeNameForItem(item, ctx = {}) {
   if (isContextItemInstance(item)) {
-    const fallback = item.getManifest?.()?.name || item.type || 'Context Item';
-    return pluginTypeName(item, item.constructor, [], fallback);
+    return pluginTypeName(item, item.constructor, [], contextItemFallback(item));
   }
 
   const type = item?.get?.('type') ?? ctx.fallbackType;
   switch (type) {
-    case 'error': return 'Error';
+    case 'error': return t('Error');
     // A notice is labelled by kind, not by incident: its summary is the
     // explanation the row prints beside this lozenge, and the panel prints the
     // same pair.
-    case 'notice': return NOTICE_TYPE_NAME;
-    case 'user': return 'User Message';
-    case 'thinking': return 'Thinking';
-    case 'assistant': return 'Assistant Message';
+    case 'notice': return t(NOTICE_TYPE_NAME);
+    case 'user': return t('User Message');
+    case 'thinking': return t('Thinking');
+    case 'assistant': return t('Assistant Message');
     case 'thread': {
       // A compaction fold is a thread by construction, but it is not work the
       // user asked for: it stands where the folded history began and is the way
       // in to the folded items, so it says what it is rather than wearing the
       // generic lozenge of an ordinary sub-thread.
-      if (item?.get?.('boundedCompaction')) return 'Compacted';
+      if (item?.get?.('boundedCompaction')) return t('Compacted');
       // Delegated threads label as their delegating tool (e.g. "Web Fetch")
       // rather than the generic "Thread"; mirrors the tool-action label path but
       // uses the static type label (no per-call tool result to feed getStatusUI).
+      // The tool name itself is an identifier, shown as it is.
       const toolName = item?.get?.('runToolName') || item?.get?.('toolName');
       const ActionClass = actionClassFor(item);
       if (ActionClass) return pluginTypeName(null, ActionClass, [], toolName);
-      return pluginTypeName(null, contextItemRegistry.get('thread'), [], 'Thread');
+      return pluginTypeName(null, contextItemRegistry.get('thread'), [], t('Thread'));
     }
     case 'tool-action': {
       const toolName = item.get('toolName');
       const ActionClass = actionClassFor(item);
       const instance = ActionClass ? makeInstance(ActionClass, ctx) : null;
-      return pluginTypeName(instance, ActionClass, toolActionStatusArgs(item, ctx), toolName || 'Tool Action');
+      return pluginTypeName(instance, ActionClass, toolActionStatusArgs(item, ctx), toolName || t('Tool Action'));
     }
     case 'context-item': {
       const inst = ctx.messageThread?.getContextItem?.(item.get('itemId'));
-      if (inst) {
-        const fallback = inst.getManifest?.()?.name || inst.type || 'Context Item';
-        return pluginTypeName(inst, inst.constructor, [], fallback);
-      }
-      return item.get?.('type') || 'Context Item';
+      if (inst) return pluginTypeName(inst, inst.constructor, [], contextItemFallback(inst));
+      return item.get?.('type') || t('Context Item');
     }
     default:
-      return 'Message';
+      return t('Message');
   }
 }
 

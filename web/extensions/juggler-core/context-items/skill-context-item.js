@@ -6,6 +6,7 @@
 import ContextItem from 'juggler/context-item';
 import { formatFileSize } from 'juggler/item-utils';
 import { smartTruncate, createElement, renderMarkdown, decorateCodeBlocks } from 'juggler/ui';
+import { markUntranslated } from 'juggler/i18n';
 import { getAvailableSkills, fetchSkillBody } from '../../../js/services/skills.js';
 
 /**
@@ -298,7 +299,18 @@ class SkillContextItem extends ContextItem {
     if (this._loadedSet().has(name)) {
       return { name, scope: skill.scope, source: skill.source, alreadyLoaded: true };
     }
-    const detail = await this._loadBody(skill.scope, skill.source, name);
+    let detail;
+    try {
+      detail = await this._loadBody(skill.scope, skill.source, name);
+    } catch (err) {
+      // The request's own error carries no prefix; the tool result is the
+      // model's, so it is worded here, in English.
+      const failure = /** @type {{status?: unknown, detail?: unknown}} */ (err);
+      if (typeof failure?.status !== 'number') throw err;
+      throw new Error(markUntranslated(failure.detail
+        ? `Failed to load skill "${name}": ${failure.detail}`
+        : `Failed to load skill "${name}" (HTTP ${failure.status})`));
+    }
     this._loadedSet().add(name);
     return {
       name,

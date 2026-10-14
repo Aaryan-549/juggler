@@ -4,7 +4,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import CommandType from 'juggler/command-type';
+import { translator } from 'juggler/i18n';
 import { extractErrorMessage } from '../../../sdk/lib/error-utils.js';
+
+const t = translator('@juggler/core');
 
 /**
  * Duplicate Conversation command — clone the current conversation into a new
@@ -39,7 +42,7 @@ class DuplicateConversationCommandType extends CommandType {
     const sourceConversation = this.messageThread?.conversation;
     const session = sourceConversation?.session;
     if (!session) {
-      return { handled: true, message: 'No session available', error: true };
+      return { handled: true, message: t('No session available'), error: true };
     }
 
     try {
@@ -55,7 +58,7 @@ class DuplicateConversationCommandType extends CommandType {
     } catch (error) {
       return {
         handled: true,
-        message: `Duplication failed: ${extractErrorMessage(error)}`,
+        message: t('Duplication failed: {error}', { error: extractErrorMessage(error) }),
         error: true
       };
     }

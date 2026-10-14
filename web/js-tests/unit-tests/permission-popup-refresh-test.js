@@ -27,7 +27,10 @@ import {
   assert
 } from '../utilities/test-helpers.js';
 import { assertDialogPopover } from '../utilities/menu-assertions.js';
+import { underPseudoLocale, assertPseudoLocalized } from '../utilities/pseudo-locale.js';
+import { isPseudoLocalized } from '../../sdk/lib/i18n.js';
 import { MessageThread } from '../../js/model/message-thread.js';
+import { setFileEditingAllowed } from '../../js/services/file-editing-permission.js';
 import '../../js/components/permission-controls.js';
 
 /**
@@ -207,6 +210,98 @@ export async function runTests(_ctx) {
         if (e.scope === 'session' && !e.implicit) mt.removeAllowedPath(e.id);
       }
       document.querySelectorAll('.permissions-popup[data-permission-controls="true"]').forEach(e => e.remove());
+      el.remove();
+    }
+  });
+
+  await run('under en-XA the button and the allowed-paths section show only translated text', async () => {
+    const conversation = await createTestConversation(session);
+    const mt = conversation.rootMessageThread;
+    const el = /** @type {any} */ (document.createElement('permission-controls'));
+    document.body.appendChild(el);
+    try {
+      await underPseudoLocale('permission-popup-refresh-test', async () => {
+        setFileEditingAllowed(mt, false);
+        el.setMessageThread(mt);
+        const button = () => /** @type {Element} */ (el.querySelector('.permission-btn'));
+        assertPseudoLocalized(button(), { where: 'edits off' });
+
+        // Conversation-scoped only: session-scoped grants reach every lane.
+        mt.addRule('execute', { kind: 'glob', value: '1 *', scope: 'conversation' });
+        mt.addAllowedPath('/1', { scope: 'conversation' });
+        setFileEditingAllowed(mt, true);
+        el.render();
+        assert(button().querySelector('.permission-detail'), 'the button drew no counts');
+        assertPseudoLocalized(button(), { where: 'edits on, one command' });
+
+        mt.addRule('execute', { kind: 'glob', value: '2 *', scope: 'conversation' });
+        mt.addAllowedPath('/2', { scope: 'conversation' });
+        el.render();
+        assertPseudoLocalized(button(), { where: 'edits on, two commands' });
+
+        el.popupOpen = true;
+        el.render();
+        const popup = /** @type {HTMLElement} */ (el.querySelector('.permissions-popup'));
+        assert(!!popup, 'popup rendered when opening');
+        document.body.appendChild(popup);
+        el._menu = { surface: popup, close() {} };
+        for (const id of ['execute', 'write-file', 'search-scope']) {
+          assert(!!popup.querySelector(`.plugin-section-wrapper[data-section-id="${id}"]`), `no ${id} section`);
+        }
+        // Paths and command patterns are data; the project root's scope label
+        // carries the title its path text has.
+        const skip = '.pattern-text';
+        assert(!!popup.querySelector('.pattern-row-implicit .permission-scope-label[title]'),
+          'the project-root row has no titled scope label');
+        assertPseudoLocalized(popup, { skip, atLeast: 4, where: 'popup, path rows' });
+
+        /** @type {HTMLElement} */ (popup.querySelector('.add-path-btn')).click();
+        const newRow = popup.querySelector('.pattern-row[data-mode="new"]');
+        assert(!!newRow, 'no new-path editor');
+        assertPseudoLocalized(popup, { skip: `${skip}, .path-edit-input`, atLeast: 4, where: 'popup, new-path editor' });
+        // The placeholder's example path is data inside the message.
+        const hint = newRow?.querySelector('.path-edit-input')?.getAttribute('placeholder') || '';
+        assert(hint.includes('~/code/juggler') && isPseudoLocalized(hint.replace('~/code/juggler', '')),
+          `new-path placeholder not translated: ${JSON.stringify(hint)}`);
+
+        el._endPathEditing();
+        /** @type {HTMLElement} */ (popup.querySelector('.path-text')).click();
+        assert(!!popup.querySelector('.pattern-row[data-mode="edit"]'), 'no edit-path editor');
+        // Its placeholder is the path being edited: data.
+        assertPseudoLocalized(popup, { skip: `${skip}, .path-edit-input`, atLeast: 4, where: 'popup, edit-path editor' });
+        el._endPathEditing();
+
+        const shell = /** @type {HTMLElement} */ (popup.querySelector('.permission-section-execute'));
+        /** @type {HTMLElement} */ (shell.querySelector('.add-pattern-btn')).click();
+        const newPattern = shell.querySelector('.pattern-row[data-mode="new"]');
+        assert(!!newPattern, 'no new-pattern editor');
+        assertPseudoLocalized(popup, { skip: `${skip}, .pattern-edit-input`, atLeast: 4, where: 'popup, new-pattern editor' });
+        const patternHint = newPattern?.querySelector('.pattern-edit-input')?.getAttribute('placeholder') || '';
+        assert(patternHint.includes('npm *') && isPseudoLocalized(patternHint.replace('npm *', '')),
+          `new-pattern placeholder not translated: ${JSON.stringify(patternHint)}`);
+        /** @type {HTMLElement} */ (shell.querySelector('.pattern-cancel-btn')).click();
+        /** @type {HTMLElement} */ (shell.querySelector('.pattern-text')).click();
+        assert(!!shell.querySelector('.pattern-row[data-mode="edit"]'), 'no edit-pattern editor');
+        assertPseudoLocalized(popup, { skip, atLeast: 4, where: 'popup, edit-pattern editor' });
+        /** @type {HTMLElement} */ (shell.querySelector('.pattern-cancel-btn')).click();
+
+        // Both states of each toggle.
+        /** @type {HTMLElement} */ (popup.querySelector('.write-file-btn')).click();
+        assert(popup.querySelector('.write-file-btn')?.classList.contains('ask'), 'edits did not turn off');
+        /** @type {HTMLElement} */ (popup.querySelector('.search-scope-btn')).click();
+        assert(popup.querySelector('.search-scope-btn')?.classList.contains('ask'), '.gitignore did not turn off');
+        assertPseudoLocalized(popup, { skip, atLeast: 4, where: 'popup, both toggles off' });
+        /** @type {HTMLElement} */ (popup.querySelector('.search-scope-btn')).click();
+      }, { '@juggler/core': [
+        'Save', 'Cancel', 'Delete', 'e.g., {example}', 'All conversations', 'This conversation',
+        'No shell patterns configured', '+ Add pattern', 'Shell command patterns',
+        'Toggle file write permission for this conversation. Writes outside the project and allowed paths always prompt.',
+        'File editing allowed in allowed paths', 'File edits prompt for confirmation',
+        'When on, file search tools (grep, glob, tree) skip files matched by .gitignore.',
+        'Respecting .gitignore in file searches', 'Searching all files (.gitignore off)',
+      ] });
+    } finally {
+      document.querySelectorAll('.permissions-popup').forEach(e => e.remove());
       el.remove();
     }
   });

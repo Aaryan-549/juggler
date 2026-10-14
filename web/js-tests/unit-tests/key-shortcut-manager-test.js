@@ -28,6 +28,7 @@ import keyShortcutManager, {
   formatBindingForPlatform,
   EDIT_GESTURE_WINDOW_MS,
 } from '../../js/services/key-shortcut-manager.js';
+import * as shortcutModule from '../../js/services/key-shortcut-manager.js';
 import {
   isFileEditingAllowed,
   toggleFileEditing,
@@ -739,6 +740,42 @@ export async function runTests(_ctx) {
       assert(untranslated.length === 0, `no catalogue entry: ${JSON.stringify([...new Set(untranslated)])}`);
       assert(notEnglish.length === 0, `fields the corpus reads are not English: ${JSON.stringify(notEnglish)}`);
       assert(!isPseudoLocalized(keyShortcutManager.label('find')), 'label(id) is the English source');
+    } finally {
+      setLocale(previous);
+      unregisterCatalog('key-shortcut-manager-test');
+    }
+  });
+
+  // Key caps have the same two readers. The UI names keys in the user's
+  // language (a German keyboard says "Strg"); the corpus formatter keeps the
+  // English names the model is told.
+  await run('under en-XA key caps translate in the UI and stay English for the corpus', async () => {
+    const formatBindingLabel = /** @type {any} */ (shortcutModule).formatBindingLabel;
+    assert(typeof formatBindingLabel === 'function', 'no formatBindingLabel export');
+    const body = await fetchJson(apiUrl(`/i18n/catalog?locale=${PSEUDO_LOCALE}`));
+    registerCatalog('key-shortcut-manager-test', PSEUDO_LOCALE, body.messages);
+    const previous = setLocale(PSEUDO_LOCALE);
+    try {
+      const named = [
+        { mod: true, shift: true, key: 'PageDown' },
+        { alt: true, key: 'ArrowUp' },
+        { key: 'ArrowDown' }, { key: 'ArrowLeft' }, { key: 'ArrowRight' }, { key: 'PageUp' }, { key: ' ' },
+        { key: 'Enter' }, { key: 'Escape' }, { key: 'Backspace' }, { key: 'Delete' }, { shift: true, key: 'Tab' },
+      ];
+      for (const binding of named) {
+        const parts = formatBindingLabel(binding, false).split('+');
+        const raw = parts.filter((/** @type {string} */ p) => !isPseudoLocalized(p));
+        assert(raw.length === 0, `plain English key cap ${JSON.stringify(binding)}: ${JSON.stringify(raw)}`);
+      }
+      assert(isPseudoLocalized(formatBindingLabel({ key: 'Space' }, true)), 'Space on macOS is plain English');
+      assert(formatBindingLabel({ mod: true, shift: true, key: 'z' }, true) === '⇧⌘Z', 'macOS glyphs changed');
+      assert(formatBindingLabel({ mod: true, key: 'k' }, false).endsWith('+K'), 'a letter key changed');
+      assert(formatBindingForPlatform(named[0], false) === 'Ctrl+Shift+Page Down',
+        `corpus label is not English: ${formatBindingForPlatform(named[0], false)}`);
+      assert(formatBindingForPlatform(named[1], false) === 'Alt+Up', 'corpus label is not English');
+      assert(formatBindingForPlatform({ key: 'Escape' }, false) === 'Escape', 'corpus label is not English');
+      assert(keyShortcutManager.formatKeyBinding(named[0]) === formatBindingLabel(named[0], mac),
+        'the manager does not format through the UI formatter');
     } finally {
       setLocale(previous);
       unregisterCatalog('key-shortcut-manager-test');

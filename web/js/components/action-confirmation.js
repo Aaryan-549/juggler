@@ -3,6 +3,7 @@
 //   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
 
 import { escapeHtml } from '../../sdk/lib/html.js';
+import { t, htmlSlots, withHtml } from '../../sdk/lib/i18n.js';
 
 /**
  * Inline folder glyph prefixed to a folder-grant `<code>` span, so a grant
@@ -186,14 +187,14 @@ class ActionConfirmation extends HTMLElement {
           // height as any other. A span (not a nested <button>, which is invalid
           // HTML) that the delegated click handler routes to edit mode.
           const pencil = editable
-            ? `<span class="pattern-edit-btn" data-edit-index="${index}" role="button" title="Edit pattern" aria-label="Edit pattern">${PENCIL_ICON_SVG}</span>`
+            ? `<span class="pattern-edit-btn" data-edit-index="${index}" role="button" title="${escapeHtml(t('Edit pattern'))}" aria-label="${escapeHtml(t('Edit pattern'))}">${PENCIL_ICON_SVG}</span>`
             : '';
           // The editor occupies the SAME slot as the button (only one is shown
           // at a time — see the `.editing` CSS), so entering edit mode swaps the
           // button for the input in place without changing the dialog's height.
           const editField = editable
             ? `<div class="pattern-edit-field" hidden>
-                 <input type="text" class="pattern-edit-input" data-edit-index="${index}" value="${escapeHtml(this._currentPattern(opt))}" aria-label="Edit approval pattern" />
+                 <input type="text" class="pattern-edit-input" data-edit-index="${index}" value="${escapeHtml(this._currentPattern(opt))}" aria-label="${escapeHtml(t('Edit approval pattern'))}" />
                  <div class="pattern-edit-notice" hidden></div>
                </div>`
             : '';
@@ -203,7 +204,7 @@ class ActionConfirmation extends HTMLElement {
               class="action-confirmation-button ${opt.style}"
               data-value="${opt.value}"
               data-index="${index}"
-            >${escapeHtml(opt.label)}${descriptor}${pencil}</button>
+            >${escapeHtml(t(opt.label))}${descriptor}${pencil}</button>
             ${editField}
           </div>
         `;
@@ -258,13 +259,23 @@ class ActionConfirmation extends HTMLElement {
     const prefix = isPathGrant ? FOLDER_ICON_SVG : '';
     const cls = isPathGrant ? 'pattern-highlight path-highlight' : 'pattern-highlight';
     const spans = parts.map(p => `<code class="${cls}">${prefix}${escapeHtml(p)}</code>`);
-    const last = spans.pop();
-    const joined = spans.length === 0
-      ? last
-      : `${spans.join(', ')}${spans.length > 1 ? ',' : ''} or ${last}`;
+    const last = /** @type {string} */ (spans.pop());
+    let joined = last;
+    const [first] = spans;
+    if (spans.length === 1 && first !== undefined) {
+      const pair = { first, last };
+      joined = withHtml(t('{first} or {last}', htmlSlots(pair)), pair);
+    } else if (spans.length > 1) {
+      const list = { list: spans.join(', '), last };
+      joined = withHtml(t('{list}, or {last}', htmlSlots(list)), list);
+    }
     // A folder grant whitelists reads under a directory; word it so it reads as
     // access, not a command pattern.
-    return isPathGrant ? ` and allow access to ${joined}` : ` for ${joined}`;
+    const slot = { patterns: joined };
+    const descriptor = isPathGrant
+      ? t('and allow access to {patterns}', htmlSlots(slot))
+      : t('for {patterns}', htmlSlots(slot));
+    return ` ${withHtml(descriptor, slot)}`;
   }
 
   /**
@@ -500,7 +511,7 @@ class ActionConfirmation extends HTMLElement {
     row.classList.toggle('revise-invalid', !valid);
 
     if (notice) {
-      const msg = (result && result.notice) ? result.notice : (valid ? '' : 'Invalid pattern');
+      const msg = (result && result.notice) ? result.notice : (valid ? '' : t('Invalid pattern'));
       if (msg) {
         notice.textContent = msg;
         notice.hidden = false;

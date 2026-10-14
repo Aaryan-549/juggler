@@ -18,7 +18,8 @@
  *
  * The catalogues: web/i18n for the core UI, and, for an extension whose
  * manifest names one, its `provides.i18n` directory — holding the messages in
- * that extension's files plus its manifest's name and setting text. An
+ * that extension's files, its capabilities' `MANIFEST` name and description,
+ * and its manifest's name and setting text. An
  * extension that names none stays in the core catalogue.
  *
  * Catalogue format (<dir>/<locale>.json): one flat JSON object mapping each
@@ -253,8 +254,35 @@ function manifestMessages(manifest) {
 }
 
 /**
+ * The text a capability class declares about itself, which the UI shows (the
+ * Extensions catalogue, the strategy pickers) with a t() scoped to the owning
+ * extension: the `name` and `description` literals of each
+ * `static MANIFEST = {…}` in a module. They sit in a class field, where no t()
+ * can mark them.
+ * @param {any} ast - A parsed module.
+ * @returns {string[]}
+ */
+function capabilityMessages(ast) {
+  const out = [];
+  walkAst(ast, (node) => {
+    if (node.type !== 'PropertyDefinition' || !node.static || node.computed
+      || node.key.type !== 'Identifier' || node.key.name !== 'MANIFEST'
+      || node.value?.type !== 'ObjectExpression') return;
+    for (const prop of node.value.properties) {
+      if (prop.type !== 'Property' || prop.computed) continue;
+      const key = prop.key.type === 'Identifier' ? prop.key.name : prop.key.value;
+      if (key !== 'name' && key !== 'description') continue;
+      const value = staticString(prop.value);
+      if (value !== null && /[A-Za-z]/.test(value)) out.push(value);
+    }
+  });
+  return out;
+}
+
+/**
  * Collect a catalogue's messages: every t()/markForTranslation() literal in its
- * files, and, for an extension's, the text in its manifest.
+ * files, every capability's `MANIFEST` name and description, and, for an
+ * extension's, the text in its manifest.
  * @param {any} sdk - The SDK module (for messageKey).
  * @param {Target} target
  * @returns {{messages: Record<string, string>, problems: string[]}}
@@ -269,7 +297,8 @@ function extract(sdk, target) {
   }
   for (const rel of target.files) {
     const text = fs.readFileSync(path.join(repoRoot, rel), 'utf8');
-    if (!/\bi18n\b/.test(text)) continue;
+    const hasI18n = /\bi18n\b/.test(text);
+    if (!hasI18n && !/\bMANIFEST\b/.test(text)) continue;
     let ast;
     try {
       ast = parse(text, { ecmaVersion: 'latest', sourceType: 'module', loc: true });
@@ -277,6 +306,8 @@ function extract(sdk, target) {
       problems.push(`${rel}: does not parse: ${err.message}`);
       continue;
     }
+    for (const source of capabilityMessages(ast)) messages[sdk.messageKey(source)] = source;
+    if (!hasI18n) continue;
     // Local names bound, by an import from an i18n module, to t (a message
     // and its translation) and to markForTranslation (a message translated
     // elsewhere — a t() of a variable names none, so the mark is what is found).
@@ -309,6 +340,14 @@ function extract(sdk, target) {
       if (source === null) return;
       let context;
       const opts = node.arguments[2];
+      // Options the extractor can't read could carry a context, and the message
+      // would then be filed under the wrong key: one the runtime never asks for.
+      const unreadable = opts && !(opts.type === 'Identifier' && opts.name === 'undefined')
+        && (opts.type !== 'ObjectExpression' || opts.properties.some((p) => p.type !== 'Property' || p.computed));
+      if (unreadable) {
+        problems.push(`${where}: t() options must be an inline object literal with plain keys, so a context in them is seen`);
+        return;
+      }
       if (opts && opts.type === 'ObjectExpression') {
         const prop = opts.properties.find((p) => p.type === 'Property' && !p.computed
           && (p.key.name === 'context' || p.key.value === 'context'));

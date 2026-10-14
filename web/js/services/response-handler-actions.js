@@ -21,6 +21,7 @@ import { withMcpToolMissReason } from './mcp-availability.js';
 import contextItemRegistry from '../registries/context-item-registry.js';
 import { extractErrorInfo } from '../../sdk/lib/error-utils.js';
 import { buildApprovalButtons } from './approval-options.js';
+import { t } from '../../sdk/lib/i18n.js';
 import { RESULT_TYPES, ACTION_STATES, TOOL_STATES } from '../../sdk/lib/message.js';
 import { INTERACTION_KIND } from '../../sdk/context-item.js';
 import { plain } from '../model/item-accessor.js';
@@ -137,8 +138,11 @@ export function buildApprovalOptions(action, prepared) {
   // (Yes, one "Don't Ask Again" per suggestion, No) — see buildApprovalButtons.
   const options = approval.options || buildApprovalButtons(action, prepared.params || {});
 
+  // The title is in the user's language, like the plugin's own beside it; the
+  // capability's name is its extension's text.
+  const namespace = contextItemRegistry.getExtensionId(manifest.id) || undefined;
   return {
-    title: approval.title || `Approve: ${manifest.name}`,
+    title: approval.title || t('Approve: {name}', { name: t(manifest.name, undefined, { namespace }) }),
     message: approval.message || '',
     options,
     ...approval.display // Extra display data (diffs, previews, etc.)

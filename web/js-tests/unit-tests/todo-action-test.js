@@ -18,6 +18,8 @@ import {
   createToolCall,
   assert
 } from '../utilities/test-helpers.js';
+import { underPseudoLocale, assertPseudoLocalized } from '../utilities/pseudo-locale.js';
+import { isPseudoLocalized } from '../../sdk/lib/i18n.js';
 
 /**
  * @typedef {object} TestResult
@@ -150,6 +152,43 @@ export async function runTests(_ctx) {
   } catch (e) {
     failed++;
     errors.push(`mixed statuses: ${e instanceof Error ? e.message : String(e)}`);
+  }
+
+  // Test 6: under en-XA the transcript row and the panel are translated, and
+  // the tool result the model reads stays English. The row is getStatusUI's,
+  // which the viewer runs at render time.
+  try {
+    await underPseudoLocale('todo-action-test', async () => {
+      const conversation = await createTestConversation(session);
+      const { outcomes } = await executeToolsAndGetContext(conversation, session, [createToolCall('todo', {
+        todos: [{ content: 'Done', status: 'completed' }, { content: 'Next', status: 'in_progress' }]
+      })]);
+      assert(String(outcomes[0].result).includes('Todo list updated: 1/2 completed, 1 in progress.'),
+        `the model's result is not the English summary: ${outcomes[0].result}`);
+
+      const item = /** @type {any} */ (conversation.rootMessageThread.contextItems.find(f => f.type === 'todo'));
+      assert(!!item, 'no todo item');
+      const states = {
+        standing: item.getStatusUI(null),
+        pending: item.getStatusUI({ pending: true }),
+        success: item.getStatusUI({ success: true, result: { total: 2, completed: 1, inProgress: 1 } }),
+        fallback: item.getStatusUI({}),
+        error: item.getStatusUI({ error: 'model-facing English' }),
+      };
+      for (const [state, ui] of Object.entries(states)) {
+        assert(isPseudoLocalized(ui.typeName), `${state}: type name ${JSON.stringify(ui.typeName)}`);
+        if (state !== 'error') assert(isPseudoLocalized(ui.summary), `${state}: summary ${JSON.stringify(ui.summary)}`);
+      }
+      assert(isPseudoLocalized(item.getTitle()), `title ${JSON.stringify(item.getTitle())}`);
+
+      item.setTodos([]);
+      assert(isPseudoLocalized(item.getBriefSummary()), `empty summary ${JSON.stringify(item.getBriefSummary())}`);
+      assertPseudoLocalized(item.createPropertiesPanelElement(), { where: 'empty panel' });
+    }, { '@juggler/core': ['Todos', 'Updating todos', '{completed}/{total} completed', 'No todos', 'No todos yet'] });
+    passed++;
+  } catch (e) {
+    failed++;
+    errors.push(`en-XA: ${e instanceof Error ? e.message : String(e)}`);
   }
 
   return { passed, failed, errors };

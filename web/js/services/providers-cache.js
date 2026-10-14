@@ -13,6 +13,7 @@
 import wsService from './websocket.js';
 import { fetchJson } from './http.js';
 import { apiUrl } from '../utils/api-url.js';
+import { t } from '../../sdk/lib/i18n.js';
 
 /** `windowAssumed` marks a provider-wide fallback window (the server reported none and no catalogue entry knew the model); `providerContextWindow` is present only when the user overrode the window. */
 /** @typedef {{ id: string, contextWindow: number, maxOutputTokens: number, fromAPI: boolean, windowAssumed?: boolean, providerContextWindow?: number|null, inputModalities?: string[], streamsLiveUsage?: boolean }} ModelWithContext */
@@ -114,7 +115,7 @@ const providersCache = {
    * @returns {Promise<void>}
    */
   async refresh() {
-    await fetchJson(apiUrl('/providers/refresh'), { method: 'POST', errorPrefix: 'Provider refresh failed' });
+    await fetchJson(apiUrl('/providers/refresh'), { method: 'POST', errorPrefix: t('Provider refresh failed') });
   },
 
   /**
@@ -128,6 +129,7 @@ const providersCache = {
     const result = await fetchJson(apiUrl('/providers/switch'), {
       method: 'POST',
       body: { from },
+      // i18n-ignore: never shown; both callers show only the server's detail (httpErrorText)
       errorPrefix: "Couldn't switch provider",
     });
     return /** @type {any} */ (result)?.provider || '';

@@ -11,6 +11,8 @@
  */
 
 import { assert } from '../utilities/test-helpers.js';
+import { underPseudoLocale, assertPseudoLocalized } from '../utilities/pseudo-locale.js';
+import { isPseudoLocalized, pseudoLocalize } from '../../sdk/lib/i18n.js';
 import '../../js/components/composer.js';
 import NoticeMessage from '../../js/components/notice-message.js';
 import { buildPrefixFingerprint, classifyContextCacheImpact } from '../../js/services/context-cache-impact.js';
@@ -213,6 +215,35 @@ export async function runTests() {
     });
     assert(impact === 'none', `deleting a notice must stay silent, got ${impact}`);
   });
+
+  // Under en-XA the row's own text — the lozenge, and the settings link with its
+  // tooltip — is translated, in the row and the panel header alike. The notice's
+  // sentence comes from the worker; here it is already pseudo-localised, and the
+  // model's name is a digit, so only the row's text is under test.
+  try {
+    await underPseudoLocale('cache-miss-warning-test', () => {
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+      try {
+        const el = /** @type {any} */ (document.createElement('notice-message'));
+        el.setAttribute('message-id', 'NOTICE_XA');
+        el.setAttribute('notice-text', pseudoLocalize('Something happened'));
+        el.setAttribute('notice-settings', JSON.stringify(
+          { tab: 'providers', provider: 'local', model: '1', field: 'contextWindow' }));
+        container.appendChild(el);
+        assert(!!el.querySelector('.notice-settings-btn'), 'no settings link');
+        assertPseudoLocalized(el, { atLeast: 4, where: 'notice with a settings link' });
+        const lozenge = typeNameForItem(item({ type: 'notice' }));
+        assert(isPseudoLocalized(lozenge), `panel lozenge ${JSON.stringify(lozenge)}`);
+      } finally {
+        container.remove();
+      }
+    });
+    passed++;
+  } catch (e) {
+    failed++;
+    errors.push(`en-XA: ${e instanceof Error ? e.message : String(e)}`);
+  }
 
   return { passed, failed, errors };
 }

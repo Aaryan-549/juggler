@@ -6,7 +6,10 @@
 import ContextItem from 'juggler/context-item';
 import { createElement } from 'juggler/ui';
 import { createEmptyState } from 'juggler/item-utils';
+import { translator, markUntranslated } from 'juggler/i18n';
 import { createTodoBlock, renderTodoMarkdown } from '../lib/task-lists.js';
+
+const t = translator('@juggler/core');
 
 /**
  * A single todo item.
@@ -165,7 +168,7 @@ class TodoContextItem extends ContextItem {
 
   /** @returns {string} Item title */
   getTitle() {
-    return 'Todos';
+    return t('Todos');
   }
 
   /**
@@ -204,9 +207,9 @@ class TodoContextItem extends ContextItem {
     const todos = this.data.todos || [];
     const total = todos.length;
     if (total === 0) {
-      return 'No todos';
+      return t('No todos');
     }
-    return `${this._countByStatus('completed')}/${total} completed`;
+    return t('{completed}/{total} completed', { completed: this._countByStatus('completed'), total });
   }
 
   /**
@@ -255,7 +258,7 @@ class TodoContextItem extends ContextItem {
     const container = createElement('div', 'ci-expanded');
     const todos = this.data.todos || [];
     if (todos.length === 0) {
-      container.appendChild(createEmptyState('No todos yet', ''));
+      container.appendChild(createEmptyState(t('No todos yet'), ''));
       return container;
     }
     const section = document.createElement('properties-panel-subsection');
@@ -280,19 +283,19 @@ class TodoContextItem extends ContextItem {
       try {
         todos = JSON.parse(todos);
       } catch {
-        return { valid: false, error: 'todos parameter is not valid JSON' };
+        return { valid: false, error: markUntranslated('todos parameter is not valid JSON') };
       }
     }
 
     if (!todos || !Array.isArray(todos)) {
-      return { valid: false, error: 'Missing required parameter: todos (must be array)' };
+      return { valid: false, error: markUntranslated('Missing required parameter: todos (must be array)') };
     }
 
     const normalized = [];
     for (const [i, item] of todos.entries()) {
       const content = TodoContextItem._resolveContent(item);
       if (!content) {
-        return { valid: false, error: `Todo ${i} is missing content` };
+        return { valid: false, error: markUntranslated(`Todo ${i} is missing content`) };
       }
       normalized.push({ content, status: TodoContextItem._resolveStatus(item) });
     }
@@ -382,20 +385,21 @@ class TodoContextItem extends ContextItem {
   }
 
   /**
-   * Format the action outcome for LLM + UI.
+   * Format the action outcome for the model: the tool result, so English. The
+   * transcript row is {@link getStatusUI}'s.
    * @param {import('juggler/context-item').Outcome} outcome - Action outcome
    * @returns {import('juggler/context-item').ItemSummary} Formatted result
    */
   getSummary(outcome) {
     if (!outcome.success) {
-      return this.failureSummary(`Todo update failed: ${outcome.error}`);
+      return this.failureSummary(markUntranslated(`Todo update failed: ${outcome.error}`));
     }
 
     const result = /** @type {TodoResult} */ (outcome.result);
     const inProgressNote = result.inProgress ? `, ${result.inProgress} in progress` : '';
-    return this.successSummary(`Todos: ${result.completed}/${result.total} completed`, {
-      details: result.inProgress ? `${result.inProgress} in progress` : '',
-      feedbackForLLM: `Todo list updated: ${result.completed}/${result.total} completed${inProgressNote}.`
+    return this.successSummary(markUntranslated(`Todos: ${result.completed}/${result.total} completed`), {
+      details: markUntranslated(result.inProgress ? `${result.inProgress} in progress` : ''),
+      feedbackForLLM: markUntranslated(`Todo list updated: ${result.completed}/${result.total} completed${inProgressNote}.`)
     });
   }
 
@@ -407,33 +411,36 @@ class TodoContextItem extends ContextItem {
    * @returns {import('juggler/context-item').ResultStatusMessage|null} Status UI config
    */
   getStatusUI(actionStatus, _toolInput, _context) {
+    // Drawn by the viewer at render time, so it follows the viewer's language.
+    const typeName = t('Todos');
     // Standing "Todos" card (no args) — state, not an event.
     if (!actionStatus) {
-      return { typeName: 'Todos', summary: this.getBriefSummary() };
+      return { typeName, summary: this.getBriefSummary() };
     }
 
     if (actionStatus.pending) {
-      return { typeName: 'Todos', summary: 'Updating todos' };
+      return { typeName, summary: t('Updating todos') };
     }
 
     if (actionStatus.success) {
       const result = /** @type {TodoResult} */ (actionStatus.result);
       return {
-        typeName: 'Todos',
-        summary: `${result?.completed ?? 0}/${result?.total ?? 0} completed`,
+        typeName,
+        summary: t('{completed}/{total} completed', { completed: result?.completed ?? 0, total: result?.total ?? 0 }),
         status: /** @type {import('juggler/context-item').ResultStatus} */ ('success')
       };
     }
 
     if (actionStatus.error) {
+      // The error is the tool result the model read, shown as it was.
       return {
-        typeName: 'Todos',
+        typeName,
         summary: actionStatus.error,
         status: /** @type {import('juggler/context-item').ResultStatus} */ ('error')
       };
     }
 
-    return { typeName: 'Todos', summary: 'Todos' };
+    return { typeName, summary: typeName };
   }
 
   /**

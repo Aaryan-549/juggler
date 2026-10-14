@@ -18,6 +18,11 @@
  * @module juggler-core/context-items/execute/permission-section
  */
 
+import { translator } from 'juggler/i18n';
+import { escapeHtml } from 'juggler/ui';
+
+const t = translator('@juggler/core');
+
 const ITEM_TYPE = 'execute';
 
 /**
@@ -88,26 +93,30 @@ export function renderExecutePermissionSection(messageThread) {
     const row = document.createElement('div');
     row.dataset.key = d.key;
     row.dataset.mode = d.mode;
+    const save = escapeHtml(t('Save'));
+    const cancel = escapeHtml(t('Cancel'));
     if (d.mode === 'display') {
       row.className = 'pattern-row';
       row.innerHTML = `
         <span class="pattern-text" data-rule-id="${d.key}"></span>
         <button class="permission-scope-btn rule-scope-btn" data-rule-id="${d.key}" data-scope=""></button>
-        <button class="pattern-delete-btn icon-btn" data-rule-id="${d.key}" title="Delete"><span class="icon-trashcan"></span></button>`;
+        <button class="pattern-delete-btn icon-btn" data-rule-id="${d.key}" title="${escapeHtml(t('Delete'))}"><span class="icon-trashcan"></span></button>`;
       updateRow(row, d);
     } else if (d.mode === 'edit') {
       row.className = 'pattern-row editing';
       row.innerHTML = `
         <input type="text" class="pattern-edit-input" data-rule-id="${d.key}" autocorrect="off" autocapitalize="off" spellcheck="false">
-        <button class="pattern-save-btn" data-rule-id="${d.key}" title="Save">Save</button>
-        <button class="pattern-cancel-btn" title="Cancel">Cancel</button>`;
+        <button class="pattern-save-btn" data-rule-id="${d.key}" title="${save}">${save}</button>
+        <button class="pattern-cancel-btn" title="${cancel}">${cancel}</button>`;
       /** @type {HTMLInputElement} */ (row.querySelector('.pattern-edit-input')).value = d.value || '';
     } else {
+      // i18n-ignore: an example command pattern, not words
+      const example = 'npm *';
       row.className = 'pattern-row editing';
       row.innerHTML = `
-        <input type="text" class="pattern-edit-input" placeholder="e.g., npm *" data-rule-id="" autocorrect="off" autocapitalize="off" spellcheck="false">
-        <button class="pattern-save-btn" data-rule-id="" title="Save">Save</button>
-        <button class="pattern-cancel-btn" title="Cancel">Cancel</button>`;
+        <input type="text" class="pattern-edit-input" placeholder="${escapeHtml(t('e.g., {example}', { example }))}" data-rule-id="" autocorrect="off" autocapitalize="off" spellcheck="false">
+        <button class="pattern-save-btn" data-rule-id="" title="${save}">${save}</button>
+        <button class="pattern-cancel-btn" title="${cancel}">${cancel}</button>`;
     }
     return row;
   }
@@ -126,7 +135,7 @@ export function renderExecutePermissionSection(messageThread) {
     const scopeBtn = row.querySelector('.rule-scope-btn');
     if (scopeBtn) {
       const scope = d.scope || 'conversation';
-      const label = scope === 'session' ? 'All conversations' : 'This conversation';
+      const label = scope === 'session' ? t('All conversations') : t('This conversation');
       if (scopeBtn.getAttribute('data-scope') !== scope) scopeBtn.setAttribute('data-scope', scope);
       if (scopeBtn.textContent !== label) scopeBtn.textContent = label;
     }
@@ -148,7 +157,7 @@ export function renderExecutePermissionSection(messageThread) {
       if (!placeholder) {
         placeholder = document.createElement('div');
         placeholder.className = 'no-patterns';
-        placeholder.textContent = 'No shell patterns configured';
+        placeholder.textContent = t('No shell patterns configured');
         listEl.appendChild(placeholder);
       }
     } else if (placeholder) {
@@ -191,7 +200,7 @@ export function renderExecutePermissionSection(messageThread) {
     section.innerHTML = `
       <div class="patterns-list"></div>
       <div class="add-pattern-row">
-        <button class="add-pattern-btn">+ Add pattern</button>
+        <button class="add-pattern-btn">${escapeHtml(t('+ Add pattern'))}</button>
       </div>
     `;
     const listEl = /** @type {HTMLElement} */ (section.querySelector('.patterns-list'));
@@ -325,7 +334,7 @@ export function renderExecutePermissionSection(messageThread) {
   render();
   return {
     id: ITEM_TYPE,
-    title: 'Shell command patterns',
+    title: t('Shell command patterns'),
     element: section,
     dispose: () => {
       messageThread.conversation.unobserveMetadata(observer);

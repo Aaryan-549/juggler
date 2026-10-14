@@ -1472,7 +1472,7 @@ registers the result under your extension id before any of your code runs, in
 the viewer and in the engine alike.
 
 Your manifest's `name`, each setting's `label`, `help` and `options`, and your
-capabilities' `MANIFEST.name` are keys too: the host translates them where it
+capabilities' `MANIFEST.name` and `MANIFEST.description` are keys too: the host translates them where it
 shows them, from your catalogue first, as `translator()` does. An option's
 label is translated; the value stored is still the English option.
 

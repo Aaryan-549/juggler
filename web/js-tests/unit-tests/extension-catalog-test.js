@@ -492,6 +492,39 @@ export async function runTests(_ctx) {
       `a folded history tile must name itself, got ${badgeForItem(fold).typeName}`);
   });
 
+  // Every lozenge the resolver names itself is translated, and a name that comes
+  // from a capability (its getTypeName, else its MANIFEST name) is looked up in
+  // its own extension's catalogue — so those stand in under juggler-core's id.
+  // A raw tool name is an identifier and stays as it is.
+  await run('every lozenge the badge resolver names is translated under en-XA', async () => {
+    if (!contextItemRegistry.isInitialized()) await contextItemRegistry.init();
+    const yItem = (/** @type {Record<string, any>} */ fields) => ({ get: (/** @type {string} */ k) => fields[k] });
+    const readFile = {
+      getTitle: () => 'README.md',
+      type: 'read-file',
+      getManifest: () => ({ id: 'read-file', name: 'Read File' }),
+    };
+    await underPseudoLocale('extension-catalog-test-badges', () => {
+      const names = {
+        error: badgeForItem(yItem({ type: 'error' })).typeName,
+        notice: badgeForItem(yItem({ type: 'notice' })).typeName,
+        user: badgeForItem(yItem({ type: 'user' })).typeName,
+        thinking: badgeForItem(yItem({ type: 'thinking' })).typeName,
+        assistant: badgeForItem(yItem({ type: 'assistant' })).typeName,
+        fold: badgeForItem(yItem({ type: 'thread', boundedCompaction: true })).typeName,
+        thread: badgeForItem(yItem({ type: 'thread' })).typeName,
+        explore: badgeForItem(yItem({ type: 'thread', runToolName: 'Explore' })).typeName,
+        toolAction: badgeForItem(yItem({ type: 'tool-action' })).typeName,
+        instance: badgeForItem(readFile).typeName,
+        other: badgeForItem(yItem({ type: 'something-else' })).typeName,
+      };
+      const raw = Object.entries(names).filter(([, s]) => !isPseudoLocalized(s));
+      assert(raw.length === 0, `plain English lozenges under en-XA: ${JSON.stringify(raw)}`);
+      const unknownTool = badgeForItem(yItem({ type: 'tool-action', toolName: 'no_such_tool' })).typeName;
+      assert(unknownTool === 'no_such_tool', `an unknown tool keeps its own name, got ${unknownTool}`);
+    }, { '@juggler/core': ['Thread', 'Explore', 'Read File'] });
+  });
+
   await run('the panel header badge links to the owning capability', () => {
     const panel = /** @type {any} */ (document.createElement('properties-panel'));
     const header = panel._createHeader('Read', { color: 'blue', iconClass: 'icon-read', pluginId: 'read-file' });

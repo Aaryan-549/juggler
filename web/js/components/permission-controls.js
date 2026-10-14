@@ -5,6 +5,7 @@
 
 import { presentInlineMenu } from '../utils/popup-surface.js';
 import { escapeHtml } from '../../sdk/lib/html.js';
+import { t } from '../../sdk/lib/i18n.js';
 import contextItemRegistry from '../registries/context-item-registry.js';
 import { isFileEditingAllowed } from '../services/file-editing-permission.js';
 import { CHECK_SVG, withClass } from '../utils/icons.js';
@@ -283,10 +284,10 @@ class PermissionControls extends HTMLElement {
     const includePopupHtml = this.popupOpen && !existingPopup;
 
     this.innerHTML = `
-            <button class="permission-btn input-ctrl-btn ${this._buttonStateClass()} ${this.popupOpen ? 'open' : ''}" title="Manage auto-approval permissions" data-shortcut-id="toggle-file-editing" aria-haspopup="dialog" aria-expanded="${this.popupOpen}">
+            <button class="permission-btn input-ctrl-btn ${this._buttonStateClass()} ${this.popupOpen ? 'open' : ''}" title="${escapeHtml(t('Manage auto-approval permissions'))}" data-shortcut-id="toggle-file-editing" aria-haspopup="dialog" aria-expanded="${this.popupOpen}">
                   ${this._buttonInnerHTML()}
               </button>
-            ${includePopupHtml ? `<div class="dropdown-menu permissions-popup show" role="dialog" aria-label="Permissions"></div>` : ''}
+            ${includePopupHtml ? `<div class="dropdown-menu permissions-popup show" role="dialog" aria-label="${escapeHtml(t('Permissions'))}"></div>` : ''}
         `;
 
     const btn = this.querySelector('.permission-btn');
@@ -351,15 +352,17 @@ class PermissionControls extends HTMLElement {
     const cmdCount = mt.getRulesFor('execute').filter((/** @type {any} */ r) => r.kind === 'glob').length;
     const pathCount = mt.getAllowedPaths().length;
     const head = allowed
-      ? `${CHECK_ICON} Edits on`
-      : `${LOCK_ICON} Edits off`;
+      ? `${CHECK_ICON} ${escapeHtml(t('Edits on'))}`
+      : `${LOCK_ICON} ${escapeHtml(t('Edits off'))}`;
     // Counts live in a span so the touch composer can drop them (keeping just
     // "✓ Edits on") to fit the single-line control row; desktop shows them all.
-    const detail = [];
-    if (cmdCount > 0) detail.push(`${cmdCount} cmd${cmdCount === 1 ? '' : 's'}`);
-    if (pathCount > 0) detail.push(`${pathCount} path${pathCount === 1 ? '' : 's'}`);
-    const detailHtml = detail.length
-      ? `<span class="permission-detail"> · ${detail.join(' · ')}</span>`
+    // One message, so the separators are translated with the counts they join.
+    const detail = (cmdCount > 0 || pathCount > 0)
+      ? t('{cmds, plural, =0 {} one { · # cmd} other { · # cmds}}{paths, plural, =0 {} one { · # path} other { · # paths}}',
+        { cmds: cmdCount, paths: pathCount })
+      : '';
+    const detailHtml = detail
+      ? `<span class="permission-detail">${escapeHtml(detail)}</span>`
       : '';
     return head + detailHtml;
   }
@@ -467,10 +470,10 @@ class PermissionControls extends HTMLElement {
     let listEl = /** @type {HTMLElement | null} */ (host.querySelector('.paths-list'));
     if (!listEl) {
       host.innerHTML = `
-              <h4 class="plugin-section-heading">Allowed paths</h4>
+              <h4 class="plugin-section-heading">${escapeHtml(t('Allowed paths'))}</h4>
               <div class="paths-list"></div>
               <div class="add-pattern-row">
-                <button class="add-pattern-btn add-path-btn">+ Add path</button>
+                <button class="add-pattern-btn add-path-btn">${escapeHtml(t('+ Add path'))}</button>
               </div>
         `;
       listEl = /** @type {HTMLElement} */ (host.querySelector('.paths-list'));
@@ -526,31 +529,36 @@ class PermissionControls extends HTMLElement {
     row.dataset.key = d.key;
     row.dataset.mode = d.mode;
     const p = d.path || '';
+    const save = escapeHtml(t('Save'));
+    const cancel = escapeHtml(t('Cancel'));
     if (d.mode === 'implicit') {
       // The implicit project root is shown but cannot be edited, re-scoped, or
       // removed — it applies to every conversation and never changes.
+      const rootTitle = escapeHtml(t('Project root — available in every conversation'));
       row.className = 'pattern-row pattern-row-implicit';
       row.innerHTML = `
-        <span class="pattern-text" data-path="${escapeHtml(p)}" title="Project root — available in every conversation">${escapeHtml(p)}</span>
-        <span class="permission-scope-label" title="Project root — available in every conversation">All conversations</span>`;
+        <span class="pattern-text" data-path="${escapeHtml(p)}" title="${rootTitle}">${escapeHtml(p)}</span>
+        <span class="permission-scope-label" title="${rootTitle}">${escapeHtml(t('All conversations'))}</span>`;
     } else if (d.mode === 'edit') {
       row.className = 'pattern-row editing';
       row.innerHTML = `
         <path-input dirs-only class="path-edit-input" value="${escapeHtml(p)}" data-old-path="${escapeHtml(d.key)}" placeholder="${escapeHtml(p)}"></path-input>
-        <button class="pattern-save-btn path-save-btn" data-old-path="${escapeHtml(d.key)}" title="Save">Save</button>
-        <button class="pattern-cancel-btn path-cancel-btn" title="Cancel">Cancel</button>`;
+        <button class="pattern-save-btn path-save-btn" data-old-path="${escapeHtml(d.key)}" title="${save}">${save}</button>
+        <button class="pattern-cancel-btn path-cancel-btn" title="${cancel}">${cancel}</button>`;
     } else if (d.mode === 'new') {
+      // i18n-ignore: an example path, not words
+      const example = '~/code/juggler';
       row.className = 'pattern-row editing';
       row.innerHTML = `
-        <path-input dirs-only class="path-edit-input" placeholder="e.g., ~/code/juggler" data-old-path=""></path-input>
-        <button class="pattern-save-btn path-save-btn" data-old-path="" title="Save">Save</button>
-        <button class="pattern-cancel-btn path-cancel-btn" title="Cancel">Cancel</button>`;
+        <path-input dirs-only class="path-edit-input" placeholder="${escapeHtml(t('e.g., {example}', { example }))}" data-old-path=""></path-input>
+        <button class="pattern-save-btn path-save-btn" data-old-path="" title="${save}">${save}</button>
+        <button class="pattern-cancel-btn path-cancel-btn" title="${cancel}">${cancel}</button>`;
     } else {
       row.className = 'pattern-row';
       row.innerHTML = `
         <span class="pattern-text path-text" data-path-id="${escapeHtml(d.key)}" data-path="${escapeHtml(p)}"></span>
         <button class="permission-scope-btn path-scope-btn" data-path-id="${escapeHtml(d.key)}" data-scope=""></button>
-        <button class="pattern-delete-btn path-delete-btn icon-btn" data-path-id="${escapeHtml(d.key)}" title="Delete"><span class="icon-trashcan"></span></button>`;
+        <button class="pattern-delete-btn path-delete-btn icon-btn" data-path-id="${escapeHtml(d.key)}" title="${escapeHtml(t('Delete'))}"><span class="icon-trashcan"></span></button>`;
       this._updatePathRow(row, d);
     }
     return row;
@@ -575,7 +583,7 @@ class PermissionControls extends HTMLElement {
     const scopeBtn = row.querySelector('.path-scope-btn');
     if (scopeBtn) {
       const scope = d.scope || 'conversation';
-      const label = scope === 'session' ? 'All conversations' : 'This conversation';
+      const label = scope === 'session' ? t('All conversations') : t('This conversation');
       if (scopeBtn.getAttribute('data-scope') !== scope) scopeBtn.setAttribute('data-scope', scope);
       if (scopeBtn.textContent !== label) scopeBtn.textContent = label;
     }
@@ -598,7 +606,7 @@ class PermissionControls extends HTMLElement {
       if (!placeholder) {
         placeholder = document.createElement('div');
         placeholder.className = 'no-patterns';
-        placeholder.textContent = 'No paths configured';
+        placeholder.textContent = t('No paths configured');
         listEl.appendChild(placeholder);
       }
     } else if (placeholder) {

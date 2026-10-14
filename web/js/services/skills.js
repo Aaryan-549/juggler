@@ -116,11 +116,13 @@ export async function getAvailableSkills() {
  * @param {'juggler'|'agents'} source - Provenance root
  * @param {string} name - Skill name
  * @returns {Promise<SkillDetail>} The skill body + file listing
- * @throws {Error} On a non-OK response (unknown skill, bad scope/source, transport)
+ * @throws {Error} On a non-OK response (unknown skill, bad scope/source), the
+ *   request's own `HttpError` with no prefix: the settings preview words
+ *   it for the user and the `skill` tool in English for the model.
  */
 export async function fetchSkillBody(scope, source, name) {
   const url = apiUrl(`/skills/${encodeURIComponent(scope)}/${encodeURIComponent(source)}/${encodeURIComponent(name)}`);
-  return await fetchJson(url, { errorPrefix: `Failed to load skill "${name}"` });
+  return await fetchJson(url);
 }
 
 /**

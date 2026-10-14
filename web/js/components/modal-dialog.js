@@ -54,9 +54,10 @@
  *   - 'prompt': Show input field with OK/Cancel buttons
  */
 import { markPopupOpen } from '../utils/popup-manager.js';
-import { createButton as makeButton } from '../../sdk/lib/html.js';
+import { createButton as makeButton, escapeHtml } from '../../sdk/lib/html.js';
 import { focusWhenShown } from '../utils/focus.js';
 import { fadeOutScrims } from '../utils/modal-scrim.js';
+import { t } from '../../sdk/lib/i18n.js';
 
 class ModalDialog extends HTMLElement {
   constructor() {
@@ -129,13 +130,13 @@ class ModalDialog extends HTMLElement {
             <modal-backdrop class="modal-backdrop-el"></modal-backdrop>
       <modal-panel class="modal-container">
         <header class="modal-header">
-          <h2 class="modal-title">Dialog</h2>
+          <h2 class="modal-title">${escapeHtml(t('Dialog'))}</h2>
         </header>
         <div class="modal-body">
           <div class="modal-message"></div>
           <input type="text" class="modal-input field-input hidden" autocorrect="off" autocapitalize="off" spellcheck="false" />
           <div class="modal-choice-options hidden"></div>
-          <input type="text" class="modal-custom-input hidden" placeholder="Enter your answer..." autocorrect="off" autocapitalize="off" spellcheck="false" />
+          <input type="text" class="modal-custom-input hidden" placeholder="${escapeHtml(t('Enter your answer...'))}" autocorrect="off" autocapitalize="off" spellcheck="false" />
         </div>
           <footer class="modal-footer">
             <!-- Buttons will be added dynamically -->
@@ -159,16 +160,16 @@ class ModalDialog extends HTMLElement {
    */
   show(options = {}) {
     const {
-      title = 'Dialog',
+      title = t('Dialog'),
       message = '',
       type = 'alert',
-      confirmText = 'OK',
-      cancelText = 'Cancel',
+      confirmText = t('OK'),
+      cancelText = t('Cancel'),
       danger = false,
       defaultValue = '',
       choices = [],
       allowCustom = false,
-      noneText = 'None of the above',
+      noneText = t('None of the above'),
       duration = 5000
     } = options;
 
@@ -310,7 +311,7 @@ class ModalDialog extends HTMLElement {
    * @param {HTMLInputElement} customInput - Custom input element
    * @param {string} [noneText] - The last button, which answers null
    */
-  setupChoices(choices, allowCustom, container, customInput, noneText = 'None of the above') {
+  setupChoices(choices, allowCustom, container, customInput, noneText = t('None of the above')) {
     container.innerHTML = '';
     let focusedIndex = 0;
     /** @type {HTMLButtonElement[]} */
@@ -333,7 +334,7 @@ class ModalDialog extends HTMLElement {
     if (allowCustom) {
       const otherButton = document.createElement('button');
       otherButton.className = 'modal-choice-button';
-      otherButton.textContent = 'Other (enter custom answer)';
+      otherButton.textContent = t('Other (enter custom answer)');
       otherButton.dataset.index = String(allButtons.length);
       otherButton.addEventListener('click', () => {
         // Show custom input and focus it
@@ -509,7 +510,7 @@ window.showModal = async function(/** @type {ModalOptions} */ options) {
  * @param {string} [title] - Modal title
  * @returns {Promise<any>} Resolves when dismissed
  */
-export async function showAlert(message, title = 'Alert') {
+export async function showAlert(message, title = t('Alert')) {
   // @ts-ignore - showModal is defined above
   return await window.showModal({
     title,
@@ -527,14 +528,14 @@ window.showAlert = showAlert;
  * @param {ConfirmOptions} [options] - Button labels / danger styling
  * @returns {Promise<boolean>} True when confirmed
  */
-export async function showConfirm(message, title = 'Confirm', options = {}) {
+export async function showConfirm(message, title = t('Confirm'), options = {}) {
   // @ts-ignore - showModal is defined above
   return await window.showModal({
     title,
     message,
     type: 'confirm',
-    confirmText: options.confirmText || 'OK',
-    cancelText: options.cancelText || 'Cancel',
+    confirmText: options.confirmText || t('OK'),
+    cancelText: options.cancelText || t('Cancel'),
     danger: options.danger || false
   });
 }
@@ -548,7 +549,7 @@ window.showConfirm = showConfirm;
  * @param {string} [title] - Modal title
  * @returns {Promise<string|null>} Entered text, or null if cancelled
  */
-export async function showPrompt(message, defaultValue = '', title = 'Input') {
+export async function showPrompt(message, defaultValue = '', title = t('Input')) {
   // @ts-ignore - showModal is defined above
   return await window.showModal({
     title,
@@ -570,7 +571,7 @@ window.showPrompt = showPrompt;
  *   nothing; it says "None of the above" unless the caller has a better word.
  * @returns {Promise<string|null>} Selected choice text, custom input, or null if cancelled
  */
-export async function showChoice(message, choices, title = 'Question', allowCustom = false, options = {}) {
+export async function showChoice(message, choices, title = t('Question'), allowCustom = false, options = {}) {
   // @ts-ignore - showModal is defined above
   return await window.showModal({
     title,

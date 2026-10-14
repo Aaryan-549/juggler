@@ -29,6 +29,8 @@ import {
   createTestConversation,
   assert
 } from '../../../js-tests/utilities/test-helpers.js';
+import { underPseudoLocale } from '../../../js-tests/utilities/pseudo-locale.js';
+import { HttpError } from '../../../js/services/http.js';
 
 /**
  * @typedef {object} TestResult
@@ -320,6 +322,28 @@ export async function runTests(_ctx) {
     const block = await item.createContextText({});
     assert(block.includes('- live-skill: unfrozen'),
       `unseeded item should fall back to the live list; got:\n${block}`);
+  });
+
+  // The tool result is the model's, so a failed load reads in English whatever
+  // language the UI is in. The skills service hands back the request's own
+  // HttpError; the item words it.
+  await test('under en-XA a failed load fails in English', async () => {
+    await underPseudoLocale('skill-item-test', async () => {
+      for (const [error, expected] of [
+        [new HttpError('HTTP 404: no such skill', 404, 'no such skill'), 'Failed to load skill "pdf-tools": no such skill'],
+        [new HttpError('HTTP 500', 500, ''), 'Failed to load skill "pdf-tools" (HTTP 500)'],
+      ]) {
+        const item = makeItem(oneSkill, {});
+        item._loadBody = async () => { throw error; };
+        let message = '';
+        try {
+          await item.execute({ name: 'pdf-tools' });
+        } catch (e) {
+          message = e instanceof Error ? e.message : String(e);
+        }
+        assert(message === expected, `expected ${JSON.stringify(expected)}, got ${JSON.stringify(message)}`);
+      }
+    });
   });
 
   return { passed, failed, errors };

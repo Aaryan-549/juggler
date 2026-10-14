@@ -10,6 +10,9 @@ import {
   endCompaction,
   compactConversation
 } from 'juggler/model';
+import { translator } from 'juggler/i18n';
+
+const t = translator('@juggler/core');
 
 /**
  * Compact command — collapse the entire conversation into a sub-thread.
@@ -37,13 +40,13 @@ class CompactCommandType extends CommandType {
    */
   async execute(_args) {
     if (!this.messageThread?.modelConfig) {
-      return { handled: true, message: 'Please select a model before compacting', error: true };
+      return { handled: true, message: t('Please select a model before compacting'), error: true };
     }
 
     const mt = /** @type {import('../../../js/model/message-thread.js').MessageThread} */ (this.messageThread);
 
     if (isCompactionPending(mt.conversationId)) {
-      return { handled: true, message: 'Compaction already in progress', error: true };
+      return { handled: true, message: t('Compaction already in progress'), error: true };
     }
 
     startCompaction(mt.conversationId);
@@ -56,10 +59,10 @@ class CompactCommandType extends CommandType {
       // fold; `error` carries a worker-side failure reason.
       const { folded, error } = await compactConversation(mt.conversationId);
       if (error) {
-        return { handled: true, message: `Compaction failed: ${error}`, error: true };
+        return { handled: true, message: t('Compaction failed: {error}', { error }), error: true };
       }
       if (!folded) {
-        return { handled: true, message: 'Nothing to compact', error: true };
+        return { handled: true, message: t('Nothing to compact'), error: true };
       }
 
       return { handled: true };
@@ -67,7 +70,7 @@ class CompactCommandType extends CommandType {
       const { extractErrorMessage: extractErr } = await import('juggler/ui');
       return {
         handled: true,
-        message: `Compaction failed: ${extractErr(error)}`,
+        message: t('Compaction failed: {error}', { error: extractErr(error) }),
         error: true
       };
     } finally {

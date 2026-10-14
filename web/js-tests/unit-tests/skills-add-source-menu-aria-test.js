@@ -165,8 +165,110 @@ export async function runTests() {
     }
   }
 
+  // ── Test 4: en-XA — every failure the tab reports is translated ────────────
+  {
+    __resetPopupManagerForTests();
+    try {
+      await underPseudoLocale('skills-tab-xa-errors', runPseudoLocaleErrorWalk);
+      passed++;
+    } catch (e) {
+      failed++;
+      errors.push('skills-tab-en-XA-errors: ' + (e instanceof Error ? e.message : String(e)));
+    } finally {
+      closeAllPopups();
+    }
+  }
+
   __resetPopupManagerForTests();
   return { passed, failed, errors };
+}
+
+/**
+ * Walk every failure the skills tab reports under en-XA: the request prefix
+ * (`Install failed`, …) and the way it is joined to the server's detail are
+ * both the UI's text. The server detail is a digit, so any letter shown is ours.
+ * The installed preview's request fails with no detail at all, the form that
+ * names only the status.
+ */
+async function runPseudoLocaleErrorWalk() {
+  /** @type {string[]} */
+  const unexpected = [];
+  /** @type {any[]} */
+  const alerts = [];
+  /** @type {Set<string>} */
+  const failing = new Set();
+  const answer = skillsFetchStub(unexpected);
+  const realFetch = window.fetch;
+  const realModal = /** @type {any} */ (window).showModal;
+  window.fetch = /** @type {any} */ (async (/** @type {any} */ input, /** @type {any} */ init) => {
+    const url = new URL(typeof input === 'string' ? input : input.url, location.href);
+    const key = `${(init?.method || 'GET').toUpperCase()} ${url.pathname.replace(/^.*\/api/, '')}`;
+    if (key === 'GET /skills/user/juggler/31' && failing.has(key)) return new window.Response('', { status: 404 });
+    if (failing.has(key)) {
+      return new window.Response(JSON.stringify({ error: '7' }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+    }
+    return answer(input, init);
+  });
+  /** @type {any} */ (window).showModal = async (/** @type {any} */ options) => {
+    if (options.type === 'alert') alerts.push(options);
+    if (options.type === 'prompt') return '1/1';
+    return options.type === 'confirm' ? true : null;
+  };
+  const host = document.createElement('div');
+  host.style.cssText = 'position:absolute;left:-9999px;top:-9999px;width:640px;height:600px;';
+  host.innerHTML = '<div id="skills-tab-root"></div>';
+  document.body.appendChild(host);
+  const tab = /** @type {any} */ (new SkillsTab(host));
+  try {
+    tab.render();
+
+    // The catalog itself fails to load.
+    failing.add('GET /skills/catalog');
+    await tab._loadAll(true);
+    assert(!!tab.loadError, 'the failed catalog load reported nothing');
+    assertPseudoLocalized(/** @type {Element} */ (host.querySelector('#skills-body')), { where: 'catalog load failure' });
+    failing.clear();
+    await tab._loadAll(true);
+    assert(tab.catalog?.entries?.length === 3, 'the stubbed catalog did not load');
+
+    // Every mutation fails, each reported in an alert.
+    for (const key of ['DELETE /skills/1/2/31', 'POST /skills/registries', 'DELETE /skills/registries/1',
+      'POST /skills/install', 'GET /skills/catalog/entry', 'GET /skills/user/juggler/31']) failing.add(key);
+    await tab._uninstall('1', '2', '31');
+    await tab._promptAddSource();
+    await tab._removeSource('1');
+    await tab._install(XA_CATALOG.entries[0], 'user', 'juggler');
+    assert(alerts.length === 4, `expected 4 failure alerts, got ${alerts.length}`);
+    for (const options of alerts) {
+      assert(isPseudoLocalized(String(options.message ?? '')),
+        `failure alert is plain English: ${JSON.stringify(options.message)}`);
+    }
+
+    // The catalog preview fails to load.
+    await tab._openPreview('1:c');
+    const drawer = /** @type {Element} */ (host.querySelector('#skills-drawer'));
+    const drawerError = drawer.querySelector('.skills-empty');
+    assert(!!drawerError, 'the failed catalog preview reported nothing');
+    assertPseudoLocalized(/** @type {Element} */ (drawerError), { where: 'catalog preview failure' });
+    tab._closePreview();
+
+    // The installed preview fails with no detail.
+    await openInstalledSkillPreview(XA_INSTALLED[0]);
+    const overlay = [...document.querySelectorAll('.skills-drawer')].find((el) => el.id !== 'skills-drawer');
+    const overlayError = overlay?.querySelector('.skills-empty');
+    assert(!!overlayError, 'the failed installed preview reported nothing');
+    assertPseudoLocalized(/** @type {Element} */ (overlayError), { where: 'installed preview failure' });
+    /** @type {HTMLElement} */ (/** @type {Element} */ (overlay).querySelector('.skills-preview-close')).click();
+
+    assert(unexpected.length === 0, `unanswered requests: ${JSON.stringify(unexpected)}`);
+  } finally {
+    window.fetch = realFetch;
+    /** @type {any} */ (window).showModal = realModal;
+    tab._closePreview();
+    resetCatalogCache();
+    resetSkillsCache();
+    host.remove();
+  }
 }
 
 /** Digit-only fixtures, so anything with letters on screen came from the UI. */

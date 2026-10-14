@@ -14,6 +14,9 @@
  */
 
 import { createCopyButton } from '../../sdk/lib/copy-button.js';
+import { isPseudoLocalized } from '../../sdk/lib/i18n.js';
+import { assert } from '../utilities/test-helpers.js';
+import { underPseudoLocale, assertPseudoLocalized } from '../utilities/pseudo-locale.js';
 
 /**
  * @param {boolean} cond
@@ -48,9 +51,11 @@ export async function runTests() {
       host.appendChild(btn);
       btn.classList.add('copied');
 
+      // `attr()` may be reported resolved or as written, depending on the engine.
+      const content = getComputedStyle(btn, '::after').content;
       total++;
-      passed += check(getComputedStyle(btn, '::after').content === '"Copied"',
-        `${label}: a .copied copy button shows no "Copied" bubble (::after content is ${getComputedStyle(btn, '::after').content})`, errors);
+      passed += check(btn.dataset.copiedLabel === 'Copied' && (content === '"Copied"' || content === 'attr(data-copied-label)'),
+        `${label}: a .copied copy button shows no "Copied" bubble (::after content is ${content}, label ${btn.dataset.copiedLabel})`, errors);
 
       total++;
       passed += check(getComputedStyle(btn).position !== 'static',
@@ -58,6 +63,32 @@ export async function runTests() {
     } finally {
       host.remove();
     }
+  }
+
+  // Under en-XA the default label and the bubble are translated. The bubble is
+  // CSS generated content, so it reads its text from the button.
+  total++;
+  try {
+    await underPseudoLocale('copy-button-test', () => {
+      const host = document.createElement('div');
+      document.body.appendChild(host);
+      try {
+        const btn = createCopyButton('text');
+        host.appendChild(btn);
+        btn.classList.add('copied');
+        assertPseudoLocalized(host, { atLeast: 2, where: 'default label' });
+        const bubble = btn.dataset.copiedLabel || '';
+        assert(isPseudoLocalized(bubble), `bubble text ${JSON.stringify(bubble)}`);
+        const shown = getComputedStyle(btn, '::after').content;
+        assert(shown === JSON.stringify(bubble) || shown === 'attr(data-copied-label)',
+          `the bubble does not show the button's text: ::after content is ${shown}`);
+      } finally {
+        host.remove();
+      }
+    });
+    passed++;
+  } catch (e) {
+    errors.push(`en-XA: ${e instanceof Error ? e.message : String(e)}`);
   }
 
   return { passed, failed: total - passed, errors };

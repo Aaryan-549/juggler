@@ -5,6 +5,9 @@
 
 import CommandType from 'juggler/command-type';
 import { extractErrorMessage } from 'juggler/ui';
+import { translator } from 'juggler/i18n';
+
+const t = translator('@juggler/core');
 
 /**
  * New Conversation command — open a fresh, empty conversation and
@@ -34,7 +37,7 @@ class NewConversationCommandType extends CommandType {
   async execute(_args) {
     const session = this.messageThread?.conversation?.session;
     if (!session) {
-      return { handled: true, message: 'No session available', error: true };
+      return { handled: true, message: t('No session available'), error: true };
     }
 
     try {
@@ -46,7 +49,7 @@ class NewConversationCommandType extends CommandType {
     } catch (error) {
       return {
         handled: true,
-        message: `Failed to create conversation: ${extractErrorMessage(error)}`,
+        message: t('Failed to create conversation: {error}', { error: extractErrorMessage(error) }),
         error: true
       };
     }

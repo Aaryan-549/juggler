@@ -58,7 +58,7 @@
  */
 
 import { cachedUserPref, setUserPref, notifyPrefChanged, reconcilePref } from './prefs.js';
-import { isMac, formatBindingForPlatform } from './key-shortcut-manager.js';
+import { isMac, formatBindingLabel } from './key-shortcut-manager.js';
 import { postWindowControl, hasNativeHost } from '../../sdk/lib/window-control.js';
 
 /** The user preference holding the chosen preset id. */
@@ -211,8 +211,8 @@ export function setEscapePreset(id) {
  */
 export function describeEscapePreset(preset) {
   const mac = isMac();
-  const esc = formatBindingForPlatform({ key: 'Escape' }, mac);
-  const shiftEsc = formatBindingForPlatform({ shift: true, key: 'Escape' }, mac);
+  const esc = formatBindingLabel({ key: 'Escape' }, mac);
+  const shiftEsc = formatBindingLabel({ shift: true, key: 'Escape' }, mac);
   return preset.description.replaceAll('{esc}', esc).replaceAll('{shiftEsc}', shiftEsc);
 }
 
@@ -283,7 +283,7 @@ function showCue() {
   const el = document.createElement('div');
   el.className = 'escape-arm-cue';
   el.setAttribute('role', 'status');
-  el.textContent = `Press ${formatBindingForPlatform({ key: 'Escape' }, mac)} again to stop`;
+  el.textContent = `Press ${formatBindingLabel({ key: 'Escape' }, mac)} again to stop`;
   document.body.appendChild(el);
   cueEl = el;
 }

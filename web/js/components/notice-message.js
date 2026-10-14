@@ -7,6 +7,7 @@ import { renderResultStatusMessage } from '../../sdk/lib/html.js';
 import { wrapWithIcon, TYPE_ICONS } from '../utils/icon-message-renderer.js';
 import { NOTICE_TYPE_NAME } from '../utils/item-badge.js';
 import { openSettings } from '../services/settings-launcher.js';
+import { t } from '../../sdk/lib/i18n.js';
 
 /**
  * Notice message component — a durable record of something that happened to a
@@ -69,7 +70,7 @@ class NoticeMessage extends BaseMessage {
     // A fixed lozenge and the explanation beside it, in the type-name/summary
     // shape every other one-line item uses — so the row is the same height as
     // its neighbours and the sentence truncates rather than wrapping.
-    const body = renderResultStatusMessage({ typeName: NOTICE_TYPE_NAME, summary: this.text });
+    const body = renderResultStatusMessage({ typeName: t(NOTICE_TYPE_NAME), summary: this.text });
 
     // The `error` glyph is a warning triangle; amber rather than the error
     // component's red, and distinct from thinking's yellow.
@@ -85,8 +86,8 @@ class NoticeMessage extends BaseMessage {
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'message-action-btn notice-settings-btn';
-      button.textContent = 'Set context window';
-      button.title = `Open ${target.model}'s Context window field in Settings → Providers`;
+      button.textContent = t('Set context window');
+      button.title = t('Open {model}\'s Context window field in Settings → Providers', { model: target.model });
       button.addEventListener('click', (event) => {
         // The row is selectable; opening settings is not a selection.
         event.preventDefault();

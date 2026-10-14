@@ -21,7 +21,7 @@
  * @module components/empty-hint-stack
  */
 
-import { formatBindingForPlatform, isMac } from '../services/key-shortcut-manager.js';
+import { formatBindingLabel, isMac } from '../services/key-shortcut-manager.js';
 import './empty-hint-tips.js';
 
 /**
@@ -39,8 +39,8 @@ import './empty-hint-tips.js';
  */
 export function emptyHintStackMarkup() {
   const mac = isMac();
-  const send = formatBindingForPlatform({ key: 'Enter' }, mac);
-  const newline = formatBindingForPlatform({ key: 'Enter', shift: true }, mac);
+  const send = formatBindingLabel({ key: 'Enter' }, mac);
+  const newline = formatBindingLabel({ key: 'Enter', shift: true }, mac);
   return `
     <div class="empty-hint-stack">
       <p class="empty-hint-lead">Type your message below</p>

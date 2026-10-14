@@ -29,7 +29,7 @@
 
 import { isAnyPopupOpen } from '../utils/popup-manager.js';
 import { hasNativeHost } from '../../sdk/lib/window-control.js';
-import { markForTranslation } from '../../sdk/lib/i18n.js';
+import { markForTranslation, t } from '../../sdk/lib/i18n.js';
 
 /**
  * A platform-agnostic key binding.
@@ -166,7 +166,9 @@ const MAC_KEY_GLYPHS = {
 };
 
 /**
- * Verbose key names for the Windows/Linux "Ctrl+…" style.
+ * Verbose key names for the Windows/Linux "Ctrl+…" style, in English: the
+ * names the AboutJuggler corpus tells the model. The UI shows them through
+ * {@link uiKeyName} instead.
  * @type {Record<string, string>}
  */
 const NAMED_KEY_LABELS = {
@@ -192,28 +194,57 @@ function bindingShipsOn(binding, mac) {
  * The glyph/label for a binding's key on an explicit platform. Pure.
  * @param {KeyBinding} binding
  * @param {boolean} mac - True for macOS glyphs, false for Windows/Linux labels.
+ * @param {(name: string) => string} name - Words a key name in the reader's language.
  * @returns {string} The glyph/label for the binding's key.
  */
-function keyGlyphFor(binding, mac) {
+function keyGlyphFor(binding, mac, name) {
   if (binding.displayKey) return binding.displayKey;
   const key = binding.key;
-  if (mac && MAC_KEY_GLYPHS[key]) return MAC_KEY_GLYPHS[key];
-  if (!mac && NAMED_KEY_LABELS[key]) return NAMED_KEY_LABELS[key];
-  return key.length === 1 ? key.toUpperCase() : key;
+  if (mac && MAC_KEY_GLYPHS[key]) return name(MAC_KEY_GLYPHS[key]);
+  if (!mac && NAMED_KEY_LABELS[key]) return name(NAMED_KEY_LABELS[key]);
+  return key.length === 1 ? key.toUpperCase() : name(key);
 }
 
 /**
- * Render a binding for an EXPLICIT platform (⌘⇧Z on macOS, "Ctrl+Shift+Z" on
- * Windows/Linux), independent of the running client's navigator. Use when the
- * target platform is known from data rather than the live client — e.g. building
- * a platform-specific help corpus from `session.platform`. Pure; the instance
- * {@link KeyShortcutManager#formatKeyBinding} delegates here with `isMac()`.
+ * A modifier or named key as the UI shows it: the English name, translated.
+ * Glyphs and anything else pass through unchanged. Each name is a literal
+ * `t()` with an inline context (`scripts/i18n` reads only a literal) so the
+ * catalogue holds it; the context keeps "Up" or "Left" on a key
+ * cap apart from the same words elsewhere.
+ * @param {string} word - An English key name: from {@link NAMED_KEY_LABELS} or
+ *   {@link MAC_KEY_GLYPHS}, a modifier, or a binding's own multi-letter key.
+ * @returns {string} The name in the UI's language.
+ */
+function uiKeyName(word) {
+  switch (word) {
+    case 'Ctrl': return t('Ctrl', undefined, { context: 'keyboard key' });
+    case 'Alt': return t('Alt', undefined, { context: 'keyboard key' });
+    case 'Shift': return t('Shift', undefined, { context: 'keyboard key' });
+    case 'Space': return t('Space', undefined, { context: 'keyboard key' });
+    case 'Up': return t('Up', undefined, { context: 'keyboard key' });
+    case 'Down': return t('Down', undefined, { context: 'keyboard key' });
+    case 'Left': return t('Left', undefined, { context: 'keyboard key' });
+    case 'Right': return t('Right', undefined, { context: 'keyboard key' });
+    case 'Page Up': return t('Page Up', undefined, { context: 'keyboard key' });
+    case 'Page Down': return t('Page Down', undefined, { context: 'keyboard key' });
+    case 'Enter': return t('Enter', undefined, { context: 'keyboard key' });
+    case 'Escape': return t('Escape', undefined, { context: 'keyboard key' });
+    case 'Backspace': return t('Backspace', undefined, { context: 'keyboard key' });
+    case 'Delete': return t('Delete', undefined, { context: 'keyboard key' });
+    case 'Tab': return t('Tab', undefined, { context: 'keyboard key' });
+    default: return word;
+  }
+}
+
+/**
+ * Render a binding for a platform, naming keys through `name`.
  * @param {KeyBinding} binding
  * @param {boolean} mac - True to render for macOS, false for Windows/Linux.
+ * @param {(name: string) => string} name - Words a key name in the reader's language.
  * @returns {string} The platform-correct key label.
  */
-export function formatBindingForPlatform(binding, mac) {
-  const keyGlyph = keyGlyphFor(binding, mac);
+function composeBinding(binding, mac, name) {
+  const keyGlyph = keyGlyphFor(binding, mac, name);
   if (mac) {
     // Apple order: ⌃ ⌥ ⇧ ⌘ — we use ⌥ ⇧ ⌘.
     let out = '';
@@ -223,11 +254,39 @@ export function formatBindingForPlatform(binding, mac) {
     return out + keyGlyph;
   }
   const parts = [];
-  if (binding.mod) parts.push('Ctrl');
-  if (binding.alt) parts.push('Alt');
-  if (binding.shift) parts.push('Shift');
+  if (binding.mod) parts.push(name('Ctrl'));
+  if (binding.alt) parts.push(name('Alt'));
+  if (binding.shift) parts.push(name('Shift'));
   parts.push(keyGlyph);
   return parts.join('+');
+}
+
+/**
+ * Render a binding for an EXPLICIT platform (⌘⇧Z on macOS, "Ctrl+Shift+Z" on
+ * Windows/Linux), independent of the running client's navigator, with English
+ * key names whatever the UI language. Use when the target platform is known
+ * from data rather than the live client and the reader is the model — e.g.
+ * building a platform-specific help corpus from `session.platform`. Pure. The
+ * UI shows {@link formatBindingLabel} instead.
+ * @param {KeyBinding} binding
+ * @param {boolean} mac - True to render for macOS, false for Windows/Linux.
+ * @returns {string} The platform-correct key label.
+ */
+export function formatBindingForPlatform(binding, mac) {
+  return composeBinding(binding, mac, (word) => word);
+}
+
+/**
+ * Render a binding for an explicit platform as the UI shows it: as
+ * {@link formatBindingForPlatform}, with modifier and key names in the UI's
+ * language. Pure; the instance {@link KeyShortcutManager#formatKeyBinding}
+ * delegates here with `isMac()`.
+ * @param {KeyBinding} binding
+ * @param {boolean} mac - True to render for macOS, false for Windows/Linux.
+ * @returns {string} The platform-correct key label.
+ */
+export function formatBindingLabel(binding, mac) {
+  return composeBinding(binding, mac, uiKeyName);
 }
 
 /**
@@ -846,7 +905,7 @@ class KeyShortcutManager {
    * @returns {string} The platform-correct key label.
    */
   formatKeyBinding(binding) {
-    return formatBindingForPlatform(binding, isMac());
+    return formatBindingLabel(binding, isMac());
   }
 
   /**

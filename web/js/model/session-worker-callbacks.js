@@ -40,6 +40,7 @@ import { buildApprovalButtons } from '../services/approval-options.js';
 import { assembleSystemPrompt, systemPositionItems as systemPositionItemsOf, contextPositionOf } from '../services/system-prompt-builder.js';
 import { buildExtensionSystemPromptContributions } from '../services/extensions.js';
 import { estimateTokens } from '../utils/token-estimate.js';
+import { t, markForTranslation } from '../../sdk/lib/i18n.js';
 
 /**
  * Format tool input for display in approval dialog.
@@ -83,13 +84,15 @@ function updateToolActionApprovalOptions(conv, toolUseId, approvalOptions) {
  * The one-shot Allow / Deny option set — a fresh array each call. Used on
  * fallback paths where there is no owning plugin to define a meaningful "don't
  * ask again" choice (unknown tool, error building the UI), so the framework
- * offers only the one-shot decision.
+ * offers only the one-shot decision. The labels are English data, like the
+ * standard buttons' (`approval-options.js`): `<action-confirmation>` translates
+ * them where it draws them.
  * @returns {Array<{label: string, value: string, style: string}>} A fresh option array
  */
 function allowDenyOptions() {
   return [
-    { label: 'Allow', value: 'yes', style: 'primary' },
-    { label: 'Deny', value: 'no', style: 'secondary' }
+    { label: markForTranslation('Allow'), value: 'yes', style: 'primary' },
+    { label: markForTranslation('Deny'), value: 'no', style: 'secondary' }
   ];
 }
 
@@ -100,6 +103,11 @@ function allowDenyOptions() {
  * thread) and writes them onto the tool-action in Yjs. The two roles need
  * identical logic, so it lives here once and the engine/viewer setups can't
  * drift apart.
+ *
+ * The title and message it writes are in the user's language, as the plugin's
+ * own `getTitle()`/`getApprovalConfig()` text beside them is: the engine
+ * follows the UI locale, and the plugins that show the title show it as it is.
+ * A validator's error is the model's English and is stored as given.
  * @param {any} session - Session instance
  * @param {*} request - Approval request from the worker
  * @param {string} conversationId - Conversation the request targets
@@ -120,7 +128,7 @@ export async function handleApprovalRequest(session, request, conversationId) {
     if (!ActionClass) {
       console.warn(`[Session] No action class for tool ${req.toolName}`);
       updateToolActionApprovalOptions(conv, req.toolUseId, {
-        title: `Approve: ${req.toolName}`,
+        title: t('Approve: {name}', { name: req.toolName }),
         message: JSON.stringify(req.toolInput),
         options: allowDenyOptions()
       });
@@ -148,9 +156,9 @@ export async function handleApprovalRequest(session, request, conversationId) {
     const validation = await action.validate(toolInput);
     if (!validation.valid) {
       updateToolActionApprovalOptions(conv, req.toolUseId, {
-        title: `Invalid: ${action.getTitle()}`,
-        message: validation.error || 'Invalid parameters',
-        options: [{ label: 'Cancel', value: 'cancel', style: 'secondary' }]
+        title: t('Invalid: {title}', { title: action.getTitle() }),
+        message: validation.error || t('Invalid parameters'),
+        options: [{ label: markForTranslation('Cancel'), value: 'cancel', style: 'secondary' }]
       });
       return;
     }
@@ -177,7 +185,7 @@ export async function handleApprovalRequest(session, request, conversationId) {
     console.error(`[Session] Error building approval options for ${req.toolUseId}:`, errorMsg);
     updateToolActionApprovalOptions(conv, req.toolUseId, {
       title: req.toolName,
-      message: 'Error building approval UI',
+      message: t('Error building approval UI'),
       options: allowDenyOptions()
     });
   }

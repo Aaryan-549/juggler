@@ -121,6 +121,10 @@ import { runTests as runSearchActionTests } from '../unit-tests/search-action-te
 import { runTests as runToolCancellationTests } from '../unit-tests/tool-cancellation-test.js';
 import { runTests as runUnboundedAwaitTests } from '../unit-tests/unbounded-await-test.js';
 import { runTests as runModalSupersedeTests } from '../unit-tests/modal-supersede-test.js';
+import { runTests as runModalDialogTests } from '../unit-tests/modal-dialog-test.js';
+import { runTests as runHttpErrorsTests } from '../unit-tests/http-errors-test.js';
+import { runTests as runApprovalButtonsTests } from '../unit-tests/approval-buttons-test.js';
+import { runTests as runCapabilityCatalogTests } from '../unit-tests/capability-catalog-test.js';
 import { runTests as runSetupWizardTests } from '../unit-tests/setup-wizard-test.js';
 import { runTests as runWarningFallbackTests } from '../unit-tests/warning-fallback-test.js';
 import { runTests as runConversationReleaseTests } from '../unit-tests/conversation-release-test.js';
@@ -598,6 +602,10 @@ const UNIT_TEST_SUITES = [
   { name: 'unit:tool-cancellation', run: runToolCancellationTests },
   { name: 'unit:unbounded-await', run: runUnboundedAwaitTests },
   { name: 'unit:modal-supersede', run: runModalSupersedeTests },
+  { name: 'unit:modal-dialog', run: runModalDialogTests },
+  { name: 'unit:http-errors', run: runHttpErrorsTests },
+  { name: 'unit:approval-buttons', run: runApprovalButtonsTests },
+  { name: 'unit:capability-catalog', run: runCapabilityCatalogTests },
   { name: 'unit:setup-wizard', run: runSetupWizardTests },
   { name: 'unit:warning-fallback', run: runWarningFallbackTests },
   { name: 'unit:conversation-release', run: runConversationReleaseTests },

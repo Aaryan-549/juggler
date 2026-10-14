@@ -29,7 +29,7 @@
 import { escapeHtml } from '../../../sdk/lib/html.js';
 import { t } from '../../../sdk/lib/i18n.js';
 import { renderMarkdown } from '../../../sdk/lib/markdown.js';
-import { extractErrorMessage } from '../../../sdk/lib/error-utils.js';
+import { httpErrorText } from '../../services/http.js';
 import { formatBytes } from '../../utils/format.js';
 import { presentModal } from '../../utils/modal-surface.js';
 import { addFilePath } from '../../utils/properties-panel-helpers.js';
@@ -150,7 +150,8 @@ export async function openInstalledSkillPreview(skill) {
     detail = await fetchSkillBody(/** @type {any} */ (scope), /** @type {any} */ (source), name);
   } catch (err) {
     if (modal.closed) return;
-    overlay.innerHTML = skillPreviewShell(title, `<div class="skills-empty">${escapeHtml(extractErrorMessage(err))}</div>`);
+    const failure = t('Failed to load skill "{name}": {error}', { name, error: httpErrorText(err) });
+    overlay.innerHTML = skillPreviewShell(title, `<div class="skills-empty">${escapeHtml(failure)}</div>`);
     return;
   }
   if (modal.closed) return;

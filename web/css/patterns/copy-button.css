@@ -31,9 +31,10 @@
 
    The pattern class is weightless and only the state counts, so a component
    restyling its own button's bubble (`.message-copy-button.copied::after`)
-   wins at any layer. */
+   wins at any layer. Its text is the button's `data-copied-label`, which
+   `createCopyButton` sets in the user's language. */
 :where(.copy-button).copied::after {
-    content: "Copied";
+    content: attr(data-copied-label);
     position: absolute;
     top: calc(100% + 0.25rem);
     right: 0;

@@ -16,8 +16,14 @@
  * Each "don't ask again" button carries the exact `rules`/`itemType` it will
  * persist and displays the suggestion's `label` as its pattern, so the button
  * always tells the user precisely what it will remember.
+ *
+ * The buttons are built in the engine and stored in the conversation, so their
+ * labels are the English source; `<action-confirmation>` translates them where
+ * it draws them, in the viewer's language.
  * @module services/approval-options
  */
+
+import { markForTranslation } from '../../sdk/lib/i18n.js';
 
 /**
  * Build the approval button list for an action that requires approval.
@@ -30,11 +36,11 @@ export function buildApprovalButtons(action, params = {}) {
   const suggestions = action.getApprovalSuggestions?.(params) || [];
 
   /** @type {import('../components/action-confirmation.js').ApprovalOption[]} */
-  const options = [{ label: 'Yes', value: 'yes', style: 'primary' }];
+  const options = [{ label: markForTranslation('Yes'), value: 'yes', style: 'primary' }];
 
   suggestions.forEach((s, i) => {
     options.push({
-      label: 'Yes + Don\'t Ask Again',
+      label: markForTranslation('Yes + Don\'t Ask Again'),
       value: `yes-always:${i}`,
       style: 'primary-always',
       pattern: s.label,
@@ -45,6 +51,6 @@ export function buildApprovalButtons(action, params = {}) {
     });
   });
 
-  options.push({ label: 'No', value: 'no', style: 'secondary' });
+  options.push({ label: markForTranslation('No'), value: 'no', style: 'secondary' });
   return options;
 }

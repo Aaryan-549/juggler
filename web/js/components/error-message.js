@@ -6,6 +6,8 @@ import BaseMessage, { FINAL_ITEM_ATTR } from './base-message.js';
 import { createErrorArticle } from '../utils/icon-message-renderer.js';
 import { openSettings } from '../services/settings-launcher.js';
 import { RETRY_SVG } from '../utils/icons.js';
+import { t, markForTranslation } from '../../sdk/lib/i18n.js';
+import { escapeHtml } from '../../sdk/lib/html.js';
 
 /**
  * Signatures that identify an error as a failure to reach the provider at all,
@@ -18,10 +20,10 @@ const UNREACHABLE_SIGNATURE = /\b(?:ECONNREFUSED|ECONNRESET|ETIMEDOUT|ENOTFOUND|
 /**
  * Plain-English lead for an unreachable provider. Rendered above the provider's
  * own text, never in place of it, so nothing needed to diagnose the failure is
- * lost.
+ * lost. Translated where it is drawn.
  * @type {string}
  */
-const UNREACHABLE_LEAD = 'Couldn’t reach the model. Could be problems at their end, or your network.';
+const UNREACHABLE_LEAD = markForTranslation('Couldn’t reach the model. Could be problems at their end, or your network.');
 
 
 // Settings icon (Material "settings") — the same gear the header's Settings
@@ -88,7 +90,7 @@ class ErrorMessage extends BaseMessage {
     if (contentBox && this.content && UNREACHABLE_SIGNATURE.test(this.content)) {
       const leadEl = document.createElement('div');
       leadEl.className = 'error-message-lead';
-      leadEl.textContent = UNREACHABLE_LEAD;
+      leadEl.textContent = t(UNREACHABLE_LEAD);
       contentBox.prepend(leadEl);
     }
 
@@ -104,8 +106,8 @@ class ErrorMessage extends BaseMessage {
         const modelBtn = document.createElement('button');
         modelBtn.type = 'button';
         modelBtn.className = 'message-action-btn error-model-btn';
-        modelBtn.title = 'Pick a model from another provider';
-        modelBtn.innerHTML = `${SWAP_ICON}Choose another model`;
+        modelBtn.title = t('Pick a model from another provider');
+        modelBtn.innerHTML = `${SWAP_ICON}${escapeHtml(t('Choose another model'))}`;
         modelBtn.addEventListener('click', (event) => {
           event.preventDefault();
           event.stopPropagation();
@@ -120,8 +122,8 @@ class ErrorMessage extends BaseMessage {
         const settingsBtn = document.createElement('button');
         settingsBtn.type = 'button';
         settingsBtn.className = 'message-action-btn error-settings-btn';
-        settingsBtn.title = 'Open provider settings';
-        settingsBtn.innerHTML = `${SETTINGS_ICON}Provider settings`;
+        settingsBtn.title = t('Open provider settings');
+        settingsBtn.innerHTML = `${SETTINGS_ICON}${escapeHtml(t('Provider settings'))}`;
         settingsBtn.addEventListener('click', (event) => {
           event.preventDefault();
           event.stopPropagation();
@@ -134,10 +136,10 @@ class ErrorMessage extends BaseMessage {
         const retryBtn = document.createElement('button');
         retryBtn.type = 'button';
         retryBtn.className = 'message-action-btn error-retry-btn';
-        retryBtn.title = 'Delete this error and continue the conversation';
+        retryBtn.title = t('Delete this error and continue the conversation');
         // A circular arrow, distinct from the footer's Continue "play" glyph so
         // the affordance reads as "try that turn again".
-        retryBtn.innerHTML = `${RETRY_SVG}Retry`;
+        retryBtn.innerHTML = `${RETRY_SVG}${escapeHtml(t('Retry'))}`;
         retryBtn.addEventListener('click', (event) => {
           event.preventDefault();
           event.stopPropagation();

@@ -23,7 +23,9 @@
 import { isCommandAutoApproved, isCatastrophicDeletion, suggestApprovalPatterns, matchesGlob } from '../context-items/execute/command-approval.js';
 import { tokenize } from '../context-items/execute/shell-tokenizer.js';
 import { posixNormalize, isGrantableRoot, isPathInsideAllowedRoots } from 'juggler/utils/path-containment';
-import ExecuteContextItem from '../context-items/execute-context-item.js';
+import ExecuteContextItem, { describeTaskStatus } from '../context-items/execute-context-item.js';
+import { underPseudoLocale } from '../../../js-tests/utilities/pseudo-locale.js';
+import { isPseudoLocalized } from '../../../sdk/lib/i18n.js';
 
 const PROJECT_ROOT = '/Users/jules/code/juggler';
 const TEST_HOME = '/Users/jules';
@@ -2257,6 +2259,148 @@ export async function runTests() {
     const got = isCatastrophicDeletion('rm -rf /', { platform: 'linux', home: CATASTROPHIC_HOME, projectRoot: '' });
     if (got !== false) { failed++; errors.push(`catastrophic/no-root: want false with empty projectRoot, got ${got}`); }
     else passed++;
+  }
+
+  // === en-XA: everything the plugin shows the user is translated ===
+  // The edit notices, the row's states and type name, the properties-panel
+  // labels, the background task's status line, the approval message and the
+  // progress hints. Its text is juggler-core's, so it stands in under that id.
+  // Commands, descriptions and task ids are digits, which read as data.
+  /**
+   * @param {boolean} cond
+   * @param {string} msg
+   */
+  const assertTrue = (cond, msg) => { if (!cond) throw new Error(msg); };
+  try {
+    const coreText = [
+      'No command to approve', 'Enter a command pattern', 'Pattern is too long',
+      "This pattern wouldn't approve this command", 'Enter a folder path', 'Not a valid folder',
+      'Not a grantable folder', "This folder wouldn't cover this command",
+      'Very broad — approves many commands', 'Broad — grants read access to a large tree',
+      'Running', 'Exit {code}', 'Exit {code} — {error}',
+      'Gone — reaped an hour after it ended, or lost to a server restart',
+      '{minutes, plural, one {# minute} other {# minutes}}',
+      '{seconds, plural, one {# second} other {# seconds}}',
+      '{minutes, plural, one {# minute} other {# minutes}} {seconds, plural, one {# second} other {# seconds}}',
+      'Execute command ({description}):\n\n{command}\n\nThis will run in the project directory.',
+      'Execute command:\n\n{command}\n\nThis will run in the project directory.',
+      'Executing: {command}', 'Waiting for filesystem-access permission — check for a system dialog',
+      'Running… (no output yet)', 'Command cancelled: {command}', '{command} — failed', 'Background',
+      'Bash', 'Output', 'Command', 'Description', 'Timeout', 'Background task', '(starting…)', 'Result',
+      'Stop task',
+    ];
+    await underPseudoLocale('bash-command-approval-test', async () => {
+      /** @type {Record<string, string>} */
+      const shown = {};
+      const session = { platform: 'darwin', home: TEST_HOME, projectPath: '/1' };
+      const mt = { getAllowedPaths: () => [], getRulesFor: () => [], items: [] };
+      const item = new ExecuteContextItem({ id: 'xa', session, conversation: { id: 'c1', session }, messageThread: mt });
+      // With no project directory a relative folder resolves to nothing.
+      const noCwd = { platform: 'darwin', home: TEST_HOME };
+      const homeless = new ExecuteContextItem({ id: 'xa2', session: noCwd, conversation: { id: 'c1', session: noCwd }, messageThread: mt });
+
+      // Every notice reviseApprovalSuggestion can return.
+      const glob = { rules: [{ kind: 'glob', value: '1', scope: 'conversation' }], patterns: ['1'] };
+      const grant = { allowedPaths: ['/Users/jules/notes'], patterns: ['~/notes'] };
+      /** @type {Array<[string, any, string, string]>} */
+      const edits = [
+        ['no command', glob, '1', ''],
+        ['empty glob', glob, ' ', 'git push origin main'],
+        ['long glob', glob, 'echo ' + 'a'.repeat(200), 'git push origin main'],
+        ['glob misses', glob, 'git pull *', 'git push origin main'],
+        ['broad glob', glob, '*', 'git push origin main'],
+        ['empty folder', grant, ' ', 'cat ~/notes/todo.md'],
+        ['invalid folder', grant, 'relative/dir', 'cat ~/notes/todo.md'],
+        ['ungrantable folder', grant, '/', 'cat ~/notes/todo.md'],
+        ['folder misses', grant, '~/other', 'cat ~/notes/todo.md'],
+        ['broad folder', grant, '~/code', 'cat ~/code/notes.md'],
+      ];
+      for (const [name, original, editedText, command] of edits) {
+        const probe = name === 'invalid folder' ? homeless : item;
+        const res = probe.reviseApprovalSuggestion({ index: 0, original, editedText, params: { command } });
+        assertTrue(!!res.notice, `${name}: no notice in ${JSON.stringify(res)}`);
+        shown[`notice: ${name}`] = String(res.notice);
+      }
+      const notices = Object.entries(shown).filter(([k]) => k.startsWith('notice: ')).map(([, v]) => v);
+      assertTrue(new Set(notices).size === edits.length, `each edit should reach its own notice: ${JSON.stringify(notices)}`);
+
+      for (const state of [
+        { status: 'running' }, { status: 'completed', exitCode: 0 },
+        { status: 'failed', exitCode: 2, error: '3' }, { status: 'not_found' },
+      ]) {
+        shown[`task ${state.status}`] = describeTaskStatus(/** @type {any} */ (state));
+      }
+
+      shown['type name'] = ExecuteContextItem.getTypeName();
+      shown['result section'] = ExecuteContextItem.getResultSectionLabel('bash');
+      const row = (/** @type {any} */ status, /** @type {any} */ input) => item.getStatusUI(status, input);
+      shown['cancelled row'] = String(row({ cancelled: true }, { command: '1' })?.summary);
+      shown['failed row'] = String(row({ success: false, error: '2' }, { command: '1' })?.summary);
+      shown['row type name'] = String(row({ pending: true }, { command: '1' })?.typeName);
+      const bg = /** @type {any} */ (row({ pending: true }, { command: '1', run_in_background: true })?.summary);
+      shown['background tag'] = String(bg?.querySelector?.('.action-summary-background-tag')?.textContent);
+
+      for (const [name, params] of [['approval', { command: '1' }], ['approval, described', { command: '1', description: '2' }]]) {
+        shown[name] = String((await item.getApprovalConfig(/** @type {any} */ (params)))?.message);
+      }
+
+      // Progress: the start line, then both status hints the stream can relay.
+      /** @type {string[]} */
+      const progress = [];
+      item.onProgress = (/** @type {any} */ e) => { if (e.type === 'status') progress.push(e.message); };
+      /** @type {any} */ (item)._ops = {
+        shellStreaming: async (/** @type {any} */ _p, /** @type {(c: any) => void} */ onChunk) => {
+          onChunk({ status: 'awaiting-permission' });
+          onChunk({ status: 'running' });
+          return { command: '1', stdout: '', exitCode: 0, success: true };
+        },
+      };
+      await item.execute({ command: '1' });
+      assertTrue(progress.length === 3, `expected three status lines, got ${JSON.stringify(progress)}`);
+      progress.forEach((m, i) => { shown[`progress ${i}`] = m; });
+
+      // Properties panel: a background run whose task id has not landed, then
+      // one that has (its live output section is never mounted, so it stops
+      // polling by itself).
+      /** @type {Array<{label: string, content: string}>} */
+      let sections = [];
+      const helpers = {
+        addSubsection: (/** @type {any} */ _w, /** @type {string} */ label, /** @type {string} */ content) => {
+          sections.push({ label, content });
+        },
+        addLlmDescription: (/** @type {any} */ _w, /** @type {string} */ label) => { sections.push({ label, content: '' }); },
+        labeledSubsection: () => document.createElement('div'),
+      };
+      const input = { command: '1', description: '2', timeout: 90000, run_in_background: true };
+      item.renderToolActionDetails(document.createElement('div'), /** @type {any} */ ({ input, helpers, toolAction: null }));
+      const starting = sections;
+      assertTrue(starting.length === 4, `expected command, description, timeout, task: ${JSON.stringify(starting)}`);
+      starting.forEach((s, i) => { shown[`label ${i}`] = s.label; });
+      shown['timeout'] = starting[2].content;
+      shown['task id pending'] = starting[3].content;
+
+      sections = [];
+      const launched = {
+        get: (/** @type {string} */ k) => ({
+          result: { content: '4', fullResult: { result: { task_id: '5' } } },
+          displayData: { backgroundTask: { status: 'completed', exitCode: 0 } },
+        })[k],
+      };
+      const panel = document.createElement('div');
+      item.renderToolActionDetails(panel, /** @type {any} */ ({ input, helpers, toolAction: launched }));
+      assertTrue(sections.length === 5, `expected a Result section too: ${JSON.stringify(sections)}`);
+      shown['result label'] = sections[4].label;
+      const stop = panel.querySelector('.live-task-output-stop');
+      assertTrue(!!stop, 'the launched task drew no Stop button');
+      shown['stop button'] = String(stop?.textContent);
+
+      const raw = Object.entries(shown).filter(([, s]) => !isPseudoLocalized(s));
+      assertTrue(raw.length === 0, `plain English under en-XA: ${JSON.stringify(raw)}`);
+    }, { '@juggler/core': coreText });
+    passed++;
+  } catch (e) {
+    failed++;
+    errors.push(`en-XA: ${e instanceof Error ? e.message : String(e)}`);
   }
 
   return { passed, failed, errors };

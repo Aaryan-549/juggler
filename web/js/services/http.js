@@ -16,6 +16,13 @@
  * - **fall back**: pass `fallback` ⇒ failures resolve to that value instead.
  *   Add `errorPrefix` to also log a warning; omit it to fail silently.
  *
+ * The message a prefixed failure carries is UI text, in the UI's language:
+ * `errorPrefix` is a translated message and the way it is joined to the detail
+ * is one too. A failure with no prefix carries only the status and the server's
+ * own words. So a caller whose error the model reads (a tool result) passes no
+ * `errorPrefix` and writes its own English from the {@link HttpError}'s
+ * `status` and `detail` — see services/pinboard-operations-api.js.
+ *
  * A caller's `AbortError` is never a failure to absorb — it is always re-thrown,
  * even with a `fallback`, so callers that race requests can tell "superseded"
  * from "returned nothing" (see services/completions-api.js). A `timeoutMs`
@@ -24,6 +31,8 @@
  * instead of throwing something no caller asked for.
  * @module services/http
  */
+
+import { t } from '../../sdk/lib/i18n.js';
 
 /**
  * A non-OK HTTP response. Carries the status and the decoded error body so a
@@ -57,7 +66,7 @@ export class HttpError extends Error {
  * @param {string} [fallbackMessage] - Used when the error says nothing useful
  * @returns {string} A message fit for an alert or status line
  */
-export function httpErrorText(error, fallbackMessage = 'Request failed') {
+export function httpErrorText(error, fallbackMessage = t('Request failed')) {
   if (error instanceof HttpError) return error.detail || fallbackMessage;
   return error instanceof Error && error.message ? error.message : fallbackMessage;
 }
@@ -131,7 +140,7 @@ export function withApiToken(headers) {
  * @param {Record<string, string>} [options.headers] - Extra request headers
  * @param {AbortSignal} [options.signal] - Abort signal; an abort always re-throws
  * @param {number} [options.timeoutMs] - Give up after this long; treated as a failure, not an abort
- * @param {string} [options.errorPrefix] - Prefix for the error message / warning
+ * @param {string} [options.errorPrefix] - Translated prefix for the error message / warning
  * @param {T} [options.fallback] - Value to resolve with instead of throwing
  * @returns {Promise<any>} Parsed JSON, `null` for an empty body, or `fallback`
  * @throws {HttpError} On a non-OK response when no `fallback` was given
@@ -181,8 +190,13 @@ export async function fetchJson(url, options = {}) {
       const { detail, body: errorBody } = await decodeErrorBody(response);
       const status = `HTTP ${response.status}`;
       let message;
-      if (errorPrefix) message = detail ? `${errorPrefix}: ${detail}` : `${errorPrefix} (${status})`;
-      else message = detail ? `${status}: ${detail}` : status;
+      if (errorPrefix) {
+        message = detail
+          ? t('{prefix}: {detail}', { prefix: errorPrefix, detail })
+          : t('{prefix} (HTTP {status})', { prefix: errorPrefix, status: response.status });
+      } else {
+        message = detail ? `${status}: ${detail}` : status;
+      }
       throw new HttpError(message, response.status, detail, errorBody);
     }
     if (response.status === 204 || typeof response.json !== 'function') return null;
@@ -195,9 +209,9 @@ export async function fetchJson(url, options = {}) {
     // Our own expiry: report it as a plain timeout rather than an abort, so it
     // reads as the request failing (which it did) and honours the fallback.
     if (timedOut) {
-      const timeout = new Error(
-        errorPrefix ? `${errorPrefix}: timed out after ${timeoutMs}ms` : `Request timed out after ${timeoutMs}ms`
-      );
+      const timeout = new Error(errorPrefix
+        ? t('{prefix}: timed out after {ms}ms', { prefix: errorPrefix, ms: timeoutMs })
+        : t('Request timed out after {ms}ms', { ms: timeoutMs }));
       if (!usesFallback) throw timeout;
       if (errorPrefix) console.warn(`${errorPrefix}:`, timeout.message);
       return fallback;
