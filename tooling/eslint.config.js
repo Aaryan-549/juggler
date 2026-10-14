@@ -304,10 +304,12 @@ export default [
   // ===================================================================
   // A server may be mounted under a path prefix (the machine server's
   // /s/<id>/), so client code never writes an absolute '/api/…' URL. Tests
-  // are exempt: they match request URLs in fetch stubs, not build them.
+  // are exempt: they match request URLs in fetch stubs, not build them. The
+  // machine server's sessions page always sits at its origin's root, so its
+  // one API client, control-api.js, addresses /api/server/* as written.
   {
-    files: ['web/js/**/*.js', 'web/sdk/**/*.js', 'web/extensions/**/*.js'],
-    ignores: ['web/extensions/**/_tests/**/*.js', 'web/js/utils/api-url.js'],
+    files: ['web/js/**/*.js', 'web/sdk/**/*.js', 'web/extensions/**/*.js', 'web/machine/**/*.js'],
+    ignores: ['web/extensions/**/_tests/**/*.js', 'web/js/utils/api-url.js', 'web/machine/control-api.js'],
     plugins: { juggler: jugglerPlugin },
     rules: {
       'juggler/no-absolute-api-url': 'error',
@@ -327,7 +329,7 @@ export default [
   //   websocket                 — a reload throttle, not a preference
   //   scheduled-send-service    — a claim lock between same-origin windows
   {
-    files: ['web/js/**/*.js', 'web/sdk/**/*.js', 'web/extensions/**/*.js'],
+    files: ['web/js/**/*.js', 'web/sdk/**/*.js', 'web/extensions/**/*.js', 'web/machine/**/*.js'],
     ignores: [
       'web/extensions/**/_tests/**/*.js',
       'web/js/services/prefs.js',
