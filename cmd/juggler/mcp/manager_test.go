@@ -637,3 +637,84 @@ func TestConfigMergeProjectOverridesGlobal(t *testing.T) {
 		t.Errorf("project entry should override global: %+v", merged["b"])
 	}
 }
+
+// A project's mcp.json can arrive with a cloned repository, so it must not be
+// able to pre-approve its own tools: autoApprove is honoured from the global file
+// only, and a project entry that replaces a trusted global one of the same name
+// does not inherit the trust either.
+func TestConfigAutoApproveIsGlobalOnly(t *testing.T) {
+	writeGlobalConfig(t, map[string]ServerConfig{
+		"trusted":  {Command: "global-trusted", AutoApprove: true},
+		"shadowed": {Command: "global-shadowed", AutoApprove: true},
+	})
+	project := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(project, ".juggler"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(project, ".juggler", mcpFileName), []byte(`{"mcpServers": {
+	  "shadowed": {"command": "project-shadowed", "autoApprove": true},
+	  "local":    {"command": "project-local", "autoApprove": true}
+	}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	merged, err := loadMergedConfig(project)
+	if err != nil {
+		t.Fatalf("merge: %v", err)
+	}
+	if !merged["trusted"].AutoApprove {
+		t.Errorf("a global entry's autoApprove should be honoured: %+v", merged["trusted"])
+	}
+	if merged["shadowed"].Command != "project-shadowed" || merged["shadowed"].AutoApprove {
+		t.Errorf("a project entry must win but not pre-approve itself: %+v", merged["shadowed"])
+	}
+	if merged["local"].AutoApprove {
+		t.Errorf("a project-only entry must not pre-approve itself: %+v", merged["local"])
+	}
+}
+
+// The engine decides approval from the snapshot, so every tool of a pre-approved
+// server says so — and turning the setting off on a running server reaches the
+// snapshot and fires the change hook without a restart, or an engine holding the
+// old snapshot would go on approving.
+func TestManagerAutoApproveRidesSnapshot(t *testing.T) {
+	cfg := fakeServerConfig("serve")
+	cfg.AutoApprove = true
+	writeGlobalConfig(t, map[string]ServerConfig{"fake": cfg})
+
+	m := NewManager()
+	m.Start()
+	m.Reconcile("")
+
+	tools, _ := m.Snapshot(context.Background())
+	if len(tools) == 0 {
+		t.Fatalf("no tools discovered: %+v", m.ListServers())
+	}
+	for _, tool := range tools {
+		if !tool.AutoApprove {
+			t.Errorf("a tool of a pre-approved server should carry autoApprove: %+v", tool)
+		}
+	}
+
+	changed := make(chan struct{}, 8)
+	m.reqCh <- mcpReq{kind: reqSetHook, hookFn: func() { changed <- struct{}{} }}
+
+	cfg.AutoApprove = false
+	writeGlobalConfig(t, map[string]ServerConfig{"fake": cfg})
+	m.Reconcile("")
+
+	select {
+	case <-changed:
+	case <-time.After(5 * time.Second):
+		t.Errorf("withdrawing autoApprove did not fire the change hook")
+	}
+	tools, _ = m.Snapshot(context.Background())
+	if len(tools) == 0 {
+		t.Fatalf("the server should still be running: %+v", m.ListServers())
+	}
+	for _, tool := range tools {
+		if tool.AutoApprove {
+			t.Errorf("autoApprove was withdrawn but the snapshot still carries it: %+v", tool)
+		}
+	}
+}

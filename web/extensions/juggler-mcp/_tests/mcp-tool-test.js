@@ -12,7 +12,7 @@
  * @module unit-tests/mcp-tool-test
  */
 
-import { assert, createTestSession, createTestConversation } from '../../../js-tests/utilities/test-helpers.js';
+import { assert, createTestSession, createTestConversation, initializeRegistries } from '../../../js-tests/utilities/test-helpers.js';
 import {
   mcpLLMName,
   buildToolDefinition,
@@ -152,6 +152,91 @@ export async function runTests(_ctx) {
     assert(!mcpIsPermitted(new Set(), { server: 'github', tool: 'create_issue', readOnly: true }), 'empty set should not approve');
     // A grant for a different server must not approve.
     assert(!mcpIsPermitted(new Set(['other/*']), { server: 'github', tool: 'create_issue', readOnly: false }), 'cross-server leak');
+  });
+
+  await run('isPermitted: a pre-approved server needs no grant', () => {
+    assert(mcpIsPermitted(new Set(), { server: 'github', tool: 'create_issue', readOnly: false, autoApprove: true }), 'autoApprove should approve with no rules');
+    assert(!mcpIsPermitted(new Set(), { server: 'github', tool: 'create_issue', readOnly: false, autoApprove: false }), 'no autoApprove, no rules: ask');
+  });
+
+  // The setting reaches the item through the snapshot the Go manager serves, so
+  // a fresh copy of the module loads a stubbed one: one tool of a pre-approved
+  // server and one of a server that still asks.
+  await run('a tool whose snapshot says autoApprove is permitted without a rule', async () => {
+    const originalFetch = window.fetch;
+    try {
+      window.fetch = /** @type {any} */ (async (/** @type {any} */ url, /** @type {any} */ init) => {
+        const { operation } = JSON.parse(init.body);
+        if (!String(url).includes('/ops/call') || operation !== 'snapshot') throw new Error(`unexpected fetch in test: ${url} ${operation}`);
+        const t = (/** @type {string} */ server, /** @type {boolean} */ autoApprove) => ({
+          server, name: 'act', title: '', description: '', inputSchema: {}, readOnly: false, destructive: true, schemaTokens: 1, autoApprove
+        });
+        return { ok: true, status: 200, json: async () => ({ success: true, data: { complete: true, tools: [t('pre', true), t('ask', false)] } }) };
+      });
+      const url = new URL('../context-items/mcp-tool-context-item.js', import.meta.url);
+      url.search = '?auto-approve';
+      /** @type {any} */
+      const fresh = await import(url.href);
+      const Cls = fresh.default;
+      await Cls.prepareToolDefinitions();
+      assert(Cls.getToolDefinitions().length === 2, 'the stubbed snapshot did not load');
+      const stubSession = { platform: 'darwin', home: '/1', projectPath: '/2' };
+      const thread = { getAllowedPaths: () => ['/2'], getRulesFor: () => [], items: [] };
+      const make = (/** @type {string} */ toolName) => new Cls({
+        id: 'x', session: stubSession, conversation: { id: 'c', session: stubSession }, messageThread: thread, toolName
+      });
+      assert(make('mcp__pre__act').isPermitted({}) === true, 'a pre-approved server\'s tool should be permitted');
+      assert(make('mcp__ask__act').isPermitted({}) === false, 'a server without autoApprove should still ask');
+    } finally {
+      window.fetch = originalFetch;
+    }
+  });
+
+  // "Don't ask again" on an MCP call saves its suggestion with no scope of its
+  // own, so the scope is the item type's default. Like a shell pattern, the
+  // grant belongs to the project: a new conversation must not ask again.
+  await run('a grant saved without a scope lasts for every conversation of the project', async () => {
+    await initializeRegistries();
+    const session = await createTestSession();
+    const a = await createTestConversation(session);
+    const b = await createTestConversation(session);
+    a.rootMessageThread.clearRules('mcp-tool');
+    const [, trust] = mcpApprovalSuggestions({ server: 'github', tool: 'create_issue', readOnly: false });
+    const created = a.rootMessageThread.addRule(trust.itemType, { ...trust.rules[0], scope: trust.scope });
+    assert(created.scope === 'session', `want session scope, got ${created.scope}`);
+    const seen = b.rootMessageThread.getRulesFor('mcp-tool').find((r) => r.value === 'github/*');
+    assert(!!seen, 'a second conversation does not see the grant');
+    a.rootMessageThread.clearRules('mcp-tool');
+  });
+
+  await run('permission popup lists MCP grants, toggles their scope and deletes them', async () => {
+    await initializeRegistries();
+    const session = await createTestSession();
+    const c = await createTestConversation(session);
+    const mt = c.rootMessageThread;
+    mt.clearRules('mcp-tool');
+    assert(McpToolContextItem.getPermissionSection(mt) === null, 'no grants: no section');
+    const all = mt.addRule('mcp-tool', { kind: 'glob', value: 'github/*' });
+    mt.addRule('mcp-tool', { kind: 'glob', value: 'github/#readonly' });
+    mt.addRule('mcp-tool', { kind: 'glob', value: 'linear/get_issue' });
+    const section = /** @type {any} */ (McpToolContextItem.getPermissionSection(mt));
+    try {
+      assert(section && section.id === 'mcp-tool', 'section missing');
+      document.body.appendChild(section.element);
+      const texts = () => Array.from(section.element.querySelectorAll('.pattern-text')).map((el) => el.textContent);
+      assert(JSON.stringify(texts()) === JSON.stringify(['github: all tools', 'github: all read-only tools', 'linear: get_issue']), `rows: ${JSON.stringify(texts())}`);
+      const scopeBtn = /** @type {HTMLElement} */ (section.element.querySelector(`.rule-scope-btn[data-rule-id="${all.id}"]`));
+      assert(scopeBtn.dataset.scope === 'session', `want session, got ${scopeBtn.dataset.scope}`);
+      scopeBtn.click();
+      assert(mt.getRulesFor('mcp-tool').find((r) => r.id === all.id)?.scope === 'conversation', 'scope toggle did not move the rule');
+      /** @type {HTMLElement} */ (section.element.querySelector(`.pattern-delete-btn[data-rule-id="${all.id}"]`)).click();
+      assert(!mt.getRulesFor('mcp-tool').some((r) => r.id === all.id), 'delete did not remove the rule');
+      assert(texts().length === 2, `after delete: ${JSON.stringify(texts())}`);
+    } finally {
+      section?.dispose?.();
+      section?.element?.remove();
+      mt.clearRules('mcp-tool');
+    }
   });
 
   // An MCP server's image (a screenshot tool's) reaches the model as an image

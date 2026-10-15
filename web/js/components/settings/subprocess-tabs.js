@@ -72,6 +72,8 @@ export function formatMcpTokenCost(status) {
  * @property {boolean} toolsLoading - Whether a fetch is in flight
  * @property {string[]} toolNames - Discovered raw tool names (once loaded)
  * @property {Record<string, boolean>} toolChecked - Per-tool exposed/hidden state
+ * @property {boolean} autoApprove - Whether the server's tool calls are pre-approved
+ * @property {'global'|'project'} [scope] - Which mcp.json the entry lives in (set by the generic controller)
  */
 
 /**
@@ -108,22 +110,26 @@ export function mcpSeedFormExtra(cfg) {
     toolsLoading: false,
     toolNames: [],
     toolChecked: {},
+    autoApprove: !!(cfg && cfg.autoApprove),
   };
 }
 
 /**
- * Build the `{tools, defaultArguments}` keys to persist from the MCP form's
- * working state. When the live tool list was loaded, the checkbox state drives an
- * allowlist (omitted entirely when every tool is checked). When it was never
- * loaded (adding, or server offline), the seeded filter is preserved verbatim so
- * an unreachable server's config is never silently rewritten. Throws on malformed
- * fixed-arguments JSON. Pure — exported for unit testing.
+ * Build the `{tools, defaultArguments, autoApprove}` keys to persist from the MCP
+ * form's working state. When the live tool list was loaded, the checkbox state
+ * drives an allowlist (omitted entirely when every tool is checked). When it was
+ * never loaded (adding, or server offline), the seeded filter is preserved
+ * verbatim so an unreachable server's config is never silently rewritten.
+ * `autoApprove` is written for a global entry only: the Go manager ignores it in
+ * a project's mcp.json. Throws on malformed fixed-arguments JSON. Pure —
+ * exported for unit testing.
  * @param {McpFormState} f - The form working state
- * @returns {{tools?: {allow?: string[], deny?: string[]}, defaultArguments?: object}} Extra entry keys
+ * @returns {{tools?: {allow?: string[], deny?: string[]}, defaultArguments?: object, autoApprove?: true}} Extra entry keys
  */
 export function mcpFormToConfigExtra(f) {
-  /** @type {{tools?: {allow?: string[], deny?: string[]}, defaultArguments?: object}} */
+  /** @type {{tools?: {allow?: string[], deny?: string[]}, defaultArguments?: object, autoApprove?: true}} */
   const out = {};
+  if (f.autoApprove && (f.scope || 'global') === 'global') out.autoApprove = true;
 
   if (f.toolsLoaded) {
     const checked = (f.toolNames || []).filter((n) => f.toolChecked[n]);
@@ -160,13 +166,13 @@ export function mcpFormToConfigExtra(f) {
  * fixed-arguments JSON field. Fetches the server's live tool list once (edit of a
  * running server); on add or when offline it shows a hint and leaves the seeded
  * filter untouched. Kept out of the generic controller via the renderFormExtra
- * spec hook.
+ * spec hook. Exported for unit testing.
  * @param {McpFormState} f - Form working state
  * @param {HTMLElement} wrap - Form element to append to
  * @param {import('../config-tab.js').ConfigTabController} ctrl - Owning controller (for re-render)
  * @returns {void}
  */
-function renderMcpFormExtra(f, wrap, ctrl) {
+export function renderMcpFormExtra(f, wrap, ctrl) {
   // --- Tools section ---
   const toolsField = document.createElement('div');
   toolsField.className = 'mcp-form-field';
@@ -246,6 +252,45 @@ function renderMcpFormExtra(f, wrap, ctrl) {
   argsField.appendChild(ta);
   argsField.appendChild(mcpHint(t('A JSON object merged into every call to this server and hidden from the model. The configured value overrides anything the model supplies — use it to fix routing keys.')));
   wrap.appendChild(argsField);
+
+  // --- Pre-approval section ---
+  // A project's mcp.json can come with a cloned repository, so the Go manager
+  // honours this only from the global file. A project server gets a hint
+  // instead of a checkbox that would be saved and never obeyed. While adding,
+  // the scope selector (rendered above, in the same form) re-renders the form so
+  // this follows it; mcpFormToConfigExtra drops the flag for a project entry
+  // at save regardless.
+  const scopeSelect = wrap.querySelector('.mcp-scope-input');
+  if (scopeSelect && f.mode !== 'edit') {
+    scopeSelect.addEventListener('change', () => {
+      ctrl._syncFormState();
+      ctrl.render();
+    });
+  }
+  const approveField = document.createElement('div');
+  approveField.className = 'mcp-form-field';
+  const approveLabel = document.createElement('label');
+  approveLabel.className = 'mcp-field-label';
+  approveLabel.textContent = t('Approval');
+  approveField.appendChild(approveLabel);
+  if (f.scope === 'project') {
+    approveField.appendChild(mcpHint(t('Every call asks first. Only a global server can be pre-approved, so a project’s own mcp.json cannot switch its approval off.')));
+  } else {
+    const row = document.createElement('label');
+    row.className = 'mcp-tool-filter-row';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.className = 'mcp-auto-approve-input';
+    cb.checked = !!f.autoApprove;
+    cb.addEventListener('change', () => { f.autoApprove = cb.checked; });
+    const text = document.createElement('span');
+    text.textContent = t('Pre-approve this server’s tools');
+    row.appendChild(cb);
+    row.appendChild(text);
+    approveField.appendChild(row);
+    approveField.appendChild(mcpHint(t('Its tools run without asking, in every conversation. Global servers only.')));
+  }
+  wrap.appendChild(approveField);
 }
 
 /**

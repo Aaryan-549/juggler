@@ -1390,6 +1390,7 @@ export async function osRevealPath(params) {
  * @property {boolean} readOnly - annotations.readOnlyHint
  * @property {boolean} destructive - annotations.destructiveHint (when !readOnly)
  * @property {number} schemaTokens - ~chars/4 estimate of the input schema
+ * @property {boolean} [autoApprove] - The server is pre-approved in the global MCP config
  */
 
 /**

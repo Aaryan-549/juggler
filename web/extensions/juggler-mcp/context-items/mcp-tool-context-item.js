@@ -10,6 +10,7 @@ import { translator, markUntranslated } from 'juggler/i18n';
 // reaches ../../../js/services/*. This is the websocket the engine already uses;
 // importing the module by its stable URL yields that same singleton instance.
 import wsService from '../../../js/services/websocket.js';
+import { renderMcpPermissionSection } from './permission-section.js';
 
 const t = translator('@juggler/mcp');
 
@@ -23,6 +24,7 @@ const t = translator('@juggler/mcp');
  * @property {boolean} readOnly - annotations.readOnlyHint
  * @property {boolean} destructive - annotations.destructiveHint
  * @property {number} schemaTokens - ~chars/4 estimate of the input schema
+ * @property {boolean} [autoApprove] - The server is pre-approved in the global MCP config
  */
 
 /**
@@ -134,14 +136,17 @@ export function mcpApprovalSuggestions(target) {
 }
 
 /**
- * Whether a set of persisted glob rule values auto-approves this call. A
- * `#readonly` grant applies ONLY when the tool is annotated read-only — never an
- * approval based on annotations alone. Pure — exported for unit testing.
+ * Whether this call is auto-approved: by the server being pre-approved in the
+ * user's global MCP config (`autoApprove`, which the Go manager never honours
+ * from a project's own file), or by a persisted glob rule. A `#readonly` grant
+ * applies ONLY when the tool is annotated read-only — never an approval based on
+ * annotations alone. Pure — exported for unit testing.
  * @param {Set<string>} values - Persisted glob rule values for the mcp-tool itemType
- * @param {{server: string, tool: string, readOnly: boolean}} t - Target tool
+ * @param {{server: string, tool: string, readOnly: boolean, autoApprove?: boolean}} t - Target tool
  * @returns {boolean} True if auto-approved
  */
 export function mcpIsPermitted(values, t) {
+  if (t.autoApprove) return true;
   const rv = mcpRuleValues(t.server, t.tool);
   if (values.has(rv.exact)) return true;
   if (values.has(rv.all)) return true;
@@ -390,7 +395,28 @@ class McpToolContextItem extends ContextItem {
         .filter((r) => r.kind === 'glob')
         .map((r) => String(r.value))
     );
-    return mcpIsPermitted(values, { server, tool, readOnly: info.readOnly });
+    return mcpIsPermitted(values, { server, tool, readOnly: info.readOnly, autoApprove: info.autoApprove === true });
+  }
+
+  /**
+   * A "don't ask again" grant belongs to the project, as a shell pattern does:
+   * trusting a server in one conversation should not mean being asked again in
+   * the next. The permissions popup can still narrow one to this conversation.
+   * @returns {{allowedScopes: Array<'session'|'conversation'>, defaultScope: 'session'}} Scope policy
+   */
+  static getPermissionScopePolicy() {
+    return { allowedScopes: ['session', 'conversation'], defaultScope: 'session' };
+  }
+
+  /**
+   * List the saved MCP grants in the permissions popup, so one can be narrowed
+   * to this conversation or revoked. No section when there are none.
+   * @override
+   * @param {import('../../../js/model/message-thread.js').MessageThread} messageThread - Owning thread
+   * @returns {{id: string, title: string, element: HTMLElement, dispose: () => void}|null} Permission section
+   */
+  static getPermissionSection(messageThread) {
+    return renderMcpPermissionSection(messageThread);
   }
 
   /**

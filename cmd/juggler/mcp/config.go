@@ -46,6 +46,10 @@ type ServerConfig struct {
 	// the model supplies, so routing keys (e.g. a memory bank id) are decided by
 	// configuration, not by the model.
 	DefaultArguments map[string]any `json:"defaultArguments,omitempty"`
+	// AutoApprove pre-approves every call to this server's tools, so they never
+	// stop for the approval dialog. Honoured from the global mcp.json only — see
+	// loadMergedConfig.
+	AutoApprove bool `json:"autoApprove,omitempty"`
 }
 
 // ToolFilter is a per-server tool visibility policy. Allow, when non-empty, is a
@@ -154,6 +158,13 @@ func readConfigFile(path string) (Config, error) {
 // project entries overriding global ones of the same name. The returned map is
 // never nil. Either file being absent is fine; a malformed file returns its
 // error so the caller can surface it.
+//
+// AutoApprove is dropped from every project entry. A project's mcp.json can
+// arrive with a cloned repository, and its servers start without asking, so the
+// approval dialog is the only thing between that repository's tools and their
+// first call — a file it supplies must not be able to switch the dialog off. A
+// project entry that replaces a pre-approved global one of the same name is a
+// different server, so it does not inherit the setting either.
 func loadMergedConfig(projectRoot string) (map[string]ServerConfig, error) {
 	global, err := readConfigFile(globalConfigPath())
 	if err != nil {
@@ -168,6 +179,7 @@ func loadMergedConfig(projectRoot string) (map[string]ServerConfig, error) {
 		merged[name] = sc
 	}
 	for name, sc := range project.Servers {
+		sc.AutoApprove = false
 		merged[name] = sc // project wins
 	}
 	return merged, nil

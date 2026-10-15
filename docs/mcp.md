@@ -97,6 +97,7 @@ Juggler stores it under `transport` next time it writes the file.
 | `enabled` | all | `false` keeps the entry but never starts it. Default `true`. |
 | `tools` | all | `{"allow": […]}` / `{"deny": […]}` — see below. |
 | `defaultArguments` | all | Fixed arguments merged into every call — see below. |
+| `autoApprove` | all | `true` runs the server's tools without asking. Global file only — see below. |
 
 ## Authentication
 
@@ -176,6 +177,18 @@ An MCP tool call asks for approval by default — Juggler can't know what a
 third-party tool does. The approval offers three widths: this tool, all read-only
 tools on this server, or every tool on that server (trust the server). Granting
 by read-only only ever covers tools the server itself annotated as read-only.
+
+A grant covers every conversation in the project, not just the one you clicked
+it in. The permissions popup lists them under **MCP tools approved**, where each
+can be narrowed to its own conversation or deleted.
+
+To skip the question altogether for a server you trust, tick **Pre-approve this
+server's tools** in Settings → MCP servers, or set `"autoApprove": true` on its
+entry. Its calls then run without asking, in every conversation of every
+project. This works **only in the global file**. A project's
+`.juggler/mcp.json` can arrive with a repository you cloned, so Juggler ignores
+`autoApprove` there. A project entry that replaces a pre-approved global one of
+the same name doesn't inherit it either.
 
 ## When it isn't working
 

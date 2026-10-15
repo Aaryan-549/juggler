@@ -65,6 +65,7 @@ type ToolInfo struct {
 	ReadOnly     bool   `json:"readOnly"`     // annotations.readOnlyHint
 	Destructive  bool   `json:"destructive"`  // annotations.destructiveHint (meaningful when !ReadOnly)
 	SchemaTokens int    `json:"schemaTokens"` // ~chars/4 estimate of the input schema
+	AutoApprove  bool   `json:"autoApprove"`  // the server is pre-approved (ServerConfig.AutoApprove)
 }
 
 // ServerStatus is one entry in the mcpListServers response.
@@ -224,7 +225,7 @@ func (m *Manager) run() {
 			if req.server == "" {
 				out = flattenTools(servers)
 			} else if s := servers[req.server]; s != nil {
-				out = append(out, s.tools...)
+				out = s.toolInfos()
 			}
 			req.resp <- mcpResp{tools: out}
 
@@ -365,6 +366,11 @@ func (m *Manager) reconcile(servers map[string]*serverState, project string) {
 		if s == nil {
 			s = &serverState{name: name, status: statusStopped, stderr: newTailRing(stderrRingBytes)}
 			servers[name] = s
+			changed = true
+		}
+		// Engines cache the snapshot they approve from, and nothing else about
+		// a running server changes when only this flag does.
+		if s.cfg.AutoApprove != dc.AutoApprove && len(s.tools) > 0 {
 			changed = true
 		}
 		s.cfg = dc
@@ -802,7 +808,20 @@ func listStatuses(servers map[string]*serverState) []ServerStatus {
 func flattenTools(servers map[string]*serverState) []ToolInfo {
 	var out []ToolInfo
 	for _, name := range sortedServerNames(servers) {
-		out = append(out, servers[name].tools...)
+		out = append(out, servers[name].toolInfos()...)
+	}
+	return out
+}
+
+// toolInfos returns a copy of the server's discovered tools stamped with its
+// current AutoApprove. The flag is read from the config at answer time rather
+// than stored with the tools, which are only refreshed when the server lists
+// them: a setting withdrawn from a running server must stop approving at once.
+func (s *serverState) toolInfos() []ToolInfo {
+	out := make([]ToolInfo, len(s.tools))
+	for i, t := range s.tools {
+		t.AutoApprove = s.cfg.AutoApprove
+		out[i] = t
 	}
 	return out
 }

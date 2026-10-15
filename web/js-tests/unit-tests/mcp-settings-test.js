@@ -28,6 +28,7 @@ import {
   mcpToolAllowed,
   mcpSeedFormExtra,
   mcpFormToConfigExtra,
+  renderMcpFormExtra,
 } from '../../js/components/settings/subprocess-tabs.js';
 import { mcpToolMissReason, MCP_DISABLED_NOTICE } from '../../js/services/mcp-availability.js';
 import { McpTab } from '../../js/components/settings/subprocess-tabs.js';
@@ -315,6 +316,46 @@ export async function runTests(_ctx) {
   await run('extra: empty form yields no extra keys', () => {
     const out = mcpFormToConfigExtra({ toolsLoaded: false, toolAllow: null, toolDeny: [], defaultArgsText: '  ' });
     assert(!('tools' in out) && !('defaultArguments' in out), 'empty form should add nothing');
+  });
+
+  // --- pre-approval ---------------------------------------------------------
+  // The Go manager ignores autoApprove in a project's mcp.json, so the form
+  // writes it only into the global file and says so rather than offering a
+  // checkbox that would be stored and never honoured.
+
+  await run('pre-approval: seeded from the entry, off by default', () => {
+    assert(mcpSeedFormExtra({ autoApprove: true }).autoApprove === true, 'seeded true');
+    assert(mcpSeedFormExtra({}).autoApprove === false, 'default false');
+  });
+
+  await run('pre-approval: saved for a global server only', () => {
+    const base = { toolsLoaded: false, toolAllow: null, toolDeny: [], defaultArgsText: '' };
+    assert(mcpFormToConfigExtra({ ...base, autoApprove: true, scope: 'global' }).autoApprove === true, 'global: saved');
+    assert(!('autoApprove' in mcpFormToConfigExtra({ ...base, autoApprove: true, scope: 'project' })), 'project: never written');
+    assert(!('autoApprove' in mcpFormToConfigExtra({ ...base, autoApprove: false, scope: 'global' })), 'off: omitted');
+  });
+
+  await run('pre-approval: a checkbox for a global server, a hint for a project one', () => {
+    const ctrl = /** @type {any} */ ({ editing: null, render: () => {} });
+    const form = (/** @type {'global'|'project'} */ scope, /** @type {boolean} */ autoApprove) => {
+      const f = { ...mcpSeedFormExtra({ autoApprove }), mode: 'add', name: '', scope };
+      const wrap = document.createElement('div');
+      renderMcpFormExtra(/** @type {any} */ (f), wrap, ctrl);
+      return { f, cb: /** @type {HTMLInputElement|null} */ (wrap.querySelector('.mcp-auto-approve-input')), wrap };
+    };
+    const global = form('global', false);
+    assert(!!global.cb && global.cb.checked === false, 'global: an unchecked checkbox');
+    // A detached checkbox fires no change event in WebKit, so mount it.
+    document.body.appendChild(global.wrap);
+    try {
+      global.cb.click();
+    } finally {
+      global.wrap.remove();
+    }
+    assert(global.f.autoApprove === true, 'checking it sets the form state');
+    const project = form('project', false);
+    assert(!project.cb, 'project: no checkbox');
+    assert(/global/i.test(project.wrap.textContent || ''), `project: a hint naming the global scope: ${project.wrap.textContent}`);
   });
 
   // --- deep link: a tool leads back to the server that provides it -----------

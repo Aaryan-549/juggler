@@ -45,6 +45,7 @@ import { t, markForTranslation } from '../../sdk/lib/i18n.js';
  * @property {boolean} [enabled] - Whether the entry is active
  * @property {{allow?: string[], deny?: string[]}} [tools] - Per-server tool visibility filter (MCP only)
  * @property {Record<string, any>} [defaultArguments] - Fixed arguments merged into every call and hidden from the model (MCP only)
+ * @property {boolean} [autoApprove] - Tool calls are pre-approved; honoured in the global file only (MCP only)
  */
 
 /**

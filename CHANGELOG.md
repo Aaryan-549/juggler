@@ -30,6 +30,8 @@ of changes; this project follows semantic versioning.
 - Screen readers announce the composer's command, skill and actions menus as menus
 - Fixed busy conversations jumping down the list when an agent started a new one
 - New conversations' tips can be turned off; "Suggest prompts" now covers starter prompts too
+- Pre-approve a global MCP server in Settings so its tools never ask
+- "Don't ask again" on an MCP tool now covers every conversation in the project
 
 ## [0.7.6] - 2026-10-09
 
