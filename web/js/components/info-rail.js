@@ -49,6 +49,7 @@
 import { providers, isHidden, hideCard, INFO_CARDS_CHANGED_EVENT } from '../services/info-cards-manager.js';
 import infoCardRegistry from '../registries/info-card-registry.js';
 import { capabilityLabel } from '../utils/capability-label.js';
+import { WORD_OF_MOUTH_CARD } from './word-of-mouth.js';
 import { t } from '../../sdk/lib/i18n.js';
 import './info-cards-button.js';
 import JugglerElement from './juggler-element.js';
@@ -289,6 +290,11 @@ class InfoRail extends JugglerElement {
       const eligible = providers()
         .filter((p) => !isHidden(p.id) && (typeof p.hasContent !== 'function' || p.hasContent()))
         .slice(0, MAX_CARDS);
+      // The one-time "spread the word" ask is built in rather than a plugin, and
+      // only takes a slot the extension cards leave free.
+      if (eligible.length < MAX_CARDS && !isHidden(WORD_OF_MOUTH_CARD.id) && WORD_OF_MOUTH_CARD.hasContent()) {
+        eligible.push(/** @type {any} */ (WORD_OF_MOUTH_CARD));
+      }
 
       // Reconcile the mounted set to the eligible providers, in priority order,
       // reusing existing cards so their state (tip rotation) survives.

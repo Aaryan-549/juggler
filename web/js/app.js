@@ -50,6 +50,7 @@ import { showAlert, showNotice } from './components/modal-dialog.js';
 import { openCommandManager } from './components/command-editor-dialog.js';
 import { setFaultSink, reportFault } from './utils/fault-report.js';
 import { apiUrl, serverPath } from './utils/api-url.js';
+import { startWordOfMouth, noteComposerSend } from './components/word-of-mouth.js';
 
 /**
  * Route this page's faults to the app log, and catch the ones nothing else
@@ -503,6 +504,10 @@ class JugglerApp {
       // Attach the conversation-level keyboard command handlers (new/bin/jump/
       // toggle-file-editing) and install the global shortcut dispatcher.
       registerConversationShortcuts(session);
+
+      // Count days of use and, once, ask the user to spread the word
+      // (components/word-of-mouth.js). Not under automated tests.
+      if (!(/** @type {any} */ (window).JUGGLER_TEST_MODE)) void startWordOfMouth();
     }
 
     // Wire global header controls (undo/redo + project path)
@@ -609,7 +614,10 @@ class JugglerApp {
 
     // The conversation owns its own handlers and manages everything;
     // validation (including model selection) happens inside sendMessage().
-    conversation.sendMessage(message, threadItemId, messageThread, { attachments: attachments || [], skills: skills || [] });
+    const refusal = await conversation.sendMessage(message, threadItemId, messageThread, { attachments: attachments || [], skills: skills || [] });
+    // This is the composer's send path — a message the user wrote — so an
+    // accepted one is a day of use.
+    noteComposerSend(message, refusal);
   }
 
   /**

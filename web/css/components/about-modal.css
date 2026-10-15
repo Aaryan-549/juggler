@@ -155,6 +155,24 @@ about-modal .about-link a:hover {
     text-decoration: underline;
 }
 
+/* The "spread the word" section (components/word-of-mouth.js), under a hairline. */
+about-modal .about-content .word-of-mouth {
+    margin-top: 1.25rem;
+    padding-top: 1rem;
+    border-top: 0.0625rem solid var(--border-divider);
+}
+
+about-modal .about-content .word-of-mouth__heading {
+    font-weight: 600;
+}
+
+about-modal .about-content .word-of-mouth__link {
+    box-sizing: border-box;
+    width: 100%;
+    margin-top: 0.5rem;
+    font-family: var(--font-mono);
+}
+
 about-modal .about-footer {
     display: flex;
     justify-content: center;

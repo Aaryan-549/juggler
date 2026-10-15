@@ -12,6 +12,7 @@ import { apiUrl } from '../utils/api-url.js';
 import { durationToken } from '../utils/modal-scrim.js';
 import { t, markForTranslation, htmlSlots, withHtml } from '../../sdk/lib/i18n.js';
 import { escapeHtml } from '../../sdk/lib/html.js';
+import { buildWordOfMouthAsk } from './word-of-mouth.js';
 
 /**
  * AboutModal - Shows information about the application
@@ -178,6 +179,9 @@ class AboutModal extends JugglerElement {
                 </footer>
             </modal-panel>
         `;
+
+    // The "spread the word" ask, kept here for good (components/word-of-mouth.js).
+    this.querySelector('.about-content')?.appendChild(buildWordOfMouthAsk({ variant: 'about' }));
 
     // Attach event listeners
     const backdrop = this.querySelector('.about-backdrop');
