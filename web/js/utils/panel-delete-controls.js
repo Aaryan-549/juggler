@@ -15,8 +15,12 @@
  * @param {import('../model/message-thread.js').default} parentThread
  * @param {string} itemId - id of the item in parentThread these buttons act on
  * @param {(e: MouseEvent) => void} onDelete - called when Delete is clicked
+ * @param {string} [deleteBlockedReason] - When set, plain Delete is rendered
+ *   disabled with this as its tooltip. The Delete/Backspace key works by
+ *   clicking this button, so disabling it covers the key too. The span deletes
+ *   stay enabled: they stop the turn before deleting.
  */
-export function appendDeleteControls(container, parentThread, itemId, onDelete) {
+export function appendDeleteControls(container, parentThread, itemId, onDelete, deleteBlockedReason) {
   const makeBtn = (/** @type {string} */ label) => {
     const btn = document.createElement('button');
     btn.className = 'properties-panel-btn danger';
@@ -25,6 +29,10 @@ export function appendDeleteControls(container, parentThread, itemId, onDelete) 
   };
 
   const deleteBtn = makeBtn('Delete');
+  if (deleteBlockedReason) {
+    deleteBtn.disabled = true;
+    deleteBtn.title = deleteBlockedReason;
+  }
   deleteBtn.addEventListener('click', (e) => onDelete(e));
   container.appendChild(deleteBtn);
 

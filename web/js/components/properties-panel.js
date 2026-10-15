@@ -1046,9 +1046,14 @@ class PropertiesPanel extends HTMLElement {
     if (taItemId && this._messageThread) {
       const itemIndex = this._messageThread.findIndexByItemId(taItemId);
 
+      // A busy tool cannot be deleted on its own: deleting the item does not
+      // stop the tool, and the result it finishes with has nowhere to land.
+      const taState = toolAction.get('state');
+      const busy = taState === TOOL_STATES.RUNNING || taState === TOOL_STATES.APPROVED;
       if (itemIndex >= 0) {
         appendDeleteControls(controls, this._messageThread, taItemId,
-          () => this._deleteItem(taItemId));
+          () => this._deleteItem(taItemId),
+          busy ? 'Stop the tool before deleting it' : undefined);
       }
     }
 

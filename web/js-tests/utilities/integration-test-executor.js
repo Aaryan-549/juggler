@@ -291,6 +291,7 @@ import { runTests as runColumnFileDropTests } from '../unit-tests/column-file-dr
 import { runTests as runComposerAttachButtonTests } from '../unit-tests/composer-attach-button-test.js';
 import { runTests as runColumnNavigationTests } from '../unit-tests/column-navigation-test.js';
 import { runTests as runDeleteSelectionNeighbourTests } from '../unit-tests/delete-selection-neighbour-test.js';
+import { runTests as runRunningToolDeleteTests } from '../unit-tests/running-tool-delete-test.js';
 import { runTests as runControlClickRevealTests } from '../unit-tests/control-click-reveal-test.js';
 import { runTests as runTabHideFocusTests } from '../unit-tests/tab-hide-focus-test.js';
 import { runTests as runImageLightboxTests } from '../unit-tests/image-lightbox-test.js';
@@ -782,6 +783,7 @@ const UNIT_TEST_SUITES = [
   // Exclusive for the shared origin: one case writes the tool-grouping
   // localStorage preference, which every lane's renderer reads.
   { name: 'unit:delete-selection-neighbour', run: runDeleteSelectionNeighbourTests, needsExclusiveRun: true },
+  { name: 'unit:running-tool-delete', run: runRunningToolDeleteTests },
   { name: 'unit:control-click-reveal', run: runControlClickRevealTests },
   { name: 'unit:tab-hide-focus', run: runTabHideFocusTests },
   { name: 'unit:image-lightbox', run: runImageLightboxTests },

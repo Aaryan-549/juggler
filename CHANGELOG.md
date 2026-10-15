@@ -18,6 +18,8 @@ of changes; this project follows semantic versioning.
 - Remote viewers keep their own sound, Escape and diff settings instead of changing the desktop's
 - Fixed Claude Code cutting long tool descriptions short; the model now sees them whole
 - query_code says what is already in scope when a script reaches for Node's modules
+- Re-running a tool mid-turn stops the turn first, then continues from the new result
+- A still-running tool can no longer be deleted on its own from its panel
 - Fixed query_code rewriting the text "import(" inside a script's strings
 - run_code and query_code programs can show the model images with `image()`
 - MCP tools' images now reach the model instead of an `[image]` placeholder

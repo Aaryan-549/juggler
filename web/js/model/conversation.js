@@ -845,9 +845,17 @@ class Conversation {
   /**
    * Re-run a tool action. Resets it locally and re-evaluates immediately.
    * Also tells the worker (for batchCompleteSignal reset if strategy loop is active).
+   *
+   * A re-run means "go again from here", which a live turn contradicts: the
+   * worker cannot queue the re-run's LLM call behind one already in flight, so
+   * the tool would re-run under a reply that never reads its new result. Any
+   * live turn is stopped and settled first (cancelAndSettle tells the user), and
+   * the re-run then drives an LLM call of its own.
    * @param {string} toolUseId - The tool use to re-run
    */
   async retryToolApproval(toolUseId) {
+    await this.cancelAndSettle('tool re-run');
+
     // Tools whose result IS the user's input (e.g. AskUserQuestion) must be
     // re-asked on re-run, not silently replayed with the stored answer. Ask
     // the owning plugin which behaviour applies.

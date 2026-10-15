@@ -576,7 +576,7 @@ properties-panel-controls:empty {
     transition: background var(--transition-base), border-color var(--transition-base), color var(--transition-base);
 }
 
-.properties-panel-btn:hover {
+.properties-panel-btn:hover:not(:disabled) {
     background: var(--bg-raised);
     border-color: var(--text-tertiary);
     color: var(--text-primary);
@@ -592,10 +592,15 @@ properties-panel-controls:empty {
     color: var(--accent-red);
 }
 
-.properties-panel-btn.danger:hover {
+.properties-panel-btn.danger:hover:not(:disabled) {
     background: var(--accent-red);
     border-color: var(--accent-red);
     color: var(--text-on-accent);
+}
+
+.properties-panel-btn:disabled {
+    color: var(--text-tertiary);
+    cursor: not-allowed;
 }
 
 /* Copyable text container */

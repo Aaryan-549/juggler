@@ -892,6 +892,63 @@ export const rerunQuestionReasksTest = {
   }
 };
 
+// ============================================================================
+// TEST 14: Re-run while the LLM is mid-reply stops the turn first
+// ============================================================================
+
+/**
+ * The user clicks "Re-run command" on a completed tool while the turn is still
+ * live — here the LLM is mid-reply about that tool's output. A re-run means "go
+ * again from here", which the live turn contradicts, so the turn is stopped
+ * first and the re-run then drives a fresh LLM call of its own.
+ *
+ * Without the stop, the worker resets and re-executes the tool but drops the
+ * re-run's LLM request (the thread is still calling_llm), and the turn never
+ * comes back to read the new result: the re-run's wait for a completed turn
+ * times out with the mock still parked.
+ * @type {import('../utilities/integration-test-runner.js').IntegrationTestDefinition}
+ */
+export const rerunDuringLiveTurnTest = {
+  name: 'rerun-during-live-turn',
+  description: 'Re-running a tool while the LLM is mid-reply stops the turn, re-runs, and continues',
+  fixture: 'unit-test-fixture',
+
+  llmResponses: [
+    toolUseResponse('call_1', 'bash',
+      { command: 'env echo "hello"' },
+      'Running command.'
+    ),
+    // The reply to the first result parks mid-stream: the live turn the
+    // re-run lands in.
+    textResponse('Reading the first result.', { pauseBeforeReturn: true }),
+    // The re-run's own LLM call.
+    textResponse('Done.')
+  ],
+
+  operations: [
+    { type: 'send-message-no-wait', message: 'Run it' },
+    { type: 'wait-for-approval', toolUseId: 'call_1' },
+    { type: 'approve-no-wait', toolUseId: 'call_1' },
+    { type: 'wait-for-mock-paused' },
+    { type: 'rerun-tool', toolUseId: 'call_1' }
+  ],
+
+  expectedItems: [
+    { type: 'system-prompt' },
+    { type: 'user', content: 'Run it' },
+    { type: 'assistant', content: 'Running command.' },
+    {
+      type: 'tool-action',
+      toolUseId: '$TOOL_1',
+      toolName: 'bash',
+      state: 'completed',
+      result: { content: 'hello', isError: false }
+    },
+    { type: 'assistant', content: 'Reading the first result.' },
+    { type: 'assistant', content: 'Done.' }
+  ]
+};
+
 // Export all tests
 export const tests = [
   rerunCompletedToolTest,
@@ -907,5 +964,6 @@ export const tests = [
   rerunBatchGrepToolTest,
   rerunBashDifferentOutputTest,
   cancelDuringRerunTest,
-  rerunQuestionReasksTest
+  rerunQuestionReasksTest,
+  rerunDuringLiveTurnTest
 ];
