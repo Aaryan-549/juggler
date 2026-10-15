@@ -1189,6 +1189,40 @@ func TestContextRecoveryPinsLeadingContextItems(t *testing.T) {
 	}
 }
 
+// A standing context item added mid-conversation (a file pin, a dropped file)
+// stands at its document position. It stays put, but history on both sides of
+// it is still old conversation and must fold.
+func TestContextRecoveryFoldsHistoryAroundMidConversationContextItem(t *testing.T) {
+	w := NewConversationWorker("test-conv", "user:test")
+	defer w.doc.Destroy()
+	w.currentRun().storeState(StateProcessing)
+	w.doc.SetMetadata("defaultModelConfig", map[string]any{"provider": "test", "model": "test"})
+
+	base := recoveryTestItems()
+	items := []ConversationItem{base[0], {Type: "file-content", ItemID: "pin-0", Content: "a pinned file"}}
+	items = append(items, base[1:]...)
+	w.doc.InsertMessage(0, items...)
+	pinned := &ModelConfig{Provider: "test", Model: "test"}
+	_, stub := newRecoveryStub(t, pinned)
+	w.llmCallFunc = stub
+
+	if _, err := w.ownedRun(t).compactToFit(recoveryLimitErr(), pinned); err != nil {
+		t.Fatal(err)
+	}
+	got := w.doc.GetItems()
+	for _, it := range got {
+		if strings.HasPrefix(it.ItemID, "old-") {
+			t.Fatalf("%s still stands verbatim; old history after a mid-conversation context item was never folded", it.ItemID)
+		}
+	}
+	if len(got) != 5 || got[0].ItemID != "pin-0" {
+		t.Fatalf("items = %d, first %q; want the context item kept in place, then summary plus three suffix items", len(got), got[0].ItemID)
+	}
+	if got[1].Type != ItemTypeThread || !got[1].BoundedCompaction || !strings.Contains(got[1].Summary, "4 earlier items") {
+		t.Fatalf("items[1] = %q %q, want a summary thread of the four old items", got[1].Type, got[1].Summary)
+	}
+}
+
 func TestContextRecoveryStatePreservesLatestProviderCause(t *testing.T) {
 	state := compactionAttempts{}
 	firstCause := errors.New("provider overflow one")

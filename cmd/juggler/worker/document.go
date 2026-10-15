@@ -411,7 +411,7 @@ func (cd *ConversationDocument) FoldPrefixIntoSummaryIfUnchanged(arr *ycrdt.YArr
 		return false
 	}
 	cd.doc.Transact(func(_ *ycrdt.Transaction) {
-		spliceSummaryIntoPrefix(arr, start, count, summary)
+		spliceSummaryIntoPrefix(arr, start, count, nil, summary)
 	}, cd.txOrigin())
 	return true
 }
@@ -433,10 +433,26 @@ func (cd *ConversationDocument) foldFingerprintUnchangedLocked(arr *ycrdt.YArray
 
 // spliceSummaryIntoPrefix replaces count items at start with the single summary
 // item, preserving the summary's nested-item order via insertItemWithNested.
-// Callers must be inside an active Transact and hold ycrdtMu.
-func spliceSummaryIntoPrefix(arr *ycrdt.YArray, start, count int, summary ConversationItem) {
-	arr.Delete(ycrdt.Number(start), ycrdt.Number(count))
-	insertItemWithNested(arr, start, summary)
+// keep lists ascending array indices inside the range that stay in the array
+// untouched (standing context items a recovery fold steps around); they close
+// up, in order, at start, and the summary follows them. Callers must be inside
+// an active Transact and hold ycrdtMu.
+func spliceSummaryIntoPrefix(arr *ycrdt.YArray, start, count int, keep []int, summary ConversationItem) {
+	if len(keep) == 0 {
+		arr.Delete(ycrdt.Number(start), ycrdt.Number(count))
+		insertItemWithNested(arr, start, summary)
+		return
+	}
+	kept := make(map[int]bool, len(keep))
+	for _, i := range keep {
+		kept[i] = true
+	}
+	for i := start + count - 1; i >= start; i-- {
+		if !kept[i] {
+			arr.Delete(ycrdt.Number(i), 1)
+		}
+	}
+	insertItemWithNested(arr, start+len(keep), summary)
 }
 
 func (cd *ConversationDocument) deleteMessages(indices []int) {

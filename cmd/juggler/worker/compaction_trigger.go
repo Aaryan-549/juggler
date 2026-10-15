@@ -457,6 +457,15 @@ func (r *run) compactToFit(limitErr *provider.ContextLimitExceededError, modelCo
 	foldable := func(u recoveryUnit) bool {
 		return u.start != pinnedInvocation && recoveryUnitFoldable(items[u.start])
 	}
+	// A standing context item added mid-conversation (a file pin, a dropped
+	// file, a todo or plan) stands at its document position. It is never folded,
+	// but it is no wall either: the fold steps around it, leaving it in the array
+	// just ahead of the summary. Treating it as a wall would cap every fold at
+	// the history before the first such item, so a long conversation that
+	// gained one early could never be reduced again.
+	standing := func(u recoveryUnit) bool {
+		return !isConversationalItemType(items[u.start].Type)
+	}
 
 	// Leading non-conversational items (rules, plans, other standing context)
 	// are pinned: they render through the system prompt (already inside the
@@ -474,27 +483,35 @@ func (r *run) compactToFit(limitErr *provider.ContextLimitExceededError, modelCo
 	// newest unit alone is granted the full budget: a live tool batch that fits
 	// the window must survive verbatim (folding it would sever the open tool
 	// pair; shrinking is reserved for results that can never fit at all). A
-	// pinned unit stops the walk — the fold boundary may not cross it.
+	// standing unit is walked past uncharged — it stays wherever the boundary
+	// falls; any other pinned unit stops the walk, since the fold boundary may
+	// not cross it.
 	fullBudget := window - envelope - reserve - recoverySummaryFloorTokens
 	suffixBudget := int64(float64(fullBudget) * recoverySuffixBudgetFraction)
 	k := len(units)
 	var suffixEst int64
+	keptNewest := false
 	for k > skip {
 		unit := units[k-1]
+		if standing(unit) {
+			k--
+			continue
+		}
 		if !foldable(unit) {
 			break
 		}
 		budget := suffixBudget
-		if k == len(units) {
+		if !keptNewest {
 			budget = fullBudget
 		}
 		if suffixEst+unit.est > budget {
 			break
 		}
 		suffixEst += unit.est
+		keptNewest = true
 		k--
 	}
-	if k == len(units) {
+	if !keptNewest {
 		return contextRecoveryOutcome(before, items), nil
 	}
 	// The suffix walk stops at the first pinned unit from the back, but another
@@ -503,9 +520,10 @@ func (r *run) compactToFit(limitErr *provider.ContextLimitExceededError, modelCo
 	// both sides of it. The fold is a single contiguous range, so clamp k to
 	// the first pinned unit at or after skip — the fold covers only the leading
 	// contiguous run and leaves the pin (and everything after it) untouched.
+	// Standing units are not pins here: the fold steps around them.
 	// units[skip] is foldable by construction, so k stays > skip.
 	for p := skip; p < k; p++ {
-		if !foldable(units[p]) {
+		if !foldable(units[p]) && !standing(units[p]) {
 			k = p
 			break
 		}
@@ -529,12 +547,26 @@ func (r *run) compactToFit(limitErr *provider.ContextLimitExceededError, modelCo
 
 	prefixStart := units[skip].start
 	prefixEnd := units[k-1].end
+	// Split the range into what folds and the standing items that stay. Records
+	// are index-aligned with items (the prompt id is in neither), so the
+	// reducer's source is exactly the folded items' records.
+	var kept []int
+	folded := make([]ConversationItem, 0, prefixEnd-prefixStart)
+	prefixRecords := make([]string, 0, prefixEnd-prefixStart)
+	for i := prefixStart; i < prefixEnd; i++ {
+		if !isConversationalItemType(items[i].Type) {
+			kept = append(kept, i)
+			continue
+		}
+		folded = append(folded, items[i])
+		prefixRecords = append(prefixRecords, records[i])
+	}
 	// A range holding nothing but already-summarized compaction threads would
 	// only re-summarize existing summaries — nothing fresh, no progress
 	// (mirrors the manual fold's guard, and keeps the foldBoundary progress
 	// signal honest: a new summary id always means brand-new history folded).
 	hasFresh := false
-	for _, it := range items[prefixStart:prefixEnd] {
+	for _, it := range folded {
 		if !summarizedCompactionThread(it) {
 			hasFresh = true
 			break
@@ -543,7 +575,6 @@ func (r *run) compactToFit(limitErr *provider.ContextLimitExceededError, modelCo
 	if !hasFresh {
 		return contextRecoveryOutcome(before, items), nil
 	}
-	prefixRecords := records[prefixStart:prefixEnd]
 	// The hidden compaction calls are independent requests against the full
 	// context window: providerOverhead accounts for the provider's fixed overhead
 	// exactly once. Subtracting envelope+suffix from the window would double-count
@@ -582,8 +613,8 @@ func (r *run) compactToFit(limitErr *provider.ContextLimitExceededError, modelCo
 		ItemID:  promptID,
 		Content: defaultSummarizationPromptMarker,
 	}
-	nested := make([]ConversationItem, 0, prefixEnd-prefixStart+1)
-	for _, it := range items[prefixStart:prefixEnd] {
+	nested := make([]ConversationItem, 0, len(folded)+1)
+	for _, it := range folded {
 		nested = append(nested, condenseForRefold(it))
 	}
 	nested = append(nested, promptItem)
@@ -598,12 +629,12 @@ func (r *run) compactToFit(limitErr *provider.ContextLimitExceededError, modelCo
 		ItemID:                 generateItemID(),
 		Timestamp:              time.Now().Format(time.RFC3339),
 		Goal:                   "Compacted conversation history",
-		Summary:                fmt.Sprintf("Summarized %d earlier items to fit the context window", prefixEnd-prefixStart),
+		Summary:                fmt.Sprintf("Summarized %d earlier items to fit the context window", len(folded)),
 		BoundedCompaction:      true,
 		CompactionPromptItemID: promptID,
 		Items:                  nestedJSON,
 		Result:                 resultJSON,
-		FoldedRuns:             foldedRunsIn(items[prefixStart:prefixEnd]),
+		FoldedRuns:             foldedRunsIn(folded),
 		// The fold is spliced where the folded history began, far above a reader
 		// parked at the tail, and a thread item is the auto-select fallback: left
 		// selectable it takes the column out from under whoever is reading. The
@@ -621,7 +652,7 @@ func (r *run) compactToFit(limitErr *provider.ContextLimitExceededError, modelCo
 	// the fold splicing at stale indices — it aborts rather than clobbering. The
 	// tracked variant captures the whole delete+insert as one undo group, so a
 	// single undo reverses the fold (parity with the browser /compact fold).
-	if !r.foldPrefixIntoSummaryTracked(r.getTargetItemsYArray(), prefixStart, prefixEnd-prefixStart, summaryItem, promptID, fingerprint) {
+	if !r.foldPrefixIntoSummaryTracked(r.getTargetItemsYArray(), prefixStart, prefixEnd-prefixStart, kept, summaryItem, promptID, fingerprint) {
 		r.recordCompactionOutcome(compactionKindAuto, "error", result, map[string]any{"reason": string(BoundedCompactionSourceChanged)})
 		return contextRecoveryResult{}, &BoundedCompactionError{
 			Reason: BoundedCompactionSourceChanged, Message: "conversation changed during context recovery; nothing was folded",
@@ -630,12 +661,12 @@ func (r *run) compactToFit(limitErr *provider.ContextLimitExceededError, modelCo
 		}
 	}
 	r.recordCompactionOutcome(compactionKindAuto, "fold", result, map[string]any{
-		"foldedItems": prefixEnd - prefixStart, "suffixTokens": suffixEst, "window": window,
+		"foldedItems": len(folded), "keptStanding": len(kept), "suffixTokens": suffixEst, "window": window,
 	})
 	r.log.Info("[compaction] folded %d items into a compaction summary (passes=%d calls=%d spend=%d window=%d suffix=%d tokens)",
-		prefixEnd-prefixStart, result.Passes, result.Calls, result.EstimatedSpend, window, suffixEst)
+		len(folded), result.Passes, result.Calls, result.EstimatedSpend, window, suffixEst)
 	outcome := contextRecoveryOutcome(before, r.getTargetItems())
-	outcome.FoldedItems = prefixEnd - prefixStart
+	outcome.FoldedItems = len(folded)
 	return outcome, nil
 }
 

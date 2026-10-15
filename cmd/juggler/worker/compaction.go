@@ -682,7 +682,7 @@ func (r *run) foldConversationForCompaction(handoffPromote bool) (string, bool, 
 		FoldedRuns:             foldedRunsIn(items[prefixStart:prefixEnd]),
 	}
 
-	if !r.foldPrefixIntoSummaryTracked(r.getTargetItemsYArray(), prefixStart, prefixEnd-prefixStart, summaryItem, promptID, fingerprint) {
+	if !r.foldPrefixIntoSummaryTracked(r.getTargetItemsYArray(), prefixStart, prefixEnd-prefixStart, nil, summaryItem, promptID, fingerprint) {
 		return "", false, &BoundedCompactionError{Reason: BoundedCompactionSourceChanged, Message: "conversation changed during compaction; nothing was folded"}
 	}
 	return threadID, true, nil
@@ -697,8 +697,9 @@ func (r *run) foldConversationForCompaction(handoffPromote bool) (string, bool, 
 // fold: one undo restores the pre-fold history and removes the summary thread,
 // instead of the fold lingering as an un-undoable item while the rest of the
 // conversation undoes around it. Returns false without mutating when the source
-// changed under the recheck.
-func (w *ConversationWorker) foldPrefixIntoSummaryTracked(arr *ycrdt.YArray, start, count int, summary ConversationItem, promptID, expectedFingerprint string) bool {
+// changed under the recheck. keep is spliceSummaryIntoPrefix's: indices inside
+// the range left in place rather than folded.
+func (w *ConversationWorker) foldPrefixIntoSummaryTracked(arr *ycrdt.YArray, start, count int, keep []int, summary ConversationItem, promptID, expectedFingerprint string) bool {
 	if arr == nil || count <= 0 {
 		return false
 	}
@@ -713,7 +714,7 @@ func (w *ConversationWorker) foldPrefixIntoSummaryTracked(arr *ycrdt.YArray, sta
 	um := w.tracker.ensureUndoManager()
 	um.StopCapturing()
 	ycrdt.Transact(w.doc.doc, func(_ *ycrdt.Transaction) {
-		spliceSummaryIntoPrefix(arr, start, count, summary)
+		spliceSummaryIntoPrefix(arr, start, count, keep, summary)
 	}, w.doc.authorID, true)
 	um.StopCapturing()
 	return true

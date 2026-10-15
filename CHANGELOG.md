@@ -18,6 +18,7 @@ of changes; this project follows semantic versioning.
 - Denying a tool call also stops approved calls still waiting their turn
 - Remote viewers keep their own sound, Escape and diff settings instead of changing the desktop's
 - Fixed Claude Code cutting long tool descriptions short; the model now sees them whole
+- Fixed auto-compaction stalling when a file or other context item was added mid-conversation
 - query_code says what is already in scope when a script reaches for Node's modules
 - Re-running a tool mid-turn stops the turn first, then continues from the new result
 - A still-running tool can no longer be deleted on its own from its panel
