@@ -10,7 +10,8 @@ import { presentPopup } from '../utils/popup-surface.js';
 import { applyMenuRoles, attachMenuKeyboard } from '../utils/menu-roles.js';
 import { showAlert, showConfirm } from './modal-dialog.js';
 import JugglerElement from './juggler-element.js';
-import { UNTITLED_BASE } from '../model/conversation-naming.js';
+import { t } from '../../sdk/lib/i18n.js';
+import { escapeHtml } from '../../sdk/lib/html.js';
 
 /**
  * @typedef {object} BinnedConvRow
@@ -97,14 +98,14 @@ class BinModal extends JugglerElement {
       <modal-backdrop class="modal-backdrop-el bin-backdrop"></modal-backdrop>
       <modal-panel class="modal-container bin-panel">
         <header class="modal-header">
-          <h2 class="modal-title">Bin</h2>
+          <h2 class="modal-title">${escapeHtml(t('Bin'))}</h2>
           <div class="bin-header-actions">
-            <button class="bin-empty-now" type="button" disabled aria-haspopup="menu" aria-expanded="false">Empty Bin</button>
-            <button class="bin-close" aria-label="Close" title="Close">×</button>
+            <button class="bin-empty-now" type="button" disabled aria-haspopup="menu" aria-expanded="false">${escapeHtml(t('Empty Bin'))}</button>
+            <button class="bin-close" aria-label="${escapeHtml(t('Close'))}" title="${escapeHtml(t('Close'))}">×</button>
           </div>
         </header>
         <div class="modal-body bin-body">
-            <div class="bin-empty hidden">The bin is empty.</div>
+            <div class="bin-empty hidden">${escapeHtml(t('The bin is empty.'))}</div>
             <div class="bin-size-notice hidden" role="status"></div>
           <ul class="bin-list" role="list"></ul>
         </div>
@@ -148,11 +149,11 @@ class BinModal extends JugglerElement {
       console.error('[BinModal] Failed to load binned list:', e);
       this._binned = [];
       empty.classList.remove('hidden');
-      empty.textContent = 'Couldn’t load the bin.';
+      empty.textContent = t('Couldn’t load the bin.');
       list.innerHTML = '';
       if (emptyBtn) {
         emptyBtn.disabled = true;
-        emptyBtn.textContent = 'Empty Bin';
+        emptyBtn.textContent = t('Empty Bin');
       }
       return;
     }
@@ -169,8 +170,8 @@ class BinModal extends JugglerElement {
       // the user how much they're about to reclaim.
       const sizeBytes = this._session.bin.sizeBytes || 0;
       emptyBtn.textContent = binned.length > 0 && sizeBytes > 0
-        ? `Empty Bin (${formatBytes(sizeBytes)})`
-        : 'Empty Bin';
+        ? t('Empty Bin ({size})', { size: formatBytes(sizeBytes) })
+        : t('Empty Bin');
     }
     if (binned.length === 0) {
       empty.classList.remove('hidden');
@@ -178,8 +179,8 @@ class BinModal extends JugglerElement {
       // user got here. After they restore, delete, or empty something the
       // emptiness is their own doing, so it is stated plainly.
       empty.textContent = onOpen
-        ? 'Empty. Either you’re very tidy or you’re new.'
-        : 'The bin is empty.';
+        ? t('Empty. Either you’re very tidy or you’re new.')
+        : t('The bin is empty.');
       return;
     }
     empty.classList.add('hidden');
@@ -189,7 +190,7 @@ class BinModal extends JugglerElement {
     // user cannot infer — that it will sit there until they act.
     const noticeBytes = this._session.bin.sizeBytes || 0;
     if (notice && noticeBytes >= BIN_LARGE_BYTES) {
-      notice.textContent = `The bin is holding ${formatBytes(noticeBytes)}. Nothing here is deleted automatically.`;
+      notice.textContent = t('The bin is holding {size}. Nothing here is deleted automatically.', { size: formatBytes(noticeBytes) });
       notice.classList.remove('hidden');
     }
 
@@ -204,13 +205,13 @@ class BinModal extends JugglerElement {
           <span class="bin-row-date"></span>
         </div>
         <div class="bin-row-actions">
-          <button class="bin-action bin-restore" type="button">Restore</button>
-          <button class="bin-action bin-delete" type="button">Delete</button>
+          <button class="bin-action bin-restore" type="button">${escapeHtml(t('Restore'))}</button>
+          <button class="bin-action bin-delete" type="button">${escapeHtml(t('Delete'))}</button>
         </div>
       `;
       const nameEl = li.querySelector('.bin-row-name');
       const dateEl = /** @type {HTMLElement|null} */ (li.querySelector('.bin-row-date'));
-      if (nameEl) nameEl.textContent = row.name || UNTITLED_BASE;
+      if (nameEl) nameEl.textContent = row.name || t('Untitled');
       if (dateEl) {
         dateEl.textContent = dateShort;
         dateEl.title = dateFull;
@@ -234,8 +235,8 @@ class BinModal extends JugglerElement {
     } catch (e) {
       console.error('[BinModal] restore failed:', e);
       await showAlert(
-        `Couldn’t restore: ${/** @type {any} */ (e)?.message || e}`,
-        'Restore failed'
+        t('Couldn’t restore: {error}', { error: String(/** @type {any} */ (e)?.message || e) }),
+        t('Restore failed')
       );
     }
     await this._refreshList();
@@ -248,9 +249,9 @@ class BinModal extends JugglerElement {
   async _onDelete(row) {
     if (!this._session) return;
     const confirmed = await showConfirm(
-      `Permanently delete "${row.name || UNTITLED_BASE}"?\n\nThis cannot be undone.`,
-      'Delete Conversation',
-      { confirmText: 'Delete', cancelText: 'Cancel', danger: true }
+      t('Permanently delete "{name}"?\n\nThis cannot be undone.', { name: row.name || t('Untitled') }),
+      t('Delete Conversation'),
+      { confirmText: t('Delete'), cancelText: t('Cancel'), danger: true }
     );
     if (!confirmed) return;
     try {
@@ -258,8 +259,8 @@ class BinModal extends JugglerElement {
     } catch (e) {
       console.error('[BinModal] delete failed:', e);
       await showAlert(
-        `Couldn’t delete: ${/** @type {any} */ (e)?.message || e}`,
-        'Delete failed'
+        t('Couldn’t delete: {error}', { error: String(/** @type {any} */ (e)?.message || e) }),
+        t('Delete failed')
       );
     }
     await this._refreshList();
@@ -277,8 +278,8 @@ class BinModal extends JugglerElement {
     const cutoff = Date.now() - days * DAY_MS;
     return this._binned
       .filter((row) => {
-        const t = Date.parse(row.lastModifiedAt);
-        return Number.isFinite(t) && t < cutoff;
+        const at = Date.parse(row.lastModifiedAt);
+        return Number.isFinite(at) && at < cutoff;
       })
       .map((row) => row.id);
   }
@@ -345,7 +346,7 @@ class BinModal extends JugglerElement {
       const matches = this._idsOlderThan(days).length;
       const row = document.createElement('li');
       row.className = matches > 0 ? 'menu-item' : 'menu-item unavailable';
-      row.textContent = `Older than ${days} days`;
+      row.textContent = t('{days, plural, one {Older than # day} other {Older than # days}}', { days });
       if (matches > 0) {
         row.addEventListener('click', (e) => {
           e.stopPropagation();
@@ -362,7 +363,7 @@ class BinModal extends JugglerElement {
 
     const everything = document.createElement('li');
     everything.className = 'menu-item danger';
-    everything.textContent = 'Everything';
+    everything.textContent = t('Everything');
     everything.addEventListener('click', (e) => {
       e.stopPropagation();
       this._closeEmptyMenu();
@@ -370,7 +371,7 @@ class BinModal extends JugglerElement {
     });
     list.appendChild(everything);
 
-    applyMenuRoles(list, 'Empty Bin');
+    applyMenuRoles(list, t('Empty Bin'));
     this._emptyMenu.replaceChildren(list);
   }
 
@@ -387,10 +388,10 @@ class BinModal extends JugglerElement {
     if (doomed && doomed.length === 0) return;
     const confirmed = await showConfirm(
       doomed
-        ? `Permanently delete ${doomed.length} conversation${doomed.length === 1 ? '' : 's'} last active over ${olderThanDays} days ago?\n\nThis cannot be undone.`
-        : 'Permanently delete every conversation in the bin?\n\nThis cannot be undone.',
-      'Empty Bin',
-      { confirmText: doomed ? 'Delete' : 'Empty Bin', cancelText: 'Cancel', danger: true }
+        ? t('{count, plural, one {Permanently delete {count} conversation last active over {days} days ago?\n\nThis cannot be undone.} other {Permanently delete {count} conversations last active over {days} days ago?\n\nThis cannot be undone.}}', { count: doomed.length, days: olderThanDays })
+        : t('Permanently delete every conversation in the bin?\n\nThis cannot be undone.'),
+      t('Empty Bin'),
+      { confirmText: doomed ? t('Delete') : t('Empty Bin'), cancelText: t('Cancel'), danger: true }
     );
     if (!confirmed) return;
 
@@ -404,7 +405,7 @@ class BinModal extends JugglerElement {
     const empty = /** @type {HTMLElement|null} */ (this.querySelector('.bin-empty'));
     if (emptyBtn) {
       emptyBtn.disabled = true;
-      emptyBtn.textContent = 'Emptying…';
+      emptyBtn.textContent = t('Emptying…');
     }
     if (doomed) {
       for (const id of doomed) {
@@ -415,7 +416,7 @@ class BinModal extends JugglerElement {
     }
     if (empty && !list?.children.length) {
       empty.classList.remove('hidden');
-      empty.textContent = 'The bin is empty.';
+      empty.textContent = t('The bin is empty.');
     }
 
     try {
@@ -423,8 +424,8 @@ class BinModal extends JugglerElement {
     } catch (e) {
       console.error('[BinModal] empty bin failed:', e);
       await showAlert(
-        `Couldn’t empty the bin: ${/** @type {any} */ (e)?.message || e}`,
-        'Empty Bin failed'
+        t('Couldn’t empty the bin: {error}', { error: String(/** @type {any} */ (e)?.message || e) }),
+        t('Empty Bin failed')
       );
     }
     await this._refreshList();

@@ -81,6 +81,10 @@ function revealInScroller(scroller, target) {
  * @property {string} [scope] - What is being compared, when this manifest says
  *   more than the panel's `scopeLabel` — the tree it was read from, say. It rides
  *   the manifest so the words and the files they describe arrive together.
+ * @property {string} [commentScope] - The same words as a new comment stores
+ *   them, when they differ from `scope`. Comments reach the model in the review
+ *   message, so a host whose `scope` is in the UI language gives the English
+ *   here. Absent: `scope`.
  * @property {string} [scopeKey] - Which comparison this is, for the comments: a
  *   comment is written in the manifest's scope, and only the comments written in
  *   it are drawn and counted here. '' or absent is the host's default comparison,
@@ -912,7 +916,7 @@ class ReviewPanel {
     const scope = existing ? existing.scope : this._scopeKey();
     if (scope) {
       comment.scope = scope;
-      const label = existing ? existing.scopeLabel : this._manifest?.scope;
+      const label = existing ? existing.scopeLabel : (this._manifest?.commentScope || this._manifest?.scope);
       if (label) comment.scopeLabel = label;
     }
     if (anchor.side !== 'file' && typeof anchor.startLine === 'number') {

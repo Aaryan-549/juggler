@@ -29,6 +29,39 @@ import {
   runWorkspaceSuite,
   FixtureProvider
 } from '../utilities/conversation-workspace-helpers.js';
+import { isPseudoLocalized } from '../../sdk/lib/i18n.js';
+import { underPseudoLocale, shownStrings } from '../utilities/pseudo-locale.js';
+
+const PLACES_EXTENSION = 'test-i18n-places';
+
+/** A provider that says what it is good for, and finds a place it once parked. */
+class AdvisesAndFinds extends WorkspaceProvider {
+  static MANIFEST = {
+    id: 'i18n-create-dialog-provider',
+    name: 'Advises, for testing',
+    version: '1.0.0',
+    description: 'Makes a place for the place list to describe',
+    setupLabel: 'New place, for testing',
+    recommendations: {
+      bestFor: 'checking what a place list says',
+      avoidFor: 'anything that matters',
+      notes: ['Nothing is made on disk.']
+    }
+  };
+
+  /**
+   * @param {any[]} workspaces - This provider's rows.
+   * @returns {Promise<any>} The parked place, as something to adopt.
+   */
+  async reconcile(workspaces) {
+    void workspaces;
+    return {
+      orphanedWorkspaces: [],
+      orphanedArtifacts: [{ id: 'i18n-create-1', label: '8', detail: '9', workspace: { root: '/3/8', label: '8', meta: {} } }],
+      confirmed: []
+    };
+  }
+}
 
 /**
  * A second kind, so that the rail has something to walk between. It builds
@@ -723,6 +756,90 @@ export async function runTests() {
         'and left the table as it was');
       assert(!document.querySelector('.workspace-create-overlay'),
         'and took itself off the screen');
+    });
+
+    await run('en-XA: the dialog draws no plain English in any state', async () => {
+      // Pinned: only the stand-in provider is registered, under an extension id
+      // whose catalogue the case supplies, and then none at all, for the dialog
+      // that has nothing to offer.
+      const registry = /** @type {any} */ (workspaceProviderRegistry);
+      const savedItems = new Map(registry.items);
+      const savedExtensions = new Map(registry.itemExtensions);
+      const savedPaths = new Map(registry.modulePaths);
+      registry.items.clear();
+      const added = registry.registerClass(AdvisesAndFinds, { extensionId: PLACES_EXTENSION, modulePath: '(test)' });
+      const originalFetch = window.fetch;
+      const { MANIFEST } = AdvisesAndFinds;
+      // A place this project parked: its artifact comes back as an adopt row.
+      const fake = {
+        projectPath: '/1',
+        workspaces: /** @type {any[]} */ ([{ id: 'ws_parked', root: '/3/8', label: '8', state: 'closed', providerId: AdvisesAndFinds.MANIFEST.id }])
+      };
+      const overlay = () => /** @type {HTMLElement} */ (document.querySelector('.workspace-create-overlay'));
+
+      /** @type {string[]} */
+      const texts = [];
+      try {
+        assert(added.registered, `the stand-in provider registered, got ${JSON.stringify(added)}`);
+        await underPseudoLocale('workspace-create-dialog-test', async () => {
+          // The adoption's POST answers with a row that has no id: the dialog's
+          // own refusal is what is drawn.
+          window.fetch = /** @type {typeof fetch} */ (async (input, init) => {
+            if (String(input).includes('/session/workspaces') && init?.method === 'POST') {
+              return new window.Response(JSON.stringify({ workspace: {} }), {
+                status: 200, headers: { 'Content-Type': 'application/json' }
+              });
+            }
+            return originalFetch(input, init);
+          });
+
+          // Opened on the stand-in's kind, with a found tree beside it. Probed
+          // first: a dialog with a form open does not redraw for a late offer.
+          await probeSetupAdoptions(fake);
+          let settled = openWorkspaceCreate(fake);
+          try {
+            await waitFor(() => overlay()?.querySelector('.setup-row-adopt') !== null, 2000);
+            assert(overlay().querySelector('.workspace-create-detail-title'), 'the chosen kind heads its half');
+            texts.push(...shownStrings(overlay()));
+
+            // The found tree taken up, and refused.
+            /** @type {HTMLElement} */ (overlay().querySelector('.setup-row-adopt')).click();
+            await waitFor(() => overlay()?.querySelector('.setup-error') !== null, 2000);
+            texts.push(...shownStrings(/** @type {HTMLElement} */ (overlay().querySelector('.setup-error'))));
+          } finally {
+            press('.workspace-create-cancel');
+            await settled;
+          }
+
+          // Nothing registered at all.
+          registry.items.clear();
+          settled = openWorkspaceCreate(fake);
+          try {
+            await waitFor(() => overlay()?.querySelector('.workspace-create-empty') !== null, 2000);
+            texts.push(...shownStrings(/** @type {HTMLElement} */ (overlay().querySelector('.workspace-create-empty'))));
+            texts.push(...shownStrings(/** @type {HTMLElement} */ (overlay().querySelector('.workspace-create-footer'))));
+          } finally {
+            press('.workspace-create-cancel');
+            await settled;
+          }
+        }, {
+          [PLACES_EXTENSION]: [MANIFEST.setupLabel, MANIFEST.description, MANIFEST.recommendations.bestFor,
+            MANIFEST.recommendations.avoidFor, ...MANIFEST.recommendations.notes]
+        });
+      } finally {
+        window.fetch = originalFetch;
+        overlay()?.remove();
+        registry.items.clear();
+        for (const [k, v] of savedItems) registry.items.set(k, v);
+        registry.itemExtensions.clear();
+        for (const [k, v] of savedExtensions) registry.itemExtensions.set(k, v);
+        registry.modulePaths.clear();
+        for (const [k, v] of savedPaths) registry.modulePaths.set(k, v);
+      }
+
+      assert(texts.length >= 12, `every state drew something, got ${JSON.stringify(texts)}`);
+      const raw = texts.filter((text) => !/^[\d/\s]+$/.test(text) && !isPseudoLocalized(text));
+      assert(raw.length === 0, `plain English under en-XA: ${JSON.stringify(raw)}`);
     });
   });
 }

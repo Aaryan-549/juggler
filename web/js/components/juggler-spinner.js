@@ -39,6 +39,8 @@
  * exactly the non-live appearance.
  */
 
+import { t } from '../../sdk/lib/i18n.js';
+
 // The two paths from juggler-logo.svg, inlined into a single self-contained
 // <svg> whose viewBox tightly frames one club (centred at 0,0). We deliberately
 // do NOT use a shared <symbol> + <use>: an <svg> that references a <symbol>
@@ -212,7 +214,7 @@ class JugglerSpinner extends HTMLElement {
   connectedCallback() {
     if (this.childElementCount === 0) this._renderClubs(DEFAULT_CLUBS);
     if (!this.hasAttribute('role')) this.setAttribute('role', 'status');
-    if (!this.hasAttribute('aria-label')) this.setAttribute('aria-label', 'Loading');
+    if (!this.hasAttribute('aria-label')) this.setAttribute('aria-label', t('Loading'));
     this._observeVisibility();
   }
 
@@ -389,8 +391,8 @@ class JugglerSpinner extends HTMLElement {
   _toolWaitRate(ms) {
     const n = Number(ms);
     const waited = Number.isFinite(n) && n > 0 ? n : 0;
-    const t = Math.min(1, waited / TUNING.toolWaitSlowdownMs);
-    return TUNING.toolWaitStartRate + (TUNING.minRate - TUNING.toolWaitStartRate) * t;
+    const progress = Math.min(1, waited / TUNING.toolWaitSlowdownMs);
+    return TUNING.toolWaitStartRate + (TUNING.minRate - TUNING.toolWaitStartRate) * progress;
   }
 
   /**

@@ -16,13 +16,14 @@
 import { presentPopup } from './popup-surface.js';
 import { applyMenuRoles, attachMenuKeyboard } from './menu-roles.js';
 import keyShortcutManager from '../services/key-shortcut-manager.js';
+import { t } from '../../sdk/lib/i18n.js';
 
 /** Popup-manager id: at most one overflow menu is ever open. */
 const OVERFLOW_MENU_POPUP_ID = 'header-overflow-menu';
 
 /**
  * @typedef {object} HeaderOverflowItem
- * @property {string} label - What the row does.
+ * @property {string} label - What the row does: English, marked for translation and translated where the row is drawn.
  * @property {string} shortcutId - KeyShortcutManager id whose binding the row shows.
  * @property {() => void} run - The action, shared with the button the row stands in for.
  * @property {() => boolean} [omit] - Leaves the row out of a menu opened while it returns true.
@@ -55,7 +56,7 @@ export function setupHeaderOverflowMenu(button, items) {
       row.className = 'menu-item';
       const name = document.createElement('span');
       name.className = 'menu-item-name';
-      name.textContent = item.label;
+      name.textContent = t(item.label);
       row.append(name);
       const keys = keyShortcutManager.formatBinding(item.shortcutId);
       if (keys) {
@@ -71,7 +72,7 @@ export function setupHeaderOverflowMenu(button, items) {
       });
       list.append(row);
     }
-    applyMenuRoles(list, 'More controls');
+    applyMenuRoles(list, t('More controls'));
     surface.append(list);
     button.setAttribute('aria-expanded', 'true');
     release = presentPopup({

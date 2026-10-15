@@ -282,8 +282,7 @@ export async function runTests() {
         const t = state.thread();
         t.set('goal', '1');
         drawTile(t, state.live, state.name,
-          // juggler-spinner.js draws its own "Loading" label; it is another file's slice.
-          state.kind === 'running' ? '.thread-goal, .thread-status-message > span, juggler-spinner' : '.thread-goal');
+          state.kind === 'running' ? '.thread-goal, .thread-status-message > span' : '.thread-goal');
       }
       // At rest with a summary and the cost pair it closes on.
       drawTile(thread({ goal: '1', result: '2', contextTokens: 3, resultTokens: 4 }), null, 'summary',

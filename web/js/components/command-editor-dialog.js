@@ -24,6 +24,9 @@ import { presentPopup } from '../utils/popup-surface.js';
 import { closePopupById } from '../utils/popup-manager.js';
 import { focusWhenShown } from '../utils/focus.js';
 import { showConfirm } from './modal-dialog.js';
+import { capabilityLabel } from '../utils/capability-label.js';
+import { t, markForTranslation, htmlSlots, withHtml } from '../../sdk/lib/i18n.js';
+import { escapeHtml } from '../../sdk/lib/html.js';
 import './model-picker/model-chip.js';
 import './model-picker/model-picker.js';
 
@@ -38,9 +41,9 @@ const MODEL_PICKER_POPUP_ID = 'command-editor-model-picker';
  * @type {Record<string, string>}
  */
 const RUN_MODES = {
-  send: 'Send immediately',
-  draft: 'Insert as draft',
-  subthread: 'Run in a thread',
+  send: markForTranslation('Send immediately'),
+  draft: markForTranslation('Insert as draft'),
+  subthread: markForTranslation('Run in a thread'),
 };
 
 /**
@@ -50,15 +53,15 @@ const RUN_MODES = {
  * @type {Record<string, string>}
  */
 const RUN_MODE_HINTS = {
-  send: 'Expands the template and sends it as your next message.',
-  draft: 'Puts the expanded template in the composer so you can edit it first.',
-  subthread: 'Runs the prompt in a separate thread; the result lands back here.',
+  send: markForTranslation('Expands the template and sends it as your next message.'),
+  draft: markForTranslation('Puts the expanded template in the composer so you can edit it first.'),
+  subthread: markForTranslation('Runs the prompt in a separate thread; the result lands back here.'),
 };
 
 /** Save destinations, in the order the segmented control offers them. */
 const SCOPES = {
-  project: 'This project',
-  user: 'All my projects',
+  project: markForTranslation('This project'),
+  user: markForTranslation('All my projects'),
 };
 
 /**
@@ -159,7 +162,8 @@ export function openCommandEditor(options = {}) {
       for (const { id, manifest } of strategyManifests()) {
         const opt = document.createElement('option');
         opt.value = id;
-        opt.textContent = manifest?.name || id;
+        // A strategy's name is its manifest's, in its own extension's catalogue.
+        opt.textContent = manifest?.name ? capabilityLabel(manifest.name, id, strategyRegistry) : id;
         if (id === fm.strategy) opt.selected = true;
         strategySelect.appendChild(opt);
       }
@@ -184,8 +188,8 @@ export function openCommandEditor(options = {}) {
       modelChip.update({
         providers: providersCache.get(),
         config: modelConfig,
-        placeholder: 'Inherit from parent',
-        buttonTitle: 'Model for the thread',
+        placeholder: t('Inherit from parent'),
+        buttonTitle: t('Model for the thread'),
       });
     };
 
@@ -202,7 +206,7 @@ export function openCommandEditor(options = {}) {
       const picker = /** @type {any} */ (document.createElement('model-picker'));
       picker.providers = providersCache.get();
       picker.value = modelConfig;
-      picker.noneLabel = 'Inherit from parent';
+      picker.noneLabel = t('Inherit from parent');
       picker.loading = !providersCache.hasReceived();
 
       /** @type {(() => void)|null} */
@@ -256,8 +260,8 @@ export function openCommandEditor(options = {}) {
       const v = nameInput.value.trim();
       let msg = '';
       if (!v) msg = '';
-      else if (!USER_COMMAND_NAME_RE.test(v)) msg = 'Lowercase letters, digits, and hyphens; must start with a letter.';
-      else if (reserved.has(v)) msg = `"/${v}" already exists as a built-in command.`;
+      else if (!USER_COMMAND_NAME_RE.test(v)) msg = t('Lowercase letters, digits, and hyphens; must start with a letter.');
+      else if (reserved.has(v)) msg = t('"/{name}" already exists as a built-in command.', { name: v });
       nameError.textContent = msg;
       const ok = !!v && !msg;
       saveBtn.disabled = !ok;
@@ -271,13 +275,16 @@ export function openCommandEditor(options = {}) {
 
     const updateRunUI = () => {
       subthreadFields.classList.toggle('hidden', run !== 'subthread');
-      runHint.textContent = RUN_MODE_HINTS[run] || '';
+      const hint = RUN_MODE_HINTS[run];
+      runHint.textContent = hint ? t(hint) : '';
     };
 
     const updatePathHint = () => {
-      const dir = scope === 'user' ? '~/.juggler/commands' : '<project>/.juggler/commands';
-      const nm = nameInput.value.trim() || 'name';
-      pathHint.textContent = `${dir}/${nm}.md`;
+      // A path, so only the words standing in for the parts not yet known translate.
+      const project = t('<project>', undefined, { context: 'stands for the project folder in a path' });
+      const dir = scope === 'user' ? '~/.juggler/commands' : `${project}/.juggler/commands`; // i18n-ignore: a path
+      const nm = nameInput.value.trim() || t('name', undefined, { context: 'stands for the command name in a file name' });
+      pathHint.textContent = `${dir}/${nm}.md`; // i18n-ignore: a path
     };
 
     nameInput.addEventListener('input', () => { validateName(); updatePathHint(); });
@@ -290,8 +297,8 @@ export function openCommandEditor(options = {}) {
       const del = $('#cmd-delete');
       del.classList.remove('hidden');
       del.addEventListener('click', async () => {
-        const ok = await showConfirm(
-          `Delete the /${def?.name} command?`, 'Delete command', { danger: true, confirmText: 'Delete' });
+        const ok = await showConfirm(t('Delete the /{name} command?', { name: def?.name }), t('Delete command'),
+          { danger: true, confirmText: t('Delete') });
         if (!ok) return;
         await deleteUserCommand(/** @type {any} */ (def?.scope), /** @type {any} */ (def?.name));
         refreshRegistries();
@@ -335,7 +342,7 @@ export function openCommandEditor(options = {}) {
       if (res.status === 400 && res.data?.errors) {
         showFieldErrors(overlay, res.data.errors);
       } else {
-        showFieldErrors(overlay, { template: res.data?.error || 'Could not save command.' });
+        showFieldErrors(overlay, { template: res.data?.error || t('Could not save command.') });
       }
     });
 
@@ -371,16 +378,16 @@ export function openCommandManager() {
     const overlay = modal.root;
     overlay.innerHTML = `
       <div class="command-editor-backdrop"></div>
-      <div class="command-editor-panel" role="dialog" aria-modal="true" aria-label="Custom slash commands">
+      <div class="command-editor-panel" role="dialog" aria-modal="true" aria-label="${escapeHtml(t('Custom slash commands'))}">
         <header class="command-editor-header">
-          <h2>Custom slash commands</h2>
-          <button id="cmd-close" class="close-button command-editor-close" title="Close" aria-label="Close"><span class="icon-close"></span></button>
+          <h2>${escapeHtml(t('Custom slash commands'))}</h2>
+          <button id="cmd-close" class="close-button command-editor-close" title="${escapeHtml(t('Close'))}" aria-label="${escapeHtml(t('Close'))}"><span class="icon-close"></span></button>
         </header>
         <div class="command-editor-body" id="cmd-manager-body"></div>
         <footer class="command-editor-footer">
           <div class="command-editor-path"></div>
           <div class="command-editor-actions">
-            <button id="cmd-manager-new" class="modal-button btn-primary">New command…</button>
+            <button id="cmd-manager-new" class="modal-button btn-primary">${escapeHtml(t('New command…'))}</button>
           </div>
         </footer>
       </div>`;
@@ -396,8 +403,8 @@ export function openCommandManager() {
       const userCommands = await fetchUserCommands();
       if (seq !== renderSeq) return; // superseded by a newer render
       body.innerHTML = '';
-      body.appendChild(userGroup('This project', userCommands.filter((d) => d.scope === 'project'), render));
-      body.appendChild(userGroup('All projects', userCommands.filter((d) => d.scope === 'user'), render));
+      body.appendChild(userGroup(t('This project'), userCommands.filter((d) => d.scope === 'project'), render));
+      body.appendChild(userGroup(t('All projects'), userCommands.filter((d) => d.scope === 'user'), render));
     };
 
     // Live-refresh across clients: any command file changing on disk — from this
@@ -434,7 +441,7 @@ function userGroup(title, defs, refresh) {
   if (defs.length === 0) {
     const empty = document.createElement('div');
     empty.className = 'command-editor-hint';
-    empty.textContent = 'None yet.';
+    empty.textContent = t('None yet.');
     group.appendChild(empty);
     return group;
   }
@@ -459,18 +466,18 @@ function userGroup(title, defs, refresh) {
     actions.className = 'command-manager-actions';
     const edit = document.createElement('button');
     edit.className = 'modal-button btn-secondary';
-    edit.textContent = 'Edit';
+    edit.textContent = t('Edit');
     edit.addEventListener('click', async () => { await openCommandEditor({ def }); refresh(); });
     // Delete is the app's standard trashcan: an icon-only button, muted until
     // hovered, as every other per-row delete in the UI.
     const del = document.createElement('button');
     del.className = 'command-manager-delete';
-    del.title = 'Delete';
-    del.setAttribute('aria-label', `Delete /${def.name}`);
+    del.title = t('Delete');
+    del.setAttribute('aria-label', t('Delete /{name}', { name: def.name }));
     del.appendChild(Object.assign(document.createElement('span'), { className: 'icon-trashcan' }));
     del.addEventListener('click', async () => {
-      const ok = await showConfirm(
-        `Delete the /${def.name} command?`, 'Delete command', { danger: true, confirmText: 'Delete' });
+      const ok = await showConfirm(t('Delete the /{name} command?', { name: def.name }), t('Delete command'),
+        { danger: true, confirmText: t('Delete') });
       if (!ok) return;
       await deleteUserCommand(/** @type {any} */ (def.scope), def.name);
       refreshRegistries();
@@ -532,9 +539,10 @@ function seedModelConfig(fm) {
 
 /**
  * One segmented control: a radiogroup of buttons, the active one carrying the
- * selection. Values are ids from a fixed table, so they need no escaping.
+ * selection. Values are ids from a fixed table, so they need no escaping; the
+ * labels are the table's English, translated here.
  * @param {string} id - Element id
- * @param {string} ariaLabel - Group label
+ * @param {string} ariaLabel - Group label, translated
  * @param {string} attr - Data attribute holding each option's value
  * @param {Record<string, string>} options - value → label
  * @param {string} current - The selected value
@@ -544,9 +552,9 @@ function segmentedHTML(id, ariaLabel, attr, options, current) {
   const segments = Object.entries(options).map(([value, label]) => {
     const active = value === current;
     return `<button type="button" class="command-editor-seg${active ? ' active' : ''}" role="radio"`
-      + ` aria-checked="${active}" data-${attr}="${value}">${label}</button>`;
+      + ` aria-checked="${active}" data-${attr}="${value}">${escapeHtml(t(label))}</button>`;
   }).join('');
-  return `<div id="${id}" class="command-editor-segmented" role="radiogroup" aria-label="${ariaLabel}">${segments}</div>`;
+  return `<div id="${id}" class="command-editor-segmented" role="radiogroup" aria-label="${escapeHtml(ariaLabel)}">${segments}</div>`;
 }
 
 /**
@@ -576,65 +584,68 @@ function wireSegmented(group, attr, onChange) {
  */
 function buildMarkup(v) {
   const esc = (/** @type {string} */ s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  // Template syntax is written as the command file reads it, in every language.
+  const syntax = { first: '<code>$1</code>', last: '<code>$9</code>', args: '<code>$ARGUMENTS</code>', dollars: '<code>$$</code>' }; // i18n-ignore: template syntax
+  // The name field's placeholder is an example command name, an identifier.
   return `
     <div class="command-editor-backdrop"></div>
-    <div class="command-editor-panel" role="dialog" aria-modal="true" aria-label="Command editor">
+    <div class="command-editor-panel" role="dialog" aria-modal="true" aria-label="${escapeHtml(t('Command editor'))}">
       <header class="command-editor-header">
-        <h2>${v.editing ? 'Edit command' : 'New command'}</h2>
-        <button id="cmd-close" class="close-button command-editor-close" title="Close" aria-label="Close"><span class="icon-close"></span></button>
+        <h2>${v.editing ? escapeHtml(t('Edit command')) : escapeHtml(t('New command'))}</h2>
+        <button id="cmd-close" class="close-button command-editor-close" title="${escapeHtml(t('Close'))}" aria-label="${escapeHtml(t('Close'))}"><span class="icon-close"></span></button>
       </header>
       <div class="command-editor-body">
         <div class="command-editor-row">
-          <label class="command-editor-label command-editor-name-field">Name
+          <label class="command-editor-label command-editor-name-field">${escapeHtml(t('Name'))}
             <div class="command-editor-name-row"><span class="command-editor-slash">/</span>
               <input id="cmd-name" type="text" class="field-input command-editor-input" value="${esc(v.name)}"
                 autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="review-pr" /></div>
           </label>
           <label class="command-editor-label">
-            <span class="command-editor-label-text">Args hint <span class="command-editor-optional">(optional)</span></span>
-            <input id="cmd-argshint" type="text" class="field-input command-editor-input" value="${esc(v.argsHint)}" placeholder="&lt;pr-number&gt;" />
+            <span class="command-editor-label-text">${escapeHtml(t('Args hint'))} <span class="command-editor-optional">${escapeHtml(t('(optional)'))}</span></span>
+            <input id="cmd-argshint" type="text" class="field-input command-editor-input" value="${esc(v.argsHint)}" placeholder="${escapeHtml(t('<pr-number>', undefined, { context: 'example arguments hint for a command' }))}" />
           </label>
         </div>
         <div id="cmd-name-error" class="command-editor-field-error" data-error-for="name"></div>
 
-        <label class="command-editor-label">Description
+        <label class="command-editor-label">${escapeHtml(t('Description'))}
           <input id="cmd-description" type="text" class="field-input command-editor-input" value="${esc(v.description)}"
-            placeholder="Shown in the slash menu" />
+            placeholder="${escapeHtml(t('Shown in the slash menu'))}" />
           <div class="command-editor-field-error" data-error-for="description"></div>
         </label>
 
-        <label class="command-editor-label">Prompt template
+        <label class="command-editor-label">${escapeHtml(t('Prompt template'))}
           <textarea id="cmd-template" class="command-editor-textarea field-input" rows="6"
-            placeholder="Review PR $1. $ARGUMENTS">${esc(v.template)}</textarea>
+            placeholder="${escapeHtml(t('Review PR {first}. {rest}', { first: '$1', rest: '$ARGUMENTS' }))}">${esc(v.template)}</textarea>
           <div class="command-editor-field-error" data-error-for="template"></div>
-          <div class="command-editor-hint">Placeholders: <code>$1</code>…<code>$9</code>, <code>$ARGUMENTS</code>, <code>$$</code> for a literal $.</div>
+          <div class="command-editor-hint">${withHtml(t('Placeholders: {first}…{last}, {args}, {dollars} for a literal $.', htmlSlots(syntax)), syntax)}</div>
         </label>
 
         <div class="command-editor-preview surface-well">
           <div class="command-editor-preview-head">
-            <span class="command-editor-preview-title">Preview</span>
+            <span class="command-editor-preview-title">${escapeHtml(t('Preview'))}</span>
             <input id="cmd-preview-args" type="text" class="field-input command-editor-input command-editor-preview-args"
-              placeholder="sample args" aria-label="Sample arguments for the preview" />
+              placeholder="${escapeHtml(t('sample args'))}" aria-label="${escapeHtml(t('Sample arguments for the preview'))}" />
           </div>
           <pre id="cmd-preview-out" class="command-editor-preview-out"></pre>
         </div>
 
         <div class="command-editor-field">
-          <div class="command-editor-label-text">When invoked</div>
-          ${segmentedHTML('cmd-run', 'Run mode', 'run', RUN_MODES, v.run)}
+          <div class="command-editor-label-text">${escapeHtml(t('When invoked'))}</div>
+          ${segmentedHTML('cmd-run', t('Run mode'), 'run', RUN_MODES, v.run)}
           <div id="cmd-run-hint" class="command-editor-run-hint"></div>
         </div>
 
         <div id="cmd-subthread-fields" class="command-editor-subthread hidden">
-          <div class="command-editor-hint">Applied to the thread only. Anything left inherited follows this conversation.</div>
-          <label class="command-editor-label">Thread goal
-            <input id="cmd-goal" type="text" class="field-input command-editor-input" value="${esc(v.goal)}" placeholder="PR review" />
+          <div class="command-editor-hint">${escapeHtml(t('Applied to the thread only. Anything left inherited follows this conversation.'))}</div>
+          <label class="command-editor-label">${escapeHtml(t('Thread goal'))}
+            <input id="cmd-goal" type="text" class="field-input command-editor-input" value="${esc(v.goal)}" placeholder="${escapeHtml(t('PR review'))}" />
           </label>
-          <label class="command-editor-label">Strategy
-            <select id="cmd-strategy" class="command-editor-select field-input"><option value="">Inherit from parent</option></select>
+          <label class="command-editor-label">${escapeHtml(t('Strategy'))}
+            <select id="cmd-strategy" class="command-editor-select field-input"><option value="">${escapeHtml(t('Inherit from parent'))}</option></select>
           </label>
           <div class="command-editor-label">
-            <span class="command-editor-label-text">Model</span>
+            <span class="command-editor-label-text">${escapeHtml(t('Model'))}</span>
             <model-chip id="cmd-model"></model-chip>
           </div>
         </div>
@@ -643,12 +654,12 @@ function buildMarkup(v) {
       </div>
       <footer class="command-editor-footer">
         <div class="command-editor-target">
-          ${segmentedHTML('cmd-scope', 'Where to save', 'scope', SCOPES, v.scope === 'user' ? 'user' : 'project')}
+          ${segmentedHTML('cmd-scope', t('Where to save'), 'scope', SCOPES, v.scope === 'user' ? 'user' : 'project')}
           <div id="cmd-path-hint" class="command-editor-path"></div>
         </div>
         <div class="command-editor-actions">
-          <button id="cmd-delete" class="modal-button btn-danger hidden">Delete</button>
-          <button id="cmd-save" class="modal-button btn-primary">Save</button>
+          <button id="cmd-delete" class="modal-button btn-danger hidden">${escapeHtml(t('Delete'))}</button>
+          <button id="cmd-save" class="modal-button btn-primary">${escapeHtml(t('Save'))}</button>
         </div>
       </footer>
     </div>

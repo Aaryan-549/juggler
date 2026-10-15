@@ -41,6 +41,9 @@ import PinboardItemType from 'juggler/pinboard-item-type';
 import '../../js/components/pinboard-shell.js';
 import '../../js/components/conversation-bar.js';
 import '../../js/components/conversation-tab.js';
+import { budgetFor } from '../utilities/test-deadline.js';
+import { underPseudoLocale } from '../utilities/pseudo-locale.js';
+import { isPseudoLocalized } from '../../sdk/lib/i18n.js';
 
 /**
  * @typedef {object} TestResult
@@ -1838,6 +1841,94 @@ export async function runTests() {
       } finally {
         teardown();
       }
+    });
+
+    await run('under en-XA the toolbar, the window header, the board\u2019s states and a failed add speak the user\u2019s language', async () => {
+      /** @type {string[]} */
+      const raw = [];
+      const check = (/** @type {string} */ where, /** @type {string[]} */ shown, atLeast = 1) => {
+        if (shown.length < atLeast) raw.push(`${where}: expected ${atLeast} strings, found ${shown.length}`);
+        for (const s of shown) if (!isPseudoLocalized(s)) raw.push(`${where}: ${s}`);
+      };
+      const attr = (/** @type {Element|null|undefined} */ el, /** @type {string} */ name) => el?.getAttribute(name) || '';
+      // Digits only: the conversation's name is data, and stands inside two of the messages.
+      const named = () => makeSession({ conversations: [{ id: BOARD_CONVERSATION, name: '7' }] });
+      const realGetType = pinboardItemRegistry.getType;
+      const originalClose = window.close;
+      const slot = document.createElement('div');
+      slot.id = 'board-title';
+      await underPseudoLocale('pinboard-satellite-test', async () => {
+        // The docked board: its toolbar, and an add whose type refused.
+        const docked = await mountShell({ pins: PROBE_BOARD, search: '' });
+        try {
+          const toolbar = docked.shell.querySelector('.pinboard-toolbar');
+          assert(!!toolbar, 'the docked board has its toolbar');
+          check('identity', [toolbar.querySelector('.pinboard-toolbar__identity')?.textContent || '']);
+          const popOut = toolbar.querySelector('.pinboard-toolbar__popout');
+          check('pop-out', [attr(popOut, 'title'), attr(popOut, 'aria-label'), popOut?.textContent || ''], 3);
+          const close = toolbar.querySelector('.close-button');
+          check('close', [attr(close, 'title'), attr(close, 'aria-label')], 2);
+
+          pinboardItemRegistry.getType = /** @type {any} */ (() => ({
+            configure: async () => { throw new Error('42'); },
+          }));
+          await docked.panel._add('i18n-refuses');
+          const status = docked.shell.querySelector('.pinboard-panel__status')?.textContent
+            || pinboardView.getStatus();
+          if (!status.includes('42')) raw.push(`add failure keeps the error: ${status}`);
+          check('add failure', [status.replace('42', '')]);
+        } finally {
+          pinboardItemRegistry.getType = realGetType;
+          docked.teardown();
+        }
+
+        // A board window that can reach its owner: the header names the
+        // conversation as a control, and says what kind of window this is.
+        document.body.appendChild(slot);
+        asDesktopWindow(true);
+        const linked = await mountShell({ pins: PROBE_BOARD, session: named() });
+        try {
+          await waitFor(() => !!slot.querySelector('button.app-header__board-conversation'),
+            'the header to name the conversation as a control', budgetFor(2000));
+          const name = slot.querySelector('.app-header__board-conversation');
+          check('header name control', [attr(name, 'title'), attr(name, 'aria-label')], 2);
+          check('header kind', [slot.querySelector('.app-header__board-kind')?.textContent || '']);
+
+          // Its conversation goes: the board names the one it has lost.
+          window.close = () => {};
+          linked.session.known.delete(BOARD_CONVERSATION);
+          linked.session.emit('conversation:deleted');
+          const gone = linked.shell.querySelector('.pinboard-placeholder:not([hidden])')?.textContent || '';
+          if (!gone.includes('7')) raw.push(`the lost board keeps its name: ${gone}`);
+          check('named conversation gone', [gone.replace('7', '')]);
+        } finally {
+          window.close = originalClose;
+          linked.teardown();
+          slot.remove();
+          asDesktopWindow(false);
+        }
+
+        // Still opening its conversation.
+        const gates = makeLoadGates();
+        const opening = await mountShell({ pins: PROBE_BOARD, session: makeBoardSession({ load: gates.hold }) });
+        try {
+          check('opening', [opening.shell.querySelector('.pinboard-placeholder')?.textContent || '']);
+        } finally {
+          gates.release(BOARD_CONVERSATION);
+          opening.teardown();
+        }
+
+        // A conversation this session never knew.
+        const missing = await mountShell({ pins: PROBE_BOARD, session: makeSession() });
+        try {
+          await waitFor(() => !!missing.shell.querySelector('.pinboard-placeholder:not([hidden])')?.textContent,
+            'the board to say what is missing', budgetFor(2000));
+          check('unnamed conversation gone', [missing.shell.querySelector('.pinboard-placeholder')?.textContent || '']);
+        } finally {
+          missing.teardown();
+        }
+      });
+      assert(raw.length === 0, `plain English under en-XA: ${JSON.stringify(raw)}`);
     });
   } finally {
     __setViewModeForTests();

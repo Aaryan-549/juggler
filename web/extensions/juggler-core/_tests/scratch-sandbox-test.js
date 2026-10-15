@@ -49,6 +49,44 @@ import {
 import { rebindConversation } from '../../../js/services/workspace-rebinding.js';
 import workspaceProviderRegistry from '../../../js/registries/workspace-provider-registry.js';
 import ScratchCopyWorkspaceProvider, { sandboxPlaces } from '../workspaces/scratch-copy-workspace-provider.js';
+import { underPseudoLocale } from '../../../js-tests/utilities/pseudo-locale.js';
+import { isPseudoLocalized } from '../../../sdk/lib/i18n.js';
+
+/** juggler-core's English for what a scratch copy says, standing in for its catalogue. */
+const CORE_TEXT = [
+  'Name',
+  'That leaves nothing that can be a directory name.',
+  'Work in a copy of the project, not your own files. Files git ignores are not copied.',
+  "Couldn't make a copy: the workspace it would be a copy of has no root.",
+  "Couldn't make a copy: {name} leaves nothing that can be a directory name.",
+  "Couldn't make a copy at {dir}: there is already something there.",
+  'Copying the tree',
+  'Taking a snapshot of it',
+  'The copy is missing.',
+  'There is no record of what this is a copy of.',
+  '{count, plural, one {{count} file changed since the copy was made} other {{count} files changed since the copy was made}}',
+  'Nothing changed since the copy was made',
+  'Apply the changes',
+  '{target, select, project {Copies what changed here back into the project, then removes the copy. Anything the project has changed since is refused by name, and nothing is applied.} other {Copies what changed here back into {tree}, then removes the copy. Anything {tree} has changed since is refused by name, and nothing is applied.}}',
+  'Close the workspace, keep the copy',
+  'The copy and everything in it stays on disk, ready to be adopted again. Conversations here go to the bin, which they can be restored from.',
+  'Apply, overwriting',
+  '{target, select, project {Copies the changes back even over files the project has changed since. What is in the project is lost.} other {Copies the changes back even over files {tree} has changed since. What is in {tree} is lost.}}',
+  'Close the workspace and delete the copy',
+  'Deletes the copy and everything done in it. Conversations here go to the bin, which they can be restored from.',
+  'There is no record of what this is a copy of, so it is not ours to finish with.',
+  'Left {dir} where it is.',
+  '{name} has no action "{actionId}".',
+  'Nothing has changed in the copy, so there is nothing to apply.',
+  '{name} could not be applied: {files} {count, plural, one {has} other {have}} changed since the copy was taken. Nothing was applied.',
+  '{name} could not be applied: {files} and {rest, plural, one {{rest} file} other {{rest} files}} more have changed since the copy was taken. Nothing was applied.',
+  'Applied {count, plural, one {{count} file} other {{count} files}} and removed {dir}.',
+  '{dir} is still there and could not be removed.',
+  'Removed {dir}.',
+  '{dir} is not there any more.',
+  '{dir} — a copy with no conversation',
+  'Nothing was checkpointed, so there is nothing to undo.'
+];
 
 /**
  * This suite's ops are bound to no workspace, so its shell commands run at the
@@ -1141,6 +1179,154 @@ export async function runTests() {
         if (row) await unregisterWorkspace(row.id).catch(() => {});
         await ops.shell({ command: `rm -rf ${places.rel}` }).catch(() => {});
       }
+    });
+
+    await run('everything a scratch copy says to the user is translated under en-XA', async () => {
+      /** @type {Record<string, string>} */
+      const shown = {};
+      // Every path the provider names is under `.juggler/sandboxes`, whose
+      // letters are data: each place is mapped to a digit before the check.
+      const places = sandboxPlaces('/1', '2');
+      const manifestName = String(ScratchCopyWorkspaceProvider.MANIFEST.name);
+      /**
+       * A shown line with its data mapped to digits.
+       * @param {any} text - What was shown.
+       * @returns {string} The line, ready for the check.
+       */
+      const scrub = (text) => String(text)
+        .split(places.work).join('3')
+        .split(places.pristine).join('3')
+        .split(places.dir).join('3')
+        .split(manifestName).join('3');
+
+      await underPseudoLocale('scratch-sandbox-test', async () => {
+        // Hooks called directly, every operation stubbed: nothing is registered
+        // and nothing on disk is made, looked at or removed.
+        const provider = new ScratchCopyWorkspaceProvider({});
+        /** @type {any} The private hooks, which a test may reach. */
+        const hooks = provider;
+        /** @type {any} */
+        let found = { exists: false };
+        /** @type {any[]} What each `compareTrees` call answers, in turn; the last repeats. */
+        let compared = [{}];
+        let calls = 0;
+        /** @type {string[]} */
+        const steps = [];
+        const ops = {
+          stat: async () => found,
+          writeFile: async () => ({}),
+          copyTree: async () => ({}),
+          compareTrees: async () => compared[Math.min(calls++, compared.length - 1)],
+          expandDirectory: async () => ({ items: [{ isDir: true, name: '2' }] })
+        };
+        /**
+         * Answer the next comparisons with these.
+         * @param {any[]} answers - In call order.
+         */
+        const compare = (answers) => { compared = answers; calls = 0; };
+        const session = { projectPath: '/1', workspaceRoot: () => '/1' };
+        const ctx = {
+          session,
+          baseWorkspaceId: '',
+          ops,
+          baseOps: ops,
+          signal: new AbortController().signal,
+          rollback: { push: () => {} },
+          checkpoint: async () => {},
+          progress: (/** @type {string} */ step) => { steps.push(step); }
+        };
+
+        const container = document.createElement('div');
+        provider.renderSetup(container, { ...ctx, values: { name: '2' } });
+        shown['field label'] = String(container.querySelector('label')?.textContent);
+        const form = hooks._form;
+        const note = () => String(form.note.childNodes[0]?.textContent);
+        shown['destination note'] = note();
+        form.input.value = '!';
+        hooks._showDestination();
+        shown['unusable-name note'] = note();
+
+        /**
+         * What a call threw.
+         * @param {() => any} fn - The call.
+         * @returns {Promise<string>} Its message.
+         */
+        const thrown = async (fn) => {
+          try {
+            await fn();
+            return '(nothing thrown)';
+          } catch (e) {
+            return e instanceof Error ? e.message : String(e);
+          }
+        };
+        shown['no-root refusal'] = await thrown(() => hooks._places({ name: '2' }, {}));
+        shown['unusable-name refusal'] = await thrown(() => hooks._places({ name: '!' }, ctx));
+        found = { exists: true };
+        shown['occupied refusal'] = await thrown(() => provider.provision({ name: '2' }, ctx));
+        found = { exists: false };
+        await provider.provision({ name: '2' }, ctx);
+        assert(steps.length === 2, `a provision reports two steps, got ${JSON.stringify(steps)}`);
+        steps.forEach((step, i) => { shown[`progress ${i}`] = step; });
+
+        const row = { label: '2', root: places.work, meta: { name: '2', baseDir: '/1', dir: places.dir } };
+        shown['missing status'] = String((await provider.status({ available: false }, ctx))?.detail);
+        shown['unrecorded status'] = String((await provider.status({}, ctx))?.detail);
+        compare([{}]);
+        shown['unchanged status'] = String((await provider.status(row, ctx))?.detail);
+        compare([{ changed: ['4'] }]);
+        shown['one-changed status'] = String((await provider.status(row, ctx))?.detail);
+        compare([{ changed: ['4'], added: ['5'] }]);
+        shown['changed status'] = String((await provider.status(row, ctx))?.detail);
+
+        for (const [which, workspace] of [['project', {}], ['named', { meta: { baseDir: '/4' } }]]) {
+          for (const option of provider.finishOptions(workspace)) {
+            shown[`${which} ${option.id} label`] = String(option.label);
+            shown[`${which} ${option.id} description`] = String(option.description);
+          }
+        }
+
+        /**
+         * What finishing with the row says.
+         * @param {string} actionId - Which ending.
+         * @returns {Promise<string>} Its message.
+         */
+        const finished = async (actionId) => String((await provider.finish(row, actionId, ctx))?.message);
+        shown['unrecorded finish'] = String((await provider.finish({}, 'keep', ctx))?.message);
+        shown['keep'] = await finished('keep');
+        shown['unknown action'] = await finished('5');
+        compare([{}]);
+        shown['nothing to apply'] = await finished('apply');
+        compare([{ changed: ['4'] }]);
+        shown['one conflict'] = await finished('apply');
+        compare([{ changed: ['4', '5'] }]);
+        shown['two conflicts'] = await finished('apply');
+        compare([{ changed: ['4', '5', '6', '7', '8'] }]);
+        shown['many conflicts'] = await finished('apply');
+        compare([{ changed: ['4'] }]);
+        shown['applied one'] = await finished('apply-anyway');
+        compare([{ changed: ['4'], removed: ['5'] }]);
+        shown['applied two'] = await finished('apply-anyway');
+        found = { exists: true };
+        shown['discard stuck'] = await finished('discard');
+        found = { exists: false };
+        shown['discarded'] = await finished('discard');
+
+        const report = await provider.reconcile(
+          [{ id: '9', root: places.work, meta: { name: '8', baseDir: '/1', dir: places.dir } }], ctx);
+        assert(report.orphanedWorkspaces.length === 1 && report.orphanedArtifacts.length === 1,
+          `one row missing its copy and one copy with no row, got ${JSON.stringify(report)}`);
+        shown['missing reason'] = String(report.orphanedWorkspaces[0].reason);
+        shown['unclaimed detail'] = String(report.orphanedArtifacts[0].detail);
+
+        shown['unrecorded cleanup'] = String((await provider.cleanupPartial({}, ctx))?.message);
+        found = { exists: true };
+        shown['cleanup stuck'] = String((await provider.cleanupPartial(row, ctx))?.message);
+        found = { exists: false };
+        shown['cleaned up'] = String((await provider.cleanupPartial(row, ctx))?.message);
+      }, { '@juggler/core': CORE_TEXT });
+
+      const english = Object.entries(shown).filter(([, text]) => !isPseudoLocalized(scrub(text)));
+      assert(english.length === 0, `still English under en-XA: ${JSON.stringify(english)}`);
     });
   } finally {
     if (session) {

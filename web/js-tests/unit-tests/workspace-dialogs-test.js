@@ -6,14 +6,17 @@
  * The workspace dialogs — the move confirmation
  * (`components/workspace-move-dialog.js`), the reconnect question
  * (`components/workspace-reconnect-dialog.js`) and the finish dialog
- * (`components/workspace-finish-dialog.js`) — and a workspace box's header
- * (`components/workspace-box-header.js`) follow the UI language in every state
+ * (`components/workspace-finish-dialog.js`) — a workspace box's header
+ * (`components/workspace-box-header.js`), and the place list and setup form the
+ * dialogs share (`services/workspace-places.js`,
+ * `components/workspace-setup-form.js`) follow the UI language in every state
  * they draw.
  *
  * Both run against stand-in sessions and conversations, so nothing is moved:
  * the one move pressed is refused by a throw, and the reconnect's register
  * call is answered by a fetch stub. The workspace provider registry holds only
- * a stand-in provider for the duration, and is put back afterwards.
+ * a stand-in provider for the duration, and is put back afterwards; the place
+ * list's offer table likewise, since a sibling suite in the lane fills it.
  * @module unit-tests/workspace-dialogs-test
  */
 
@@ -21,7 +24,9 @@ import { openWorkspaceMove } from '../../js/components/workspace-move-dialog.js'
 import { openWorkspaceReconnect } from '../../js/components/workspace-reconnect-dialog.js';
 import { openWorkspaceFinish } from '../../js/components/workspace-finish-dialog.js';
 import '../../js/components/workspace-box-header.js';
-import { setupRows, adoptSetupRow } from '../../js/services/workspace-places.js';
+import { setupRows, adoptSetupRow, probeSetupAdoptions, __setSetupOffersForTests } from '../../js/services/workspace-places.js';
+import { buildPlaceRows, buildProviderFields, buildProvisionProgress } from '../../js/components/workspace-setup-form.js';
+import { provisionWorkspace, provisionLeftBehind } from '../../js/services/workspace-provisioning.js';
 import workspaceProviderRegistry from '../../js/registries/workspace-provider-registry.js';
 import WorkspaceProvider from '../../sdk/workspace-provider.js';
 import { isPseudoLocalized } from '../../sdk/lib/i18n.js';
@@ -79,6 +84,138 @@ class HoldsWork extends WorkspaceProvider {
   }
 }
 
+const PLACES_EXTENSION = 'test-i18n-places';
+const PLACES_PROVIDER_ID = 'i18n-places-provider';
+
+/** A provider that says what it is good for, and finds a place it once parked. */
+class AdvisesAndFinds extends WorkspaceProvider {
+  static MANIFEST = {
+    id: PLACES_PROVIDER_ID,
+    name: 'Advises, for testing',
+    version: '1.0.0',
+    description: 'Makes a place for the place list to describe',
+    setupLabel: 'New place, for testing',
+    recommendations: {
+      bestFor: 'checking what a place list says',
+      avoidFor: 'anything that matters',
+      notes: ['Nothing is made on disk.'],
+    },
+  };
+
+  /**
+   * @param {any[]} workspaces - This provider's rows.
+   * @returns {Promise<any>} The parked place, as something to adopt.
+   */
+  async reconcile(workspaces) {
+    void workspaces;
+    return {
+      orphanedWorkspaces: [],
+      orphanedArtifacts: [{ id: 'i18n-places-1', label: '8', detail: '9', workspace: { root: '/3/8', label: '8', meta: {} } }],
+      confirmed: [],
+    };
+  }
+}
+
+const BASE_PROVIDER_ID = 'i18n-base-provider';
+
+/**
+ * A provider that overrides only `provision`, so every other sentence it says
+ * is the base class's. Its name is a digit: a manifest name is translated by
+ * its readers, not by the base class that quotes it.
+ */
+class LeansOnBase extends WorkspaceProvider {
+  static MANIFEST = {
+    id: BASE_PROVIDER_ID,
+    name: '4',
+    version: '1.0.0',
+    description: 'Says only what the base class says',
+  };
+
+  /**
+   * Fail, after a step whose undoing fails too.
+   * @param {any} values - Unused.
+   * @param {any} ctx - The provisioner's context.
+   * @returns {Promise<any>} Never resolves.
+   */
+  async provision(values, ctx) {
+    void values;
+    ctx.rollback.push(() => { throw new Error('7'); });
+    throw new Error('6');
+  }
+}
+
+const FOREIGN_PROVIDER_ID = 'i18n-foreign-provider';
+
+/**
+ * Another suite's provider, which finds a tree and says so in English — what a
+ * git-worktree suite earlier in the same lane leaves on the offer table.
+ */
+class AnotherSuites extends WorkspaceProvider {
+  static MANIFEST = {
+    id: FOREIGN_PROVIDER_ID,
+    name: 'Another suite, for testing',
+    version: '1.0.0',
+    description: 'Leaves an offer behind, as a sibling suite in the lane would',
+  };
+
+  /**
+   * @param {any[]} workspaces - This provider's rows.
+   * @returns {Promise<any>} One stray tree, described in English.
+   */
+  async reconcile(workspaces) {
+    void workspaces;
+    return {
+      orphanedWorkspaces: [],
+      orphanedArtifacts: [{
+        id: 'i18n-foreign-1',
+        label: 'feat/tunnels',
+        detail: '/9/feat-tunnels — a worktree of 9 with no workspace',
+        workspace: { root: '/9/feat-tunnels', label: 'feat/tunnels', meta: {} },
+      }],
+      confirmed: [],
+    };
+  }
+}
+
+/**
+ * Put another suite's offer on the table, the way that suite would: its
+ * provider is registered alone for one probe, then the registry is put back.
+ * @returns {Promise<void>} When the offer is on the table.
+ */
+async function seedForeignOffer() {
+  const registry = /** @type {any} */ (workspaceProviderRegistry);
+  const savedItems = new Map(registry.items);
+  const savedExtensions = new Map(registry.itemExtensions);
+  const savedPaths = new Map(registry.modulePaths);
+  registry.items.clear();
+  try {
+    const added = registry.registerClass(AnotherSuites, { extensionId: 'test-i18n-foreign', modulePath: '(test)' });
+    assert(added.registered, `the foreign provider registered, got ${JSON.stringify(added)}`);
+    await probeSetupAdoptions({ projectPath: '/1', workspaces: [] });
+  } finally {
+    registry.items.clear();
+    for (const [k, v] of savedItems) registry.items.set(k, v);
+    registry.itemExtensions.clear();
+    for (const [k, v] of savedExtensions) registry.itemExtensions.set(k, v);
+    registry.modulePaths.clear();
+    for (const [k, v] of savedPaths) registry.modulePaths.set(k, v);
+  }
+}
+
+/**
+ * Give a case an offer table of its own: the lane's — with another suite's
+ * offer always on it, so a case that leaks the lane's table fails alone too —
+ * is swapped for an empty one.
+ * @returns {Promise<() => void>} Puts the lane's table back, without the seeded offer.
+ */
+async function ownOfferTable() {
+  await seedForeignOffer();
+  const lane = __setSetupOffersForTests(new Map());
+  return () => {
+    __setSetupOffersForTests(new Map([...lane].filter(([, offer]) => offer.providerId !== FOREIGN_PROVIDER_ID)));
+  };
+}
+
 /**
  * A JSON response, as the server would send it.
  * @param {number} status - HTTP status.
@@ -114,6 +251,8 @@ export async function runTests() {
   };
 
   await run('en-XA: the move and reconnect dialogs draw no plain English in any state', async () => {
+    // "Nothing on offer" is a state of the table, so the case owns the table.
+    const restoreOffers = await ownOfferTable();
     const registry = /** @type {any} */ (workspaceProviderRegistry);
     const savedItems = new Map(registry.items);
     const savedExtensions = new Map(registry.itemExtensions);
@@ -160,13 +299,24 @@ export async function runTests() {
           workspaceRoot: (/** @type {string} */ id) => (id === 'ws_from' ? '/5/6' : id ? '' : '/1'),
         };
         let throwOnAsk = false;
+        let busy = false;
+        /** @type {any} */
         const moving = {
           session,
           workspaceId: 'ws_from',
           get isProcessing() {
             if (throwOnAsk) throw new Error('7');
-            return false;
+            return busy;
           },
+        };
+        /**
+         * Press Move on the dialog on screen and record the refusal it draws.
+         * @param {string} where - The refusal.
+         */
+        const refusal = async (where) => {
+          /** @type {HTMLButtonElement} */ (overlay().querySelector('.workspace-move-commit')).click();
+          await waitFor(() => !!overlay()?.querySelector('.setup-error'), { description: `the refusal (${where})` });
+          shown.push({ where, text: overlay().querySelector('.setup-error')?.textContent || '' });
         };
         const toProject = openWorkspaceMove(moving, '');
         const dataSkip = '.workspace-move-from .workspace-move-now-label, .workspace-move-now-path';
@@ -183,8 +333,24 @@ export async function runTests() {
         assert(overlay().querySelector('.setup-error')?.textContent === '7',
           `the error is shown as given, got ${JSON.stringify(overlay().querySelector('.setup-error')?.textContent)}`);
         collect('move, refused', `${dataSkip}, .setup-error`);
+
+        // The service's own refusals, pressed again: a turn in flight, then a
+        // conversation that has lost its session.
+        throwOnAsk = false;
+        busy = true;
+        await refusal('move, refused mid-turn');
+        busy = false;
+        moving.session = undefined;
+        await refusal('move, refused with no session');
+        moving.session = session;
         /** @type {HTMLElement} */ (overlay().querySelector('.workspace-move-cancel')).click();
         assert((await toProject).moved === false, 'cancelling the move moves nothing');
+
+        // A workspace that cannot be worked in refuses the conversation.
+        const toNowhere = openWorkspaceMove({ session, workspaceId: '', isProcessing: false }, 'ws_gone');
+        await refusal('move, refused into a workspace with no tree');
+        /** @type {HTMLElement} */ (overlay().querySelector('.workspace-move-cancel')).click();
+        assert((await toNowhere).moved === false, 'a refused move moves nothing');
 
         // ---- Move: from the project folder to a workspace. ----
         const fromProject = { session, workspaceId: '', isProcessing: false };
@@ -199,7 +365,8 @@ export async function runTests() {
         lost.session = lonely;
         FindsOnePlace.offering = false;
         const alone = openWorkspaceReconnect(lost);
-        assert(overlay().querySelector('.setup-row-detail'), 'with nothing on offer, the dialog says so');
+        assert(!overlay().querySelector('.setup-row') && overlay().querySelector('.setup-row-detail'),
+          'with nothing on offer, the dialog offers nothing and says so');
         collect('reconnect, one conversation, nothing on offer');
         /** @type {HTMLElement} */ (overlay().querySelector('.workspace-move-cancel')).click();
         assert((await alone).reconnected === false, 'cancelling reconnects nothing');
@@ -250,6 +417,7 @@ export async function runTests() {
     } finally {
       window.fetch = originalFetch;
       document.querySelectorAll('.workspace-move-overlay').forEach((el) => el.remove());
+      restoreOffers();
       registry.items.clear();
       for (const [k, v] of savedItems) registry.items.set(k, v);
       registry.itemExtensions.clear();
@@ -358,6 +526,158 @@ export async function runTests() {
 
     assert(texts.length >= 1, `the header showed its tooltip, got ${JSON.stringify(texts)}`);
     const raw = texts.filter((text) => !isPseudoLocalized(text));
+    assert(raw.length === 0, `plain English under en-XA: ${JSON.stringify(raw)}`);
+  });
+
+  await run('en-XA: the place list, a provider\'s advice and the progress block draw no plain English', async () => {
+    // Pinned: only the stand-in provider is registered, under an extension id
+    // whose catalogue the case supplies, so every provider-supplied word is
+    // proved to go through that extension's catalogue. The offer table is
+    // pinned the same way, so the adopt row drawn is the stand-in's alone.
+    const restoreOffers = await ownOfferTable();
+    const registry = /** @type {any} */ (workspaceProviderRegistry);
+    const savedItems = new Map(registry.items);
+    const savedExtensions = new Map(registry.itemExtensions);
+    const savedPaths = new Map(registry.modulePaths);
+    registry.items.clear();
+    const added = registry.registerClass(AdvisesAndFinds, { extensionId: PLACES_EXTENSION, modulePath: '(test)' });
+    const originalFetch = window.fetch;
+    const { MANIFEST } = AdvisesAndFinds;
+    const holder = document.createElement('div');
+    document.body.appendChild(holder);
+    // A place this project parked: its artifact comes back as an adopt row.
+    const session = {
+      projectPath: '/1',
+      workspaces: /** @type {any[]} */ ([{ id: 'ws_parked', root: '/3/8', label: '8', state: 'closed', providerId: PLACES_PROVIDER_ID }]),
+    };
+
+    /** @type {string[]} */
+    let texts = [];
+    try {
+      assert(added.registered, `the stand-in provider registered, got ${JSON.stringify(added)}`);
+      await underPseudoLocale('workspace-places-test', async () => {
+        window.fetch = /** @type {typeof fetch} */ (async (input, init) => {
+          if (String(input).includes('/session/workspaces') && init?.method === 'POST') {
+            return json(200, { workspace: { id: 'ws_back', root: '/3/8', label: '8', state: 'ready', providerId: PLACES_PROVIDER_ID } });
+          }
+          return originalFetch(input, init);
+        });
+        try {
+          await probeSetupAdoptions(session);
+          const rows = setupRows(session);
+          const adopts = rows.filter((row) => row.kind === 'adopt');
+          assert(adopts.length === 1 && adopts[0].providerId === PLACES_PROVIDER_ID,
+            `the parked place is offered, and nothing else is, got ${JSON.stringify(rows)}`);
+          assert(rows.some((row) => row.kind === 'new'), `the stand-in offers a "New…" row, got ${JSON.stringify(rows)}`);
+          holder.appendChild(buildPlaceRows({ rows, selection: '', label: '5', onSelect: () => {}, onAdopt: () => {} }));
+          assert(holder.querySelectorAll('.setup-row-meaning').length === 3,
+            'the project, the parked place and the "New…" row each say what choosing them means');
+          assert(holder.querySelector('.setup-row-verb'), 'the offer says what taking it does');
+
+          const fields = buildProviderFields({ session, providerId: PLACES_PROVIDER_ID });
+          holder.appendChild(fields.element);
+          assert(fields.element.querySelector('.setup-recommend-for')
+            && fields.element.querySelector('.setup-recommend-against')
+            && fields.element.querySelector('.setup-recommend-note'), 'the form gives all three kinds of advice');
+          holder.appendChild(buildProviderFields({ session, providerId: 'i18n-not-a-provider' }).element);
+          holder.appendChild(buildProvisionProgress([{ step: '7', detail: '6' }], () => {}));
+          texts = shownStrings(holder).filter((text) => !/^[\d/\s]+$/.test(text));
+        } finally {
+          // The offer table outlives this suite; leave nothing of ours on it.
+          for (const row of setupRows(session)) {
+            if (row.kind === 'adopt' && String(row.id).includes(PLACES_PROVIDER_ID)) {
+              await adoptSetupRow(session, row.id).catch(() => {});
+            }
+          }
+        }
+      }, {
+        [PLACES_EXTENSION]: [MANIFEST.setupLabel, MANIFEST.description, MANIFEST.recommendations.bestFor,
+          MANIFEST.recommendations.avoidFor, ...MANIFEST.recommendations.notes],
+      });
+    } finally {
+      window.fetch = originalFetch;
+      holder.remove();
+      restoreOffers();
+      registry.items.clear();
+      for (const [k, v] of savedItems) registry.items.set(k, v);
+      registry.itemExtensions.clear();
+      for (const [k, v] of savedExtensions) registry.itemExtensions.set(k, v);
+      registry.modulePaths.clear();
+      for (const [k, v] of savedPaths) registry.modulePaths.set(k, v);
+    }
+
+    assert(texts.length >= 10, `the list, the forms and the progress drew something, got ${JSON.stringify(texts)}`);
+    const raw = texts.filter((text) => !isPseudoLocalized(text));
+    assert(raw.length === 0, `plain English under en-XA: ${JSON.stringify(raw)}`);
+  });
+
+  await run('en-XA: the base provider\'s own sentences, and what a failed provision left behind, are translated', async () => {
+    // The base class draws nothing itself: its finish refusal reaches the panel's
+    // notice, its cleanup verdict the reconcile pass, and the left-behind sentence
+    // the create dialog — each as given. So the sentences are checked as said.
+    const registry = /** @type {any} */ (workspaceProviderRegistry);
+    const savedItems = new Map(registry.items);
+    const savedExtensions = new Map(registry.itemExtensions);
+    const savedPaths = new Map(registry.modulePaths);
+    registry.items.clear();
+    const added = registry.registerClass(LeansOnBase, { extensionId: 'test-i18n-base', modulePath: '(test)' });
+    const originalFetch = window.fetch;
+    const session = /** @type {any} */ ({
+      projectPath: '/1',
+      workspaces: [],
+      workspaceRoot: (/** @type {string} */ id) => (id ? '' : '/1'),
+    });
+    const workspace = /** @type {any} */ ({ id: 'ws_base', root: '/1/2', label: '3', state: 'provisioning', providerId: BASE_PROVIDER_ID, meta: {} });
+
+    /** @type {{where: string, text: string}[]} */
+    const said = [];
+    try {
+      assert(added.registered, `the stand-in provider registered, got ${JSON.stringify(added)}`);
+      await underPseudoLocale('workspace-provider-base-test', async () => {
+        window.fetch = /** @type {typeof fetch} */ (async (input, init) => {
+          if (String(input).includes('/session/workspaces')) {
+            if (init?.method === 'POST') {
+              return json(200, { workspace: { id: 'ws_base', root: '/1', label: '3', state: 'provisioning', providerId: BASE_PROVIDER_ID } });
+            }
+            return json(200, { workspace: { id: 'ws_base' } });
+          }
+          return originalFetch(input, init);
+        });
+
+        const provider = new LeansOnBase({ session });
+        const finished = await provider.finish(workspace, '5', /** @type {any} */ ({}));
+        assert(finished.done === false, 'an ending it does not have is refused');
+        said.push({ where: 'finish', text: String(finished.message) });
+        const cleaned = await provider.cleanupPartial(workspace, /** @type {any} */ ({}));
+        assert(cleaned.removed === false, 'a provider with no cleanup removes nothing');
+        said.push({ where: 'cleanupPartial', text: String(cleaned.message) });
+
+        /** @type {any} */
+        let thrown = null;
+        try {
+          await provisionWorkspace({ session, providerId: BASE_PROVIDER_ID, values: {}, baseWorkspaceId: '', label: '3' });
+        } catch (error) {
+          thrown = error;
+        }
+        assert(thrown?.message === '6', `the provision's own error is what is thrown, got ${JSON.stringify(thrown?.message)}`);
+        said.push({ where: 'leftBehind', text: provisionLeftBehind(thrown) });
+      });
+    } finally {
+      window.fetch = originalFetch;
+      registry.items.clear();
+      for (const [k, v] of savedItems) registry.items.set(k, v);
+      registry.itemExtensions.clear();
+      for (const [k, v] of savedExtensions) registry.itemExtensions.set(k, v);
+      registry.modulePaths.clear();
+      for (const [k, v] of savedPaths) registry.modulePaths.set(k, v);
+    }
+
+    const byWhere = Object.fromEntries(said.map(({ where, text }) => [where, text]));
+    // The data rides inside the wrapper: the provider's name, the action, the reason.
+    assert(byWhere.finish?.includes('4') && byWhere.finish.includes('5'), `the refusal names the provider and the ending, got ${JSON.stringify(byWhere.finish)}`);
+    assert(byWhere.cleanupPartial?.includes('4'), `the verdict names the provider, got ${JSON.stringify(byWhere.cleanupPartial)}`);
+    assert(byWhere.leftBehind?.includes('7'), `what could not be undone is carried, got ${JSON.stringify(byWhere.leftBehind)}`);
+    const raw = said.filter(({ text }) => !isPseudoLocalized(text));
     assert(raw.length === 0, `plain English under en-XA: ${JSON.stringify(raw)}`);
   });
 

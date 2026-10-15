@@ -10,7 +10,27 @@
  */
 
 import { assert } from '../utilities/test-helpers.js';
-import { buildPickerPanel } from '../../js/components/project-picker.js';
+import { underPseudoLocale, shownStrings } from '../utilities/pseudo-locale.js';
+import { t, isPseudoLocalized } from '../../sdk/lib/i18n.js';
+import apiService from '../../js/services/api.js';
+import { closePopupById } from '../../js/utils/popup-manager.js';
+import { endProjectOpen } from '../../js/components/project-opening.js';
+import { buildPickerPanel, openProjectPicker, openNewProjectPanel } from '../../js/components/project-picker.js';
+
+/**
+ * Yield to timers until `ready()` holds, or give up after a generous bound.
+ * @param {() => unknown} ready
+ * @param {number} [ms]
+ * @returns {Promise<boolean>} Whether it came true.
+ */
+async function waitUntil(ready, ms = 3000) {
+  const end = Date.now() + ms;
+  while (!ready()) {
+    if (Date.now() > end) return false;
+    await new Promise((r) => setTimeout(r, 10));
+  }
+  return true;
+}
 
 /**
  * Wait for a promise to settle, or report that it never did.
@@ -101,6 +121,198 @@ export async function runTests() {
     } finally {
       cancel();
       element.remove();
+    }
+  });
+
+  await run('markup in caller-supplied labels is shown as text', async () => {
+    const { element, cancel } = buildPickerPanel({
+      title: '<b>1</b>',
+      subtitle: '<b>2</b>',
+      placeholder: '"><b>3</b>',
+      confirmLabel: '<b>4</b>',
+      newWindowLabel: '<b>5</b>',
+      onNewWindow: () => {},
+    });
+    try {
+      assert(!element.querySelector('b'), `markup in a label became elements: ${element.innerHTML}`);
+      const title = element.querySelector('.pp-title')?.textContent || '';
+      assert(title === '<b>1</b>', `title read "${title}", want "<b>1</b>"`);
+      const open = element.querySelector('.pp-btn-open')?.textContent || '';
+      assert(open === '<b>4</b>', `confirm read "${open}", want "<b>4</b>"`);
+      const placeholder = element.querySelector('path-input')?.getAttribute('placeholder');
+      assert(placeholder === '"><b>3</b>', `placeholder read ${JSON.stringify(placeholder)}`);
+    } finally {
+      cancel();
+    }
+  });
+
+  await run('under en-XA every state the picker draws is translated', async () => {
+    const root = document.documentElement;
+    const hadWindowMode = root.dataset.windowMode;
+    const hadExternal = root.dataset.externalServer;
+    const real = {
+      getRecents: apiService.getRecents,
+      checkProject: apiService.checkProject,
+      openProject: apiService.openProject,
+      newWindow: apiService.newWindow,
+      createProject: apiService.createProject,
+    };
+    const w = /** @type {any} */ (window);
+    const realShowModal = w.showModal;
+    /** @type {any[]} */
+    const modals = [];
+    const modalAnswer = true;
+    const chip = document.createElement('button');
+    chip.id = 'project-path-chip';
+    chip.style.cssText = 'position:absolute;left:-9999px;top:-9999px;';
+    document.body.appendChild(chip);
+    /** @type {(() => void)[]} */
+    const cleanups = [];
+    try {
+      await underPseudoLocale('test-project-picker', async () => {
+        /** @type {string[]} */
+        const raw = [];
+        /**
+         * @param {Element} el
+         * @param {string} where
+         * @param {string} [skip]
+         */
+        const collect = (el, where, skip = '.pp-recent-item') => {
+          const shown = shownStrings(el, skip);
+          assert(shown.length >= 1, `nothing shown (${where})`);
+          for (const s of shown) if (!isPseudoLocalized(s)) raw.push(`${where}: ${s}`);
+        };
+        /**
+         * @param {unknown} s
+         * @param {string} where
+         */
+        const check = (s, where) => {
+          assert(typeof s === 'string' && s.length > 0, `nothing to check (${where})`);
+          if (!isPseudoLocalized(/** @type {string} */ (s))) raw.push(`${where}: ${s}`);
+        };
+        w.showModal = async (/** @type {any} */ opts) => { modals.push(opts); return modalAnswer; };
+
+        // --- the shared panel, every default, every status ---
+        /** @type {(r: any) => void} */
+        let answer = () => {};
+        const { element, cancel } = buildPickerPanel({
+          recents: ['/1/2'],
+          onNewWindow: () => {},
+          validate: () => new Promise((r) => { answer = r; }),
+        });
+        document.body.appendChild(element);
+        cleanups.push(() => { cancel(); element.remove(); });
+        collect(element, 'defaults');
+        const recent = /** @type {HTMLElement} */ (element.querySelector('.pp-recent-item'));
+        const status = /** @type {HTMLElement} */ (element.querySelector('.pp-status'));
+        /**
+         * @param {any} result - What the validator answers, or a rejection.
+         * @returns {Promise<string|null>} The status it settled on.
+         */
+        const statusFor = async (result) => {
+          recent.click();
+          check(status.textContent, 'checking');
+          if (result instanceof Error) answer(Promise.reject(result));
+          else answer(result);
+          const before = status.className;
+          assert(await waitUntil(() => status.className !== before), 'the status never settled');
+          return status.textContent;
+        };
+        check(await statusFor({ valid: true, current: true }), 'current project');
+        check(await statusFor({ valid: false }), 'invalid');
+        check(await statusFor(new Error('1')), 'check failed');
+        // The Browse… button draws only under a native host, which this page
+        // never has; its label is checked from the catalogue.
+        check(t('Browse…'), 'browse');
+
+        // --- the project picker: switching in place, then busy, then a failed open ---
+        delete root.dataset.windowMode;
+        delete root.dataset.externalServer;
+        apiService.getRecents = async () => ({ paths: ['/1/2'] });
+        apiService.checkProject = async (/** @type {string} */ p) => ({ valid: true, path: p });
+        apiService.openProject = () => Promise.reject(new Error('1'));
+        const busySession = /** @type {any} */ ({ busyConversationNames: async () => ['1'] });
+        const switching = openProjectPicker('/1', busySession);
+        let popup = /** @type {HTMLElement|null} */ (document.querySelector('.pp-panel-popup'));
+        assert(!!popup, 'the switching picker never presented');
+        collect(/** @type {HTMLElement} */ (popup), 'switching');
+        assert(await waitUntil(() => popup?.querySelector('.pp-recent-item')), 'the recents never drew');
+        /** @type {HTMLElement} */ (/** @type {HTMLElement} */ (popup).querySelector('.pp-recent-item')).click();
+        await switching;
+        endProjectOpen();
+        const confirm = modals.find((m) => m.type === 'confirm');
+        assert(!!confirm, 'switching with busy work asked nothing');
+        check(confirm.title, 'busy title');
+        check(confirm.message, 'busy message');
+        check(confirm.confirmText, 'busy confirm');
+        check(confirm.cancelText, 'busy cancel');
+        const openAlert = modals.find((m) => m.type === 'alert');
+        assert(!!openAlert, 'a failed open showed no alert');
+        check(openAlert.title, 'open failed');
+        modals.length = 0;
+
+        // --- desktop, switching: a new window is the only way ---
+        root.dataset.windowMode = '1';
+        apiService.getRecents = async () => ({ paths: [] });
+        void openProjectPicker('/1', null);
+        popup = document.querySelector('.pp-panel-popup');
+        assert(!!popup, 'the new-window picker never presented');
+        collect(/** @type {HTMLElement} */ (popup), 'switching to a new window');
+        closePopupById('project-picker');
+        await new Promise((r) => setTimeout(r, 0));
+
+        // --- desktop, empty window: both buttons, and a failed new window ---
+        apiService.newWindow = () => Promise.reject(new Error('1'));
+        void openProjectPicker('', null);
+        popup = document.querySelector('.pp-panel-popup');
+        assert(!!popup, 'the empty-window picker never presented');
+        collect(/** @type {HTMLElement} */ (popup), 'empty window');
+        const newWindowBtn = /** @type {HTMLButtonElement|null} */ (popup?.querySelector('.pp-btn-newwindow') ?? null);
+        assert(!!newWindowBtn, 'the empty-window picker offered no new window');
+        popup?.querySelector('path-input')?.dispatchEvent(new CustomEvent('path-change', { detail: { value: '/1' } }));
+        assert(await waitUntil(() => newWindowBtn && !newWindowBtn.disabled), 'the new-window button never enabled');
+        /** @type {HTMLButtonElement} */ (newWindowBtn).click();
+        assert(await waitUntil(() => modals.some((m) => m.type === 'alert')), 'a failed new window showed no alert');
+        check(modals.find((m) => m.type === 'alert').title, 'new window failed');
+        modals.length = 0;
+        closePopupById('project-picker');
+        await new Promise((r) => setTimeout(r, 0));
+
+        // --- the new-folder panel: defaults, both refusals, a failed create ---
+        apiService.createProject = () => Promise.reject(new Error('1'));
+        openNewProjectPanel([]);
+        const made = /** @type {HTMLElement|null} */ (document.querySelector('.pp-panel-popup'));
+        assert(!!made, 'the new-folder panel never presented');
+        cleanups.push(() => closePopupById('new-project'));
+        collect(/** @type {HTMLElement} */ (made), 'new folder');
+        const nameEl = /** @type {HTMLInputElement} */ (made?.querySelector('.pp-name-input'));
+        const madeStatus = /** @type {HTMLElement} */ (made?.querySelector('.pp-status'));
+        for (const name of ['..', '1/2']) {
+          nameEl.value = name;
+          nameEl.dispatchEvent(new Event('input'));
+          check(madeStatus.textContent, `folder name ${name}`);
+        }
+        nameEl.value = '1';
+        nameEl.dispatchEvent(new Event('input'));
+        /** @type {HTMLElement} */ (/** @type {HTMLElement} */ (made).querySelector('.pp-btn-open')).click();
+        assert(await waitUntil(() => modals.some((m) => m.type === 'alert')), 'a failed create showed no alert');
+        endProjectOpen();
+        check(modals.find((m) => m.type === 'alert').title, 'create failed');
+
+        assert(raw.length === 0, `plain English under en-XA: ${JSON.stringify(raw)}`);
+      });
+    } finally {
+      for (const fn of cleanups) fn();
+      closePopupById('project-picker');
+      closePopupById('new-project');
+      endProjectOpen();
+      w.showModal = realShowModal;
+      Object.assign(apiService, real);
+      chip.remove();
+      if (hadWindowMode === undefined) delete root.dataset.windowMode;
+      else root.dataset.windowMode = hadWindowMode;
+      if (hadExternal === undefined) delete root.dataset.externalServer;
+      else root.dataset.externalServer = hadExternal;
     }
   });
 

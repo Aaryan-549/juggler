@@ -64,14 +64,15 @@ import { markPopupOpen } from '../utils/popup-manager.js';
 import { attachMenuKeyboard } from '../utils/menu-roles.js';
 import { resolveCodeSelection, proseReference } from '../utils/code-selection.js';
 import { insertAtCaret } from '../components/composer-paste-tokens.js';
+import { t, markForTranslation } from '../../sdk/lib/i18n.js';
 
 /**
  * The row that puts a reference to the selected file content into the prompt.
  * One spelling, shared by every surface that offers it — the text-edit menu here
  * and the code-block and diff-viewer providers, which are reached first and so
- * have to offer it themselves.
+ * have to offer it themselves. English, for comparison: rows carry `t()` of it.
  */
-export const PASTE_REFERENCE_LABEL = 'Paste path and line number into prompt';
+export const PASTE_REFERENCE_LABEL = markForTranslation('Paste path and line number into prompt');
 
 /** @type {ContextMenuProvider[]} @private */
 const _providers = [];
@@ -231,30 +232,30 @@ export function buildTextEditMenu(start) {
     const sel = fieldSelection(field);
     const hasSel = sel.text.length > 0;
     return [
-      { label: 'Cut', disabled: !hasSel, onClick: () => {
+      { label: t('Cut'), disabled: !hasSel, onClick: () => {
         writeClipboard(sel.text);
         spliceField(field, sel.start, sel.end, '');
       } },
-      { label: 'Copy', disabled: !hasSel, onClick: () => writeClipboard(sel.text) },
-      { label: 'Paste', onClick: async () => {
+      { label: t('Copy'), disabled: !hasSel, onClick: () => writeClipboard(sel.text) },
+      { label: t('Paste'), onClick: async () => {
         const text = await readClipboard();
         if (text) spliceField(field, sel.start, sel.end, text);
       } },
       { separator: true },
-      { label: 'Select All', onClick: () => { field.focus(); field.select(); } },
+      { label: t('Select All'), onClick: () => { field.focus(); field.select(); } },
     ];
   }
 
   if (editableHost) {
     const hasSel = selectionText.length > 0;
     return [
-      { label: 'Cut', disabled: !hasSel, onClick: () => {
+      { label: t('Cut'), disabled: !hasSel, onClick: () => {
         writeClipboard(selectionText);
         editableHost.focus();
         try { document.execCommand('delete'); } catch (e) { /* best effort */ }
       } },
-      { label: 'Copy', disabled: !hasSel, onClick: () => writeClipboard(selectionText) },
-      { label: 'Paste', onClick: async () => {
+      { label: t('Copy'), disabled: !hasSel, onClick: () => writeClipboard(selectionText) },
+      { label: t('Paste'), onClick: async () => {
         const text = await readClipboard();
         if (!text) return;
         editableHost.focus();
@@ -269,12 +270,12 @@ export function buildTextEditMenu(start) {
   // give, so the reference names the file alone.
   if (selectionText) {
     /** @type {ContextMenuItem[]} */
-    const items = [{ label: 'Copy', onClick: () => writeClipboard(selectionText) }];
+    const items = [{ label: t('Copy'), onClick: () => writeClipboard(selectionText) }];
     const reference = resolveCodeSelection(window.getSelection?.());
     // Offered only where there is a composer to put it in: a detached Pinboard
     // window has code to select and nothing to ask.
     if (reference && activeComposer()) {
-      items.push({ label: PASTE_REFERENCE_LABEL, onClick: () => askAboutSelection(reference) });
+      items.push({ label: t(PASTE_REFERENCE_LABEL), onClick: () => askAboutSelection(reference) });
     }
     return items;
   }
@@ -367,7 +368,7 @@ export function codeReferenceMenuItem({ path = '', outOfRoot = false, side, with
     || proseReference(path, outOfRoot, selectionTextWithin(selection, within));
   if (!reference || !activeComposer()) return null;
   const full = side ? { ...reference, side } : reference;
-  return { label: PASTE_REFERENCE_LABEL, onClick: () => askAboutSelection(full) };
+  return { label: t(PASTE_REFERENCE_LABEL), onClick: () => askAboutSelection(full) };
 }
 
 /**
@@ -515,7 +516,7 @@ function showMenu(items, x, y, anchor) {
   menu.className = 'dropdown-menu juggler-context-menu show';
   const list = document.createElement('menu');
   list.setAttribute('role', 'menu');
-  list.setAttribute('aria-label', 'Context menu');
+  list.setAttribute('aria-label', t('Context menu'));
   menu.appendChild(list);
 
   for (const item of items) {
@@ -620,8 +621,8 @@ function onContextMenu(e) {
   }
 
   // Only Element targets support closest()/matches() that providers rely on.
-  const t = /** @type {any} */ (e.target);
-  const start = t && typeof t.closest === 'function' ? /** @type {Element} */ (t) : null;
+  const target = /** @type {any} */ (e.target);
+  const start = target && typeof target.closest === 'function' ? /** @type {Element} */ (target) : null;
 
   // 1) Registered juggler providers.
   const resolved = resolveMenu(start, e);

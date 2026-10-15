@@ -27,7 +27,17 @@ import pinboardItemRegistry from '../../../js/registries/pinboard-item-registry.
 import pinboardStore from '../../../js/services/pinboard-store.js';
 import pinboardView from '../../../js/services/pinboard-view.js';
 import { writeFileOp, mkdirOp } from '../../../js/services/ops-api.js';
+import { describePin } from '../../../js/components/pinboard-content.js';
 import { assert } from '../../../js-tests/utilities/test-helpers.js';
+import { underPseudoLocale, shownStrings } from '../../../js-tests/utilities/pseudo-locale.js';
+import { budgetFor } from '../../../js-tests/utilities/test-deadline.js';
+import { isPseudoLocalized } from '../../../sdk/lib/i18n.js';
+
+/** The English messages the en-XA case draws, served as juggler-core's. */
+const CORE_TEXT = [
+  'No project', 'Project files', "The project's files appear here.", 'Reading…', 'Empty',
+  "Couldn't read this folder. {error}", "Couldn't open that file. {error}", 'Refresh',
+];
 
 /**
  * @typedef {object} TestResult
@@ -722,6 +732,105 @@ export async function runTests(ctx) {
       assert(!chord.defaultPrevented, 'the board keeps its own way between tabs');
     } finally {
       mounted.teardown();
+    }
+  });
+
+  // ========================================================================
+  // en-XA
+  // ========================================================================
+
+  await test('en-XA: the add reason, tab, empty board, every note row, the open failure and Refresh are translated', async () => {
+    // The tab's word is the manifest name, returned as given: the host's
+    // describePin translates a title equal to it, scoped to the owner. The
+    // registry is pinned here so the lookup cannot inherit the lane's.
+    const registry = /** @type {any} */ (pinboardItemRegistry);
+    registry.getType = (/** @type {string} */ id) => (id === 'project-files' ? pin : null);
+    registry.getExtensionId = (/** @type {string} */ id) => (id === 'project-files' ? '@juggler/core' : null);
+
+    /** @type {(() => void)[]} */
+    const hanging = [];
+    const realFetch = window.fetch;
+    try {
+      await underPseudoLocale('project-files-pin-test', async () => {
+        /** @type {Record<string, string>} */
+        const shown = {};
+        const raw = /** @type {string} */ (pin.describe({}, /** @type {any} */ ({ project: { path: '/1' } })).title);
+        assert(raw === 'Project files', `describe() returns the manifest name as given, got "${raw}"`);
+        shown['add reason'] = String(pin.canAdd(/** @type {any} */ ({ project: { path: '' } })));
+        shown['tab title'] = describePin(/** @type {any} */ ({ id: 'pin_1', type: 'project-files', config: {} }),
+          /** @type {any} */ ({ project: { path: '/1' } })).title;
+
+        const empty = mount('');
+        try {
+          shown['no project'] = String(empty.body.querySelector('.pin-empty')?.textContent);
+        } finally {
+          empty.teardown();
+        }
+
+        // Every read and the open are answered here: /1 holds three folders
+        // and a file; /1/2 is empty, /1/3 fails, /1/4 never answers, and the
+        // file will not open.
+        window.fetch = /** @type {any} */ (async (/** @type {any} */ url, /** @type {any} */ init) => {
+          if (!String(url).includes('/ops/call')) return realFetch(url, init);
+          const { operation, params } = JSON.parse(init.body);
+          const reply = (/** @type {any} */ body) => new window.Response(JSON.stringify(body),
+            { status: 200, headers: { 'Content-Type': 'application/json' } });
+          if (operation === 'open') return reply({ success: false, error: '8' });
+          if (params.path === '/1/4') {
+            await new Promise((resolve) => { hanging.push(() => resolve(undefined)); });
+            return reply({ success: true, data: { items: [] } });
+          }
+          if (params.path === '/1/3') return reply({ success: false, error: '9' });
+          const items = params.path === '/1'
+            ? [{ name: '2', isDir: true }, { name: '3', isDir: true }, { name: '4', isDir: true }, { name: '5', isDir: false }]
+            : [];
+          return reply({ success: true, data: { items } });
+        });
+
+        const mounted = mount('/1');
+        try {
+          const until = Date.now() + budgetFor(5000);
+          const wait = async (/** @type {() => boolean} */ check, /** @type {string} */ what) => {
+            while (!check()) {
+              if (Date.now() > until) throw new Error(`timed out waiting for ${what}: "${mounted.body.textContent}"`);
+              await new Promise((r) => { setTimeout(r, 20); });
+            }
+          };
+          const rowOf = (/** @type {string} */ name) => /** @type {HTMLElement|undefined} */ (
+            [...mounted.body.querySelectorAll('.project-files-pin__row')]
+              .find((el) => el.querySelector('.project-files-pin__name')?.textContent === name));
+          await wait(() => namesOf(mounted.body).length === 4, 'the root to be read');
+          for (const name of ['2', '3', '4']) rowOf(name)?.click();
+          // Waits until every note has spoken, however long the slow read
+          // takes to cross the grace period.
+          await wait(() => mounted.body.querySelectorAll('.project-files-pin__note').length === 3, 'three note rows');
+          /** @type {HTMLElement} */ (rowOf('5')).click();
+          press(/** @type {HTMLElement} */ (mounted.list), 'Enter');
+          await wait(() => !!mounted.body.querySelector('.project-files-pin__status'), 'the open failure');
+
+          const notes = [...mounted.body.querySelectorAll('.project-files-pin__note')].map((el) => el.textContent || '');
+          assert(notes.some((s) => s.includes('9')), `the read failure keeps the op's error, got ${JSON.stringify(notes)}`);
+          const status = mounted.body.querySelector('.project-files-pin__status')?.textContent || '';
+          assert(status.includes('8'), `the open failure keeps the op's error, got "${status}"`);
+          // Names are data; a row's controls are the shared file actions,
+          // whose words are the core's and tested with them.
+          shownStrings(mounted.body, '.project-files-pin__name, .project-files-pin__actions').forEach((s, i) => { shown[`body ${i}`] = s; });
+          assert(Object.keys(shown).filter((k) => k.startsWith('body')).length === 5,
+            `the tree's name, three notes and the status are all drawn, got ${JSON.stringify(shown)}`);
+          shown['refresh action'] = String(mounted.controller.getActions()[0]?.label);
+        } finally {
+          hanging.forEach((go) => go());
+          mounted.teardown();
+        }
+
+        const english = Object.entries(shown).filter(([, s]) => !isPseudoLocalized(s));
+        assert(english.length === 0, `plain English under en-XA: ${JSON.stringify(english)}`);
+      }, { '@juggler/core': CORE_TEXT });
+    } finally {
+      window.fetch = realFetch;
+      hanging.forEach((go) => go());
+      delete registry.getType;
+      delete registry.getExtensionId;
     }
   });
 

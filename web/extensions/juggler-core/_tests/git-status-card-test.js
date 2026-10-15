@@ -30,7 +30,7 @@ const CORE_TEXT = [
   'Checking…', 'No git repository', 'No changed files', 'Workspace: {workspace}',
   'Review changes in the Pinboard', 'Open Git status in the Pinboard',
   'Review changes', 'Open in the Pinboard', 'Review changes →',
-  '{count} changed', '{count} staged', '{changed} changed, {staged} staged',
+  '{count} changed', '{count} staged', '{changed} changed, {staged} staged', 'repo',
 ];
 
 /**
@@ -453,6 +453,11 @@ export async function runTests(_ctx) {
           m.teardown();
         }
       }
+      // The repository badges above are data, but one at a root with no folder
+      // name is labelled in the card's own words.
+      const unnamed = await mount({ root: '', repos: [repo({ changed: 3, total: 3 }), repo({ path: '5', staged: 4, total: 4 })] });
+      shown.push(unnamed.contentEl.querySelector('.info-card__git-repo')?.textContent || '');
+      unnamed.teardown();
       const raw = shown.filter((s) => !isPseudoLocalized(s));
       assert(shown.length >= 20, `expected the states to show text, got ${JSON.stringify(shown)}`);
       assert(raw.length === 0, `plain English under en-XA: ${JSON.stringify(raw)}`);

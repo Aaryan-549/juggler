@@ -21,6 +21,10 @@
 
 import { assert, initializeRegistries, neutralizeStrayOverlays, waitFor } from '../utilities/test-helpers.js';
 import { FixtureProvider, ensureFixtureProvider } from '../utilities/conversation-workspace-helpers.js';
+import { underPseudoLocale, shownStrings } from '../utilities/pseudo-locale.js';
+import { isPseudoLocalized } from '../../sdk/lib/i18n.js';
+import workspaceProviderRegistry from '../../js/registries/workspace-provider-registry.js';
+import WorkspaceProvider from '../../sdk/workspace-provider.js';
 import '../../js/components/workspace-panel.js';
 // For the width comparison: the column a workspace panel stands in place of.
 import '../../js/components/conversation-area.js';
@@ -74,6 +78,48 @@ function makeSession(workspaces) {
      */
     subscribe() { return () => {}; }
   };
+}
+
+const XA_EXTENSION = 'test-i18n-workspace-panel';
+const XA_PROVIDER_ID = 'i18n-workspace-panel-provider';
+
+/**
+ * A provider whose every word is a digit, so whatever English the panel draws
+ * is the panel's own — except its manifest name and description, which the
+ * panel reads through the provider's extension catalogue.
+ */
+class SaysLittle extends WorkspaceProvider {
+  static MANIFEST = {
+    id: XA_PROVIDER_ID,
+    name: 'Quiet place, for testing',
+    version: '1.0.0',
+    description: 'Says as little as a provider can',
+  };
+
+  /** @type {any} What the next status read answers; an Error is thrown. */
+  static next = {};
+
+  /**
+   * @param {any} workspace - The row being reported on.
+   * @returns {Promise<any>} Whatever the case set.
+   */
+  async status(workspace) {
+    void workspace;
+    if (SaysLittle.next instanceof Error) throw SaysLittle.next;
+    return SaysLittle.next;
+  }
+
+  /**
+   * @param {any} workspace - The row being finished with.
+   * @returns {any[]} One ending that keeps the place, one that does not.
+   */
+  finishOptions(workspace) {
+    void workspace;
+    return [
+      { id: 'keep', label: '1', description: '2', keepsWorkspace: true },
+      { id: 'end', label: '3', description: '4', danger: true }
+    ];
+  }
 }
 
 /**
@@ -596,6 +642,133 @@ export async function runTests() {
     } finally {
       teardown();
     }
+  });
+
+  await checkAsync('en-XA: the panel, its confirmation and its refusal draw no plain English in any state', async () => {
+    // Pinned: only the stand-in provider is registered, under an extension id
+    // whose catalogue the case supplies, so the kind and its note are proved to
+    // go through that extension's catalogue rather than the lane's registry.
+    const registry = /** @type {any} */ (workspaceProviderRegistry);
+    const savedItems = new Map(registry.items);
+    const savedExtensions = new Map(registry.itemExtensions);
+    const savedPaths = new Map(registry.modulePaths);
+    registry.items.clear();
+    const added = registry.registerClass(SaysLittle, { extensionId: XA_EXTENSION, modulePath: '(test)' });
+    const { MANIFEST } = SaysLittle;
+    const originalShowModal = /** @type {any} */ (window).showModal;
+
+    // Data is digits: labels, roots, conversation names, provider sentences.
+    const table = [
+      { id: 'ws_xa', root: '/1/2', label: '8', state: 'ready', available: true, providerId: XA_PROVIDER_ID, baseWorkspaceId: 'ws_xb' },
+      { id: 'ws_xb', root: '/1/3', label: '9', state: 'ready', available: true, providerId: XA_PROVIDER_ID },
+      { id: 'ws_xc', root: '/1', label: '7', state: 'ready', available: true, providerId: XA_PROVIDER_ID },
+      { id: 'ws_xd', root: '/1/4', label: '6', state: 'ready', available: true, providerId: 'i18n-nobody' }
+    ];
+    const session = makeSession(table);
+    session.projectPath = '/1';
+    const { panel, teardown } = mountPanel(session);
+
+    /** @type {{where: string, text: string}[]} */
+    const shown = [];
+    /**
+     * Record everything the panel shows in one state, less what is data.
+     * @param {string} where - The state.
+     */
+    const collect = (where) => {
+      const texts = shownStrings(panel).filter((text) => !/^[\d/\s…]+$/.test(text));
+      assert(texts.length >= 3, `the panel drew something (${where}), got ${JSON.stringify(texts)}`);
+      for (const text of texts) shown.push({ where, text });
+    };
+    /**
+     * Select a workspace and wait for its status read to land.
+     * @param {string} id - Which workspace.
+     * @param {any} status - What the stand-in answers.
+     */
+    const select = async (id, status) => {
+      SaysLittle.next = status;
+      session.selection = { kind: 'workspace', id };
+      panel._refresh();
+      collect(`${id}, before its status`);
+      await waitFor(() => !panel.querySelector('.workspace-panel-pending'),
+        { description: `the status read for ${id} to land` });
+    };
+
+    try {
+      assert(added.registered, `the stand-in provider registered, got ${JSON.stringify(added)}`);
+      await underPseudoLocale('workspace-panel-test', async () => {
+        // A workspace made from another, holding work it does not describe.
+        await select('ws_xa', { dirty: true });
+        assert(panel.querySelector('.workspace-panel-dirty'), 'the bare dirty line is drawn');
+        assert(panel.querySelector('.workspace-panel-where .workspace-panel-detail'), 'the base workspace line is drawn');
+        assert(panel.querySelector('.workspace-panel-kind-note'), 'the kind note is drawn');
+        collect('ws_xa, dirty');
+
+        // The red ending, agreed to through a confirmation carrying the warning.
+        /** @type {any} */
+        let asked = null;
+        /** @type {any} */ (window).showModal = async (/** @type {any} */ options) => { asked = options; return false; };
+        /** @type {HTMLElement} */ (panel.querySelector('[data-action="end"]')).click();
+        await waitFor(() => asked !== null, { description: 'the confirmation to be asked' });
+        const parts = String(asked.message).split('\n\n');
+        assert(parts.length === 2 && parts[0] === '4', `the provider's sentence, then the warning, got ${JSON.stringify(asked.message)}`);
+        shown.push({ where: 'confirmation', text: parts[1] });
+        shown.push({ where: 'confirmation buttons', text: String(asked.cancelText) });
+        await waitFor(() => !panel.querySelector('[data-action="end"]')?.hasAttribute('disabled'),
+          { description: 'the rows to come back' });
+
+        // A provider with nothing to say.
+        SaysLittle.next = {};
+        await panel.refreshStatus();
+        assert(panel.querySelector('.workspace-panel-state .workspace-panel-note'), 'the nothing-to-report line is drawn');
+        collect('ws_xa, nothing to report');
+
+        // A provider that could not say: the reason is data, the rest is not.
+        SaysLittle.next = new Error('5');
+        await panel.refreshStatus();
+        assert(panel.querySelector('.workspace-panel-problem'), 'the problem line is drawn');
+        collect('ws_xa, status failed');
+
+        // Two conversations mid-turn: the ending is refused in a sentence.
+        session.conversations.set('c_x1', { id: 'c_x1', name: '1', workspaceId: 'ws_xa', isProcessing: true });
+        session.conversations.set('c_x2', { id: 'c_x2', name: '2', workspaceId: 'ws_xa', isProcessing: true });
+        /** @type {HTMLElement} */ (panel.querySelector('[data-action="end"]')).click();
+        await waitFor(() => !!document.querySelector('modal-dialog.is-notice.show .modal-message'),
+          { description: 'the refusal notice' });
+        shown.push({ where: 'refusal (two)', text: document.querySelector('modal-dialog.is-notice.show .modal-message')?.textContent ?? '' });
+        neutralizeStrayOverlays();
+        session.conversations.delete('c_x2');
+        /** @type {HTMLElement} */ (panel.querySelector('[data-action="end"]')).click();
+        await waitFor(() => !!document.querySelector('modal-dialog.is-notice.show .modal-message'),
+          { description: 'the refusal notice for one' });
+        shown.push({ where: 'refusal (one)', text: document.querySelector('modal-dialog.is-notice.show .modal-message')?.textContent ?? '' });
+        neutralizeStrayOverlays();
+        session.conversations.clear();
+
+        // A workspace whose tree is the project's.
+        await select('ws_xc', {});
+        collect('ws_xc, in the project');
+
+        // A workspace whose provider is gone: before its status read the
+        // reason sits under the actions; after it, in the status lines.
+        await select('ws_xd', {});
+        assert(panel.querySelector('.workspace-panel-problem'), 'the provider-missing problem is drawn');
+        collect('ws_xd, provider missing');
+      }, { [XA_EXTENSION]: [MANIFEST.name, MANIFEST.description] });
+    } finally {
+      /** @type {any} */ (window).showModal = originalShowModal;
+      SaysLittle.next = {};
+      neutralizeStrayOverlays();
+      teardown();
+      registry.items.clear();
+      for (const [k, v] of savedItems) registry.items.set(k, v);
+      registry.itemExtensions.clear();
+      for (const [k, v] of savedExtensions) registry.itemExtensions.set(k, v);
+      registry.modulePaths.clear();
+      for (const [k, v] of savedPaths) registry.modulePaths.set(k, v);
+    }
+
+    const raw = shown.filter(({ text }) => !isPseudoLocalized(text));
+    assert(raw.length === 0, `plain English under en-XA: ${JSON.stringify(raw)}`);
   });
 
   return { passed, failed, errors };

@@ -8,11 +8,14 @@ import { formatDisplayPath, formatFileContentForLLM, parseFileContentForLLM, bas
 import { fileSourceFromText } from 'juggler/file-source';
 import { extractFileSource } from 'juggler/registry';
 import { createElement, injectStylesOnce } from 'juggler/ui';
+import { translator, markUntranslated } from 'juggler/i18n';
 import { addFilePath } from 'juggler/ui';
 import { buildPickerPanel, hasNativeHost, pickFile } from 'juggler/ui';
 import { smartTruncate } from 'juggler/ui';
 import { gitignoreDisabled } from './path-approval.js';
 import { fetchLiveFile, liveFileSource, liveFileInfo, renderLiveFileBody } from '../lib/live-file.js';
+
+const t = translator('@juggler/core');
 
 /**
  * Safety ceiling (characters) on the file body a single pinned/@-mentioned file
@@ -163,14 +166,14 @@ class FileContentContextItem extends ContextItem {
    */
   getStatusUI() {
     if (!this.data.path) {
-      return { typeName: 'File Content', summary: 'No file selected' };
+      return { typeName: t('File Content'), summary: t('No file selected') };
     }
     if (this.data.isDirectory) {
       const displayPath = basename(this.data.path) || this.data.path;
-      return { typeName: 'Folder', summary: `${displayPath}/`, status: 'success' };
+      return { typeName: t('Folder'), summary: `${displayPath}/`, status: 'success' };
     }
     const filename = basename(this.data.path) || this.data.path;
-    return { typeName: 'File Content', summary: filename, status: 'success' };
+    return { typeName: t('File Content'), summary: filename, status: 'success' };
   }
 
   /**
@@ -188,7 +191,7 @@ class FileContentContextItem extends ContextItem {
     const startDir = context.startDir || '';
     const loopback = ['127.0.0.1', 'localhost', '[::1]', '::1'].includes(globalThis.location?.hostname);
     if (hasNativeHost() && loopback && context.localTree !== false) {
-      const picked = await pickFile('Add File Content', startDir);
+      const picked = await pickFile(t('Add File Content'), startDir);
       return picked ? { path: picked } : null;
     }
 
@@ -197,10 +200,10 @@ class FileContentContextItem extends ContextItem {
     document.body.appendChild(overlay);
 
     const { element, promise, cancel } = buildPickerPanel({
-      title: 'Add File Content',
-      placeholder: 'File path…',
+      title: t('Add File Content'),
+      placeholder: t('File path…'),
       dirsOnly: false,
-      confirmLabel: 'Add',
+      confirmLabel: t('Add'),
       showCancel: true,
       startDir,
     });
@@ -340,7 +343,8 @@ class FileContentContextItem extends ContextItem {
    */
   async onToolCall(_toolName, params) {
     if (!params.path || typeof params.path !== 'string') {
-      throw new Error('Missing required parameter: path');
+      // The thrown error is the item's outcome error, which stays English.
+      throw new Error(markUntranslated('Missing required parameter: path'));
     }
     // An item that already has a path is being reused (see mergeOrReplace):
     // its kind was fixed when it was created, and a mention or seed reusing a
@@ -456,7 +460,7 @@ class FileContentContextItem extends ContextItem {
    */
   getTitle() {
     if (!this.data.path) {
-      return 'File Content';
+      return t('File Content');
     }
     if (this.data.isDirectory) {
       return formatDisplayPath(this.data.path.replace(/\/+$/, '')) + '/';
@@ -470,10 +474,10 @@ class FileContentContextItem extends ContextItem {
    */
   getBriefSummary() {
     if (!this.data.path) {
-      return 'Empty file content';
+      return t('Empty file content');
     }
     if (this.data.isDirectory) {
-      return `Directory listing: ${this.data.path}`;
+      return t('Directory listing: {path}', { path: this.data.path });
     }
     return formatDisplayPath(this.data.path);
   }
@@ -513,11 +517,11 @@ class FileContentContextItem extends ContextItem {
     const body = createElement('div', 'file-content-body');
     container.appendChild(body);
 
-    addFilePath(headerHost, this.getAbsolutePath() || 'No file', undefined,
+    addFilePath(headerHost, this.getAbsolutePath() || t('No file'), undefined,
       { pin: this.getAbsolutePath() });
 
     if (!this.data.path) {
-      body.appendChild(createElement('div', 'file-content-loading', 'No file selected'));
+      body.appendChild(createElement('div', 'file-content-loading', t('No file selected')));
       return container;
     }
 
@@ -527,13 +531,13 @@ class FileContentContextItem extends ContextItem {
       return container;
     }
 
-    body.appendChild(createElement('div', 'file-content-loading', 'Loading…'));
+    body.appendChild(createElement('div', 'file-content-loading', t('Loading…')));
 
     this._fetchLive().then(r => {
       // Swap body. Replace the header info with the just-fetched stats.
       headerHost.replaceChildren();
       const absolute = this.getAbsolutePath() || r.path || '';
-      addFilePath(headerHost, absolute || 'No file', liveFileInfo(r), { pin: absolute });
+      addFilePath(headerHost, absolute || t('No file'), liveFileInfo(r), { pin: absolute });
 
       const frozen = FileContentContextItem.isFrozen(this.data);
       if (frozen) {
@@ -552,7 +556,7 @@ class FileContentContextItem extends ContextItem {
     }).catch(err => {
       console.error('[FileContentContextItem] properties panel fetch failed:', err);
       body.replaceChildren(createElement('div', 'file-content-not-found',
-        `Failed to load: ${this.data.path}`));
+        t('Failed to load: {path}', { path: this.data.path })));
     });
 
     return container;
@@ -663,7 +667,8 @@ class FileContentContextItem extends ContextItem {
   static _boundSnapshot(text) {
     const { content, truncated } = smartTruncate(text, { maxChars: MAX_FROZEN_SNAPSHOT_CHARS });
     return truncated
-      ? content + `\n\n(Truncated from ${text.length} to ${content.length} chars)`
+      // The model reads the snapshot, so its truncation note stays English.
+      ? content + markUntranslated(`\n\n(Truncated from ${text.length} to ${content.length} chars)`)
       : text;
   }
 
@@ -680,16 +685,17 @@ class FileContentContextItem extends ContextItem {
   async _renderLive() {
     const r = await this._fetchLive();
 
+    // Everything returned here is the model's context text, so it stays English.
     if (!r.exists) {
-      return `File does not exist: ${r.path || this.data.path}`;
+      return markUntranslated(`File does not exist: ${r.path || this.data.path}`);
     }
 
     if (r.isDirectory) {
-      return `Directory listing of ${r.path}:\n${r.content || '(empty)'}`;
+      return markUntranslated(`Directory listing of ${r.path}:\n${r.content || '(empty)'}`);
     }
 
     if (r.warning) {
-      return `File ${r.path}: ${r.warning}`;
+      return markUntranslated(`File ${r.path}: ${r.warning}`);
     }
 
     // A file whose bytes are not text carries no `content` of its own — its
@@ -705,7 +711,7 @@ class FileContentContextItem extends ContextItem {
         conversationId: this.conversation?.id,
       });
       if (extracted.text) return extracted.text;
-      if (extracted.warning) return `File ${r.path}: ${extracted.warning}`;
+      if (extracted.warning) return markUntranslated(`File ${r.path}: ${extracted.warning}`);
     }
 
     const formatted = formatFileContentForLLM({
@@ -721,7 +727,7 @@ class FileContentContextItem extends ContextItem {
     // transaction view and the wire identical.
     const { content: bounded, truncated } = smartTruncate(formatted, { maxChars: MAX_PINNED_FILE_CHARS });
     return truncated
-      ? bounded + `\n\n(File content truncated from ${formatted.length} to ${bounded.length} chars to fit the request)`
+      ? bounded + markUntranslated(`\n\n(File content truncated from ${formatted.length} to ${bounded.length} chars to fit the request)`)
       : formatted;
   }
 
@@ -743,14 +749,14 @@ class FileContentContextItem extends ContextItem {
 
     if (typeof this.data.content !== 'string') {
       note.appendChild(createElement('div', 'file-content-seeded-line', seeded
-        ? 'Added at the start of this conversation. It is frozen as it stands when the first message is sent.'
-        : 'Mentioned in a message. It is frozen as it stands when that message is sent.'));
+        ? t('Added at the start of this conversation. It is frozen as it stands when the first message is sent.')
+        : t('Mentioned in a message. It is frozen as it stands when that message is sent.')));
       return note;
     }
 
     note.appendChild(createElement('div', 'file-content-seeded-line', seeded
-      ? 'Added at the start of this conversation and frozen when it began, so that editing this file does not make the conversation re-read itself. Below is the frozen copy the conversation reads.'
-      : 'Mentioned in a message and frozen when it was sent, so that editing this file does not make the conversation re-read itself. Below is the frozen copy the conversation reads.'));
+      ? t('Added at the start of this conversation and frozen when it began, so that editing this file does not make the conversation re-read itself. Below is the frozen copy the conversation reads.')
+      : t('Mentioned in a message and frozen when it was sent, so that editing this file does not make the conversation re-read itself. Below is the frozen copy the conversation reads.')));
 
     // Offer the update only against a real difference.
     this._renderLive().then(live => {
@@ -760,12 +766,12 @@ class FileContentContextItem extends ContextItem {
 
       const row = createElement('div', 'file-content-seeded-actions');
       row.appendChild(createElement('span', 'file-content-seeded-changed',
-        'The file has changed since. Updating re-reads the conversation once.'));
+        t('The file has changed since. Updating re-reads the conversation once.')));
 
       const update = document.createElement('button');
       update.className = 'file-content-seeded-update';
-      update.textContent = 'Update';
-      update.setAttribute('aria-label', 'Update the frozen copy of this file');
+      update.textContent = t('Update');
+      update.setAttribute('aria-label', t('Update the frozen copy of this file'));
       update.addEventListener('click', async (ev) => {
         ev.stopPropagation();
         update.disabled = true;

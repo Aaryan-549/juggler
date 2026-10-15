@@ -20,6 +20,8 @@
 
 import workspaceProviderRegistry from '../registries/workspace-provider-registry.js';
 import { createBoundOps } from '../../sdk/ops.js';
+import { t } from '../../sdk/lib/i18n.js';
+import { capabilityLabel } from '../utils/capability-label.js';
 // For the side effect of defining <path-input>: a provider builds its fields
 // from tag names, so the completing path field has to exist wherever a setup
 // form does, and this is the one module both of its hosts go through.
@@ -78,11 +80,11 @@ export function buildProviderFields(request) {
 
   const provider = workspaceProviderRegistry.createProvider(providerId, session) ?? null;
   if (!provider) {
-    fields.textContent = 'This provider is not loaded.';
+    fields.textContent = t('This provider is not loaded.');
     return { element: fields, provider: null, getValue: () => ({ valid: false, values: {} }) };
   }
 
-  const advice = buildRecommendations(provider);
+  const advice = buildRecommendations(provider, providerId);
   if (advice) fields.appendChild(advice);
 
   provider.renderSetup(fields, /** @type {any} */ ({
@@ -118,9 +120,11 @@ export function buildProviderFields(request) {
  * Providers that say nothing get nothing — the block is absent rather than
  * empty, so a form is not pushed down the panel by a heading with no content.
  * @param {any} provider - The provider whose form this is.
+ * @param {string} providerId - Its registry id, which names the extension whose
+ *   catalogue translates its manifest's advice.
  * @returns {HTMLElement|null} The block, or null when there is nothing to say.
  */
-function buildRecommendations(provider) {
+function buildRecommendations(provider, providerId) {
   const advice = provider?.getManifest?.()?.recommendations;
   const notes = Array.isArray(advice?.notes) ? advice.notes.filter(Boolean) : [];
   if (!advice?.bestFor && !advice?.avoidFor && !notes.length) return null;
@@ -135,11 +139,17 @@ function buildRecommendations(provider) {
     block.appendChild(element);
   };
 
+  /**
+   * @param {string} text - Manifest text.
+   * @returns {string} It, translated in the provider's extension's catalogue.
+   */
+  const own = (text) => capabilityLabel(text, providerId, workspaceProviderRegistry);
+
   // A fragment on its own is not a sentence, and the frame is what makes each of
   // them read as advice rather than as a claim about this particular workspace.
-  if (advice.bestFor) line('setup-recommend-for', `Best for ${advice.bestFor}.`);
-  if (advice.avoidFor) line('setup-recommend-against', `Not for ${advice.avoidFor}.`);
-  for (const note of notes) line('setup-recommend-note', String(note));
+  if (advice.bestFor) line('setup-recommend-for', t('Best for {work}.', { work: own(advice.bestFor) }));
+  if (advice.avoidFor) line('setup-recommend-against', t('Not for {work}.', { work: own(advice.avoidFor) }));
+  for (const note of notes) line('setup-recommend-note', own(String(note)));
 
   return block;
 }
@@ -212,7 +222,7 @@ export function buildPlaceRows(request) {
     if (row.kind === 'adopt') {
       const verb = document.createElement('span');
       verb.className = 'setup-row-verb';
-      verb.textContent = adoptVerb || 'Adopt';
+      verb.textContent = adoptVerb || t('Adopt');
       head.appendChild(verb);
     }
 
@@ -368,7 +378,7 @@ export function buildProvisionProgress(lines, onCancel) {
 
   const actions = document.createElement('div');
   actions.className = 'setup-actions';
-  actions.appendChild(setupButton('setup-cancel', 'Cancel', onCancel));
+  actions.appendChild(setupButton('setup-cancel', t('Cancel'), onCancel));
   view.appendChild(actions);
   return view;
 }

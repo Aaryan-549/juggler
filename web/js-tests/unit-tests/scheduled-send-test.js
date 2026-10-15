@@ -26,6 +26,12 @@
 
 import { initializeRegistries, assert } from '../utilities/test-helpers.js';
 import scheduledSendService from '../../js/services/scheduled-send-service.js';
+import {
+  updateScheduleButton, clearScheduledSendState, toggleSchedulePicker,
+} from '../../js/components/composer-schedule.js';
+import { closeAllPopups, __resetPopupManagerForTests } from '../../js/utils/popup-manager.js';
+import { underPseudoLocale, shownStrings } from '../utilities/pseudo-locale.js';
+import { isPseudoLocalized } from '../../sdk/lib/i18n.js';
 import '../../js/components/composer.js';
 
 /**
@@ -266,6 +272,110 @@ export async function runTests() {
     } finally {
       /** @type {any} */ (scheduledSendService)._session = savedSession;
       /** @type {any} */ (scheduledSendService)._fire = savedFire;
+    }
+  }
+
+  // ── Test 5: every state the clock button and picker draw, under en-XA ─────
+  // Walks the idle, armed-delay and armed-turn-end button; the armed picker in
+  // both modes; and the idle picker with and without a running turn, at zero
+  // delay too. A wall-clock time is Intl's output (data), so any `H:MM` in a
+  // shown string is mapped to a digit before the check — whatever minute the
+  // run lands in. The clock button's own aria-label is composer.js's markup,
+  // so only the title this module sets is read from it.
+  {
+    __resetPopupManagerForTests();
+    const { box, textarea, container, thread, scheduleBtn } = mountComposer();
+    try {
+      // English first: the formats the strings carry must read as before.
+      armWithText(box, textarea, 'scheduled text');
+      updateScheduleButton(box);
+      const enTitle = scheduleBtn.getAttribute('title') || '';
+      assert(/^Sending at \d\d:\d\d — click to change or cancel$/.test(enTitle),
+        `English armed title changed: ${JSON.stringify(enTitle)}`);
+      const enBadge = box.querySelector('.schedule-send-countdown')?.textContent || '';
+      assert(/^(59m|1h)$/.test(enBadge), `English countdown changed: ${JSON.stringify(enBadge)}`);
+      box._scheduledSendAt = Date.now() + 10000;
+      updateScheduleButton(box);
+      assert(box.querySelector('.schedule-send-countdown')?.textContent === '<1m',
+        'English sub-minute countdown changed');
+      box._scheduledSendAt = Date.now() + 65.5 * 60000;
+      updateScheduleButton(box);
+      const enMixed = box.querySelector('.schedule-send-countdown')?.textContent || '';
+      assert(/^1h[45]m$/.test(enMixed), `English hours+minutes countdown changed: ${JSON.stringify(enMixed)}`);
+      clearScheduledSendState(box);
+
+      /** @type {string[]} */
+      const shown = [];
+      const SKIP = '.schedule-stepper-btn, .schedule-stepper-value';
+      /** @param {Element|null} el */
+      const collect = (el) => {
+        assert(!!el, 'expected an element to read');
+        shown.push(...shownStrings(/** @type {Element} */ (el), SKIP));
+        for (const b of /** @type {Element} */ (el).querySelectorAll('.schedule-stepper-btn')) {
+          shown.push(b.getAttribute('aria-label') || '<no aria-label>');
+        }
+      };
+      const openPicker = () => {
+        closeAllPopups();
+        toggleSchedulePicker(box);
+        const menu = document.querySelector('#schedule-send-menu');
+        assert(!!menu, 'the picker did not open');
+        shown.push(menu?.getAttribute('aria-label') || '<no aria-label>');
+        return /** @type {HTMLElement} */ (menu);
+      };
+
+      await underPseudoLocale('scheduled-send-test', async () => {
+        // Idle button over a non-empty box.
+        textarea.value = 'scheduled text';
+        updateScheduleButton(box);
+        shown.push(scheduleBtn.getAttribute('title') || '');
+
+        // Armed delay: title and each countdown shape.
+        for (const ahead of [3600000, 10000, 65.5 * 60000, 30 * 60000]) {
+          box._scheduledSendAt = Date.now() + ahead;
+          box._scheduledSendMode = 'delay';
+          updateScheduleButton(box);
+          shown.push(scheduleBtn.getAttribute('title') || '');
+          collect(box.querySelector('.schedule-send-countdown'));
+        }
+        collect(openPicker());
+
+        // Armed turn-end.
+        box._scheduledSendMode = 'turn-end';
+        updateScheduleButton(box);
+        shown.push(scheduleBtn.getAttribute('title') || '');
+        collect(box.querySelector('.schedule-send-countdown'));
+        collect(openPicker());
+
+        // Idle picker, nothing running, then at zero delay.
+        clearScheduledSendState(box);
+        let menu = openPicker();
+        collect(menu);
+        /** @type {HTMLElement} */ (menu.querySelector('.schedule-stepper-btn')).click();
+        assert(/** @type {HTMLButtonElement} */ (menu.querySelector('.schedule-confirm-btn')).disabled,
+          'a zero delay must disable the confirm button');
+        collect(menu);
+
+        // Idle picker while a turn runs.
+        thread.conversation = { isTurnActive: () => true };
+        menu = openPicker();
+        collect(menu);
+        closeAllPopups();
+      });
+
+      const raw = shown
+        .map((s) => s.replace(/\d{1,2}[:.]\d{2}/g, '0'))
+        .filter((s) => !isPseudoLocalized(s));
+      assert(shown.length >= 20, `expected at least 20 strings, found ${shown.length}`);
+      assert(raw.length === 0, `plain English under en-XA: ${JSON.stringify(raw)}`);
+      passed++;
+    } catch (e) {
+      failed++;
+      errors.push('en-XA: ' + (e instanceof Error ? `${e.message}\n${e.stack}` : String(e)));
+    } finally {
+      closeAllPopups();
+      container.remove();
+      __resetPopupManagerForTests();
     }
   }
 

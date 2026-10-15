@@ -29,7 +29,10 @@ import {
   resolveMenu,
   registerContextMenuProvider,
   PASTE_REFERENCE_LABEL,
+  codeReferenceMenuItem,
 } from '../../js/services/context-menu-service.js';
+import { underPseudoLocale, shownStrings } from '../utilities/pseudo-locale.js';
+import { isPseudoLocalized } from '../../sdk/lib/i18n.js';
 // Imported for its registration: the file-reference menu is a side effect of
 // loading the module that owns it, and these tests are about that menu.
 import '../../js/utils/properties-panel-helpers.js';
@@ -509,6 +512,86 @@ export async function runTests() {
     elsewhere.remove();
     const leftover = document.querySelector('.juggler-context-menu');
     if (leftover) leftover.remove();
+  }
+
+  // === Everything the service's own menus show follows the UI language ===
+  // Every built-in menu: a text field's (drawn for real, so the menu's own
+  // aria-label is seen), a contentEditable's, a read-only selection's with the
+  // paste-reference row, and the paste row a provider asks for. Fixture text is
+  // digits, which are data.
+  {
+    /** @type {string[]} */
+    const shown = [];
+    const xaTab = document.createElement('conversation-tab');
+    xaTab.className = 'active';
+    const xaComposer = document.createElement('div');
+    xaComposer.appendChild(document.createElement('textarea'));
+    /** @type {any} */ (xaTab).getComposer = () => xaComposer;
+    const field = document.createElement('input');
+    field.type = 'text';
+    field.value = '12';
+    const editable = document.createElement('div');
+    editable.contentEditable = 'true';
+    editable.textContent = '34';
+    const code = document.createElement('div');
+    code.setAttribute('data-code-ref-path', '5/6.7');
+    code.textContent = '89';
+    document.body.append(xaTab, field, editable, code);
+    const selection = window.getSelection();
+    const selectAllOf = (/** @type {Node} */ node) => {
+      selection?.removeAllRanges();
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      selection?.addRange(range);
+    };
+    try {
+      await underPseudoLocale('context-menu-test', async () => {
+        // A writable field, through a real right-click.
+        selection?.removeAllRanges();
+        field.setSelectionRange(0, 2);
+        field.dispatchEvent(new MouseEvent('contextmenu', {
+          bubbles: true, cancelable: true, clientX: 20, clientY: 20,
+        }));
+        const menu = document.querySelector('.juggler-context-menu');
+        if (!menu) throw new Error('a right-click on a text field opened no menu');
+        const fieldRows = menu.querySelectorAll('.menu-item');
+        if (fieldRows.length !== 4) throw new Error(`expected the field's four rows, got ${fieldRows.length}`);
+        if (!menu.querySelector('[role="menu"][aria-label]')) throw new Error('the menu has no aria-label');
+        shown.push(...shownStrings(menu));
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        await new Promise((r) => setTimeout(r, 0));
+        document.querySelector('.juggler-context-menu')?.remove();
+
+        // A contentEditable host.
+        selectAllOf(editable);
+        const editRows = labelsOf(buildTextEditMenu(editable));
+        if (editRows.length !== 3) throw new Error(`expected the editable's three rows, got ${JSON.stringify(editRows)}`);
+        shown.push(...editRows.map(String));
+
+        // A read-only selection over content naming its file: Copy plus the paste row.
+        selectAllOf(code);
+        const readRows = labelsOf(buildTextEditMenu(code));
+        if (readRows.length !== 2) throw new Error(`expected Copy and the paste row, got ${JSON.stringify(readRows)}`);
+        shown.push(...readRows.map(String));
+
+        // The paste row a provider offers itself.
+        const providerRow = codeReferenceMenuItem({ path: '5/6.7', within: code });
+        if (!providerRow) throw new Error('codeReferenceMenuItem offered no row over a selection');
+        shown.push(String(providerRow.label));
+      });
+      const raw = shown.filter((s) => !isPseudoLocalized(s));
+      tally(check(shown.length >= 11 && raw.length === 0,
+        `en-XA: plain English in the service's own menus (${shown.length} shown): ${JSON.stringify(raw)}`, errors));
+    } catch (e) {
+      tally(check(false, `en-XA: ${e instanceof Error ? e.message : String(e)}`, errors));
+    } finally {
+      selection?.removeAllRanges();
+      document.querySelector('.juggler-context-menu')?.remove();
+      xaTab.remove();
+      field.remove();
+      editable.remove();
+      code.remove();
+    }
   }
 
   return { passed, failed, errors };

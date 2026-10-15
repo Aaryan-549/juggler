@@ -432,5 +432,46 @@ export async function runTests() {
     }
   }
 
+  // ── Test 7: en-XA — the completion menu's own text ────────────────────────
+  // The listbox's accessible name in every state it opens in (empty, and with
+  // a row), and the "no matches" row a provider without an emptyLabel gets.
+  // The rows themselves are the provider's.
+  try {
+    await underPseudoLocale('slash-completion-test', async () => {
+      /** @type {string[]} */
+      const shown = [];
+      const { box, container } = mountComposer();
+      const completions = box._completions;
+      const realProvider = completions._provider;
+      try {
+        const bare = { ...slashCommandProvider, id: 'bare', emptyLabel: undefined };
+        for (const provider of [...completions._providers, bare]) {
+          completions._provider = provider;
+          completions._open([]);
+          const menu = document.querySelector('.completions-menu');
+          assert(!!menu, `${provider.id}: no menu was drawn`);
+          shown.push(String(menu?.getAttribute('aria-label')),
+            String(menu?.querySelector('.menu-item-empty')?.textContent));
+          completions.close();
+        }
+        completions._provider = slashCommandProvider;
+        completions._open([{ name: '1', userDefined: true, scope: 'project', description: '2' }]);
+        const menu = document.querySelector('.completions-menu');
+        assert(!!menu?.querySelector('.menu-item:not(.menu-item-empty)'), 'no row was drawn');
+        shown.push(String(menu?.getAttribute('aria-label')));
+        completions.close();
+      } finally {
+        completions._provider = realProvider;
+        container.remove();
+      }
+      const raw = shown.filter((s) => !isPseudoLocalized(s));
+      assert(raw.length === 0, `plain English under en-XA: ${JSON.stringify(raw)}`);
+    });
+    passed++;
+  } catch (e) {
+    failed++;
+    errors.push('completion menu en-XA: ' + (e instanceof Error ? e.message : String(e)));
+  }
+
   return { passed, failed, errors };
 }

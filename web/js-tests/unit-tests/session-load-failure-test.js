@@ -24,6 +24,8 @@ import { assert, trackTestSession } from '../utilities/test-helpers.js';
 import ConnectionManager from '../../js/services/connection-manager.js';
 import Session from '../../js/model/session.js';
 import { HttpError } from '../../js/services/http.js';
+import { underPseudoLocale } from '../utilities/pseudo-locale.js';
+import { isPseudoLocalized } from '../../sdk/lib/i18n.js';
 
 /**
  * @typedef {object} TestResult
@@ -36,7 +38,7 @@ import { HttpError } from '../../js/services/http.js';
  * Run the real `_loadSession` against a Session whose load throws `thrown`,
  * and report what the manager did about it.
  * @param {unknown} thrown - What `Session.load()` throws
- * @returns {Promise<{alerts: string[], readyError: unknown, loaded: boolean}>} The alerts raised, the readiness rejection, and whether the session was marked loaded
+ * @returns {Promise<{alerts: string[], alertTitles: string[], readyError: unknown, loaded: boolean}>} The alerts raised (messages and titles), the readiness rejection, and whether the session was marked loaded
  */
 async function failLoadWith(thrown) {
   const proto = /** @type {any} */ (Session.prototype);
@@ -45,6 +47,8 @@ async function failLoadWith(thrown) {
   const origAlert = win.showAlert;
   /** @type {string[]} */
   const alerts = [];
+  /** @type {string[]} */
+  const alertTitles = [];
   const cm = /** @type {any} */ (new ConnectionManager({
     llmState: /** @type {any} */ (null),
     onServerMessage: () => {},
@@ -53,8 +57,9 @@ async function failLoadWith(thrown) {
   proto.load = async function () {
     throw thrown;
   };
-  win.showAlert = (/** @type {string} */ message) => {
+  win.showAlert = (/** @type {string} */ message, /** @type {string} */ title) => {
     alerts.push(message);
+    alertTitles.push(title);
   };
   try {
     await cm._loadSession();
@@ -65,7 +70,7 @@ async function failLoadWith(thrown) {
     } catch (e) {
       readyError = e;
     }
-    return { alerts, readyError, loaded: cm._sessionLoaded };
+    return { alerts, alertTitles, readyError, loaded: cm._sessionLoaded };
   } finally {
     proto.load = origLoad;
     win.showAlert = origAlert;
@@ -125,6 +130,26 @@ export async function runTests(_ctx) {
   await run('"Not Found" in an error message is a load failure, not a reload', async () => {
     const detail = 'extension module Not Found: my-plugin';
     assertRecovered(await failLoadWith(new Error(detail)), detail);
+  });
+
+  // The alert is the user's; the readiness rejection is the one-shot caller's
+  // (the CLI prints it inside its own English), so it stays English.
+  await run('en-XA: the load-failure alert is translated, the readiness error is not', async () => {
+    const detail = '12345';
+    /** @type {{alerts: string[], alertTitles: string[], readyError: unknown, loaded: boolean}|null} */
+    let outcome = null;
+    await underPseudoLocale('session-load-failure-test', async () => {
+      outcome = await failLoadWith(new Error(detail));
+    });
+    const o = /** @type {{alerts: string[], alertTitles: string[], readyError: unknown, loaded: boolean}} */ (/** @type {unknown} */ (outcome));
+    assert(o.alerts.length === 1, `expected one alert; got ${o.alerts.length}`);
+    assert(o.alerts[0].includes(detail), `the alert must carry the failure; got ${JSON.stringify(o.alerts[0])}`);
+    /** @type {string[]} */
+    const shown = [...o.alerts[0].split('\n\n'), o.alertTitles[0]];
+    const raw = shown.filter((s) => !isPseudoLocalized(s));
+    assert(raw.length === 0, `plain English under en-XA: ${JSON.stringify(raw)}`);
+    assert(o.readyError instanceof Error && o.readyError.message === `the engine could not load its session: ${detail}`,
+      `whenReadyToRun() must reject in English; got ${String(o.readyError)}`);
   });
 
   return { passed, failed, errors };

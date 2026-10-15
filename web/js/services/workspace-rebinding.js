@@ -29,6 +29,7 @@
  */
 
 import { posixNormalize } from 'juggler/utils/path-containment';
+import { t } from '../../sdk/lib/i18n.js';
 import { SCOPE_SESSION } from '../model/scoped-permission-store.js';
 
 /**
@@ -49,7 +50,7 @@ import { SCOPE_SESSION } from '../model/scoped-permission-store.js';
  */
 export function whyNotRebind(conversation, workspaceId) {
   const session = conversation?.session;
-  if (!session) return `Couldn't move the conversation: it has no session.`;
+  if (!session) return t("Couldn't move the conversation: it has no session.");
 
   // Going nowhere is refused by nothing: the move is already true.
   const target = workspaceId || '';
@@ -60,11 +61,11 @@ export function whyNotRebind(conversation, workspaceId) {
   // a group, its next operation lands exactly where it would have — and a turn
   // parked on an approval is "running" for as long as the user takes to answer.
   if (conversation.isProcessing === true && !sameTree(session, from, target)) {
-    return `Couldn't move the conversation: it's in the middle of a turn.`;
+    return t("Couldn't move the conversation: it's in the middle of a turn.");
   }
 
   if (target && !session.workspaceRoot(target)) {
-    return `Couldn't move the conversation: that workspace can't be worked in.`;
+    return t("Couldn't move the conversation: that workspace can't be worked in.");
   }
 
   return '';

@@ -7,6 +7,7 @@ import { extractErrorInfo, extractErrorMessage } from '../../sdk/lib/error-utils
 import { createContextWriter } from './context-writer.js';
 import { RESULT_TYPES } from '../../sdk/lib/message.js';
 import { FormattingHelpers } from '../../sdk/lib/formatting-helpers.js';
+import { markUntranslated } from '../../sdk/lib/i18n.js';
 import * as actions from './response-handler-actions.js';
 
 /**
@@ -155,7 +156,7 @@ class ResponseHandler {
       // Extract content for both UI message and return value
       const content = typeof result.content === 'string'
         ? result.content
-        : extractErrorMessage(result.content) || 'Tool executed.';
+        : extractErrorMessage(result.content) || markUntranslated('Tool executed.');
 
       // DOCUMENT-DRIVEN FLOW: Worker created the tool-action item.
       // We just need to update it with the result via completeToolAction.
@@ -172,7 +173,7 @@ class ResponseHandler {
         if (itemId) {
           const contextItem = messageThread.getContextItem(itemId);
           if (!contextItem) {
-            throw new Error(`Context item ${itemId} not found in message thread after tool result`);
+            throw new Error(markUntranslated(`Context item ${itemId} not found in message thread after tool result`));
           }
           // Get rendered content from context item
           const contextParams = {
@@ -206,7 +207,7 @@ class ResponseHandler {
       };
     } catch (error) {
       const { message, stack } = extractErrorInfo(error);
-      const errorContent = `Error: ${message}`;
+      const errorContent = markUntranslated(`Error: ${message}`);
       if (stack) console.error(`[ResponseHandler] Tool error stack:\n${stack}`);
       return actions.failToolAction(messageThread, toolCall, {
         content: errorContent,
@@ -289,7 +290,7 @@ class ResponseHandler {
       return {
         success: true,
         resultStatus: /** @type {ResultStatus} */ ('success'),
-        content: `Successfully dropped ${itemCount} context item${itemCount !== 1 ? 's' : ''}.`,
+        content: markUntranslated(`Successfully dropped ${itemCount} context item${itemCount !== 1 ? 's' : ''}.`),
         metadata: {
           resultType: RESULT_TYPES.DROP,
           itemIds: itemIds
@@ -299,16 +300,17 @@ class ResponseHandler {
     }
 
     // No handler found - unknown meta tool
+    const unknownMeta = markUntranslated(`Unknown meta tool: ${toolCall.name}`);
     return {
       success: false,
       resultStatus: /** @type {ResultStatus} */ ('error'),
-      content: `Unknown meta tool: ${toolCall.name}`,
+      content: unknownMeta,
       metadata: {
         resultType: RESULT_TYPES.META_TOOL,
         toolName: toolCall.name,
-        fullResult: { success: false, error: `Unknown meta tool: ${toolCall.name}` }
+        fullResult: { success: false, error: unknownMeta }
       },
-      data: { error: `Unknown meta tool: ${toolCall.name}` }
+      data: { error: unknownMeta }
     };
   }
 
@@ -323,7 +325,7 @@ class ResponseHandler {
     // An `mcp__*` name that misses here has three quite different causes, and
     // the model will keep calling the tool until it is told which one.
     const errorMsg = await withMcpToolMissReason(
-      `Unknown tool: "${toolCall.name}". This tool is not registered with any handler.`,
+      markUntranslated(`Unknown tool: "${toolCall.name}". This tool is not registered with any handler.`),
       toolCall.name
     );
     return actions.failToolAction(messageThread, toolCall, {
@@ -347,7 +349,7 @@ class ResponseHandler {
   async _doContextItemTool(itemDetails, toolCall, ctx, messageThread) {
     const itemResult = await this._executeContextItemToolCall(itemDetails, toolCall, ctx, messageThread);
 
-    const content = itemResult?.message || (itemResult?.success ? 'Context item updated successfully.' : 'Context item update failed.');
+    const content = itemResult?.message || (itemResult?.success ? markUntranslated('Context item updated successfully.') : markUntranslated('Context item update failed.'));
     /** @type {ResultStatus} */
     const resultStatus = itemResult?.success ? 'success' : 'error';
 
@@ -396,14 +398,14 @@ class ResponseHandler {
         success: false,
         shouldContinue: true,
         message: undefined,
-        error: result.error || 'Context item creation failed'
+        error: result.error || markUntranslated('Context item creation failed')
       };
     }
 
     // Get the context item instance (either newly created or reused)
     const targetItem = messageThread.getContextItem(/** @type {string} */ (result.id));
     if (!targetItem) {
-      throw new Error(`Context item ${result.id} not found after executeContextItem`);
+      throw new Error(markUntranslated(`Context item ${result.id} not found after executeContextItem`));
     }
 
     // Return result - executeContextItem already called handleToolCall for new items
@@ -412,7 +414,7 @@ class ResponseHandler {
       success: true,
       shouldContinue: true,
       includeInConversation: false,
-      message: targetItem.getBriefSummary?.() || `Updated ${targetItem.getTitle?.() || result.id}`,
+      message: targetItem.getBriefSummary?.() || markUntranslated(`Updated ${targetItem.getTitle?.() || result.id}`),
       itemId: result.id || undefined,
       result: targetItem.getToolResult?.() || {}
     };

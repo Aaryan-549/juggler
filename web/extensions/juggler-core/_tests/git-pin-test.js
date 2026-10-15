@@ -21,6 +21,17 @@ import { underPseudoLocale } from '../../../js-tests/utilities/pseudo-locale.js'
 import { isPseudoLocalized } from '../../../sdk/lib/i18n.js';
 import { DEFAULT_SCOPE, SCOPE_PRESETS, SCOPE_SYNTAX } from '../lib/git-scope.js';
 
+/** `lib/git-status.js`'s English, for the en-XA case's stand-in catalogue. */
+const GIT_STATUS_TEXT = [
+  'repo', 'Detached head', 'No branch',
+  '{ahead} ahead, {behind} behind', '{count} ahead', '{count} behind',
+  'Untracked', 'Unchanged',
+  '{status, select, modified {Modified} added {Added} deleted {Deleted} renamed {Renamed} copied {Copied} typechange {Type changed} other {Conflicted}}',
+  '{status, select, modified {Modified and staged} added {Added and staged} deleted {Deleted and staged} renamed {Renamed and staged} copied {Copied and staged} typechange {Type changed and staged} other {Conflicted and staged}}',
+  '{staged, select, modified {Modified} added {Added} deleted {Deleted} renamed {Renamed} copied {Copied} typechange {Type changed} other {Conflicted}} and staged, then {worktree, select, modified {modified} added {added} deleted {deleted} renamed {renamed} copied {copied} typechange {type changed} other {conflicted}} again',
+  'First {shown} of {total} files.',
+];
+
 /**
  * @typedef {object} TestResult
  * @property {number} passed Number of passing assertions.
@@ -1556,6 +1567,192 @@ export async function runTests(_ctx) {
       refusal = e instanceof Error ? e.message : String(e);
     }
     assert(refusal.includes('--output'), `an option the server will not pass to git is refused, naming it: ${refusal}`);
+  });
+
+  // --- en-XA ------------------------------------------------------------------
+
+  await test('en-XA: every state the pin draws is translated, and a comment keeps its scope in English', async () => {
+    // Data is digits throughout: refs, workspaces, branches, errors and commit
+    // ids, so a translated message around them reads as pseudo text.
+    const base = '1234567000000000000000000000000000000000';
+    const target = '7654321000000000000000000000000000000000';
+    /** @type {string[]} */
+    const shown = [];
+    /**
+     * The panel's scope row is the pin's words, then the panel's own file count
+     * and line totals (review-panel.js, a slice of its own) — kept off here.
+     * @param {any} m - The mounted pin.
+     * @returns {string} The pin's part of the row.
+     */
+    const scopeText = (m) => (m.body.querySelector('.review-panel__scope-text')?.textContent || '')
+      .replace(/ · \d+ files?( so far)?( · \+\d+ −\d+)?$/, '');
+    const file = { path: '1.js', index: 'M', worktree: '.' };
+    /**
+     * Mount a review in one scope and return what its scope row says.
+     * @param {string} scope - The pin's scope.
+     * @param {any} [overrides] - Manifest overrides.
+     * @param {any} [repoOverrides] - What the repository resolved to.
+     * @returns {Promise<string>} The pin's part of the scope row.
+     */
+    const scopeLine = async (scope, overrides = {}, repoOverrides = {}) => {
+      const m = await mounted({
+        config: scope === DEFAULT_SCOPE ? {} : { scope },
+        manifest: manifestOf([file], {
+          repos: [repo({ files: [file], total: 1, ...repoOverrides })],
+          ...overrides,
+        }),
+      });
+      const text = scopeText(m);
+      m.teardown();
+      return text;
+    };
+    let commentLabel = '';
+
+    await underPseudoLocale('git-pin-test', async () => {
+      // The controls, with an expression in force so the field and its button are drawn.
+      const m = await mounted({ config: { scope: '1..2' }, manifest: manifestOf([file], {
+        scope: { input: '1..2', kind: 'commits', label: '1..2' },
+      }) });
+      const select = /** @type {HTMLSelectElement} */ (m.body.querySelector('.git-pin__scope-select'));
+      const input = /** @type {HTMLInputElement} */ (m.body.querySelector('.git-pin__scope-input'));
+      const apply = /** @type {HTMLElement} */ (m.body.querySelector('.git-pin__scope-apply'));
+      const custom = [...select.options].find((o) => o.value === 'custom');
+      shown.push(select.getAttribute('aria-label') || '', custom?.textContent || '',
+        input.getAttribute('aria-label') || '', apply.textContent || '');
+      assert(input.placeholder === 'main...HEAD', `the placeholder is an expression, shown as typed: ${input.placeholder}`);
+      // A refresh that fails keeps the review and says so under it.
+      m.failReview(new Error('3'));
+      await m.controller.getActions()[0].run();
+      shown.push(m.body.querySelector('.review-panel__error')?.textContent || '');
+      shown.push(...m.controller.getActions().map((/** @type {any} */ a) => a.label));
+      m.teardown();
+
+      // Nothing read yet, and a read that failed, in the default scope and another.
+      for (const config of [{}, { scope: '1..2' }]) {
+        const failed = await mounted({ config, reviewError: new Error('3') });
+        shown.push(failed.body.querySelector('.git-pin__quiet')?.textContent || '',
+          failed.body.querySelector('.git-pin__error')?.textContent || '');
+        failed.teardown();
+      }
+
+      // No repository, in the project and in a workspace's tree.
+      for (const workspace of ['', '4']) {
+        const empty = await mounted({ manifest: manifestOf([], { repos: [], workspace }) });
+        shown.push(empty.body.querySelector('.pin-empty')?.textContent || '');
+        empty.teardown();
+      }
+
+      // The scope line: the default, a preset the server named in its words, the
+      // branch's merge-base, an expression; with and without a workspace, and
+      // with one commit, two, or none resolved.
+      shown.push(await scopeLine(DEFAULT_SCOPE));
+      shown.push(await scopeLine(DEFAULT_SCOPE, { workspace: '4' }));
+      shown.push(await scopeLine('@staged', { scope: { input: '@staged', kind: 'index', label: 'Staged against HEAD' } }));
+      shown.push(await scopeLine('@staged',
+        { scope: { input: '@staged', kind: 'index', label: 'Staged against HEAD' }, workspace: '4' }, { base }));
+      shown.push(await scopeLine('@branch',
+        { scope: { input: '@branch', kind: 'worktree', label: 'Working tree against the merge-base with the default branch' } },
+        { base, baseName: '9' }));
+      shown.push(await scopeLine('@last',
+        { scope: { input: '@last', kind: 'commits', label: 'Last commit against its parent' }, workspace: '4' },
+        { base, target }));
+      // An expression's label is the server's own words for it — here a range,
+      // which is data: only the words around it are the pin's.
+      const range = await scopeLine('1..2', { scope: { input: '1..2', kind: 'commits', label: '1..2' } }, { base, target });
+      shown.push(range);
+      assert(range.includes('1..2') && range.includes('1234567..7654321'), `the range and its commits are named: ${range}`);
+
+      // A repository's details: an upstream it is level with, stashes, a
+      // repository with no commits, a detached head, no branch, and a branch
+      // ahead, behind, and both. The branch, upstream and HEAD are data.
+      const detailed = await mounted({ manifest: manifestOf([file], { repos: [
+        repo({ path: '5', branch: '6', upstream: '7', stashes: 2, files: [file], total: 1 }),
+        repo({ path: '8', branch: '6', initial: true, stashes: 1, files: [file], total: 1 }),
+        repo({ path: '9', detached: true, files: [file], total: 1 }),
+        repo({ path: '10', branch: '', files: [file], total: 1 }),
+        repo({ path: '11', branch: '6', upstream: '7', ahead: 2, behind: 3, files: [file], total: 1 }),
+        repo({ path: '12', branch: '6', upstream: '7', ahead: 1, files: [file], total: 1 }),
+        repo({ path: '13', branch: '6', upstream: '7', behind: 1, files: [file], total: 1 }),
+      ] }) });
+      for (const detail of detailed.body.querySelectorAll('.review-panel__group-detail')) {
+        shown.push(...(detail.textContent || '').split(' · ').filter((part) => !/^(\d+|→ \d+)$/.test(part)));
+      }
+      detailed.teardown();
+
+      // A list the server cut short says how much of it there is; a repository
+      // at a root with no folder name is still named.
+      const truncated = await mounted({ manifest: manifestOf([file], {
+        root: '',
+        repos: [repo({ files: [file], total: 9, truncated: true }), repo({ path: '5', files: [file], total: 1 })],
+      }) });
+      shown.push(truncated.body.querySelector('.review-panel__group-note')?.textContent || '');
+      shown.push(truncated.body.querySelector('.review-panel__group-name')?.textContent || '');
+      truncated.teardown();
+
+      // Every file status, one side at a time and both, in its row's label.
+      const statusFiles = [...'MADRCTU'].flatMap((letter, i) => [
+        { path: `${i}0.js`, index: '.', worktree: letter },
+        { path: `${i}1.js`, index: letter, worktree: '.' },
+      ]).concat([
+        { path: '80.js', index: 'A', worktree: 'M' },
+        { path: '81.js', index: 'R', worktree: 'T' },
+        { path: '82.js', index: '?', worktree: '?' },
+        { path: '83.js', index: '.', worktree: '.' },
+      ]);
+      const statuses = await mounted({ manifest: manifestOf(statusFiles) });
+      // The label's path and onward are the panel's; the status may hold a comma.
+      for (const row of statuses.rows()) shown.push((row.getAttribute('aria-label') || '').replace(/, \d+\.js(, .*)?$/, ''));
+      statuses.teardown();
+
+      // A conflicted file names itself so in its row's label. The rest of that
+      // label is the panel's (review-panel.js).
+      const conflicted = await mounted({
+        manifest: manifestOf([{ path: '1.js', index: 'U', worktree: 'U', conflicted: true }]),
+      });
+      shown.push((conflicted.rows()[0]?.getAttribute('aria-label') || '').split(', ')[0] || '');
+      conflicted.teardown();
+
+      // The tab's words and the add picker's reason. The tab's title is the
+      // manifest name, which `describePin` translates in its owner's catalogue.
+      shown.push(String(pin.describe({}).subtitle));
+      shown.push(String(pin.canAdd(/** @type {any} */ ({ project: { path: '' } }))));
+      assert(pin.describe({}).title === GitPin.MANIFEST.name, 'the title is the manifest name, for describePin to translate');
+
+      // A comment is stored with the scope's words, and they reach the model in
+      // the review message: those stay English while the row above is translated.
+      const scoped = await mounted({
+        config: { scope: '@staged' },
+        manifest: manifestOf([{ path: 'a.js', index: 'M', worktree: '.' }], {
+          scope: { input: '@staged', kind: 'index', label: 'Staged against HEAD' },
+          repos: [repo({ files: [{ path: 'a.js', index: 'M', worktree: '.' }], total: 1, base })],
+        }),
+      });
+      const button = /** @type {HTMLElement|null} */ (scoped.body.querySelector('.diff-comment-btn[data-side="new"][data-line="85"]'));
+      assert(button, 'expected a comment button on the added line');
+      button?.click();
+      const editor = scoped.editor();
+      /** @type {HTMLTextAreaElement} */ (editor.querySelector('textarea')).value = 'A new one';
+      /** @type {HTMLElement} */ (editor.querySelector('.review-panel__save')).click();
+      await settle();
+      commentLabel = scoped.saves().at(-1)?.comments?.find((/** @type {any} */ c) => c.body === 'A new one')?.scopeLabel || '';
+      scoped.teardown();
+    }, { '@juggler/core': [
+      ...SCOPE_PRESETS.flatMap((p) => [p.label, p.description]), SCOPE_SYNTAX,
+      'Compare', 'Custom…', 'Git diff expression', 'Show', 'Checking…', 'Refresh', 'Review changes', 'No project',
+      "Couldn't read the working tree. {error}", "Couldn't compare {scope}. {error}", "Couldn't refresh. {error}",
+      'No git repository.', 'No git repository in {workspace}.',
+      'Working tree against HEAD', 'Working tree of {workspace} against HEAD',
+      'Working tree against the merge-base with {base}', '{label} in {workspace}',
+      '{label} · {base}..{target}', '{label} ({base})',
+      'Up to date', 'No commits yet', '{count, plural, one {{count} stash} other {{count} stashes}}', 'Conflicted',
+      ...GIT_STATUS_TEXT,
+    ] });
+
+    assert(shown.length === 51, `expected every state drawn, got ${shown.length}: ${JSON.stringify(shown)}`);
+    const raw = shown.filter((s) => !isPseudoLocalized(s));
+    assert(raw.length === 0, `plain English under en-XA: ${JSON.stringify(raw)}`);
+    assert(commentLabel === 'Staged against HEAD (1234567)',
+      `a comment's scope is read by the model, so it stays English: ${JSON.stringify(commentLabel)}`);
   });
 
   return { passed, failed, errors };

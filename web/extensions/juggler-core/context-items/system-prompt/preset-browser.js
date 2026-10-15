@@ -22,6 +22,7 @@
  */
 
 import { createElement, presentPopup } from 'juggler/ui';
+import { translator, markForTranslation } from 'juggler/i18n';
 import { attachMenuKeyboard, focusMenuItem } from '../../../../js/utils/menu-roles.js';
 import { systemPromptRegistry } from '../../../../sdk/lib/system-prompt-registry.js';
 import { extractErrorMessage } from '../../../../sdk/lib/error-utils.js';
@@ -35,6 +36,29 @@ import {
 } from '../../../../js/services/system-prompt-presets.js';
 
 /** @typedef {import('../../../../sdk/lib/system-prompt-registry.js').SystemPromptPreset} SystemPromptPreset */
+
+const t = translator('@juggler/core');
+
+/**
+ * Captions for the registry's category ids. A category with no caption here
+ * shows its id, capitalized.
+ * @type {Record<string, string>}
+ */
+const CATEGORY_LABELS = {
+  general: markForTranslation('General'),
+  specialized: markForTranslation('Specialized'),
+  user: markForTranslation('User'),
+};
+
+/**
+ * The caption shown for a category id.
+ * @param {string} category - Category id from the registry
+ * @returns {string} The caption
+ */
+function categoryLabel(category) {
+  const label = CATEGORY_LABELS[category];
+  return label ? t(label) : category.charAt(0).toUpperCase() + category.slice(1);
+}
 
 // Inline icons for the dropdown (Material Symbols paths, currentColor fill).
 /**
@@ -127,7 +151,7 @@ function renderPresetMenu(item, dropdown, container) {
     : -1;
   const menu = document.createElement('menu');
   menu.setAttribute('role', 'menu');
-  menu.setAttribute('aria-label', 'System prompt presets');
+  menu.setAttribute('aria-label', t('System prompt presets'));
   const defaultId = getDefaultPresetId();
   const selectedId = item.data.selectedPresetId;
 
@@ -135,7 +159,7 @@ function renderPresetMenu(item, dropdown, container) {
     const presets = systemPromptRegistry.getPresetsByCategory(category);
     if (presets.length === 0) continue;
 
-    menu.appendChild(buildCategoryHeader(category));
+    menu.appendChild(buildCategoryHeader(categoryLabel(category)));
 
     for (const preset of presets) {
       menu.appendChild(buildPresetMenuItem(item, preset, defaultId, selectedId, dropdown, container));
@@ -147,10 +171,10 @@ function renderPresetMenu(item, dropdown, container) {
   separator.setAttribute('role', 'separator');
   menu.appendChild(separator);
 
-  menu.appendChild(buildActionItem(SP_ICON_PLUS, 'Save current text as preset…', () => {
+  menu.appendChild(buildActionItem(SP_ICON_PLUS, t('Save current text as preset…'), () => {
     saveCurrentAsPreset(item, dropdown, container);
   }));
-  menu.appendChild(buildActionItem(SP_ICON_GEAR, 'Manage presets…', () => {
+  menu.appendChild(buildActionItem(SP_ICON_GEAR, t('Manage presets…'), () => {
     closeDropdown(item);
     showManagePresets(item, container);
   }));
@@ -160,13 +184,13 @@ function renderPresetMenu(item, dropdown, container) {
 }
 
 /**
- * Build an uppercase section label row (capitalized; CSS upper-cases it). It
- * carries no role: a menu owns only items, and the rows under it name themselves.
- * @param {string} label - Category label
+ * Build an uppercase section label row (CSS upper-cases it). It carries no
+ * role: a menu owns only items, and the rows under it name themselves.
+ * @param {string} label - Category caption, as shown
  * @returns {HTMLElement} The header row
  */
 function buildCategoryHeader(label) {
-  const header = createElement('li', 'sp-preset-category', label.charAt(0).toUpperCase() + label.slice(1));
+  const header = createElement('li', 'sp-preset-category', label);
   header.setAttribute('role', 'none');
   return header;
 }
@@ -204,20 +228,20 @@ function buildPresetMenuItem(item, preset, defaultId, selectedId, dropdown, cont
   const name = createElement('span', 'sp-preset-row-name', preset.name);
   name.setAttribute('role', 'menuitemradio');
   name.setAttribute('aria-checked', String(isSelected));
-  if (isDefault) name.setAttribute('aria-label', `${preset.name} (default)`);
+  if (isDefault) name.setAttribute('aria-label', t('{name} (default)', { name: preset.name }));
   row.appendChild(name);
 
   if (isDefault) {
-    const badge = createElement('span', 'sp-preset-default-badge', 'default');
+    const badge = createElement('span', 'sp-preset-default-badge', t('default'));
     badge.setAttribute('aria-hidden', 'true');
     row.appendChild(badge);
   } else {
     const setBtn = document.createElement('button');
     setBtn.className = 'sp-preset-setdefault-btn';
     setBtn.setAttribute('role', 'menuitem');
-    setBtn.setAttribute('aria-label', `Set ${preset.name} as the default`);
-    setBtn.textContent = 'Set default';
-    setBtn.title = `Make "${preset.name}" the default for new conversations`;
+    setBtn.setAttribute('aria-label', t('Set {name} as the default', { name: preset.name }));
+    setBtn.textContent = t('Set default');
+    setBtn.title = t('Make "{name}" the default for new conversations', { name: preset.name });
     setBtn.addEventListener('click', async (e) => {
       e.stopPropagation();
       try {
@@ -309,13 +333,17 @@ async function saveCurrentAsPreset(item, dropdown, container) {
     if (existing) {
       const showChoice = /** @type {any} */ (window).showChoice;
       if (showChoice) {
+        // showChoice answers with the chosen label, so the labels are compared as shown.
+        const update = t('Update');
+        const saveAsNew = t('Save as new\u2026');
+        const cancel = t('Cancel');
         const choice = await showChoice(
-          `"${existing.name}" is already a preset.`,
-          ['Update', 'Save as new\u2026', 'Cancel'],
-          'Save preset',
+          t('"{name}" is already a preset.', { name: existing.name }),
+          [update, saveAsNew, cancel],
+          t('Save preset'),
           false
         );
-        if (choice === 'Update') {
+        if (choice === update) {
           try {
             await updateUserPreset(existing.id, existing.name, content);
             selectPreset(item, existing.id);
@@ -325,7 +353,7 @@ async function saveCurrentAsPreset(item, dropdown, container) {
           }
           return;
         }
-        if (choice === 'Cancel' || choice === null) return;
+        if (choice === cancel || choice === null) return;
         // 'Save as new…' falls through to the name-prompt path below.
       }
     }
@@ -333,7 +361,7 @@ async function saveCurrentAsPreset(item, dropdown, container) {
 
   const showPrompt = /** @type {any} */ (window).showPrompt;
   const name = showPrompt
-    ? await showPrompt('Name this preset:', '', 'Save system prompt preset')
+    ? await showPrompt(t('Name this preset:'), '', t('Save system prompt preset'))
     : null;
   if (!name || !name.trim()) return;
   try {
@@ -361,14 +389,20 @@ function selectPreset(item, presetId) {
  * user whether the name collided or the disk is full, so it is shown rather
  * than summarised away.
  * @param {unknown} err - The thrown error
- * @param {string} verb - What was being attempted ("save", "update")
+ * @param {'save'|'update'} verb - What was being attempted
  * @param {string} logPrefix - Console prefix for the developer-facing log
  * @returns {Promise<void>}
  */
 async function reportPresetFailure(err, verb, logPrefix) {
   console.error(logPrefix, err);
   const showConfirm = /** @type {any} */ (window).showConfirm;
-  if (showConfirm) await showConfirm(extractErrorMessage(err), `Couldn't ${verb} preset`, { confirmText: 'OK' });
+  if (showConfirm) {
+    await showConfirm(
+      extractErrorMessage(err),
+      t("{verb, select, update {Couldn't update preset} other {Couldn't save preset}}", { verb }),
+      { confirmText: t('OK') }
+    );
+  }
 }
 
 /**
@@ -382,15 +416,15 @@ function showManagePresets(item, container) {
   const surface = document.createElement('nav');
   surface.className = 'dropdown-menu system-prompt-manage-dropdown show';
   surface.setAttribute('role', 'dialog');
-  surface.setAttribute('aria-label', 'Manage presets');
+  surface.setAttribute('aria-label', t('Manage presets'));
 
   const render = () => {
     const menu = document.createElement('menu');
-    menu.appendChild(buildCategoryHeader('Your presets'));
+    menu.appendChild(buildCategoryHeader(t('Your presets')));
 
     const userPresets = systemPromptRegistry.getPresetsByCategory('user');
     if (userPresets.length === 0) {
-      menu.appendChild(createElement('li', 'sp-preset-empty', 'No saved presets yet.'));
+      menu.appendChild(createElement('li', 'sp-preset-empty', t('No saved presets yet.')));
     }
 
     for (const preset of userPresets) {
@@ -430,7 +464,7 @@ function buildManageRow(item, preset, container, rerender) {
 
   const editBtn = document.createElement('button');
   editBtn.className = 'sp-preset-edit-btn';
-  editBtn.textContent = 'Edit';
+  editBtn.textContent = t('Edit');
   editBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     // Load the preset content into the editor so the user can tweak it,
@@ -444,12 +478,16 @@ function buildManageRow(item, preset, container, rerender) {
 
   const delBtn = document.createElement('button');
   delBtn.className = 'sp-preset-delete-btn';
-  delBtn.textContent = 'Delete';
+  delBtn.textContent = t('Delete');
   delBtn.addEventListener('click', async (e) => {
     e.stopPropagation();
     const showConfirm = /** @type {any} */ (window).showConfirm;
     const ok = showConfirm
-      ? await showConfirm(`Delete preset "${preset.name}"? This cannot be undone.`, 'Delete preset', { confirmText: 'Delete', cancelText: 'Cancel', danger: true })
+      ? await showConfirm(
+        t('Delete preset "{name}"? This cannot be undone.', { name: preset.name }),
+        t('Delete preset'),
+        { confirmText: t('Delete'), cancelText: t('Cancel'), danger: true }
+      )
       : true;
     if (!ok) return;
     try {

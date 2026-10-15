@@ -23,6 +23,9 @@ import { runningToolsInTree } from '../../js/model/thread-navigation.js';
 import LLMState from '../../js/services/llm-state.js';
 // The side-effect import registers the custom element.
 import { __resetDropBudgetForTests } from '../../js/components/juggler-spinner.js';
+import { underPseudoLocale, shownStrings } from '../utilities/pseudo-locale.js';
+import { assert } from '../utilities/test-helpers.js';
+import { isPseudoLocalized } from '../../sdk/lib/i18n.js';
 
 /**
  * @typedef {object} TestResult
@@ -610,5 +613,41 @@ export async function runTests() {
   // Detaching cancels the armed fumble and refunds its impression, so the
   // budget is not silently spent by a spinner that never showed anything.
   for (const el of mounted) el.remove();
+
+  // N — en-XA: the label a spinner gives itself is translated, whether or not
+  // it is `live`; a label the caller set is the caller's and is left alone.
+  // Read synchronously at connect — no animation frame is awaited.
+  try {
+    /** @type {string[]} */
+    const raw = [];
+    let checked = 0;
+    let callerLabel = '';
+    await underPseudoLocale('test-juggler-spinner', () => {
+      for (const live of [false, true]) {
+        const holder = document.createElement('div');
+        document.body.appendChild(holder);
+        try {
+          const el = document.createElement('juggler-spinner');
+          if (live) el.setAttribute('live', '');
+          holder.appendChild(el);
+          const shown = shownStrings(holder);
+          checked += shown.length;
+          for (const s of shown) if (!isPseudoLocalized(s)) raw.push(`${live ? 'live' : 'plain'}: ${s}`);
+        } finally {
+          holder.remove();
+        }
+      }
+      const own = document.createElement('juggler-spinner');
+      own.setAttribute('aria-label', '9');
+      document.body.appendChild(own);
+      callerLabel = own.getAttribute('aria-label') || '';
+      own.remove();
+    });
+    assert(checked >= 2, `expected both spinners to show a label, saw ${checked}`);
+    assert(raw.length === 0, `plain English under en-XA: ${JSON.stringify(raw)}`);
+    assert(callerLabel === '9', `a caller's aria-label is kept, got ${JSON.stringify(callerLabel)}`);
+    passed++;
+  } catch (e) { failed++; errors.push(`en-XA spinner label: ${e.message}`); }
+
   return { passed, failed, errors };
 }

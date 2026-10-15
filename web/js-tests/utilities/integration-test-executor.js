@@ -124,6 +124,7 @@ import { runTests as runModalSupersedeTests } from '../unit-tests/modal-supersed
 import { runTests as runModalDialogTests } from '../unit-tests/modal-dialog-test.js';
 import { runTests as runHttpErrorsTests } from '../unit-tests/http-errors-test.js';
 import { runTests as runApprovalButtonsTests } from '../unit-tests/approval-buttons-test.js';
+import { runTests as runResponseHandlerModelTextTests } from '../unit-tests/response-handler-model-text-test.js';
 import { runTests as runCapabilityCatalogTests } from '../unit-tests/capability-catalog-test.js';
 import { runTests as runSetupWizardTests } from '../unit-tests/setup-wizard-test.js';
 import { runTests as runWarningFallbackTests } from '../unit-tests/warning-fallback-test.js';
@@ -368,8 +369,10 @@ import { runTests as runPermissionPopupRefreshTests } from '../unit-tests/permis
 import { runTests as runClipboardTests } from '../unit-tests/clipboard-test.js';
 import { runTests as runCopyButtonTests } from '../unit-tests/copy-button-test.js';
 import { runTests as runLiveTaskOutputTests } from '../unit-tests/live-task-output-test.js';
+import { runTests as runComposerAttachmentsTests } from '../unit-tests/composer-attachments-test.js';
 import { runTests as runCodeBlockTests } from '../unit-tests/code-block-test.js';
 import { runTests as runWindowCaptionControlsTests } from '../unit-tests/window-caption-controls-test.js';
+import { runTests as runUIEventManagerTests } from '../unit-tests/ui-event-manager-test.js';
 import { runTests as runThinkingBlockTests } from '../unit-tests/thinking-block-test.js';
 import { runTests as runPropertiesPanelHelpersTests } from '../unit-tests/properties-panel-helpers-test.js';
 import { runTests as runWorkspaceDialogsTests } from '../unit-tests/workspace-dialogs-test.js';
@@ -619,6 +622,7 @@ const UNIT_TEST_SUITES = [
   { name: 'unit:modal-dialog', run: runModalDialogTests },
   { name: 'unit:http-errors', run: runHttpErrorsTests },
   { name: 'unit:approval-buttons', run: runApprovalButtonsTests },
+  { name: 'unit:response-handler-model-text', run: runResponseHandlerModelTextTests },
   { name: 'unit:capability-catalog', run: runCapabilityCatalogTests },
   { name: 'unit:setup-wizard', run: runSetupWizardTests },
   { name: 'unit:warning-fallback', run: runWarningFallbackTests },
@@ -846,8 +850,10 @@ const UNIT_TEST_SUITES = [
   { name: 'unit:clipboard', run: runClipboardTests },
   { name: 'unit:copy-button', run: runCopyButtonTests },
   { name: 'unit:live-task-output', run: runLiveTaskOutputTests },
+  { name: 'unit:composer-attachments', run: runComposerAttachmentsTests },
   { name: 'unit:code-block', run: runCodeBlockTests },
   { name: 'unit:window-caption-controls', run: runWindowCaptionControlsTests },
+  { name: 'unit:ui-event-manager', run: runUIEventManagerTests },
   { name: 'unit:thinking-block', run: runThinkingBlockTests },
   { name: 'unit:properties-panel-helpers', run: runPropertiesPanelHelpersTests },
   { name: 'unit:workspace-dialogs', run: runWorkspaceDialogsTests },

@@ -39,6 +39,9 @@ import {
   ESCAPE_QUIET_MS,
   __setEscapeHostForTests,
 } from '../../js/services/escape-behaviour.js';
+import { isMac, formatBindingLabel } from '../../js/services/key-shortcut-manager.js';
+import { isPseudoLocalized } from '../../sdk/lib/i18n.js';
+import { underPseudoLocale, shownStrings } from '../utilities/pseudo-locale.js';
 
 /**
  * @typedef {object} TestResult
@@ -505,6 +508,49 @@ export async function runTests(_ctx) {
       assert(getEscapePreset().id === 'two-step', 'choosing a preset should store it');
       assert(desc.textContent === describeEscapePreset(getEscapePreset()),
         'the description should follow the choice');
+    });
+
+    await run('en-XA: the settings row, every preset description and the armed cue are translated', async () => {
+      await underPseudoLocale('escape-behaviour-test', async () => {
+        const mac = isMac();
+        // Key caps are data drawn by their own formatter: map them to a digit so
+        // only the sentences around them are judged. Shift+Escape first, as it
+        // contains the plain cap.
+        const caps = [
+          formatBindingLabel({ shift: true, key: 'Escape' }, mac),
+          formatBindingLabel({ key: 'Escape' }, mac),
+        ];
+        /**
+         * @param {string} s - A shown string.
+         * @returns {string} It with every key cap replaced by a digit.
+         */
+        const uncapped = (s) => caps.reduce((acc, cap) => acc.replaceAll(cap, '1'), s);
+        /** @type {string[]} */
+        const shown = [];
+
+        setEscapePreset('stop');
+        const row = buildEscapeBehaviourRow();
+        const select = /** @type {HTMLSelectElement} */ (row.querySelector('select'));
+        const desc = /** @type {HTMLElement} */ (row.querySelector('.provider-description'));
+        shown.push(...shownStrings(row));
+        for (const preset of ESCAPE_PRESETS) {
+          select.value = preset.id;
+          select.dispatchEvent(new Event('change'));
+          shown.push(desc.textContent || '');
+        }
+
+        setEscapePreset('double-press');
+        app.running = true;
+        press(app);
+        const armed = cue();
+        assert(armed, 'the double-press preset should show its cue');
+        shown.push(armed?.textContent || '');
+        resetEscapeGesture();
+
+        assert(shown.length >= ESCAPE_PRESETS.length * 2 + 3, `expected the whole row, found ${shown.length}`);
+        const raw = shown.map(uncapped).filter((s) => !isPseudoLocalized(s));
+        assert(raw.length === 0, `plain English under en-XA: ${JSON.stringify(raw)}`);
+      });
     });
   } finally {
     resetEscapeGesture();

@@ -31,6 +31,7 @@ import { modelLabelFromList } from '../../model/model-display.js';
 import { buildModelConfig } from '../../model/model-config.js';
 import keyShortcutManager from '../../services/key-shortcut-manager.js';
 import { escapeHtml } from '../../../sdk/lib/html.js';
+import { t } from '../../../sdk/lib/i18n.js';
 import './model-tuning.js';
 
 /**
@@ -48,13 +49,13 @@ class ModelChip extends HTMLElement {
     /** @type {ModelConfigShape|undefined} @private - What the mini popover edits; undefined ⇒ follow `config`. */
     this._liveConfig = undefined;
     /** @type {string} @private - Label shown when no model is in effect. */
-    this._placeholder = 'Select Model';
+    this._placeholder = t('Select Model');
     /** @type {import('../../services/connection-status.js').ConnectionStatus} @private */
     this._connectionState = null;
     /** @type {boolean} @private - Whether an empty selection should pulse for attention. */
     this._pulseWhenEmpty = false;
     /** @type {string} @private - The button's tooltip. */
-    this._buttonTitle = 'LLM Model';
+    this._buttonTitle = t('LLM Model');
     /** @type {(() => void)|null} @private - presentPopup release for the mini popover. */
     this._miniRelease = null;
     /** @type {HTMLElement|null} @private - The mini popover's surface while open. */
@@ -210,12 +211,12 @@ class ModelChip extends HTMLElement {
     let modelUnavailable = false;
 
     if (this._connectionState === 'error') {
-      modelDisplay = 'Connection Error';
+      modelDisplay = t('Connection Error');
     } else if (this._connectionState === 'disconnected') {
-      modelDisplay = 'Disconnected';
+      modelDisplay = t('Disconnected');
     } else if (this._connectionState === 'connecting') {
-      modelDisplay = 'Connecting...';
-    } else if (!provider || provider === 'Loading...') {
+      modelDisplay = t('Connecting...');
+    } else if (!provider || provider === 'Loading...') { // i18n-ignore: a sentinel provider name, never drawn
       modelDisplay = this._placeholder;
     } else {
       modelDisplay = model ? modelLabelFromList(this._providers, provider, model) : provider;
@@ -253,14 +254,18 @@ class ModelChip extends HTMLElement {
     const explicit = this._config?.thinking;
     const level = explicit && levels.includes(explicit) ? explicit : '';
     const declaredDefault = modelEntry?.defaultThinkingLevel || '';
-    const shown = level || declaredDefault || 'def';
+    const shown = level || declaredDefault || t('def', undefined, { context: 'short for the default thinking level, on a small pill' });
     // Cite the switch-thinking shortcut (⌥⌘T / Ctrl+Alt+T) live from the central
     // table, so the hint stays correct if it's ever rebound or left unbound.
     const cycleKey = keyShortcutManager.formatBinding('cycle-thinking');
-    const keyHint = cycleKey ? ` (${cycleKey}, hold for menu)` : '';
-    const title = level
-      ? `Thinking: ${level} — click to change${keyHint}`
-      : `Thinking: ${declaredDefault ? `${declaredDefault} (default)` : 'default'} — click to change${keyHint}`;
+    const params = {
+      state: level ? 'explicit' : declaredDefault ? 'declared' : 'none',
+      level: level || declaredDefault,
+      key: cycleKey,
+    };
+    const title = cycleKey
+      ? t('Thinking: {state, select, explicit {{level}} declared {{level} (default)} other {default}} — click to change ({key}, hold for menu)', params)
+      : t('Thinking: {state, select, explicit {{level}} declared {{level} (default)} other {default}} — click to change', params);
     // A <span> (not <button>): the chip nests inside the model button, and a
     // button inside a button is invalid HTML the parser would eject.
     return `<span class="thinking-chip${level ? '' : ' default'}" role="button" aria-haspopup="dialog" aria-expanded="${!!this._miniRelease}" title="${escapeHtml(title)}">${escapeHtml(shown)}</span>`;
@@ -292,7 +297,7 @@ class ModelChip extends HTMLElement {
     if (!active) return '';
 
     const label = active.name || active.id;
-    const title = active.description ? `${label} — ${active.description}` : label;
+    const title = active.description ? t('{label} — {description}', { label, description: active.description }) : label;
     return `<span class="service-tier-chip" title="${escapeHtml(title)}">${escapeHtml(label)}</span>`;
   }
 
@@ -373,7 +378,7 @@ class ModelChip extends HTMLElement {
     const surface = document.createElement('nav');
     surface.className = 'dropdown-menu thinking-mini show';
     surface.setAttribute('role', 'dialog');
-    surface.setAttribute('aria-label', 'Thinking');
+    surface.setAttribute('aria-label', t('Thinking'));
     const tuning = document.createElement('model-tuning');
     /** @type {any} */ (tuning).sections = 'thinking';
     /** @type {any} */ (tuning).modelEntry = modelEntry;

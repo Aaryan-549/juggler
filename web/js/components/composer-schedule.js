@@ -34,22 +34,16 @@
 
 import scheduledSendService from '../services/scheduled-send-service.js';
 import { presentPopup } from '../utils/popup-surface.js';
+import { t, formatDate, formatNumber } from '../../sdk/lib/i18n.js';
 
 /**
  * The preset delay chips offered in the scheduled-send picker, tuned to the
  * primary use case: firing a command when the next LLM-provider time slice
  * opens. Minutes only — the picker's steppers cover everything in between.
- * @type {Array<{label: string, minutes: number}>}
+ * Each chip is labelled by {@link formatDelayShort}, the countdown's own format.
+ * @type {number[]}
  */
-const SCHEDULE_PRESETS = [
-  { label: '15m', minutes: 15 },
-  { label: '30m', minutes: 30 },
-  { label: '1h', minutes: 60 },
-  { label: '2h', minutes: 120 },
-  { label: '3h', minutes: 180 },
-  { label: '4h', minutes: 240 },
-  { label: '5h', minutes: 300 },
-];
+const SCHEDULE_PRESET_MINUTES = [15, 30, 60, 120, 180, 240, 300];
 
 /** Granularity (minutes) of the scheduled-send picker — no finer than this. */
 const SCHEDULE_MINUTE_STEP = 5;
@@ -65,25 +59,22 @@ const SCHEDULE_MAX_HOURS = 12;
  */
 function formatDelayShort(ms) {
   const totalMin = Math.floor(Math.max(0, ms) / 60000);
-  if (totalMin < 1) return '<1m';
+  if (totalMin < 1) return t('<1m');
   const h = Math.floor(totalMin / 60);
   const m = totalMin % 60;
-  if (h && m) return `${h}h${m}m`;
-  if (h) return `${h}h`;
-  return `${m}m`;
+  if (h && m) return t('{hours}h{minutes}m', { hours: h, minutes: m });
+  if (h) return t('{hours}h', { hours: h });
+  return t('{minutes}m', { minutes: m });
 }
 
 /**
- * Format an epoch-ms instant as a 24-hour wall-clock "HH:MM" — the absolute
- * time the user is actually aligning to ("sends at 14:35").
+ * Format an epoch-ms instant as a 24-hour wall-clock time ("14:35" in English)
+ * — the absolute time the user is actually aligning to ("sends at 14:35").
  * @param {number} epochMs
- * @returns {string} The 24-hour "HH:MM" wall-clock time.
+ * @returns {string} The 24-hour wall-clock time, in the active locale's form.
  */
 function formatClockTime(epochMs) {
-  const d = new Date(epochMs);
-  const hh = String(d.getHours()).padStart(2, '0');
-  const mm = String(d.getMinutes()).padStart(2, '0');
-  return `${hh}:${mm}`;
+  return formatDate(epochMs, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
 }
 
 /**
@@ -247,7 +238,7 @@ export function updateScheduleButton(composer) {
   /** @type {HTMLButtonElement} */ (btn).disabled = empty;
   if (composer._scheduledSendAt === null || empty) {
     btn.classList.remove('armed');
-    btn.setAttribute('title', 'Send later');
+    btn.setAttribute('title', t('Send later'));
     if (label) {
       /** @type {HTMLElement} */ (label).hidden = true;
       label.textContent = '';
@@ -257,14 +248,14 @@ export function updateScheduleButton(composer) {
   btn.classList.add('armed');
   const turnEnd = composer._scheduledSendMode === 'turn-end';
   btn.setAttribute('title', turnEnd
-    ? 'Sending when this turn ends — click to cancel'
-    : `Sending at ${formatClockTime(composer._scheduledSendAt)} — click to change or cancel`);
+    ? t('Sending when this turn ends — click to cancel')
+    : t('Sending at {time} — click to change or cancel', { time: formatClockTime(composer._scheduledSendAt) }));
   if (label) {
     /** @type {HTMLElement} */ (label).hidden = false;
     // A turn-end wait has no countdown — it ends when the turn does — so the
     // badge names the wait instead.
     label.textContent = turnEnd
-      ? 'turn'
+      ? t('turn', undefined, { context: 'scheduled-send badge: waiting for the turn to end' })
       : formatDelayShort(Math.max(0, composer._scheduledSendAt - Date.now()));
   }
 }
@@ -321,7 +312,7 @@ function openSchedulePicker(composer) {
   menu.className = 'dropdown-menu schedule-send-menu show';
   menu.id = 'schedule-send-menu';
   menu.setAttribute('role', 'dialog');
-  menu.setAttribute('aria-label', 'Send later');
+  menu.setAttribute('aria-label', t('Send later'));
 
   const present = () => {
     composer._schedulePickerCleanup = presentPopup({
@@ -342,14 +333,14 @@ function openSchedulePicker(composer) {
     const targetLine = document.createElement('div');
     targetLine.className = 'schedule-armed-target';
     targetLine.textContent = composer._scheduledSendMode === 'turn-end'
-      ? 'Sending when this turn ends'
-      : `Sending at ${formatClockTime(composer._scheduledSendAt)}`;
+      ? t('Sending when this turn ends')
+      : t('Sending at {time}', { time: formatClockTime(composer._scheduledSendAt) });
     menu.appendChild(targetLine);
 
     const cancelBtn = document.createElement('button');
     cancelBtn.type = 'button';
     cancelBtn.className = 'schedule-cancel-btn schedule-cancel-only';
-    cancelBtn.textContent = 'Cancel timer';
+    cancelBtn.textContent = t('Cancel timer');
     cancelBtn.addEventListener('click', () => {
       cancelScheduledSend(composer);
       closeSchedulePicker(composer);
@@ -365,7 +356,7 @@ function openSchedulePicker(composer) {
 
   const heading = document.createElement('div');
   heading.className = 'schedule-send-heading';
-  heading.textContent = 'Send after a delay';
+  heading.textContent = t('Send after a delay');
   menu.appendChild(heading);
 
   // Preset chips — stretch to fill the row.
@@ -379,7 +370,9 @@ function openSchedulePicker(composer) {
   menu.appendChild(steppers);
 
   /**
-   * @param {string} unitLabel
+   * @param {string} unitLabel - Shown beside the value.
+   * @param {string} fewerLabel - The minus button's accessible name.
+   * @param {string} moreLabel - The plus button's accessible name.
    * @param {() => number} get
    * @param {(v: number) => void} set
    * @param {number} min
@@ -387,14 +380,14 @@ function openSchedulePicker(composer) {
    * @param {number} step
    * @returns {HTMLElement} the value element (for later text updates)
    */
-  const buildStepper = (unitLabel, get, set, min, max, step) => {
+  const buildStepper = (unitLabel, fewerLabel, moreLabel, get, set, min, max, step) => {
     const wrap = document.createElement('div');
     wrap.className = 'schedule-stepper';
     const dec = document.createElement('button');
     dec.type = 'button';
     dec.className = 'schedule-stepper-btn';
     dec.textContent = '\u2212'; // minus
-    dec.setAttribute('aria-label', `Fewer ${unitLabel}`);
+    dec.setAttribute('aria-label', fewerLabel);
     const val = document.createElement('span');
     val.className = 'schedule-stepper-value';
     const unit = document.createElement('span');
@@ -404,7 +397,7 @@ function openSchedulePicker(composer) {
     inc.type = 'button';
     inc.className = 'schedule-stepper-btn';
     inc.textContent = '+';
-    inc.setAttribute('aria-label', `More ${unitLabel}`);
+    inc.setAttribute('aria-label', moreLabel);
     dec.addEventListener('click', () => { set(Math.max(min, get() - step)); refresh(); });
     inc.addEventListener('click', () => { set(Math.min(max, get() + step)); refresh(); });
     wrap.append(dec, val, unit, inc);
@@ -412,9 +405,11 @@ function openSchedulePicker(composer) {
     return val;
   };
 
-  const hoursValueEl = buildStepper('hr',
+  const hoursValueEl = buildStepper(
+    t('hr', undefined, { context: 'unit: hours' }), t('Fewer hr'), t('More hr'),
     () => hours, (v) => { hours = v; }, 0, SCHEDULE_MAX_HOURS, 1);
-  const minutesValueEl = buildStepper('min',
+  const minutesValueEl = buildStepper(
+    t('min', undefined, { context: 'unit: minutes' }), t('Fewer min'), t('More min'),
     () => minutes, (v) => { minutes = v; }, 0, 60 - SCHEDULE_MINUTE_STEP, SCHEDULE_MINUTE_STEP);
 
   // One full-width button that both previews and confirms the target time.
@@ -427,26 +422,26 @@ function openSchedulePicker(composer) {
   menu.appendChild(actions);
 
   const refresh = () => {
-    hoursValueEl.textContent = String(hours);
-    minutesValueEl.textContent = String(minutes).padStart(2, '0');
+    hoursValueEl.textContent = formatNumber(hours);
+    minutesValueEl.textContent = formatNumber(minutes, { minimumIntegerDigits: 2 });
     const totalMin = hours * 60 + minutes;
     if (totalMin <= 0) {
-      scheduleBtn.textContent = 'Pick a delay above';
+      scheduleBtn.textContent = t('Pick a delay above');
       scheduleBtn.disabled = true;
     } else {
       scheduleBtn.disabled = false;
-      scheduleBtn.textContent = `Schedule to send at ${formatClockTime(Date.now() + totalMin * 60000)}`;
+      scheduleBtn.textContent = t('Schedule to send at {time}', { time: formatClockTime(Date.now() + totalMin * 60000) });
     }
   };
 
-  for (const preset of SCHEDULE_PRESETS) {
+  for (const presetMinutes of SCHEDULE_PRESET_MINUTES) {
     const chip = document.createElement('button');
     chip.type = 'button';
     chip.className = 'schedule-preset';
-    chip.textContent = preset.label;
+    chip.textContent = formatDelayShort(presetMinutes * 60000);
     chip.addEventListener('click', () => {
-      hours = Math.min(SCHEDULE_MAX_HOURS, Math.floor(preset.minutes / 60));
-      minutes = preset.minutes % 60;
+      hours = Math.min(SCHEDULE_MAX_HOURS, Math.floor(presetMinutes / 60));
+      minutes = presetMinutes % 60;
       refresh();
     });
     presetRow.appendChild(chip);
@@ -467,11 +462,11 @@ function openSchedulePicker(composer) {
   const turnEndBtn = document.createElement('button');
   turnEndBtn.type = 'button';
   turnEndBtn.className = 'schedule-turn-end-btn';
-  turnEndBtn.textContent = 'Run at end of turn';
+  turnEndBtn.textContent = t('Run at end of turn');
   turnEndBtn.disabled = !turnRunning;
   turnEndBtn.title = turnRunning
-    ? 'Wait for the current turn to finish, then send — the running turn is left alone'
-    : 'Nothing is running';
+    ? t('Wait for the current turn to finish, then send — the running turn is left alone')
+    : t('Nothing is running');
   turnEndBtn.addEventListener('click', () => {
     armScheduledSend(composer, Date.now(), 'turn-end');
     closeSchedulePicker(composer);

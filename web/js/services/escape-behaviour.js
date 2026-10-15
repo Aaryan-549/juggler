@@ -60,6 +60,7 @@
 import { cachedMachinePref, setMachinePref, notifyPrefChanged, reconcilePref } from './prefs.js';
 import { isMac, formatBindingLabel } from './key-shortcut-manager.js';
 import { postWindowControl, hasNativeHost } from '../../sdk/lib/window-control.js';
+import { t, markForTranslation } from '../../sdk/lib/i18n.js';
 
 /**
  * The preference holding the chosen preset id. A machine preference
@@ -131,49 +132,49 @@ export const ESCAPE_QUIET_MS = 1000;
 export const ESCAPE_PRESETS = [
   {
     id: 'stop',
-    label: 'Stop immediately',
-    description: '{esc} stops the turn at once; {shiftEsc} pauses instead '
-      + '(the current step finishes, then it rests). With nothing running, {esc} clears the prompt.',
+    label: markForTranslation('Stop immediately'),
+    description: markForTranslation('{esc} stops the turn at once; {shiftEsc} pauses instead '
+      + '(the current step finishes, then it rests). With nothing running, {esc} clears the prompt.'),
     running: 'stop',
     idle: 'clear',
   },
   {
     id: 'pause',
-    label: 'Pause instead of stopping',
-    description: '{esc} pauses — the current step finishes and records its result, then it rests at idle; '
-      + 'nothing is cancelled. {shiftEsc} stops outright. With nothing running, {esc} clears the prompt.',
+    label: markForTranslation('Pause instead of stopping'),
+    description: markForTranslation('{esc} pauses — the current step finishes and records its result, then it rests at idle; '
+      + 'nothing is cancelled. {shiftEsc} stops outright. With nothing running, {esc} clears the prompt.'),
     running: 'pause',
     idle: 'clear',
   },
   {
     id: 'two-step',
-    label: 'Pause, then stop',
-    description: 'The first {esc} pauses; pressing it again while the pause is pending stops outright. '
-      + '{shiftEsc} stops on the first press. With nothing running, {esc} clears the prompt.',
+    label: markForTranslation('Pause, then stop'),
+    description: markForTranslation('The first {esc} pauses; pressing it again while the pause is pending stops outright. '
+      + '{shiftEsc} stops on the first press. With nothing running, {esc} clears the prompt.'),
     running: 'two-step',
     idle: 'clear',
   },
   {
     id: 'double-press',
-    label: 'Press Escape twice to stop',
-    description: 'One {esc} does nothing; pressing it twice quickly stops the turn. '
-      + '{shiftEsc} pauses. With nothing running, {esc} clears the prompt.',
+    label: markForTranslation('Press Escape twice to stop'),
+    description: markForTranslation('One {esc} does nothing; pressing it twice quickly stops the turn. '
+      + '{shiftEsc} pauses. With nothing running, {esc} clears the prompt.'),
     running: 'double-press',
     idle: 'clear',
   },
   {
     id: 'clear-only',
-    label: 'Never stop — only clear the prompt',
-    description: '{esc} never touches a running turn; it always clears the prompt (undoably). '
-      + 'Stop from the footer button, or pause with {shiftEsc}.',
+    label: markForTranslation('Never stop — only clear the prompt'),
+    description: markForTranslation('{esc} never touches a running turn; it always clears the prompt (undoably). '
+      + 'Stop from the footer button, or pause with {shiftEsc}.'),
     running: 'clear',
     idle: 'clear',
   },
   {
     id: 'inert',
-    label: 'Never stop, never clear',
-    description: '{esc} only dismisses menus and dialogs — it leaves both the turn and the prompt alone. '
-      + 'Stop from the footer button, or pause with {shiftEsc}.',
+    label: markForTranslation('Never stop, never clear'),
+    description: markForTranslation('{esc} only dismisses menus and dialogs — it leaves both the turn and the prompt alone. '
+      + 'Stop from the footer button, or pause with {shiftEsc}.'),
     running: 'none',
     idle: 'none',
   },
@@ -217,7 +218,7 @@ export function describeEscapePreset(preset) {
   const mac = isMac();
   const esc = formatBindingLabel({ key: 'Escape' }, mac);
   const shiftEsc = formatBindingLabel({ shift: true, key: 'Escape' }, mac);
-  return preset.description.replaceAll('{esc}', esc).replaceAll('{shiftEsc}', shiftEsc);
+  return t(preset.description, { esc, shiftEsc });
 }
 
 // ---------------------------------------------------------------------------
@@ -287,7 +288,7 @@ function showCue() {
   const el = document.createElement('div');
   el.className = 'escape-arm-cue';
   el.setAttribute('role', 'status');
-  el.textContent = `Press ${formatBindingLabel({ key: 'Escape' }, mac)} again to stop`;
+  el.textContent = t('Press {key} again to stop', { key: formatBindingLabel({ key: 'Escape' }, mac) });
   document.body.appendChild(el);
   cueEl = el;
 }
@@ -636,7 +637,7 @@ export function buildEscapeBehaviourRow() {
   info.className = 'provider-info';
   const nameEl = document.createElement('div');
   nameEl.className = 'provider-name';
-  nameEl.textContent = 'Escape key';
+  nameEl.textContent = t('Escape key');
   const desc = document.createElement('div');
   desc.className = 'provider-description';
   info.appendChild(nameEl);
@@ -646,11 +647,11 @@ export function buildEscapeBehaviourRow() {
   ctrl.className = 'provider-control';
   const select = document.createElement('select');
   select.className = 'settings-select field-input';
-  select.setAttribute('aria-label', 'What the Escape key does');
+  select.setAttribute('aria-label', t('What the Escape key does'));
   for (const preset of ESCAPE_PRESETS) {
     const option = document.createElement('option');
     option.value = preset.id;
-    option.textContent = preset.label;
+    option.textContent = t(preset.label);
     select.appendChild(option);
   }
   ctrl.appendChild(select);

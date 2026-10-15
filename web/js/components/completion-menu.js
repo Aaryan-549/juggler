@@ -375,7 +375,7 @@ export class CompletionMenu {
 
     // A list the textarea drives, not a menu: focus stays in the textarea, and
     // the highlighted row is announced through it (see _highlight).
-    applyListboxRoles(menu, 'Suggestions');
+    applyListboxRoles(menu, t('Suggestions'));
     linkListbox(this._textarea, menu);
     setActiveOption(this._textarea, menu, -1);
 

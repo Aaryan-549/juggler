@@ -4,7 +4,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import PinboardItemType from 'juggler/pinboard-item-type';
-import { translator } from 'juggler/i18n';
+import { translator, markForTranslation, markUntranslated } from 'juggler/i18n';
 import { createElement, createFileActions, createReviewPanel, injectStylesOnce } from 'juggler/ui';
 import { pinEmpty } from '../lib/pin-empty.js';
 import {
@@ -82,8 +82,25 @@ injectStylesOnce('git-pin-styles', `
 }
 `);
 
-/** What a pin with the default scope compares, said once, at the top, in words. */
-const SCOPE_LABEL = 'Working tree against HEAD';
+/** What a pin with the default scope compares, said once, at the top, in words (English source text). */
+const SCOPE_LABEL = markForTranslation('Working tree against HEAD');
+
+/**
+ * How a scope line is worded: `t` for the line on screen, {@link english} for
+ * the words a comment stores.
+ * @typedef {(source: string, params?: Record<string, unknown>) => string} Wording
+ */
+
+/**
+ * A message in its English source, its `{params}` filled in. A comment stores
+ * the scope line it was written under, and the review message hands it to the
+ * model (`Comparing {scopeLabel}:`), so those words stay English whatever the
+ * UI's language. The scope messages hold plain placeholders only.
+ * @type {Wording}
+ */
+function english(source, params) {
+  return markUntranslated(source.replace(/\{(\w+)\}/g, (_, name) => String(params?.[name] ?? '')));
+}
 
 /** The select's value for "type an expression". */
 const CUSTOM = 'custom';
@@ -121,25 +138,34 @@ function uniformResolution(review) {
  * to, since `main` today is not `main` yesterday.
  * @param {import('juggler/pinboard-item-type').PinGitReview} review - What the server reported.
  * @param {string} scope - The scope the review was asked for.
+ * @param {Wording} say - `t` for the screen, {@link english} for a comment.
  * @returns {string} e.g. 'Working tree of feat/tunnels against HEAD'.
  */
-function scopeLabel(review, scope) {
+function scopeLabel(review, scope, say) {
   if (scope === DEFAULT_SCOPE) {
-    return review.workspace ? `Working tree of ${review.workspace} against HEAD` : SCOPE_LABEL;
+    return review.workspace
+      ? say(markForTranslation('Working tree of {workspace} against HEAD'), { workspace: review.workspace })
+      : say(SCOPE_LABEL);
   }
   // The dropdown beside this already names the preset, so the line says only
   // what it came to. A range is followed by its two commits; a comparison with
   // one commit by that commit, in brackets after the name it was asked by.
   const resolved = uniformResolution(review);
-  let label = review.scope?.label || scope;
+  // The server's label is its own English. For a preset it is the preset's
+  // description, which has a translation; for an expression it is built from the
+  // expression's revisions, and is shown as the server gave it.
+  const named = review.scope?.label || scope;
+  const preset = scopePreset(scope);
+  let label = preset && named === preset.description ? say(preset.description) : named;
   if (scope === '@branch' && resolved?.baseName) {
-    label = `Working tree against the merge-base with ${resolved.baseName}`;
+    label = say(markForTranslation('Working tree against the merge-base with {base}'), { base: resolved.baseName });
   }
-  if (review.workspace) label = `${label} in ${review.workspace}`;
+  if (review.workspace) label = say(markForTranslation('{label} in {workspace}'), { label, workspace: review.workspace });
   if (!resolved) return label;
   return resolved.target
-    ? `${label} · ${shortId(resolved.base)}..${shortId(resolved.target)}`
-    : `${label} (${shortId(resolved.base)})`;
+    ? say(markForTranslation('{label} · {base}..{target}'),
+      { label, base: shortId(resolved.base), target: shortId(resolved.target) })
+    : say(markForTranslation('{label} ({base})'), { label, base: shortId(resolved.base) });
 }
 
 /**
@@ -168,10 +194,12 @@ function repoDetail(repo) {
   if (repo.upstream) parts.push(`→ ${repo.upstream}`);
   const divergence = divergencePhrase(repo);
   if (divergence) parts.push(divergence);
-  else if (repo.upstream) parts.push('Up to date');
-  if (repo.initial) parts.push('No commits yet');
+  else if (repo.upstream) parts.push(t('Up to date'));
+  if (repo.initial) parts.push(t('No commits yet'));
   else if (repo.head) parts.push(repo.head.slice(0, 7));
-  if (repo.stashes > 0) parts.push(`${repo.stashes} ${repo.stashes === 1 ? 'stash' : 'stashes'}`);
+  if (repo.stashes > 0) {
+    parts.push(t('{count, plural, one {{count} stash} other {{count} stashes}}', { count: repo.stashes }));
+  }
   return parts.filter(Boolean).join(' · ');
 }
 
@@ -209,7 +237,8 @@ function toManifest(review, scope) {
   // several, and an unlabelled block would not say which.
   const showNames = !(repos.length === 1 && !repos[0]?.path);
   return {
-    scope: scopeLabel(review, scope),
+    scope: scopeLabel(review, scope, t),
+    commentScope: scopeLabel(review, scope, english),
     scopeKey: scope === DEFAULT_SCOPE ? '' : scope,
     complete: review.complete === true,
     warnings: review.warnings || [],
@@ -227,7 +256,7 @@ function toManifest(review, scope) {
           oldPath: file.oldPath,
           code: fileCode(file),
           tone: fileTone(file),
-          status: file.conflicted ? 'Conflicted' : fileStatusWords(file),
+          status: file.conflicted ? t('Conflicted') : fileStatusWords(file),
           added: file.added,
           removed: file.removed,
           filePath: onDisk ? absolute : undefined,
@@ -280,20 +309,21 @@ class GitPin extends PinboardItemType {
    * @returns {true|string} True when there is a project whose tree to read.
    */
   canAdd(active) {
-    return active?.project?.path ? true : 'No project';
+    return active?.project?.path ? true : t('No project');
   }
 
   /**
    * The title and what the pin is for. `describe` is called during layout and
    * may not do work, so it cannot read the tree — the branch and the counts are
    * in the body, which has the service. A scoped pin says its scope, which is
-   * what tells two Git tabs apart.
+   * what tells two Git tabs apart. The title is the manifest name, which the
+   * host translates in this extension's catalogue.
    * @param {Record<string, any>} [config] - The pin's config.
    * @returns {import('juggler/pinboard-item-type').PinDescription} The tab's words.
    */
   describe(config) {
     const scope = normalizeScope(config?.scope);
-    return { title: this.name, subtitle: scope === DEFAULT_SCOPE ? 'Review changes' : scopeName(scope) };
+    return { title: this.name, subtitle: scope === DEFAULT_SCOPE ? t('Review changes') : scopeName(scope) };
   }
 
   /**
@@ -373,7 +403,7 @@ class GitPin extends PinboardItemType {
     // holds rather than the one it was built with, so a context update reaches
     // it without the panel being rebuilt around the new services.
     const panel = createReviewPanel({
-      scopeLabel: SCOPE_LABEL,
+      scopeLabel: t(SCOPE_LABEL),
       loadPatch: (file, options) => context.services.git.diff(file.repo, file.path, { ...options, scope: reviewScope }),
       review: {
         draft: () => context.services.review.draft(),
@@ -388,14 +418,14 @@ class GitPin extends PinboardItemType {
     // which is typed into a field that remembers what this pin was asked before.
     const bar = createElement('div', 'git-pin__scope-bar');
     const select = /** @type {HTMLSelectElement} */ (createElement('select', 'git-pin__scope-select'));
-    select.setAttribute('aria-label', 'Compare');
+    select.setAttribute('aria-label', t('Compare'));
     for (const preset of SCOPE_PRESETS) {
       const option = /** @type {HTMLOptionElement} */ (createElement('option', '', t(preset.label)));
       option.value = preset.id;
       option.title = t(preset.description);
       select.append(option);
     }
-    const customOption = /** @type {HTMLOptionElement} */ (createElement('option', '', 'Custom…'));
+    const customOption = /** @type {HTMLOptionElement} */ (createElement('option', '', t('Custom…')));
     customOption.value = CUSTOM;
     select.append(customOption);
     const listId = `git-pin-scopes-${Math.random().toString(36).slice(2, 8)}`;
@@ -404,11 +434,12 @@ class GitPin extends PinboardItemType {
     const input = /** @type {HTMLInputElement} */ (createElement('input', 'git-pin__scope-input'));
     input.type = 'text';
     input.spellcheck = false;
+    // i18n-ignore: a git expression, shown as typed
     input.placeholder = 'main...HEAD';
     input.title = t(SCOPE_SYNTAX);
-    input.setAttribute('aria-label', 'Git diff expression');
+    input.setAttribute('aria-label', t('Git diff expression'));
     input.setAttribute('list', listId);
-    const apply = /** @type {HTMLButtonElement} */ (createElement('button', 'git-pin__scope-apply', 'Show'));
+    const apply = /** @type {HTMLButtonElement} */ (createElement('button', 'git-pin__scope-apply', t('Show')));
     apply.type = 'button';
     bar.append(select, input, apply, recentList);
 
@@ -447,10 +478,11 @@ class GitPin extends PinboardItemType {
       if (!review) {
         // Nothing read yet is not the same as no repository, and saying the
         // wrong one of those is worse than saying neither.
-        const parts = [createElement('div', 'git-pin__quiet', 'Checking…')];
+        const parts = [createElement('div', 'git-pin__quiet', t('Checking…'))];
         if (error) {
-          const lead = scope === DEFAULT_SCOPE ? "Couldn't read the working tree." : `Couldn't compare ${scopeName(scope)}.`;
-          parts.push(createElement('div', 'git-pin__error', `${lead} ${error}`));
+          parts.push(createElement('div', 'git-pin__error', scope === DEFAULT_SCOPE
+            ? t("Couldn't read the working tree. {error}", { error })
+            : t("Couldn't compare {scope}. {error}", { scope: scopeName(scope), error })));
         }
         content.replaceChildren(...parts);
         return;
@@ -459,7 +491,9 @@ class GitPin extends PinboardItemType {
       if ((review.repos || []).length === 0) {
         // Already the whole answer: the tab says what the pin is for, and this
         // says why there is none of it. Centred like every other empty card.
-        content.replaceChildren(pinEmpty(review.workspace ? `No git repository in ${review.workspace}.` : 'No git repository.'));
+        content.replaceChildren(pinEmpty(review.workspace
+          ? t('No git repository in {workspace}.', { workspace: review.workspace })
+          : t('No git repository.')));
         return;
       }
 
@@ -470,7 +504,7 @@ class GitPin extends PinboardItemType {
       }
       // A failed refresh keeps the last good review on screen and says so
       // underneath: blanking the panel loses more than the staleness costs.
-      panel.setError(error ? `Couldn't refresh. ${error}` : '');
+      panel.setError(error ? t("Couldn't refresh. {error}", { error }) : '');
     };
 
     const refresh = async () => {
@@ -571,7 +605,7 @@ class GitPin extends PinboardItemType {
       getActions: () => [
         {
           id: 'refresh',
-          label: 'Refresh',
+          label: t('Refresh'),
           icon: 'refresh',
           primary: true,
           run: () => refresh(),

@@ -15,6 +15,8 @@
  *   3. Choosing a cutoff confirms, then empties with THAT cutoff — the number
  *      in the confirmation matches what goes.
  *   4. "Everything" empties the whole bin (no cutoff on the wire).
+ *   5. Under en-XA, every state the modal draws — and every dialog it raises —
+ *      is translated.
  *
  * The session is a stub and `window.showModal` is stubbed to auto-confirm:
  * this pins the modal's own behaviour, not the server round-trip.
@@ -23,6 +25,10 @@
 
 import { assert } from '../utilities/test-helpers.js';
 import { assertMenuShape } from '../utilities/menu-assertions.js';
+import { underPseudoLocale, shownStrings } from '../utilities/pseudo-locale.js';
+import { isPseudoLocalized } from '../../sdk/lib/i18n.js';
+import { formatBytes } from '../../js/utils/format.js';
+import { BIN_LARGE_BYTES } from '../../js/utils/constants.js';
 import '../../js/components/bin-modal.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -172,6 +178,97 @@ export async function runTests() {
     /** @type {any} */ (window).showModal = realShowModal;
     modal.close();
     modal.remove();
+    document.querySelector('.bin-empty-menu')?.remove();
+  }
+
+  // --- 5: under en-XA, every state the modal and its dialogs draw is translated
+  const xaModal = /** @type {any} */ (document.createElement('bin-modal'));
+  document.body.appendChild(xaModal);
+  try {
+    await underPseudoLocale('test-bin-modal', async () => {
+      /** @type {string[]} */
+      const shown = [];
+      const size = formatBytes(BIN_LARGE_BYTES);
+      // Names are digits (data); the dates are Intl output, so never checked.
+      const skip = '.bin-close, .bin-row-name, .bin-row-date';
+      const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+      const panel = () => /** @type {HTMLElement} */ (xaModal.querySelector('.bin-panel'));
+
+      /** @type {any} */ (window).showModal = async (/** @type {any} */ options) => {
+        for (const key of ['title', 'message', 'confirmText', 'cancelText']) {
+          if (options?.[key]) shown.push(options[key]);
+        }
+        return true;
+      };
+
+      // The list fails to load.
+      await xaModal.open({ bin: { sizeBytes: 0, async list() { throw new Error('9'); } } });
+      shown.push(...shownStrings(panel(), skip));
+      const close = /** @type {HTMLElement} */ (xaModal.querySelector('.bin-close'));
+      shown.push(close.getAttribute('aria-label') || '', close.title);
+
+      // Opened onto an empty bin.
+      await xaModal.open({ bin: { sizeBytes: 0, async list() { return []; } } });
+      shown.push(...shownStrings(panel(), skip));
+
+      // A large bin with a named and an untitled conversation; every action fails.
+      const session = {
+        rows: [
+          { id: 'conv_a', name: '7', lastModifiedAt: daysAgo(40) },
+          { id: 'conv_b', name: '', lastModifiedAt: daysAgo(10) },
+        ],
+        bin: {
+          sizeBytes: BIN_LARGE_BYTES,
+          async list() { return session.rows.slice(); },
+          async restore() { throw new Error('9'); },
+          async deletePermanently() { throw '9'; },
+          /** @param {number|null} days */
+          async empty(days) {
+            const button = /** @type {HTMLElement} */ (xaModal.querySelector('.bin-empty-now'));
+            shown.push(button.textContent || '');
+            const emptyNote = /** @type {HTMLElement} */ (xaModal.querySelector('.bin-empty'));
+            if (!emptyNote.classList.contains('hidden')) shown.push(emptyNote.textContent || '');
+            if (days === null) throw new Error('9');
+          },
+        },
+      };
+      await xaModal.open(session);
+      shown.push(...shownStrings(panel(), skip));
+      const untitled = xaModal.querySelector('.bin-row[data-conversation-id="conv_b"] .bin-row-name');
+      shown.push(untitled?.textContent || '');
+
+      /** @type {HTMLElement} */ (xaModal.querySelector('.bin-row[data-conversation-id="conv_a"] .bin-restore')).click();
+      await settle();
+      /** @type {HTMLElement} */ (xaModal.querySelector('.bin-row[data-conversation-id="conv_b"] .bin-delete')).click();
+      await settle();
+
+      const button = /** @type {HTMLButtonElement} */ (xaModal.querySelector('.bin-empty-now'));
+      button.click();
+      let menu = /** @type {HTMLElement} */ (document.querySelector('.bin-empty-menu'));
+      assert(!!menu, 'en-XA: the Empty Bin menu did not open');
+      shown.push(...shownStrings(menu));
+      /** @type {HTMLElement} */ ([...menu.querySelectorAll('.menu-item')][1]).click();
+      await settle();
+
+      button.click();
+      menu = /** @type {HTMLElement} */ (document.querySelector('.bin-empty-menu'));
+      /** @type {HTMLElement} */ ([...menu.querySelectorAll('.menu-item')].pop()).click();
+      await settle();
+
+      // Sizes are formatBytes output (data); map them to a digit.
+      const strings = shown.map((s) => s.split(size).join('1'));
+      assert(strings.length >= 25, `en-XA: expected every state's strings, got ${strings.length}`);
+      const raw = strings.filter((s) => !isPseudoLocalized(s));
+      assert(raw.length === 0, `plain English under en-XA (bin modal): ${JSON.stringify(raw)}`);
+    });
+    passed++;
+  } catch (e) {
+    failed++;
+    errors.push(`bin-empty-menu en-XA: ${/** @type {any} */ (e)?.message || e}`);
+  } finally {
+    /** @type {any} */ (window).showModal = realShowModal;
+    xaModal.close();
+    xaModal.remove();
     document.querySelector('.bin-empty-menu')?.remove();
   }
 

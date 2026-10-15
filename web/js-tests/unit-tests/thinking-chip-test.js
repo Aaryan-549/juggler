@@ -17,6 +17,9 @@
 
 import { assert } from '../utilities/test-helpers.js';
 import '../../js/components/model-picker/model-chip.js';
+import keyShortcutManager from '../../js/services/key-shortcut-manager.js';
+import { isPseudoLocalized } from '../../sdk/lib/i18n.js';
+import { underPseudoLocale } from '../utilities/pseudo-locale.js';
 
 /**
  * @typedef {object} TestResult
@@ -158,6 +161,92 @@ export async function runTests(_ctx) {
       'an unchanged update must preserve the thinking chip');
     assert(mutations.length === 0,
       `an unchanged update must not mutate the button subtree — got ${mutations.length} mutations`);
+  });
+
+  // Every state the chip draws, under en-XA. Model names, level strings and tier
+  // names are data (digits here); the chip's own words are not. The cycle-key
+  // hint is stubbed to a digit — a real key cap carries ASCII letters.
+  await run('en-XA: every chip state is translated', async () => {
+    const ownFormatBinding = Object.prototype.hasOwnProperty.call(keyShortcutManager, 'formatBinding');
+    const originalFormatBinding = keyShortcutManager.formatBinding;
+    /** @type {any} */
+    let el = null;
+    try {
+      await underPseudoLocale('thinking-chip-test', () => {
+        /** @type {string[]} */
+        const shown = [];
+        /**
+         * @param {string} where - The state being drawn.
+         * @param {string|null|undefined} s - What it showed.
+         */
+        const see = (where, s) => {
+          assert(!!s, `${where}: nothing drawn`);
+          shown.push(/** @type {string} */ (s));
+        };
+        const chipEl = () => /** @type {HTMLElement|null} */ (el.querySelector('.thinking-chip'));
+
+        // Empty: the default placeholder and button title.
+        el = /** @type {any} */ (document.createElement('model-chip'));
+        el.render();
+        see('placeholder', el.querySelector('.model-name')?.textContent);
+        see('button title', el.button?.getAttribute('title'));
+
+        // Connection faults replace the model label.
+        for (const state of ['error', 'disconnected', 'connecting']) {
+          el.connectionState = state;
+          see(`connection ${state}`, el.querySelector('.model-name')?.textContent);
+        }
+        el.connectionState = null;
+
+        /** @type {any} */
+        const entry = { id: '7', displayName: '7', thinkingLevels: ['1', '2'], defaultThinkingLevel: '2',
+          serviceTiers: [{ id: '5', name: '5', description: '6' }] };
+        const providers = [{ name: '4', displayName: '4', available: true, modelsWithContext: [entry] }];
+
+        // Explicit level, with and without a cycle-key hint.
+        keyShortcutManager.formatBinding = () => '9';
+        el.update({ providers, config: { provider: '4', model: '7', thinking: '1' } });
+        see('explicit, key hint', chipEl()?.getAttribute('title'));
+        keyShortcutManager.formatBinding = () => '';
+        el.update({ providers, config: { provider: '4', model: '7', thinking: '2' } });
+        see('explicit, no key', chipEl()?.getAttribute('title'));
+
+        // Declared default (hollow), with and without the hint.
+        el.update({ providers, config: { provider: '4', model: '7' } });
+        see('declared default, no key', chipEl()?.getAttribute('title'));
+        keyShortcutManager.formatBinding = () => '9';
+        el.update({ providers: [{ ...providers[0], modelsWithContext: [{ ...entry, defaultThinkingLevel: '1' }] }],
+          config: { provider: '4', model: '7' } });
+        see('declared default, key hint', chipEl()?.getAttribute('title'));
+
+        // No declared default: the "def" pill and its title.
+        el.update({ providers: [{ ...providers[0], modelsWithContext: [{ ...entry, defaultThinkingLevel: '' }] }],
+          config: { provider: '4', model: '7' } });
+        see('undeclared default, key hint', chipEl()?.getAttribute('title'));
+        see('undeclared default pill', chipEl()?.textContent);
+        keyShortcutManager.formatBinding = () => '';
+        el.render();
+        see('undeclared default, no key', chipEl()?.getAttribute('title'));
+
+        // Service tier: the provider's name is data, the title joins it to its description.
+        el.update({ providers, config: { provider: '4', model: '7', thinking: '1', serviceTier: '5' } });
+        see('service tier title', el.querySelector('.service-tier-chip')?.getAttribute('title'));
+
+        // The mini thinking popover's accessible name.
+        document.body.appendChild(el);
+        assert(el.openMini(), 'the mini popover must open for a thinking model');
+        see('mini popover aria-label', document.querySelector('.thinking-mini')?.getAttribute('aria-label'));
+        el.closeMini();
+
+        const raw = shown.filter((s) => !isPseudoLocalized(s));
+        assert(raw.length === 0, `plain English under en-XA: ${JSON.stringify(raw)}`);
+      });
+    } finally {
+      if (ownFormatBinding) keyShortcutManager.formatBinding = originalFormatBinding;
+      else delete /** @type {any} */ (keyShortcutManager).formatBinding;
+      el?.closeMini();
+      el?.remove();
+    }
   });
 
   return { passed, failed, errors };

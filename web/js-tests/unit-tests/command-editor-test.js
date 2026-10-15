@@ -15,11 +15,16 @@
  * @module unit-tests/command-editor-test
  */
 
-import { assert, neutralizeStrayOverlays } from '../utilities/test-helpers.js';
+import { assert, neutralizeStrayOverlays, waitFor } from '../utilities/test-helpers.js';
 import { assertDialogPopover } from '../utilities/menu-assertions.js';
-import { openCommandEditor } from '../../js/components/command-editor-dialog.js';
+import { underPseudoLocale, shownStrings } from '../utilities/pseudo-locale.js';
+import { openCommandEditor, openCommandManager } from '../../js/components/command-editor-dialog.js';
 import { buildModelConfig } from '../../js/model/model-config.js';
 import providersCache from '../../js/services/providers-cache.js';
+import { resetUserCommandsCache } from '../../js/services/user-commands.js';
+import slashCommandHandler from '../../js/services/slash-command-handler.js';
+import strategyRegistry from '../../js/registries/strategy-registry.js';
+import { isPseudoLocalized } from '../../sdk/lib/i18n.js';
 
 /**
  * @typedef {object} TestResult
@@ -133,6 +138,162 @@ function putBody(calls) {
   return put.body;
 }
 
+const STRATEGY_EXT = '@test/command-editor-strategies';
+const STRATEGY_ID = 'stand-in-strategy';
+const STRATEGY_NAME = 'Stand In Strategy';
+
+/**
+ * Data the dialogs show inside their messages — command names, template
+ * syntax, paths — mapped to a digit so only the message's own words are judged.
+ * @param {string} s
+ * @returns {string} The string with its data replaced.
+ */
+const dataToDigits = (s) => String(s).replace(/\$ARGUMENTS|\$\$|\$[19]|qq|qr|zz|ok/g, '9');
+
+/**
+ * Walk every state the editor and the manager draw under en-XA, collecting what
+ * each shows, and assert once at the end. Every collaborator the dialogs read
+ * is stubbed for the walk only: the commands endpoint, the providers cache, the
+ * built-in command list, the strategy registry (pinned to a stand-in strategy
+ * under a stand-in extension) and the modal presenter.
+ * @returns {Promise<void>}
+ */
+async function pseudoLocaleWalk() {
+  /** @type {{where: string, text: string}[]} */
+  const said = [];
+  /**
+   * @param {string} where
+   * @param {Element} root
+   * @param {string} [skip]
+   */
+  const collect = (where, root, skip) => {
+    for (const text of shownStrings(root, skip)) said.push({ where, text });
+  };
+  /**
+   * @param {string} where
+   * @param {any} text
+   */
+  const note = (where, text) => { said.push({ where, text: String(text ?? '') }); };
+
+  const originalFetch = window.fetch;
+  const originalShowModal = /** @type {any} */ (window).showModal;
+  const realGet = providersCache.get;
+  const realHasReceived = providersCache.hasReceived;
+  const realGetCommands = slashCommandHandler.getCommands;
+  const realManifests = strategyRegistry.getAllManifests;
+  const realExtensionId = strategyRegistry.getExtensionId;
+  /** @type {any[]} */
+  const modals = [];
+  try {
+    await underPseudoLocale('command-editor-test', async () => {
+      const json = (/** @type {number} */ status, /** @type {any} */ data) => new window.Response(JSON.stringify(data), {
+        status, headers: { 'Content-Type': 'application/json' },
+      });
+      window.fetch = /** @type {typeof fetch} */ (async (input, init) => {
+        const url = String(input);
+        if (url.includes('/user-commands')) {
+          if (init?.method === 'PUT') return json(500, {});
+          if (!init?.method || init.method === 'GET') {
+            return json(200, [
+              { name: 'qq', scope: 'project', path: '/1', frontmatter: { description: '4' }, body: '' },
+              { name: 'qr', scope: 'project', path: '/2', frontmatter: {}, body: '', error: '5' },
+            ]);
+          }
+          return json(200, {});
+        }
+        return originalFetch(input, init);
+      });
+      providersCache.get = () => /** @type {any} */ (PROVIDERS);
+      providersCache.hasReceived = () => true;
+      slashCommandHandler.getCommands = /** @type {any} */ (() => [{ name: 'zz', userDefined: false }]);
+      strategyRegistry.getAllManifests = /** @type {any} */ (() => [
+        { id: STRATEGY_ID, manifest: { name: STRATEGY_NAME }, modulePath: '(test)', extensionId: STRATEGY_EXT },
+      ]);
+      strategyRegistry.getExtensionId = (id) => (id === STRATEGY_ID ? STRATEGY_EXT : null);
+      /** @type {any} */ (window).showModal = async (/** @type {any} */ options) => { modals.push(options); return false; };
+      resetUserCommandsCache();
+
+      // ── a new command ─────────────────────────────────────────────────────
+      const created = openCommandEditor({});
+      let overlay = /** @type {any} */ (document.querySelector('.command-editor-overlay'));
+      assert(!!overlay, 'the editor must mount an overlay');
+      // The name field's placeholder is an example command name, an identifier.
+      const skipNew = '.command-editor-slash, #cmd-name, #cmd-path-hint, #cmd-preview-out';
+      collect('new', overlay, skipNew);
+      const hint = overlay.querySelector('#cmd-path-hint').textContent;
+      // A path is data, so only its placeholder words are judged: left in
+      // English, the hint is reported with the rest.
+      if (hint.includes('<project>') || hint.includes('/name.md')) note('path hint placeholders', hint);
+      for (const value of ['send', 'draft', 'subthread']) {
+        overlay.querySelector(`[data-run="${value}"]`).click();
+        note(`run hint ${value}`, overlay.querySelector('#cmd-run-hint').textContent);
+      }
+      const nameInput = overlay.querySelector('#cmd-name');
+      nameInput.value = 'Bad';
+      nameInput.dispatchEvent(new Event('input'));
+      note('bad name', overlay.querySelector('#cmd-name-error').textContent);
+      nameInput.value = 'zz';
+      nameInput.dispatchEvent(new Event('input'));
+      note('reserved name', overlay.querySelector('#cmd-name-error').textContent);
+
+      const chip = overlay.querySelector('#cmd-model');
+      chip.dispatchEvent(new CustomEvent('chip-toggle'));
+      const picker = /** @type {any} */ (document.querySelector('model-picker'));
+      assert(!!picker, 'pressing the chip must open the picker');
+      note('picker none label', picker.noneLabel);
+      chip.dispatchEvent(new CustomEvent('chip-toggle'));
+
+      nameInput.value = 'ok';
+      nameInput.dispatchEvent(new Event('input'));
+      overlay.querySelector('#cmd-save').click();
+      const templateError = overlay.querySelector('[data-error-for="template"]');
+      await waitFor(() => !!templateError.textContent, { description: 'the save failure' });
+      note('save failed', templateError.textContent);
+      overlay.querySelector('#cmd-close').click();
+      await created;
+
+      // ── an existing command ───────────────────────────────────────────────
+      const edited = openCommandEditor({
+        def: /** @type {any} */ ({ name: 'qq', scope: 'project', path: '/1', frontmatter: { description: '1', run: 'subthread', goal: '2' }, body: '3' }),
+      });
+      overlay = /** @type {any} */ (document.querySelector('.command-editor-overlay'));
+      collect('edit', overlay, `${skipNew}, #cmd-template`);
+      overlay.querySelector('#cmd-delete').click();
+      await waitFor(() => modals.length === 1, { description: 'the delete confirmation' });
+      overlay.querySelector('#cmd-close').click();
+      await edited;
+
+      // ── the manager ───────────────────────────────────────────────────────
+      const managed = openCommandManager();
+      overlay = /** @type {any} */ (document.querySelector('.command-editor-overlay'));
+      await waitFor(() => overlay.querySelectorAll('.command-manager-row').length === 2, { description: 'the manager list' });
+      collect('manager', overlay, 'code, .command-manager-desc, .command-manager-error');
+      overlay.querySelector('.command-manager-delete').click();
+      await waitFor(() => modals.length === 2, { description: 'the manager delete confirmation' });
+      overlay.querySelector('#cmd-close').click();
+      await managed;
+
+      for (const [i, m] of modals.entries()) {
+        for (const key of ['title', 'message', 'confirmText', 'cancelText']) note(`confirm ${i} ${key}`, m[key]);
+      }
+    }, { [STRATEGY_EXT]: [STRATEGY_NAME] });
+  } finally {
+    window.fetch = originalFetch;
+    /** @type {any} */ (window).showModal = originalShowModal;
+    providersCache.get = realGet;
+    providersCache.hasReceived = realHasReceived;
+    slashCommandHandler.getCommands = realGetCommands;
+    strategyRegistry.getAllManifests = realManifests;
+    strategyRegistry.getExtensionId = realExtensionId;
+    resetUserCommandsCache();
+  }
+
+  assert(said.some(({ text }) => text.includes('9')), 'the walk must have shown its data');
+  assert(said.length >= 30, `the dialogs drew too little: ${JSON.stringify(said)}`);
+  const raw = said.filter(({ text }) => !isPseudoLocalized(dataToDigits(text)));
+  assert(raw.length === 0, `plain English under en-XA: ${JSON.stringify(raw)}`);
+}
+
 /**
  * @param {object} _ctx - Test context (unused).
  * @returns {Promise<TestResult>} Aggregated results.
@@ -231,6 +392,17 @@ export async function runTests(_ctx) {
       `overrides must be cleared with the thread, got ${JSON.stringify(body)}`);
     assert(body.goal === '' && body.strategy === '', `goal/strategy = ${body.goal}/${body.strategy}`);
   });
+
+  try {
+    await pseudoLocaleWalk();
+    passed++;
+  } catch (e) {
+    failed++;
+    errors.push(`en-XA: every state of the editor and the manager is translated: ${e instanceof Error ? e.message : String(e)}`);
+  } finally {
+    neutralizeStrayOverlays();
+    document.querySelector('model-picker')?.remove();
+  }
 
   return { passed, failed, errors };
 }

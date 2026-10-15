@@ -31,7 +31,7 @@ const t = translator('@juggler/core');
 export function repoLabel(root, repoPath) {
   if (repoPath) return repoPath;
   const base = (root || '').replace(/[/\\]+$/, '').split(/[/\\]/).pop();
-  return base || 'repo';
+  return base || t('repo');
 }
 
 /**
@@ -56,8 +56,8 @@ export function countsPhrase(repo) {
  * @returns {string} e.g. 'develop', 'Detached head'.
  */
 export function branchPhrase(repo) {
-  if (repo.detached) return 'Detached head';
-  return repo.branch || 'No branch';
+  if (repo.detached) return t('Detached head');
+  return repo.branch || t('No branch');
 }
 
 /**
@@ -69,25 +69,27 @@ export function branchPhrase(repo) {
  */
 export function divergencePhrase(repo) {
   if (!repo.upstream) return '';
-  const parts = [];
-  if (repo.ahead > 0) parts.push(`${repo.ahead} ahead`);
-  if (repo.behind > 0) parts.push(`${repo.behind} behind`);
-  return parts.join(', ');
+  const ahead = repo.ahead > 0;
+  const behind = repo.behind > 0;
+  if (ahead && behind) return t('{ahead} ahead, {behind} behind', { ahead: repo.ahead, behind: repo.behind });
+  if (ahead) return t('{count} ahead', { count: repo.ahead });
+  if (behind) return t('{count} behind', { count: repo.behind });
+  return '';
 }
 
 /**
- * Git's status letters, spelled out.
+ * Git's status letters, as the ids {@link fileStatusWords}' messages select on.
+ * `conflicted` is each select's `other` branch.
  * @type {Map<string, string>}
  */
-const STATUS_WORDS = new Map([
-  ['M', 'Modified'],
-  ['A', 'Added'],
-  ['D', 'Deleted'],
-  ['R', 'Renamed'],
-  ['C', 'Copied'],
-  ['T', 'Type changed'],
-  ['U', 'Conflicted'],
-  ['?', 'Untracked'],
+const STATUS_IDS = new Map([
+  ['M', 'modified'],
+  ['A', 'added'],
+  ['D', 'deleted'],
+  ['R', 'renamed'],
+  ['C', 'copied'],
+  ['T', 'typechange'],
+  ['U', 'conflicted'],
 ]);
 
 /**
@@ -110,14 +112,21 @@ export function fileCode(file) {
  * @returns {string} e.g. 'Modified', 'Staged, then modified again', 'Untracked'.
  */
 export function fileStatusWords(file) {
-  if (file.worktree === '?') return 'Untracked';
-  const word = (/** @type {string} */ letter) =>
-    (letter && letter !== '.' ? STATUS_WORDS.get(letter) || '' : '');
-  const staged = word(file.index);
-  const worktree = word(file.worktree);
-  if (staged && worktree) return `${staged} and staged, then ${worktree.toLowerCase()} again`;
-  if (staged) return `${staged} and staged`;
-  return worktree || 'Unchanged';
+  if (file.worktree === '?') return t('Untracked');
+  const id = (/** @type {string} */ letter) =>
+    (letter && letter !== '.' ? STATUS_IDS.get(letter) || '' : '');
+  const staged = id(file.index);
+  const worktree = id(file.worktree);
+  if (staged && worktree) {
+    return t('{staged, select, modified {Modified} added {Added} deleted {Deleted} renamed {Renamed} copied {Copied} typechange {Type changed} other {Conflicted}} and staged, then {worktree, select, modified {modified} added {added} deleted {deleted} renamed {renamed} copied {copied} typechange {type changed} other {conflicted}} again', { staged, worktree });
+  }
+  if (staged) {
+    return t('{status, select, modified {Modified and staged} added {Added and staged} deleted {Deleted and staged} renamed {Renamed and staged} copied {Copied and staged} typechange {Type changed and staged} other {Conflicted and staged}}', { status: staged });
+  }
+  if (worktree) {
+    return t('{status, select, modified {Modified} added {Added} deleted {Deleted} renamed {Renamed} copied {Copied} typechange {Type changed} other {Conflicted}}', { status: worktree });
+  }
+  return t('Unchanged');
 }
 
 /**
@@ -146,5 +155,5 @@ export function fileTone(file) {
  */
 export function truncationNote(repo) {
   if (!repo.truncated) return '';
-  return `First ${repo.files.length} of ${repo.total} files.`;
+  return t('First {shown} of {total} files.', { shown: repo.files.length, total: repo.total });
 }

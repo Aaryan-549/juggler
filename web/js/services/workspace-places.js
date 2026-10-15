@@ -24,6 +24,8 @@ import workspaceProviderRegistry from '../registries/workspace-provider-registry
 import { workspaceStatus } from './workspace-provisioning.js';
 import { registerWorkspace, isWorkspaceUsable } from './workspaces.js';
 import { createBoundOps } from '../../sdk/ops.js';
+import { t } from '../../sdk/lib/i18n.js';
+import { capabilityLabel } from '../utils/capability-label.js';
 
 /** The row id of the project itself: the workspace every conversation has already. */
 export const PROJECT_ROW_ID = '';
@@ -84,14 +86,14 @@ export function setupRows(session) {
   const rows = [{
     kind: 'project',
     id: PROJECT_ROW_ID,
-    label: 'The project folder',
+    label: t('The project folder'),
     // Where every conversation worked before workspaces existed, said plainly:
     // the reader deciding this has met the word "workspace" for the first time a
     // moment ago, and what they need is what happens to their files. It is named
     // after the place rather than after its place in the list — "Default" told
     // somebody choosing where their work would happen only that we had chosen
     // for them.
-    meaning: 'No separate workspace: this conversation works in the project folder itself.',
+    meaning: t('No separate workspace: this conversation works in the project folder itself.'),
     detail: session?.projectPath ?? ''
   }];
 
@@ -130,7 +132,7 @@ export function setupRows(session) {
       // from usable and read identically otherwise, and only one of them is
       // somewhere the reader has already been.
       meaning: parked
-        ? 'You stopped using this workspace. Adopting it picks up where you left off.'
+        ? t('You stopped using this workspace. Adopting it picks up where you left off.')
         : undefined,
       providerId: offer.providerId
     });
@@ -147,11 +149,13 @@ export function setupRows(session) {
     rows.push({
       kind: 'new',
       id: `${NEW_ROW_PREFIX}${providerId}`,
-      label: provider.getSetupLabel(),
+      // Both are the provider's manifest text, so they are translated in the
+      // catalogue of the extension that ships it.
+      label: capabilityLabel(provider.getSetupLabel(), providerId, workspaceProviderRegistry),
       // What the provider says one of its places is. It is what this row means
       // rather than where it is — nothing is anywhere yet — so it reads on the
       // meaning line, which is the line a reader needs here.
-      meaning: provider.getManifest().description,
+      meaning: capabilityLabel(provider.getManifest().description, providerId, workspaceProviderRegistry),
       providerId
     });
   }
@@ -288,4 +292,20 @@ export async function adoptSetupRow(session, rowId, options = {}) {
  */
 export function cachedSetupStatus(workspaceId) {
   return statusCache.get(workspaceId);
+}
+
+/**
+ * TEST-ONLY: replace what is on offer, returning what was.
+ * The table lives as long as the module, and the pool's lanes run several
+ * suites in one module realm, so a case that asserts on what is offered — or
+ * on nothing being offered — sets the table for its own duration and puts the
+ * lane's back afterwards.
+ * @param {Map<string, {providerId: string, artifact: any}>} offers - The table to hold.
+ * @returns {Map<string, {providerId: string, artifact: any}>} The previous table, to restore.
+ */
+export function __setSetupOffersForTests(offers) {
+  const was = new Map(adoptable);
+  adoptable.clear();
+  for (const [id, offer] of offers) adoptable.set(id, offer);
+  return was;
 }

@@ -4,6 +4,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { validateManifest } from './lib/manifest.js';
+import { t } from './lib/i18n.js';
 
 // ============================================================================
 // Type Definitions
@@ -548,7 +549,7 @@ class WorkspaceProvider {
   async finish(workspace, actionId, ctx) {
     void workspace;
     void ctx;
-    return { done: false, message: `${this.getManifest().name} has no action "${actionId}".` };
+    return { done: false, message: t('{name} has no action "{actionId}".', { name: this.getManifest().name, actionId }) };
   }
 
   /**
@@ -596,7 +597,7 @@ class WorkspaceProvider {
     void ctx;
     return {
       removed: false,
-      message: `${this.getManifest().name} cannot clean up an interrupted provision.`
+      message: t('{name} cannot clean up an interrupted provision.', { name: this.getManifest().name })
     };
   }
 

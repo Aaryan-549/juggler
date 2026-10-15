@@ -257,24 +257,43 @@ function manifestMessages(manifest) {
  * The text a capability class declares about itself, which the UI shows (the
  * Extensions catalogue, the strategy pickers, the Pinboard's add picker) with a
  * t() scoped to the owning extension: the `name`, `description`, (a pinboard
- * item type's) `addLabel` and (an info card's) `eyebrow` literals of each
- * `static MANIFEST = {…}` in a module.
+ * item type's) `addLabel`, (an info card's) `eyebrow` and (a workspace
+ * provider's) `setupLabel` literals of each `static MANIFEST = {…}` in a
+ * module, and a workspace provider's `recommendations` — its `bestFor` and
+ * `avoidFor` and each of its `notes`. A strategy's `recommendations` use other
+ * keys and are the model's, so they are not collected.
  * They sit in a class field, where no t() can mark them.
  * @param {any} ast - A parsed module.
  * @returns {string[]}
  */
 function capabilityMessages(ast) {
   const out = [];
+  const add = (node) => {
+    const value = staticString(node);
+    if (value !== null && /[A-Za-z]/.test(value)) out.push(value);
+  };
+  const keyOf = (prop) => (prop.key.type === 'Identifier' ? prop.key.name : prop.key.value);
   walkAst(ast, (node) => {
     if (node.type !== 'PropertyDefinition' || !node.static || node.computed
       || node.key.type !== 'Identifier' || node.key.name !== 'MANIFEST'
       || node.value?.type !== 'ObjectExpression') return;
     for (const prop of node.value.properties) {
       if (prop.type !== 'Property' || prop.computed) continue;
-      const key = prop.key.type === 'Identifier' ? prop.key.name : prop.key.value;
-      if (key !== 'name' && key !== 'description' && key !== 'addLabel' && key !== 'eyebrow') continue;
-      const value = staticString(prop.value);
-      if (value !== null && /[A-Za-z]/.test(value)) out.push(value);
+      const key = keyOf(prop);
+      if (key === 'recommendations' && prop.value.type === 'ObjectExpression') {
+        for (const advice of prop.value.properties) {
+          if (advice.type !== 'Property' || advice.computed) continue;
+          const which = keyOf(advice);
+          if (which === 'bestFor' || which === 'avoidFor') add(advice.value);
+          if (which === 'notes' && advice.value.type === 'ArrayExpression') {
+            for (const note of advice.value.elements) if (note) add(note);
+          }
+        }
+        continue;
+      }
+      if (key !== 'name' && key !== 'description' && key !== 'addLabel' && key !== 'eyebrow'
+        && key !== 'setupLabel') continue;
+      add(prop.value);
     }
   });
   return out;

@@ -22,6 +22,7 @@
 import apiService from '../services/api.js';
 import { createImageThumb } from '../utils/image-lightbox.js';
 import { extractErrorMessage } from '../../sdk/lib/error-utils.js';
+import { t, formatNumber, markUntranslated } from '../../sdk/lib/i18n.js';
 
 /**
  * Fallback per-image byte ceiling — a generous upload-safety limit used when
@@ -66,6 +67,24 @@ const MAX_TEXT_DROP_BYTES = 512 * 1024;
 
 /** Reject a drop whose text files sum past this aggregate (bytes). */
 const MAX_TEXT_DROP_TURN_BYTES = 1024 * 1024;
+
+/**
+ * A file's size in megabytes, to one decimal place, for a refusal notice.
+ * @param {number} bytes
+ * @returns {string} The formatted number.
+ */
+function formatMegabytes(bytes) {
+  return formatNumber(bytes / 1024 / 1024, { minimumFractionDigits: 1, maximumFractionDigits: 1, useGrouping: false });
+}
+
+/**
+ * A size limit (already in its unit) for a refusal notice.
+ * @param {number} value
+ * @returns {string} The formatted number.
+ */
+function formatLimit(value) {
+  return formatNumber(value, { useGrouping: false });
+}
 
 /**
  * Heuristic: does a just-decoded string look like binary rather than text?
@@ -133,7 +152,7 @@ export async function pasteImagesFromAsyncClipboard(composer) {
   /** @type {File[]} */
   const files = [];
   for (const item of clipboardItems) {
-    const type = Array.from(item.types || []).find((t) => t.startsWith('image/'));
+    const type = Array.from(item.types || []).find((mime) => mime.startsWith('image/'));
     if (!type) continue;
     try {
       const blob = await item.getType(type);
@@ -165,19 +184,19 @@ export function handleFiles(composer, fileList) {
 
   for (const file of files) {
     if (file.size > maxPerImage) {
-      composer.showWarning(
-        `"${file.name}" is too large (${(file.size / 1024 / 1024).toFixed(1)} MB, ` +
-        `max ${maxPerImage / 1024 / 1024} MB per image for the current model).`
-      );
+      composer.showWarning(t(
+        '"{name}" is too large ({size} MB, max {max} MB per image for the current model).',
+        { name: file.name, size: formatMegabytes(file.size), max: formatLimit(maxPerImage / 1024 / 1024) }
+      ));
       continue;
     }
     const pendingTotal = composer._pendingAttachments.reduce(
       (/** @type {number} */ sum, /** @type {any} */ a) => sum + (a.bytes || 0), 0);
     if (pendingTotal + file.size > MAX_TURN_ATTACHMENT_BYTES) {
-      composer.showWarning(
-        `Attachments exceed the ${MAX_TURN_ATTACHMENT_BYTES / 1024 / 1024} MB ` +
-        `per-message limit.`
-      );
+      composer.showWarning(t(
+        'Attachments exceed the {max} MB per-message limit.',
+        { max: formatLimit(MAX_TURN_ATTACHMENT_BYTES / 1024 / 1024) }
+      ));
       break;
     }
     composer._uploadAndAdd(file);
@@ -204,21 +223,20 @@ export function handleTextFiles(composer, fileList) {
   for (const file of Array.from(fileList)) {
     // Gate 1: size, on metadata, before reading a single byte.
     if (file.size > MAX_TEXT_DROP_BYTES) {
-      composer.showWarning(
-        `"${file.name}" is too large to attach as text ` +
-        `(${(file.size / 1024 / 1024).toFixed(1)} MB, ` +
-        `max ${MAX_TEXT_DROP_BYTES / 1024} KB).`
-      );
+      composer.showWarning(t(
+        '"{name}" is too large to attach as text ({size} MB, max {max} KB).',
+        { name: file.name, size: formatMegabytes(file.size), max: formatLimit(MAX_TEXT_DROP_BYTES / 1024) }
+      ));
       continue;
     }
     // Gate 2: aggregate across already-staged text files.
     const stagedTotal = composer._pendingTextFiles.reduce(
-      (/** @type {number} */ sum, /** @type {any} */ t) => sum + (t.bytes || 0), 0);
+      (/** @type {number} */ sum, /** @type {any} */ staged) => sum + (staged.bytes || 0), 0);
     if (stagedTotal + file.size > MAX_TEXT_DROP_TURN_BYTES) {
-      composer.showWarning(
-        `Dropped text files exceed the ${MAX_TEXT_DROP_TURN_BYTES / 1024 / 1024} MB ` +
-        `per-message limit.`
-      );
+      composer.showWarning(t(
+        'Dropped text files exceed the {max} MB per-message limit.',
+        { max: formatLimit(MAX_TEXT_DROP_TURN_BYTES / 1024 / 1024) }
+      ));
       break;
     }
 
@@ -228,7 +246,7 @@ export function handleTextFiles(composer, fileList) {
       const content = typeof reader.result === 'string' ? reader.result : '';
       // Gate 3: binary check (file is already known-small, so this is cheap).
       if (looksBinary(content)) {
-        composer.showWarning(`"${file.name}" doesn't look like a text file.`);
+        composer.showWarning(t('"{name}" doesn\'t look like a text file.', { name: file.name }));
         return;
       }
       composer._pendingTextFiles.push({ filename: file.name, content, bytes: file.size });
@@ -236,7 +254,7 @@ export function handleTextFiles(composer, fileList) {
       // Persist so the staged file survives a reload alongside the text.
       composer._persistDraft();
     };
-    reader.onerror = () => composer.showWarning(`Couldn't read "${file.name}".`);
+    reader.onerror = () => composer.showWarning(t('Couldn\'t read "{name}".', { name: file.name }));
     reader.readAsText(file);
   }
 }
@@ -264,7 +282,7 @@ function removeTextFile(composer, entry) {
 export async function uploadAndAdd(composer, file) {
   const convId = composer._conversation?.id;
   if (!convId) {
-    composer.showWarning('No active conversation for the attachment.');
+    composer.showWarning(t('No active conversation for the attachment.'));
     return;
   }
   // Placeholder chip while the bytes upload. Carries a local preview URL so
@@ -296,7 +314,7 @@ export async function uploadAndAdd(composer, file) {
     if (idx !== -1) composer._pendingAttachments.splice(idx, 1);
     if (placeholder._previewURL) URL.revokeObjectURL(placeholder._previewURL);
     renderAttachmentChips(composer);
-    composer.showWarning(`Image upload failed: ${extractErrorMessage(err)}`);
+    composer.showWarning(t('Image upload failed: {error}', { error: extractErrorMessage(err) }));
   }
 }
 
@@ -382,12 +400,14 @@ export function stagePendingAttachments(composer, refs) {
  */
 export function stagePendingTextFiles(composer, entries) {
   const list = Array.isArray(entries)
-    ? entries.filter((t) => t && typeof t.content === 'string')
+    ? entries.filter((entry) => entry && typeof entry.content === 'string')
     : [];
-  composer._pendingTextFiles = list.map((t) => ({
-    filename: t.filename || 'dropped file',
-    content: t.content,
-    bytes: t.bytes || 0
+  composer._pendingTextFiles = list.map((entry) => ({
+    // The stored name becomes the dropped-file context item's `<file path=…>`
+    // label, which the model reads.
+    filename: entry.filename || markUntranslated('dropped file'),
+    content: entry.content,
+    bytes: entry.bytes || 0
   }));
   renderAttachmentChips(composer);
   return composer._pendingTextFiles.length;
@@ -429,13 +449,13 @@ export function renderAttachmentChips(composer) {
 
     const name = document.createElement('span');
     name.className = 'attachment-name';
-    name.textContent = ref.filename || 'image';
+    name.textContent = ref.filename || t('image');
     chip.appendChild(name);
 
     const remove = document.createElement('button');
     remove.type = 'button';
     remove.className = 'attachment-remove';
-    remove.setAttribute('aria-label', 'Remove attachment');
+    remove.setAttribute('aria-label', t('Remove attachment'));
     remove.textContent = '\u00d7';
     remove.addEventListener('click', () => removeAttachment(composer, ref));
     chip.appendChild(remove);
@@ -454,13 +474,13 @@ export function renderAttachmentChips(composer) {
 
     const name = document.createElement('span');
     name.className = 'attachment-name';
-    name.textContent = entry.filename || 'text file';
+    name.textContent = entry.filename || t('text file');
     chip.appendChild(name);
 
     const remove = document.createElement('button');
     remove.type = 'button';
     remove.className = 'attachment-remove';
-    remove.setAttribute('aria-label', 'Remove attachment');
+    remove.setAttribute('aria-label', t('Remove attachment'));
     remove.textContent = '\u00d7';
     remove.addEventListener('click', () => removeTextFile(composer, entry));
     chip.appendChild(remove);

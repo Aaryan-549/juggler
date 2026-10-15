@@ -21,7 +21,9 @@
 
 import { createBoundOps } from '../../sdk/ops.js';
 import { extractErrorMessage } from '../../sdk/lib/error-utils.js';
+import { t, markForTranslation } from '../../sdk/lib/i18n.js';
 import workspaceProviderRegistry from '../registries/workspace-provider-registry.js';
+import { capabilityLabel } from '../utils/capability-label.js';
 import { registerWorkspace, patchWorkspace, unregisterWorkspace, isWorkspaceUsable } from './workspaces.js';
 import { rebindConversation } from './workspace-rebinding.js';
 
@@ -50,9 +52,12 @@ import { rebindConversation } from './workspace-rebinding.js';
  * made stay on the table with conversations bound to them. Those conversations
  * keep working — `kind` and `root` are the session's, not the provider's — so
  * the absence must read as a missing *feature*, never as a missing place.
+ *
+ * English here; every function below hands it out translated, since all of
+ * its readers draw it.
  * @type {string}
  */
-export const PROVIDER_UNAVAILABLE = 'Provider unavailable';
+export const PROVIDER_UNAVAILABLE = markForTranslation('Provider unavailable');
 
 /**
  * How a workspace is doing, asked of its provider when there is one.
@@ -73,7 +78,7 @@ export async function workspaceStatus(session, workspace, signal) {
   if (!provider) {
     // Also a problem rather than a detail: with nobody to ask, there is nothing
     // to say about the place itself, and the row keeps its own description.
-    return { ...fallback, problem: PROVIDER_UNAVAILABLE, providerMissing: true };
+    return { ...fallback, problem: t(PROVIDER_UNAVAILABLE), providerMissing: true };
   }
   try {
     return await provider.status(workspace, {
@@ -110,7 +115,7 @@ export async function workspaceStatus(session, workspace, signal) {
 export function workspaceFinishOptions(session, workspace) {
   const provider = workspaceProviderRegistry.createProvider(workspace.providerId ?? '', session);
   if (!provider) {
-    return { options: [], unavailableReason: PROVIDER_UNAVAILABLE };
+    return { options: [], unavailableReason: t(PROVIDER_UNAVAILABLE) };
   }
   return { options: provider.finishOptions(workspace) };
 }
@@ -518,10 +523,10 @@ export function workspaceFinishWarning(session, workspace, options = {}) {
 
   return {
     refusal: busy.length
-      ? `${busy.join(', ')} ${busy.length === 1 ? 'is' : 'are'} in the middle of a turn.`
+      ? t('{names} {count, plural, one {is} other {are}} in the middle of a turn.', { names: busy.join(', '), count: busy.length })
       : '',
     warning: action?.danger && status?.dirty
-      ? 'This workspace holds uncommitted work, which goes with it.'
+      ? t('This workspace holds uncommitted work, which goes with it.')
       : ''
   };
 }
@@ -617,7 +622,7 @@ export async function finishWorkspace(request) {
   const { session, workspace, conversation, actionId, input, signal } = request;
 
   const provider = workspaceProviderRegistry.createProvider(workspace?.providerId ?? '', session);
-  if (!provider) return { done: false, message: PROVIDER_UNAVAILABLE };
+  if (!provider) return { done: false, message: t(PROVIDER_UNAVAILABLE) };
 
   const { refusal } = workspaceFinishWarning(session, workspace);
   if (refusal) return { done: false, message: refusal };
@@ -746,7 +751,7 @@ async function unwind(compensations) {
  */
 function leftBehindSentence(failures) {
   if (!failures.length) return '';
-  return `Couldn't undo all of it: ${failures.map(failure => extractErrorMessage(failure)).join('; ')}`;
+  return t(`Couldn't undo all of it: {reasons}`, { reasons: failures.map(failure => extractErrorMessage(failure)).join('; ') });
 }
 
 /**
@@ -843,7 +848,9 @@ export async function provisionWorkspace(request) {
 
   const row = await registerWorkspace({
     root: provider.plannedRoot(values) || baseRoot,
-    label: label || provider.getSetupLabel(),
+    // A row named by no one is named after its kind, in the language it was
+    // made in: the label is stored, like any name a user typed.
+    label: label || capabilityLabel(provider.getSetupLabel(), providerId, workspaceProviderRegistry),
     providerId,
     baseWorkspaceId,
     state: 'provisioning'

@@ -17,7 +17,8 @@
 
 import { assert } from '../utilities/test-helpers.js';
 import { renderTransactionDetail } from '../../js/components/transaction-detail-renderer.js';
-import { setLocale } from '../../sdk/lib/i18n.js';
+import { setLocale, formatDate, isPseudoLocalized } from '../../sdk/lib/i18n.js';
+import { underPseudoLocale, shownStrings } from '../utilities/pseudo-locale.js';
 import { parseMcpToolName, groupToolsByOrigin } from '../../js/services/thread-tool-inventory.js';
 
 /**
@@ -376,6 +377,114 @@ export async function runTests(_ctx) {
     });
     const kinds = [...host.querySelectorAll('.tx-row-kind')].map((e) => e.textContent);
     assert(!kinds.includes('tools'), `expected no tools row, kinds were ${JSON.stringify(kinds)}`);
+  });
+
+  // =========================================================================
+  // en-XA: every label, heading, empty state, count and tooltip the panel
+  // draws is translated; the request/response bodies, tool names and tool
+  // descriptions are the model's data and are shown as they are.
+  // =========================================================================
+  await run('en-XA: the transaction detail is translated in every state, the model data is not', async () => {
+    /** @type {string[]} */
+    const problems = [];
+    // Model data and lone figures: bodies, tool names and descriptions, labels
+    // previewing a message, and the bare `~123` size figures.
+    const skip = [
+      '.tx-out-block', '.tx-row-body .properties-panel-json-display', '.tx-row-body .tx-text',
+      '.tx-field-key', '.tx-row-label', '.tx-row-size', '.tx-tool-group-count', '.tx-tool-name',
+      '.tx-tool-desc', '.properties-panel-result.error',
+    ].join(', ');
+    /**
+     * @param {string} where - The state, for the failure message
+     * @param {string[]} shown - Strings the state drew
+     * @param {string} [time] - A formatted time in them (Intl data), mapped to a digit
+     */
+    const check = (where, shown, time = '') => {
+      if (shown.length === 0) problems.push(`${where}: nothing drawn`);
+      for (const s of shown) {
+        const text = time ? s.split(time).join('1') : s;
+        if (!isPseudoLocalized(text)) problems.push(`${where}: ${JSON.stringify(s)}`);
+      }
+    };
+    /**
+     * Open a row by position (its kind is translated, so it can't be found by name).
+     * @param {HTMLElement} host - Container rendered into
+     * @param {number} index - Row position
+     * @returns {HTMLElement} The opened row
+     */
+    const openRow = (host, index) => {
+      const row = /** @type {HTMLDetailsElement} */ (host.querySelectorAll('.tx-row')[index]);
+      assert(row, `no row ${index}`);
+      row.open = true;
+      row.dispatchEvent(new Event('toggle'));
+      return row;
+    };
+    const xaTool = (/** @type {string} */ name) => ({ ...tool(name), description: '2' });
+
+    await underPseudoLocale('transaction-tool-list-test', async () => {
+      // No blob at all: the default empty message.
+      const empty = document.createElement('div');
+      renderTransactionDetail(empty, null);
+      check('no blob', shownStrings(empty));
+
+      // A full round-trip: metadata, output, every input row kind, the tool
+      // list with a built-in and an MCP group, the send time and the drift line.
+      const timestamp = new Date(2026, 1, 3, 14, 32, 5).toISOString();
+      const time = formatDate(new Date(timestamp), { timeStyle: 'medium' });
+      if (!time) problems.push('the fixture time formatted to nothing');
+      const full = document.createElement('div');
+      renderTransactionDetail(full, {
+        id: '1',
+        timestamp,
+        duration: 1234,
+        inputTokens: 100,
+        outputTokens: 50,
+        cachedTokens: 10,
+        cacheWriteTokens: 0,
+        stopReason: '5',
+        modelConfig: { model: '6' },
+        output: { blocks: [{ type: 'text', content: '7' }, /** @type {any} */ ({})], error: '3' },
+        input: {
+          systemPrompt: '8',
+          messages: [{ content: '9' }],
+          tools: [xaTool('1'), xaTool('mcp__7__8')],
+        },
+      }, undefined, { messageThread: threadOffering([xaTool('1'), xaTool('mcp__7__8'), xaTool('4')]) });
+      const row = openRow(full, 1);
+      const drift = await driftText(row);
+      if (!drift) problems.push('the drift line never appeared');
+      for (const entry of full.querySelectorAll('.tx-tool')) {
+        /** @type {HTMLDetailsElement} */ (entry).open = true;
+        entry.dispatchEvent(new Event('toggle'));
+      }
+      check('full round-trip', shownStrings(full, skip), time);
+      const kinds = [...full.querySelectorAll('.tx-row-kind')].map((e) => e.textContent || '');
+      if (kinds.length !== 3) problems.push(`expected three row kinds, got ${JSON.stringify(kinds)}`);
+      if (full.querySelectorAll('.tx-tool-category').length !== 2) problems.push('expected two category lozenges');
+      if (full.querySelectorAll('.tx-tool-group').length !== 2) problems.push('expected two tool groups');
+      // The skipped figures' own tooltips, and the fallback kind of a typeless block.
+      check('figure tooltips', [...full.querySelectorAll('.tx-row-size, .tx-tool-group-count')]
+        .map((e) => e.getAttribute('title') || ''));
+      const blockKinds = [...full.querySelectorAll('.tx-out-kind')].map((e) => e.textContent || '');
+      check('typeless block kind', blockKinds.slice(1));
+      if (blockKinds[0] !== 'text') problems.push(`a block's type is shown as it is, got ${JSON.stringify(blockKinds[0])}`);
+      if (full.querySelector('.tx-tool-name')?.textContent !== '1') problems.push('the tool name changed');
+      const meta = [...full.querySelectorAll('.meta-item')].map((e) => e.textContent || '');
+      if (meta.length !== 6) problems.push(`expected six metadata fields, got ${JSON.stringify(meta)}`);
+
+      // Cancelled with nothing back, approximate tokens, no cache report, no
+      // input. The third field is `Stop: cancelled` — a provider identifier.
+      const cancelled = document.createElement('div');
+      renderTransactionDetail(cancelled, { id: '2', inputTokens: 100, inputTokensApproximate: true, stopReason: 'cancelled' });
+      check('cancelled', shownStrings(cancelled, '.meta-item:nth-child(3)'));
+
+      // Nothing returned; one built-in tool, no send time, no drift.
+      const nothing = document.createElement('div');
+      renderTransactionDetail(nothing, { id: '3', input: { systemPrompt: '', messages: [], tools: [xaTool('1')] } });
+      openRow(nothing, 0);
+      check('nothing returned', shownStrings(nothing, skip));
+    });
+    assert(problems.length === 0, problems.join('; '));
   });
 
   return { passed, failed, errors };

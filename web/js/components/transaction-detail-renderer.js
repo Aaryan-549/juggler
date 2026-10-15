@@ -18,7 +18,7 @@
  */
 
 import { formatNumber, formatTokens } from '../utils/format.js';
-import { formatNumber as formatLocaleNumber, formatDate } from '../../sdk/lib/i18n.js';
+import { formatNumber as formatLocaleNumber, formatDate, t, markForTranslation } from '../../sdk/lib/i18n.js';
 import { escapeJsonContent } from '../../sdk/lib/html.js';
 import { createCopyButton } from '../utils/properties-panel-helpers.js';
 import { estimateValueTokens, LONG_TEXT_CHARS } from '../utils/token-estimate.js';
@@ -68,6 +68,16 @@ import {
 const LABEL_CHARS = 200;
 
 /**
+ * The word drawn for a tool's category. The category itself is an identifier
+ * and stays as it is; only its label is translated, where it is drawn.
+ */
+const CATEGORY_LABELS = /** @type {Record<string, string>} */ ({
+  read: markForTranslation('read'),
+  write: markForTranslation('write'),
+  meta: markForTranslation('meta'),
+});
+
+/**
  * Render the full transaction detail into `parent` (cleared first).
  * @param {HTMLElement} parent - Container to render into.
  * @param {TransactionBlob|null} blob - Parsed blob, or null if not found.
@@ -78,7 +88,7 @@ const LABEL_CHARS = 200;
  *   is the thread this transaction belongs to; given it, the tool list can say
  *   how the thread's live tools differ from the ones this turn sent.
  */
-export function renderTransactionDetail(parent, blob, emptyMessage = 'No transaction data.', options = {}) {
+export function renderTransactionDetail(parent, blob, emptyMessage = t('No transaction data.'), options = {}) {
   parent.innerHTML = '';
   if (!blob) {
     const empty = document.createElement('div');
@@ -113,7 +123,10 @@ function _buildMetadataBar(blob) {
     bar.appendChild(span);
   };
   if (blob.inputTokens || blob.outputTokens) {
-    add(`Tokens: ${blob.inputTokensApproximate ? '~' : ''}${formatNumber(blob.inputTokens ?? 0)} in \u2192 ${formatNumber(blob.outputTokens ?? 0)} out`);
+    const tokens = { input: formatNumber(blob.inputTokens ?? 0), output: formatNumber(blob.outputTokens ?? 0) };
+    add(blob.inputTokensApproximate
+      ? t('Tokens: ~{input} in \u2192 {output} out', tokens)
+      : t('Tokens: {input} in \u2192 {output} out', tokens));
   }
   if (blob.cachedTokens !== undefined || blob.cacheWriteTokens !== undefined) {
     // A key that is present but 0 is a provider-reported zero; format it as a
@@ -121,23 +134,26 @@ function _buildMetadataBar(blob) {
     // cache usage at all.
     const read = blob.cachedTokens !== undefined ? formatNumber(blob.cachedTokens) : '?';
     const write = blob.cacheWriteTokens !== undefined ? formatNumber(blob.cacheWriteTokens) : '?';
-    add(`Cache: ${read} read / ${write} written`);
+    add(t('Cache: {read} read / {write} written', { read, write }));
   } else if (blob.inputTokens) {
-    add('Cache: not reported');
+    add(t('Cache: not reported'));
   }
   if (blob.duration) {
-    add(`Duration: ${(blob.duration / 1000).toFixed(2)}s`);
+    const seconds = formatLocaleNumber(blob.duration / 1000, {
+      minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: false
+    });
+    add(t('Duration: {seconds}s', { seconds }));
   }
   if (blob.stopReason) {
-    add(`Stop: ${blob.stopReason}`);
+    add(t('Stop: {reason}', { reason: blob.stopReason }));
   }
   // formatDate is '' for a garbled timestamp, which drops the field.
   const time = blob.timestamp ? formatDate(new Date(blob.timestamp), { timeStyle: 'medium' }) : '';
   if (time) {
-    add(`Time: ${time}`);
+    add(t('Time: {time}', { time }));
   }
   if (blob.modelConfig?.model) {
-    add(`Model: ${blob.modelConfig.model}`);
+    add(t('Model: {model}', { model: blob.modelConfig.model }));
   }
   return bar;
 }
@@ -164,10 +180,10 @@ function _buildOutputSection(blob) {
     cachedTokens: blob.cachedTokens
   };
 
-  const section = _section('LLM Output', {
-    summary: blob.outputTokens ? `${formatLocaleNumber(blob.outputTokens)} tokens` : '',
+  const section = _section(t('LLM Output'), {
+    summary: blob.outputTokens ? t('{count} tokens', { count: formatLocaleNumber(blob.outputTokens) }) : '',
     copyText: JSON.stringify(reconstructed, null, 2),
-    copyLabel: 'Copy the output as JSON'
+    copyLabel: t('Copy the output as JSON')
   });
 
   if (error) {
@@ -180,7 +196,7 @@ function _buildOutputSection(blob) {
   if (blocks.length) {
     for (const block of blocks) section.appendChild(_buildOutputBlock(block));
   } else if (!error) {
-    const msg = blob.stopReason === 'cancelled' ? 'Cancelled before any output.' : 'The model returned nothing.';
+    const msg = blob.stopReason === 'cancelled' ? t('Cancelled before any output.') : t('The model returned nothing.');
     section.appendChild(_textBlock(msg));
   }
 
@@ -197,9 +213,10 @@ function _buildOutputBlock(block) {
 
   const kind = document.createElement('div');
   kind.className = 'tx-out-kind';
+  // A block's type and a tool's name are the provider's identifiers, shown as they are.
   kind.textContent = block.type === 'tool_use' && block.toolName
-    ? `tool_use · ${block.toolName}`
-    : (block.type || 'block');
+    ? `tool_use · ${block.toolName}` // i18n-ignore: provider block type and tool name
+    : (block.type || t('block', undefined, { context: 'transaction output block kind' }));
   el.appendChild(kind);
 
   if (block.type === 'text' || block.type === 'thinking') {
@@ -234,14 +251,14 @@ function _buildInputSection(blob, messageThread = null) {
     tools
   }, null, 2);
 
-  const section = _section('LLM Input', {
+  const section = _section(t('LLM Input'), {
     summary: _inputSummary(blob, { systemPrompt, messages, tools }),
     copyText: fullJson,
-    copyLabel: 'Copy the whole input as JSON'
+    copyLabel: t('Copy the whole input as JSON')
   });
 
   if (!input || (!systemPrompt && !messages.length && !tools.length)) {
-    section.appendChild(_textBlock('No input recorded.'));
+    section.appendChild(_textBlock(t('No input recorded.')));
     return section;
   }
 
@@ -249,7 +266,9 @@ function _buildInputSection(blob, messageThread = null) {
   rows.className = 'tx-rows';
 
   if (systemPrompt) {
-    rows.appendChild(_row('system prompt', _firstLine(systemPrompt), systemPrompt));
+    rows.appendChild(_row(
+      t('system prompt', undefined, { context: 'transaction row kind' }), _firstLine(systemPrompt), systemPrompt
+    ));
   }
   if (tools.length) {
     rows.appendChild(_buildToolsRow(tools, blob, messageThread));
@@ -257,7 +276,10 @@ function _buildInputSection(blob, messageThread = null) {
 
   const displayMessages = _transformMessagesForDisplay(messages);
   displayMessages.forEach((msg, i) => {
-    const kind = typeof msg.type === 'string' && msg.type ? msg.type : 'message';
+    // A message's type is the provider's identifier, shown as it is.
+    const kind = typeof msg.type === 'string' && msg.type
+      ? msg.type
+      : t('message', undefined, { context: 'transaction row kind' });
     rows.appendChild(_row(kind, _messageLabel(msg), msg, { open: i === displayMessages.length - 1 }));
   });
 
@@ -277,11 +299,12 @@ function _inputSummary(blob, parts) {
   const estimated = estimateValueTokens(parts.systemPrompt)
     + estimateValueTokens(parts.messages)
     + estimateValueTokens(parts.tools);
-  const bits = [`~${formatTokens(estimated)} estimated`];
   if (blob.inputTokens && !blob.inputTokensApproximate) {
-    bits.push(`${formatLocaleNumber(blob.inputTokens)} reported`);
+    return t('~{estimated} estimated · {reported} reported', {
+      estimated: formatTokens(estimated), reported: formatLocaleNumber(blob.inputTokens)
+    });
   }
-  return bits.join(' · ');
+  return t('~{estimated} estimated', { estimated: formatTokens(estimated) });
 }
 
 // ============================================================================
@@ -321,13 +344,13 @@ function _row(kind, label, value, { open = false, body = undefined } = {}) {
   const sizeEl = document.createElement('span');
   sizeEl.className = 'tx-row-size';
   sizeEl.textContent = `~${formatTokens(estimateValueTokens(value))}`;
-  sizeEl.title = 'Estimated tokens (~4 characters per token)';
+  sizeEl.title = t('Estimated tokens (~4 characters per token)');
   summary.appendChild(sizeEl);
 
   summary.appendChild(createCopyButton(
     () => (typeof value === 'string' ? value : JSON.stringify(value, null, 2)),
     'properties-panel-header-icon-btn tx-row-copy',
-    'Copy this entry'
+    t('Copy this entry')
   ));
 
   row.appendChild(summary);
@@ -376,9 +399,11 @@ function _buildToolsRow(tools, blob, messageThread) {
   const groups = groupToolsByOrigin(tools);
   const mcpCount = groups.reduce((n, g) => n + (g.server === null ? 0 : g.tools.length), 0);
   const label = mcpCount
-    ? `${tools.length} tools · ${mcpCount} from MCP`
-    : `${tools.length} tools`;
-  return _row('tools', label, tools, { body: () => _buildToolList(groups, tools, blob, messageThread) });
+    ? t('{count, plural, other {{count} tools}} · {mcp, plural, other {{mcp} from MCP}}', {
+      count: tools.length, mcp: mcpCount
+    })
+    : t('{count, plural, other {{count} tools}}', { count: tools.length });
+  return _row(t('tools', undefined, { context: 'transaction row kind' }), label, tools, { body: () => _buildToolList(groups, tools, blob, messageThread) });
 }
 
 /**
@@ -404,7 +429,7 @@ function _buildToolList(groups, tools, blob, messageThread) {
     const count = document.createElement('span');
     count.className = 'tx-tool-group-count';
     count.textContent = `${group.tools.length} · ~${formatTokens(group.tokens)}`;
-    count.title = 'Tools in this group, and their estimated share of the request';
+    count.title = t('Tools in this group, and their estimated share of the request');
     heading.appendChild(count);
 
     body.appendChild(heading);
@@ -434,8 +459,12 @@ function _buildToolsHeader(tools, blob, messageThread) {
   const sent = document.createElement('div');
   sent.className = 'tx-tools-sent';
   const time = blob?.timestamp ? formatDate(new Date(blob.timestamp), { timeStyle: 'medium' }) : '';
-  const when = time ? ` at ${time}` : '';
-  sent.textContent = `${tools.length} ${tools.length === 1 ? 'tool' : 'tools'}, as sent${when} — not the live list.`;
+  const count = tools.length;
+  sent.textContent = time
+    ? t('{count, plural, one {{count} tool} other {{count} tools}}, as sent at {time} — not the live list.', {
+      count, time
+    })
+    : t('{count, plural, one {{count} tool} other {{count} tools}}, as sent — not the live list.', { count });
   header.appendChild(sent);
 
   if (messageThread) void _appendToolDrift(header, tools, messageThread);
@@ -464,7 +493,9 @@ async function _appendToolDrift(header, tools, messageThread) {
 
     const line = document.createElement('div');
     line.className = 'tx-tools-drift';
-    line.textContent = `${changes} since this turn — the model has not been offered the current list yet.`;
+    line.textContent = t('{changes} since this turn — the model has not been offered the current list yet.', {
+      changes
+    });
     line.title = toolDriftDetail(drift);
     header.appendChild(line);
   } catch {
@@ -501,7 +532,8 @@ function _buildToolEntry(tool, server) {
   if (tool?.category) {
     const cat = document.createElement('span');
     cat.className = `tx-tool-category tx-tool-category-${tool.category}`;
-    cat.textContent = String(tool.category);
+    const category = String(tool.category);
+    cat.textContent = CATEGORY_LABELS[category] ? t(CATEGORY_LABELS[category]) : category;
     summary.appendChild(cat);
   }
 
@@ -514,7 +546,7 @@ function _buildToolEntry(tool, server) {
   const size = document.createElement('span');
   size.className = 'tx-row-size';
   size.textContent = `~${formatTokens(estimateValueTokens(tool))}`;
-  size.title = 'Estimated tokens (~4 characters per token)';
+  size.title = t('Estimated tokens (~4 characters per token)');
   summary.appendChild(size);
 
   entry.appendChild(summary);
@@ -651,7 +683,7 @@ function _holdsLongText(value) {
  * @param {{summary?: string, copyText?: string, copyLabel?: string}} [options] - Right-hand size line and copy-all button.
  * @returns {HTMLElement} Subsection wrapper with a header row.
  */
-function _section(title, { summary = '', copyText = '', copyLabel = 'Copy to clipboard' } = {}) {
+function _section(title, { summary = '', copyText = '', copyLabel = t('Copy to clipboard') } = {}) {
   const el = document.createElement('properties-panel-subsection');
 
   const head = document.createElement('div');
@@ -743,10 +775,10 @@ function _formatJson(value, indent = 0) {
   if (value === null) return '<span class="json-null">null</span>';
   if (value === undefined) return '<span class="json-undefined">undefined</span>';
 
-  const t = typeof value;
-  if (t === 'boolean') return `<span class="json-boolean">${String(value)}</span>`;
-  if (t === 'number') return `<span class="json-number">${String(value)}</span>`;
-  if (t === 'string') return `<span class="json-string">"${escapeJsonContent(/** @type {string} */ (value))}"</span>`;
+  const type = typeof value;
+  if (type === 'boolean') return `<span class="json-boolean">${String(value)}</span>`;
+  if (type === 'number') return `<span class="json-number">${String(value)}</span>`;
+  if (type === 'string') return `<span class="json-string">"${escapeJsonContent(/** @type {string} */ (value))}"</span>`;
 
   if (Array.isArray(value)) {
     if (value.length === 0) return '<span class="json-bracket">[]</span>';
@@ -760,7 +792,7 @@ function _formatJson(value, indent = 0) {
     return out;
   }
 
-  if (t === 'object') {
+  if (type === 'object') {
     const obj = /** @type {Record<string, unknown>} */ (value);
     const keys = Object.keys(obj);
     if (keys.length === 0) return '<span class="json-bracket">{}</span>';

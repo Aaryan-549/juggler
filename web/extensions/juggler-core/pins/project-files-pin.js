@@ -5,9 +5,12 @@
 
 import PinboardItemType from 'juggler/pinboard-item-type';
 import { expandDirectory, openPath } from 'juggler/ops';
+import { translator } from 'juggler/i18n';
 import { createElement, createFileActions, extractErrorMessage, injectStylesOnce, pinFile } from 'juggler/ui';
 import { reconcileRows, setText } from '../lib/reconcile.js';
 import { pinEmpty } from '../lib/pin-empty.js';
+
+const t = translator('@juggler/core');
 
 injectStylesOnce('project-files-pin-styles', `
 .project-files-pin {
@@ -264,11 +267,11 @@ function visibleRows(root, expanded, entries) {
     if (!state.items) {
       // A folder that is merely opening contributes nothing. Saying "Reading…"
       // for the millisecond a local directory takes is a flicker, not news.
-      if (state.slow) rows.push({ kind: 'note', key: `${dir}\u0000loading`, depth, text: 'Reading…' });
+      if (state.slow) rows.push({ kind: 'note', key: `${dir}\u0000loading`, depth, text: t('Reading…') });
       return;
     }
     if (state.items.length === 0) {
-      rows.push({ kind: 'note', key: `${dir}\u0000empty`, depth, text: 'Empty' });
+      rows.push({ kind: 'note', key: `${dir}\u0000empty`, depth, text: t('Empty') });
       return;
     }
     for (const item of state.items) {
@@ -323,7 +326,7 @@ class ProjectFilesPin extends PinboardItemType {
    * @returns {true|string} True when a project is open.
    */
   canAdd(active) {
-    return active?.project?.path ? true : 'No project';
+    return active?.project?.path ? true : t('No project');
   }
 
   /**
@@ -366,6 +369,8 @@ class ProjectFilesPin extends PinboardItemType {
    */
   describe(config, active) {
     const root = active?.project?.path || '';
+    // The name in English: the host translates a title equal to it, in this
+    // extension's catalogue.
     return root ? { title: this.name, path: root } : { title: this.name };
   }
 
@@ -381,7 +386,7 @@ class ProjectFilesPin extends PinboardItemType {
     const body = createElement('div', 'project-files-pin');
     const list = createElement('div', 'project-files-pin__list');
     list.setAttribute('role', 'tree');
-    list.setAttribute('aria-label', 'Project files');
+    list.setAttribute('aria-label', t('Project files'));
     const status = createElement('div', 'project-files-pin__status');
     container.replaceChildren(body);
 
@@ -490,7 +495,7 @@ class ProjectFilesPin extends PinboardItemType {
         // plain-English lead goes above it rather than in place of it.
         settle({
           items: null,
-          error: `Couldn't read this folder. ${extractErrorMessage(err)}`,
+          error: t("Couldn't read this folder. {error}", { error: extractErrorMessage(err) }),
           loading: false,
           slow: false,
           token,
@@ -520,7 +525,7 @@ class ProjectFilesPin extends PinboardItemType {
         await openPath({ path });
         statusText = '';
       } catch (err) {
-        statusText = `Couldn't open that file. ${extractErrorMessage(err)}`;
+        statusText = t("Couldn't open that file. {error}", { error: extractErrorMessage(err) });
       }
       render();
     };
@@ -658,7 +663,7 @@ class ProjectFilesPin extends PinboardItemType {
       // project, not something to flash at someone who has one.
       const lead = root
         ? list
-        : (body.querySelector('.pin-empty') || pinEmpty("The project's files appear here."));
+        : (body.querySelector('.pin-empty') || pinEmpty(t("The project's files appear here.")));
       if (body.firstChild !== lead) body.replaceChildren(lead);
 
       if (statusText) {
@@ -832,7 +837,7 @@ class ProjectFilesPin extends PinboardItemType {
       // The watcher is rooted at the project and skips dot-files, so a change to
       // one is a change this pin will never hear about. That is what this is for.
       getActions: () => [
-        { id: 'refresh', label: 'Refresh', icon: 'refresh', primary: true, run: () => refreshAll() },
+        { id: 'refresh', label: t('Refresh'), icon: 'refresh', primary: true, run: () => refreshAll() },
       ],
     };
   }

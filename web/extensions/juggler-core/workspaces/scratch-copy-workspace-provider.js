@@ -22,6 +22,9 @@
 import WorkspaceProvider from 'juggler/workspace-provider';
 import { baseName, join } from '../lib/workspace-paths.js';
 import { field, nextFormSequence, showNote } from '../lib/setup-fields.js';
+import { translator } from 'juggler/i18n';
+
+const t = translator('@juggler/core');
 
 /**
  * The file that keeps the copies out of the user's own `git status`.
@@ -81,28 +84,25 @@ export function sandboxPlaces(baseRoot, name) {
 }
 
 /**
- * How many files, said in words that read as a sentence either way.
- * @param {number} count - How many.
- * @returns {string} e.g. '1 file' or '7 files'.
- */
-function countOf(count) {
-  return `${count} file${count === 1 ? '' : 's'}`;
-}
-
-/**
- * A few paths, named, with the rest counted.
+ * Why a copy could not be applied: a few of the contested paths named, the rest
+ * counted.
  *
  * Every name would be a paragraph in a dialog, and none of them would be the
  * one the reader is looking for after the fifth.
- * @param {string[]} paths - What to name.
- * @returns {string} A readable list.
+ * @param {string} name - The sandbox's name.
+ * @param {string[]} paths - What the project changed since.
+ * @returns {string} The whole sentence.
  */
-function namedFiles(paths) {
+function refusedFor(name, paths) {
   const shown = paths.slice(0, 3);
   const rest = paths.length - shown.length;
-  const list = shown.join(', ');
-  if (!rest) return `${list} ${paths.length === 1 ? 'has' : 'have'}`;
-  return `${list} and ${countOf(rest)} more have`;
+  const files = shown.join(', ');
+  if (!rest) {
+    return t('{name} could not be applied: {files} {count, plural, one {has} other {have}} changed since the copy was taken. Nothing was applied.',
+      { name, files, count: paths.length });
+  }
+  return t('{name} could not be applied: {files} and {rest, plural, one {{rest} file} other {{rest} files}} more have changed since the copy was taken. Nothing was applied.',
+    { name, files, rest });
 }
 
 /**
@@ -150,7 +150,8 @@ class ScratchCopyWorkspaceProvider extends WorkspaceProvider {
   renderSetup(container, ctx) {
     const id = `scratch-copy-name-${nextFormSequence()}`;
     container.replaceChildren();
-    const { input, note } = field(container, id, 'name', 'Name', 'risky-idea');
+    // i18n-ignore: an example directory name, which slug() keeps only in ASCII
+    const { input, note } = field(container, id, 'name', t('Name'), 'risky-idea');
 
     // What the section last reported, when there is any: a provision that was
     // cancelled or failed puts the form back, and retyping it is a poor reward
@@ -175,14 +176,14 @@ class ScratchCopyWorkspaceProvider extends WorkspaceProvider {
     const named = slug(form.input.value);
     if (!named) {
       showNote(form.note, form.input.value.trim()
-        ? 'That leaves nothing that can be a directory name.'
+        ? t('That leaves nothing that can be a directory name.')
         : '', { error: true });
       return;
     }
     const baseRoot = form.ctx?.session?.workspaceRoot?.(form.ctx?.baseWorkspaceId ?? '') ?? '';
     showNote(
       form.note,
-      baseRoot ? 'Work in a copy of the project, not your own files. Files git ignores are not copied.' : '',
+      baseRoot ? t('Work in a copy of the project, not your own files. Files git ignores are not copied.') : '',
       { path: baseRoot ? sandboxPlaces(baseRoot, named).work : '' }
     );
   }
@@ -237,10 +238,11 @@ class ScratchCopyWorkspaceProvider extends WorkspaceProvider {
    */
   _places(values, ctx) {
     const baseRoot = ctx?.session?.workspaceRoot?.(ctx?.baseWorkspaceId ?? '');
-    if (!baseRoot) throw new Error("Couldn't make a copy: the workspace it would be a copy of has no root.");
+    if (!baseRoot) throw new Error(t("Couldn't make a copy: the workspace it would be a copy of has no root."));
     const places = sandboxPlaces(baseRoot, values?.name ?? '');
     if (!places.name) {
-      throw new Error(`Couldn't make a copy: ${JSON.stringify(String(values?.name ?? ''))} leaves nothing that can be a directory name.`);
+      throw new Error(t("Couldn't make a copy: {name} leaves nothing that can be a directory name.",
+        { name: JSON.stringify(String(values?.name ?? '')) }));
     }
     return { baseRoot, places };
   }
@@ -270,7 +272,7 @@ class ScratchCopyWorkspaceProvider extends WorkspaceProvider {
     // somebody else left in the way.
     const occupied = await ctx.ops.stat({ path: places.rel });
     if (occupied?.exists) {
-      throw new Error(`Couldn't make a copy at ${places.dir}: there is already something there.`);
+      throw new Error(t("Couldn't make a copy at {dir}: there is already something there.", { dir: places.dir }));
     }
 
     const meta = {
@@ -281,7 +283,7 @@ class ScratchCopyWorkspaceProvider extends WorkspaceProvider {
       pristine: places.pristine
     };
 
-    ctx.progress('Copying the tree', places.work);
+    ctx.progress(t('Copying the tree'), places.work);
     // Both records of how to undo this go in before the step, so there is no
     // instant in which a copy exists that nothing knows how to remove. The cost
     // is that this compensation routinely runs for a copy that was never made,
@@ -295,7 +297,7 @@ class ScratchCopyWorkspaceProvider extends WorkspaceProvider {
       { path: `${SANDBOXES_REL}/.gitignore`, content: IGNORE_MARKER }, ctx.signal);
     await ctx.ops.copyTree({ from: '.', to: places.workRel }, ctx.signal);
 
-    ctx.progress('Taking a snapshot of it', places.pristine);
+    ctx.progress(t('Taking a snapshot of it'), places.pristine);
     await ctx.ops.copyTree({ from: places.workRel, to: places.pristineRel }, ctx.signal);
 
     return {
@@ -323,10 +325,10 @@ class ScratchCopyWorkspaceProvider extends WorkspaceProvider {
   async status(workspace, ctx) {
     const meta = workspace?.meta ?? {};
     if (workspace.available === false) {
-      return { detail: 'The copy is missing.', available: false };
+      return { detail: t('The copy is missing.'), available: false };
     }
     if (!meta?.baseDir) {
-      return { detail: 'There is no record of what this is a copy of.', available: true };
+      return { detail: t('There is no record of what this is a copy of.'), available: true };
     }
 
     const changes = await this._changes(workspace, ctx);
@@ -338,9 +340,9 @@ class ScratchCopyWorkspaceProvider extends WorkspaceProvider {
       // against the project? against the last turn? — are all answers this does
       // not give: it is the copy compared with the snapshot taken of it.
       detail: count
-        ? `${countOf(count)} changed since the copy was made`
-        : 'Nothing changed since the copy was made',
-      badge: count ? 'changed' : '',
+        ? t('{count, plural, one {{count} file changed since the copy was made} other {{count} files changed since the copy was made}}', { count })
+        : t('Nothing changed since the copy was made'),
+      badge: count ? 'changed' : '', // i18n-ignore: a state word, not drawn
       dirty: count > 0,
       available: true
     };
@@ -420,29 +422,31 @@ class ScratchCopyWorkspaceProvider extends WorkspaceProvider {
    */
   finishOptions(workspace) {
     const meta = workspace?.meta ?? {};
-    const tree = meta.baseDir ? baseName(String(meta?.baseDir)) : 'the project';
+    // Named when the record says which tree; 'the project' otherwise.
+    const target = meta.baseDir ? 'named' : 'project';
+    const tree = meta.baseDir ? baseName(String(meta?.baseDir)) : '';
     return [
       {
         id: 'apply',
-        label: 'Apply the changes',
-        description: `Copies what changed here back into ${tree}, then removes the copy. Anything ${tree} has changed since is refused by name, and nothing is applied.`
+        label: t('Apply the changes'),
+        description: t('{target, select, project {Copies what changed here back into the project, then removes the copy. Anything the project has changed since is refused by name, and nothing is applied.} other {Copies what changed here back into {tree}, then removes the copy. Anything {tree} has changed since is refused by name, and nothing is applied.}}', { target, tree })
       },
       {
         id: 'keep',
-        label: 'Close the workspace, keep the copy',
-        description: 'The copy and everything in it stays on disk, ready to be adopted again. Conversations here go to the bin, which they can be restored from.'
+        label: t('Close the workspace, keep the copy'),
+        description: t('The copy and everything in it stays on disk, ready to be adopted again. Conversations here go to the bin, which they can be restored from.')
       },
       {
         id: 'apply-anyway',
-        label: 'Apply, overwriting',
+        label: t('Apply, overwriting'),
         danger: true,
-        description: `Copies the changes back even over files ${tree} has changed since. What is in ${tree} is lost.`
+        description: t('{target, select, project {Copies the changes back even over files the project has changed since. What is in the project is lost.} other {Copies the changes back even over files {tree} has changed since. What is in {tree} is lost.}}', { target, tree })
       },
       {
         id: 'discard',
-        label: 'Close the workspace and delete the copy',
+        label: t('Close the workspace and delete the copy'),
         danger: true,
-        description: 'Deletes the copy and everything done in it. Conversations here go to the bin, which they can be restored from.'
+        description: t('Deletes the copy and everything done in it. Conversations here go to the bin, which they can be restored from.')
       }
     ];
   }
@@ -464,20 +468,20 @@ class ScratchCopyWorkspaceProvider extends WorkspaceProvider {
     const named = slug(String(meta?.name ?? ''));
     const baseDir = String(meta?.baseDir ?? '');
     if (!named || !baseDir) {
-      return { done: false, message: 'There is no record of what this is a copy of, so it is not ours to finish with.' };
+      return { done: false, message: t('There is no record of what this is a copy of, so it is not ours to finish with.') };
     }
 
     const places = sandboxPlaces(baseDir, named);
     const ops = ctx.baseOps ?? ctx.ops;
 
     if (actionId === 'keep') {
-      return { done: true, message: `Left ${places.dir} where it is.` };
+      return { done: true, message: t('Left {dir} where it is.', { dir: places.dir }) };
     }
     if (actionId === 'discard') return this._discard(places, ops, ctx);
     if (actionId === 'apply' || actionId === 'apply-anyway') {
       return this._apply(places, ops, ctx, actionId === 'apply-anyway');
     }
-    return { done: false, message: `${this.getManifest().name} has no action "${actionId}".` };
+    return { done: false, message: t('{name} has no action "{actionId}".', { name: this.getManifest().name, actionId }) };
   }
 
   /**
@@ -509,7 +513,7 @@ class ScratchCopyWorkspaceProvider extends WorkspaceProvider {
     const written = [...(mine?.changed ?? []), ...(mine?.added ?? [])];
     const removed = [...(mine?.removed ?? [])];
     if (!written.length && !removed.length) {
-      return { done: false, message: 'Nothing has changed in the copy, so there is nothing to apply.' };
+      return { done: false, message: t('Nothing has changed in the copy, so there is nothing to apply.') };
     }
 
     if (!overwrite) {
@@ -517,7 +521,7 @@ class ScratchCopyWorkspaceProvider extends WorkspaceProvider {
       if (conflicts.length) {
         return {
           done: false,
-          message: `${baseName(places.dir)} could not be applied: ${namedFiles(conflicts)} changed since the copy was taken. Nothing was applied.`
+          message: refusedFor(baseName(places.dir), conflicts)
         };
       }
     }
@@ -529,7 +533,8 @@ class ScratchCopyWorkspaceProvider extends WorkspaceProvider {
     await ops.copyTree({ to: '.', delete: [places.rel] }, ctx.signal);
     return {
       done: true,
-      message: `Applied ${countOf(written.length + removed.length)} and removed ${places.dir}.`
+      message: t('Applied {count, plural, one {{count} file} other {{count} files}} and removed {dir}.',
+        { count: written.length + removed.length, dir: places.dir })
     };
   }
 
@@ -574,8 +579,8 @@ class ScratchCopyWorkspaceProvider extends WorkspaceProvider {
     await ops.copyTree({ to: '.', delete: [places.rel] }, ctx.signal);
     const left = await ops.stat({ path: places.rel });
     return left?.exists
-      ? { done: false, message: `${places.dir} is still there and could not be removed.` }
-      : { done: true, message: `Removed ${places.dir}.` };
+      ? { done: false, message: t('{dir} is still there and could not be removed.', { dir: places.dir }) }
+      : { done: true, message: t('Removed {dir}.', { dir: places.dir }) };
   }
 
   /**
@@ -633,7 +638,7 @@ class ScratchCopyWorkspaceProvider extends WorkspaceProvider {
       }
       orphanedWorkspaces.push({
         ...workspace,
-        reason: `${meta.dir ?? workspace.root} is not there any more.`
+        reason: t('{dir} is not there any more.', { dir: meta.dir ?? workspace.root })
       });
     }
 
@@ -643,7 +648,7 @@ class ScratchCopyWorkspaceProvider extends WorkspaceProvider {
       orphanedArtifacts.push({
         id: places.dir,
         label: named,
-        detail: `${places.dir} — a copy with no conversation`,
+        detail: t('{dir} — a copy with no conversation', { dir: places.dir }),
         workspace: {
           root: places.work,
           label: named,
@@ -677,7 +682,7 @@ class ScratchCopyWorkspaceProvider extends WorkspaceProvider {
     const named = slug(String(meta?.name ?? ''));
     const baseDir = String(meta?.baseDir ?? '');
     if (!named || !baseDir) {
-      return { removed: false, message: 'Nothing was checkpointed, so there is nothing to undo.' };
+      return { removed: false, message: t('Nothing was checkpointed, so there is nothing to undo.') };
     }
 
     // The base workspace's operations where the host has them, because that is
@@ -692,8 +697,8 @@ class ScratchCopyWorkspaceProvider extends WorkspaceProvider {
     // one question the host has.
     const left = await ops.stat({ path: places.rel });
     return left?.exists
-      ? { removed: false, message: `${places.dir} is still there and could not be removed.` }
-      : { removed: true, message: `Removed ${places.dir}.` };
+      ? { removed: false, message: t('{dir} is still there and could not be removed.', { dir: places.dir }) }
+      : { removed: true, message: t('Removed {dir}.', { dir: places.dir }) };
   }
 }
 

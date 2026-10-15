@@ -21,6 +21,8 @@ import { focusWhenShown } from '../utils/focus.js';
 import { projectsOpenInNewWindow } from '../utils/project-open-mode.js';
 import { showAlert, showConfirm } from './modal-dialog.js';
 import { isOpeningProject, openProjectInWindow } from './project-opening.js';
+import { t } from '../../sdk/lib/i18n.js';
+import { escapeHtml } from '../../sdk/lib/html.js';
 
 /**
  * @typedef {(path: string) => Promise<{valid: boolean, path?: string, error?: string, current?: boolean}>} ValidateFn
@@ -55,11 +57,11 @@ export function buildPickerPanel({
   recents = [],
   currentPath = '',
   showCancel = true,
-  title = 'Open project folder',
+  title = t('Open project folder'),
   subtitle = '',
-  placeholder = 'Path to project folder…',
+  placeholder = t('Path to project folder…'),
   dirsOnly = true,
-  confirmLabel = 'Open',
+  confirmLabel = t('Open'),
   // Where the native chooser opens. A picker asking about a file in the open
   // project says so; the project picker names none, because it is asking where a
   // new project is and the last place the app looked is the better guess.
@@ -70,7 +72,7 @@ export function buildPickerPanel({
   confirmOpensNewWindow = false,
   validate = null,
   onNewWindow = null,
-  newWindowLabel = 'Open in new window',
+  newWindowLabel = t('Open in new window'),
 } = {}) {
   /** @type {(v: string|null) => void} */
   let resolve = () => {};
@@ -80,21 +82,21 @@ export function buildPickerPanel({
   panel.className = 'pp-panel';
   panel.innerHTML = `
     <div class="pp-header">
-      <span class="pp-title">${title}</span>
-      ${subtitle ? `<span class="pp-subtitle">${subtitle}</span>` : ''}
+      <span class="pp-title">${escapeHtml(title)}</span>
+      ${subtitle ? `<span class="pp-subtitle">${escapeHtml(subtitle)}</span>` : ''}
     </div>
     <div class="pp-body">
       <div class="pp-input-row">
-        <path-input ${dirsOnly ? 'dirs-only ' : ''}placeholder="${placeholder}"${currentPath ? ` value="${currentPath.replace(/"/g, '&quot;')}"` : ''} class="pp-path-input"></path-input>
-        ${hasNativeHost() ? '<button class="pp-btn pp-btn-browse" type="button">Browse…</button>' : ''}
+        <path-input ${dirsOnly ? 'dirs-only ' : ''}placeholder="${escapeHtml(placeholder)}"${currentPath ? ` value="${currentPath.replace(/"/g, '&quot;')}"` : ''} class="pp-path-input"></path-input>
+        ${hasNativeHost() ? `<button class="pp-btn pp-btn-browse" type="button">${escapeHtml(t('Browse…'))}</button>` : ''}
       </div>
       <div class="pp-status" aria-live="polite"${validate ? '' : ' hidden'}></div>
       <div class="pp-recents" hidden></div>
     </div>
     <div class="pp-footer">
-      ${showCancel ? '<button class="pp-btn pp-btn-cancel">Cancel</button>' : ''}
-      ${onNewWindow && !confirmOpensNewWindow ? `<button class="pp-btn pp-btn-newwindow" disabled>${newWindowLabel}</button>` : ''}
-      <button class="pp-btn pp-btn-open" disabled>${confirmLabel}</button>
+      ${showCancel ? `<button class="pp-btn pp-btn-cancel">${escapeHtml(t('Cancel'))}</button>` : ''}
+      ${onNewWindow && !confirmOpensNewWindow ? `<button class="pp-btn pp-btn-newwindow" disabled>${escapeHtml(newWindowLabel)}</button>` : ''}
+      <button class="pp-btn pp-btn-open" disabled>${escapeHtml(confirmLabel)}</button>
     </div>
   `;
 
@@ -130,7 +132,7 @@ export function buildPickerPanel({
     recentsEl.removeAttribute('hidden');
     const label = document.createElement('div');
     label.className = 'pp-recents-label';
-    label.textContent = 'Recent sessions';
+    label.textContent = t('Recent sessions');
     recentsEl.appendChild(label);
     for (const path of filtered) {
       const btn = document.createElement('button');
@@ -152,20 +154,20 @@ export function buildPickerPanel({
           return;
         }
         if (debounceTimer !== null) { clearTimeout(debounceTimer); debounceTimer = null; }
-        setStatus('checking', 'Checking…');
+        setStatus('checking', t('Checking…'));
         const gen = ++validationGen;
         try {
           const result = await validate(path);
           if (gen !== validationGen) return;
           if (result.valid) {
-            setStatus('valid', result.current ? 'This is the current project' : (result.path || path));
+            setStatus('valid', result.current ? t('This is the current project') : (result.path || path));
             confirmAction();
           } else {
-            setStatus('invalid', result.error || 'Invalid path');
+            setStatus('invalid', result.error || t('Invalid path'));
           }
         } catch (_err) {
           if (gen !== validationGen) return;
-          setStatus('invalid', 'Could not check path');
+          setStatus('invalid', t('Could not check path'));
         }
       });
       recentsEl.appendChild(btn);
@@ -212,7 +214,7 @@ export function buildPickerPanel({
   function triggerValidation(raw) {
     const val = raw.trim();
     if (!val) { setStatus('idle', ''); return; }
-    setStatus('checking', 'Checking…');
+    setStatus('checking', t('Checking…'));
     if (debounceTimer !== null) clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => checkPath(val), 200);
   }
@@ -228,13 +230,13 @@ export function buildPickerPanel({
       const result = await validate(val);
       if (gen !== validationGen) return;
       if (result.valid) {
-        setStatus('valid', result.current ? 'This is the current project' : (result.path || val));
+        setStatus('valid', result.current ? t('This is the current project') : (result.path || val));
       } else {
-        setStatus('invalid', result.error || 'Invalid path');
+        setStatus('invalid', result.error || t('Invalid path'));
       }
     } catch (_err) {
       if (gen !== validationGen) return;
-      setStatus('invalid', 'Could not check path');
+      setStatus('invalid', t('Could not check path'));
     }
   }
 
@@ -347,7 +349,7 @@ async function openInNewWindow(path) {
     await apiService.newWindow(path);
   } catch (err) {
     const msg = extractUserMessage(err);
-    await showAlert(msg, 'Open in new window');
+    await showAlert(msg, t('Open in new window'));
   }
 }
 
@@ -403,19 +405,17 @@ export async function openProjectPicker(currentPath, session) {
   // desktop window on a server the app did not start, whose paths may be on
   // another machine (the picker copy explains the tab-set change there).
   const newWindowOnly = newWindows && switching;
-  const title = switching && !newWindowOnly ? 'Switch project folder' : 'Open project folder';
+  const title = switching && !newWindowOnly ? t('Switch project folder') : t('Open project folder');
   const { element, promise, cancel } = buildPickerPanel({
     recents,
     currentPath,
     title,
-    confirmLabel: newWindowOnly ? 'Open'
-      : switching ? 'Switch' : 'Open',
+    confirmLabel: newWindowOnly ? t('Open')
+      : switching ? t('Switch') : t('Open'),
     subtitle: newWindowOnly
       ? ''
       : switching
-        ? 'The tabs in a juggler session are stored inside the project folder. Switching '
-          + 'to a different folder will reload the tabs from that folder (or create a '
-          + 'new empty session in it).'
+        ? t('The tabs in a juggler session are stored inside the project folder. Switching to a different folder will reload the tabs from that folder (or create a new empty session in it).')
         : '',
     // Dismissal is the surface's job (outside-click / Esc / scrim / drag),
     // so the panel needs no in-body Cancel button.
@@ -456,11 +456,10 @@ export async function openProjectPicker(currentPath, session) {
   const busy = session ? await session.busyConversationNames() : [];
   if (busy.length > 0) {
     const list = busy.map((n) => `• ${n}`).join('\n');
-    const noun = busy.length === 1 ? 'conversation is' : 'conversations are';
     const ok = await showConfirm(
-      `${busy.length} ${noun} still working:\n\n${list}\n\nSwitching projects will stop and discard this work. Continue?`,
-      'Switch project?',
-      { confirmText: 'Switch project', cancelText: 'Stay', danger: true },
+      t('{count, plural, one {{count} conversation is} other {{count} conversations are}} still working:\n\n{list}\n\nSwitching projects will stop and discard this work. Continue?', { count: busy.length, list }),
+      t('Switch project?'),
+      { confirmText: t('Switch project'), cancelText: t('Stay'), danger: true },
     );
     if (!ok) return;
   }
@@ -470,7 +469,7 @@ export async function openProjectPicker(currentPath, session) {
     // Server broadcasts `project-changed`; session listener triggers full reload.
   } catch (err) {
     const msg = extractUserMessage(err);
-    await showAlert(msg, 'Open project');
+    await showAlert(msg, t('Open project'));
   }
 }
 
@@ -508,8 +507,8 @@ function previewPath(parent, name) {
  * @returns {string} A reason, or "" when the name is fine.
  */
 function folderNameProblem(name) {
-  if (name === '.' || name === '..') return 'That names the parent folder, not a new one';
-  if (/[/\\]/.test(name)) return 'A name cannot contain a slash — it is created inside the folder above';
+  if (name === '.' || name === '..') return t('That names the parent folder, not a new one');
+  if (/[/\\]/.test(name)) return t('A name cannot contain a slash — it is created inside the folder above');
   return '';
 }
 
@@ -539,22 +538,22 @@ export function openNewProjectPanel(recents = []) {
   const panel = document.createElement('div');
   panel.className = 'pp-panel pp-panel-popup';
   panel.setAttribute('role', 'dialog');
-  panel.setAttribute('aria-label', 'New project folder');
+  panel.setAttribute('aria-label', t('New project folder'));
   panel.innerHTML = `
     <div class="pp-header">
-      <span class="pp-title">New project folder</span>
-      <span class="pp-subtitle">Creates an empty folder and opens it.</span>
+      <span class="pp-title">${escapeHtml(t('New project folder'))}</span>
+      <span class="pp-subtitle">${escapeHtml(t('Creates an empty folder and opens it.'))}</span>
     </div>
     <div class="pp-body">
       <div class="pp-input-row">
-        <path-input dirs-only placeholder="Where to create it…" value="${parentValue.replace(/"/g, '&quot;')}" class="pp-path-input"></path-input>
-        ${hasNativeHost() ? '<button class="pp-btn pp-btn-browse" type="button">Browse…</button>' : ''}
+        <path-input dirs-only placeholder="${escapeHtml(t('Where to create it…'))}" value="${parentValue.replace(/"/g, '&quot;')}" class="pp-path-input"></path-input>
+        ${hasNativeHost() ? `<button class="pp-btn pp-btn-browse" type="button">${escapeHtml(t('Browse…'))}</button>` : ''}
       </div>
-      <input type="text" class="pp-name-input field-input" placeholder="Folder name" spellcheck="false" autocomplete="off">
+      <input type="text" class="pp-name-input field-input" placeholder="${escapeHtml(t('Folder name'))}" spellcheck="false" autocomplete="off">
       <div class="pp-status" aria-live="polite"></div>
     </div>
     <div class="pp-footer">
-      <button class="pp-btn pp-btn-open" disabled>Create</button>
+      <button class="pp-btn pp-btn-open" disabled>${escapeHtml(t('Create'))}</button>
     </div>
   `;
 
@@ -652,7 +651,7 @@ export function openNewProjectPanel(recents = []) {
       // request was to create something, and opening someone else's work
       // instead is a different decision.
       createBtn.disabled = false;
-      await showAlert(extractUserMessage(err), 'New project folder');
+      await showAlert(extractUserMessage(err), t('New project folder'));
     }
   }
 

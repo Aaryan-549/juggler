@@ -33,6 +33,9 @@ import {
   finishWorkspace
 } from '../services/workspace-provisioning.js';
 import { extractErrorMessage } from '../../sdk/lib/error-utils.js';
+import { t } from '../../sdk/lib/i18n.js';
+import workspaceProviderRegistry from '../registries/workspace-provider-registry.js';
+import { capabilityLabel } from '../utils/capability-label.js';
 import { createFileActions } from '../utils/properties-panel-helpers.js';
 import { setupColumnResize, startingColumnWidth } from '../utils/column-resize.js';
 import { showConfirm, showNotice } from './modal-dialog.js';
@@ -179,11 +182,13 @@ class WorkspacePanel extends HTMLElement {
    * repository the worktree is of, what the copy was taken from — and belongs
    * in the lines a reader expects to be filled in late, not in the head where
    * it would rewrite itself a second after the panel opened.
-   * @returns {string} The kind, or '' when its provider is not loaded.
+   * @returns {string} The kind, in the UI language, or '' when its provider is
+   *   not loaded.
    * @private
    */
   _kind() {
-    return workspaceKind(this._session, this._workspace) || '';
+    const kind = workspaceKind(this._session, this._workspace);
+    return kind ? capabilityLabel(kind, this._workspace?.providerId, workspaceProviderRegistry) : '';
   }
 
   render() {
@@ -195,7 +200,7 @@ class WorkspacePanel extends HTMLElement {
 
     const body = document.createElement('section');
     body.className = 'workspace-panel-body';
-    body.setAttribute('aria-label', 'Workspace');
+    body.setAttribute('aria-label', t('Workspace'));
 
     body.appendChild(this._head());
     body.appendChild(this._where());
@@ -261,7 +266,7 @@ class WorkspacePanel extends HTMLElement {
     const kind = this._kind();
     const what = document.createElement('div');
     what.className = 'workspace-panel-eyebrow';
-    what.textContent = kind ? `Workspace · ${kind}` : 'Workspace';
+    what.textContent = kind ? t('Workspace · {kind}', { kind }) : t('Workspace');
     head.appendChild(what);
 
     // The kind's own description, which the provider already wrote: "Git
@@ -271,7 +276,7 @@ class WorkspacePanel extends HTMLElement {
     if (note) {
       const says = document.createElement('p');
       says.className = 'workspace-panel-kind-note';
-      says.textContent = note;
+      says.textContent = capabilityLabel(note, this._workspace?.providerId, workspaceProviderRegistry);
       head.appendChild(says);
     }
 
@@ -325,7 +330,7 @@ class WorkspacePanel extends HTMLElement {
     if (base) {
       const from = document.createElement('p');
       from.className = 'workspace-panel-detail';
-      from.textContent = `Base workspace: ${base}`;
+      from.textContent = t('Base workspace: {base}', { base });
       section.appendChild(from);
     }
     return section;
@@ -371,7 +376,7 @@ class WorkspacePanel extends HTMLElement {
 
     const heading = document.createElement('h3');
     heading.className = 'workspace-panel-heading';
-    heading.textContent = 'Status';
+    heading.textContent = t('Status');
     section.appendChild(heading);
 
     const lines = document.createElement('div');
@@ -390,7 +395,7 @@ class WorkspacePanel extends HTMLElement {
     };
 
     if (!this._status) {
-      say('workspace-panel-pending', 'Reading…');
+      say('workspace-panel-pending', t('Reading…'));
       return section;
     }
 
@@ -404,11 +409,11 @@ class WorkspacePanel extends HTMLElement {
     // written twice, the second time with less in it. Only a provider that
     // flagged the work without describing it gets a line to say so.
     if (detail) say(`workspace-panel-detail${dirty ? ' workspace-panel-dirty' : ''}`, detail);
-    else if (dirty) say('workspace-panel-dirty', 'Uncommitted changes.');
+    else if (dirty) say('workspace-panel-dirty', t('Uncommitted changes.'));
     if (problem) say('workspace-panel-problem', problem);
     // A provider that answers with no opinion has still answered, and the
     // heading is already on screen by then. Saying so beats a heading over a gap.
-    if (!lines.children.length) say('workspace-panel-note', 'Nothing to report.');
+    if (!lines.children.length) say('workspace-panel-note', t('Nothing to report.'));
     return section;
   }
 
@@ -439,10 +444,10 @@ class WorkspacePanel extends HTMLElement {
     // there that it works somewhere else would be the opposite of true.
     const inProject = sameTree(this._session, this._workspace?.id ?? '', '');
     create.appendChild(this._actionLabel(
-      'Start a new conversation here',
+      t('Start a new conversation here'),
       inProject
-        ? 'It works in the project as usual, and is kept here with the others.'
-        : 'It works in this workspace’s own files, not the project’s.',
+        ? t('It works in the project as usual, and is kept here with the others.')
+        : t('It works in this workspace’s own files, not the project’s.'),
       'icon-plus'));
     create.addEventListener('click', () => this._create());
     rows.appendChild(create);
