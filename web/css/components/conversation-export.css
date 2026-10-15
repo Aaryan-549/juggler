@@ -1,0 +1,73 @@
+/*
+ *     ▄▄ ▄▄ ▄▄  ▄▄▄▄  ▄▄▄▄ ▄▄    ▄▄▄▄▄ ▄▄▄▄
+ *     ██ ██ ██ ██ ▄▄ ██ ▄▄ ██    ██▄▄  ██▄█▄   Copyright (c) 2026 Julian Storer
+ *   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
+ */
+
+/* ============================================================================
+   CONVERSATION EXPORT
+   The dialog that asks what a shared page of a conversation should include —
+   conversation-export-dialog.js. It wears the move dialog's chrome
+   (workspace-dialogs.css); what is here is only its own content: the text that
+   says what goes in, and the two options.
+   ============================================================================ */
+
+.conversation-export-body {
+    gap: 1rem;
+}
+
+.conversation-export-text {
+    color: var(--text-secondary);
+    line-height: 1.45;
+}
+
+/* The two choices, set apart from the prose around them: a checkbox beside a
+   label, and under the label what ticking it adds. */
+
+.conversation-export-options {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding: 0.75rem 1rem;
+    border: 0.0625rem solid var(--border-divider);
+    border-radius: var(--radius-md);
+}
+
+.conversation-export-option {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.625rem;
+}
+
+/* Nudged down to sit on the label's first line — with a translate rather than a
+   margin, so the markdown scope's first/last-child margin rules (a lower layer,
+   matching any element) have nothing here to contest. */
+
+.conversation-export-checkbox {
+    flex-shrink: 0;
+    translate: 0 0.15em;
+}
+
+.conversation-export-option-text {
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+    cursor: pointer;
+}
+
+.conversation-export-option-label {
+    color: var(--text-primary);
+}
+
+.conversation-export-option-hint {
+    color: var(--text-tertiary);
+    font-size: var(--font-size-sm);
+}
+
+/* Where the file goes, last, in the quieter voice: it is the reassurance, not
+   the question. */
+
+.conversation-export-note {
+    color: var(--text-tertiary);
+    font-size: var(--font-size-sm);
+}

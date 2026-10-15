@@ -228,6 +228,48 @@ export async function pickFile(title = '', dir = '') {
 }
 
 /**
+ * Save a file to the user's disk.
+ *
+ * In the desktop app the native host shows its Save dialog, suggesting `name`,
+ * and writes the file itself — the WebView does not handle downloads. In a
+ * browser, including a remote viewer, the file is downloaded under `name`, and
+ * the browser decides where it goes. Either way the bytes go no further than
+ * this machine: to the local host, or into a Blob.
+ * @param {string} name - The suggested file name.
+ * @param {string} content - The file's contents.
+ * @param {string} [mime] - Its type, for a browser download.
+ * @returns {Promise<string|null>} Where it went — the chosen path in the desktop
+ *   app, the file name for a browser download — or null if the user cancelled.
+ * @throws {Error} When the desktop host could not save it.
+ */
+export async function saveFile(name, content, mime = 'text/plain') {
+  const url = windowControlURL('save-file', `?${new URLSearchParams({ name })}`);
+  if (url) {
+    const resp = await fetch(url, { method: 'POST', body: content });
+    /** @type {{path?: string, error?: string}|null} */
+    const data = await resp.json().catch(() => null);
+    if (!resp.ok) throw new Error(data?.error || `Save failed (${resp.status})`);
+    return data && typeof data.path === 'string' && data.path ? data.path : null;
+  }
+  const href = URL.createObjectURL(new Blob([content], { type: mime }));
+  const link = document.createElement('a');
+  link.href = href;
+  link.download = name;
+  link.rel = 'noopener';
+  link.style.display = 'none';
+  document.body.appendChild(link);
+  try {
+    link.click();
+  } finally {
+    link.remove();
+    // The click starts the download from the URL; revoking it in the same task
+    // can cancel that in some engines, so it is left a while first.
+    setTimeout(() => URL.revokeObjectURL(href), 60_000);
+  }
+  return name;
+}
+
+/**
  * Top-level domains a scheme-less bare-domain href is recognised by: every
  * two-letter ccTLD (`co.uk`, `example.io`, `example.de`) plus the common
  * generic ones. A dotted first segment ending in anything else — `foo.bar/x`,

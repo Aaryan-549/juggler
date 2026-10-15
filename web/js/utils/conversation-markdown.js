@@ -55,7 +55,7 @@ function plain(value) {
  * @param {any} item - Message item.
  * @returns {string} The trimmed text, or `''`.
  */
-function textOf(item) {
+export function textOf(item) {
   const content = plain(itemField(item, 'content'));
   if (typeof content === 'string') return content.trim();
   if (Array.isArray(content)) {
@@ -73,7 +73,7 @@ function textOf(item) {
  * @param {any} item - Tool-action item.
  * @returns {string} The summary, or `''` when the input names nothing useful.
  */
-function toolSummary(item) {
+export function toolSummary(item) {
   const input = plain(itemField(item, 'toolInput'));
   if (!input || typeof input !== 'object') return '';
   for (const key of TOOL_SUMMARY_KEYS) {

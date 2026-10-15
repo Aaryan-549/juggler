@@ -9,6 +9,7 @@ of changes; this project follows semantic versioning.
 - New --allow-host flag serves Juggler behind a reverse proxy such as tailscale serve
 - Git pin reviews any scope: staged, unstaged, branch, last commit, or a git diff range
 - Copy a whole conversation as Markdown from its tab menu or footer
+- Export a conversation as a self-contained HTML page to share, from its tab menu or /export
 - batch_read's properties panel lists files with open, copy, reveal and pin buttons
 - LAN servers answer to local names like `juggler` or `mymac.local`, not just IPs
 - Turns cut off by a provider's server mid-stream are now retried automatically

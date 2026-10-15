@@ -2828,6 +2828,12 @@ class Conversation {
           this._session?.notifyConversationChange('command-manager:open-requested', { conversationId: this.id });
           break;
         }
+        case 'openExportDialog': {
+          // /export: the export dialog is app-level UI too, opened by app.js
+          // for this conversation.
+          this._session?.notifyConversationChange('conversation-export:open-requested', { conversationId: this.id });
+          break;
+        }
       }
     }
   }

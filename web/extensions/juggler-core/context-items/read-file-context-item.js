@@ -451,6 +451,15 @@ class ReadFileContextItem extends ContextItem {
 
   /**
    * @override
+   * @param {string} _toolName
+   * @returns {boolean} Always true: a read hands back the file itself
+   */
+  static resultIsFileContent(_toolName) {
+    return true;
+  }
+
+  /**
+   * @override
    * @param {HTMLElement} wrapper
    * @param {import('juggler/context-item').ToolActionRenderContext} ctx
    * @returns {{ skipResultSection?: boolean } | void} Render result; set skipResultSection when output is rendered inline

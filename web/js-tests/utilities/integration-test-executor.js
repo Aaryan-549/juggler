@@ -149,6 +149,7 @@ import { runTests as runHeaderUndoLockTests } from '../unit-tests/header-undo-lo
 import { runTests as runHeaderBarTests } from '../unit-tests/header-bar-test.js';
 import { runTests as runFooterMetaTests } from '../unit-tests/footer-meta-test.js';
 import { runTests as runConversationMarkdownTests } from '../unit-tests/conversation-markdown-test.js';
+import { runTests as runConversationHtmlTests } from '../unit-tests/conversation-html-test.js';
 import { runTests as runWriteFileActionTests } from '../unit-tests/write-file-action-test.js';
 import { runTests as runYjsCompatTests } from '../unit-tests/yjs-compat-test.js';
 import { runTests as runBase64Tests } from '../unit-tests/base64-test.js';
@@ -643,6 +644,7 @@ const UNIT_TEST_SUITES = [
   { name: 'unit:header-bar', run: runHeaderBarTests },
   { name: 'unit:footer-meta', run: runFooterMetaTests },
   { name: 'unit:conversation-markdown', run: runConversationMarkdownTests },
+  { name: 'unit:conversation-html', run: runConversationHtmlTests },
   { name: 'unit:write-file-action', run: runWriteFileActionTests },
   { name: 'unit:yjs-compat', run: runYjsCompatTests },
   { name: 'unit:base64', run: runBase64Tests },

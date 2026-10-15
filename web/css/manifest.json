@@ -545,6 +545,13 @@
 			]
 		},
 		{
+			"file": "components/conversation-export.css",
+			"layer": "components",
+			"owns": [
+				"conversation-export-*"
+			]
+		},
+		{
 			"file": "components/pinboard.css",
 			"layer": "components",
 			"owns": [

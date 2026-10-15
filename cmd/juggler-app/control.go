@@ -6,6 +6,7 @@ package main
 
 import (
 	"encoding/json"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -84,7 +85,8 @@ var windowActions = map[string]windowAction{
 	"pick-file": func(a *appState, w http.ResponseWriter, r *http.Request, e *winEntry) {
 		a.controlPickPath(w, r, e, "pick-file")
 	},
-	"updater": (*appState).handleUpdaterControl,
+	"save-file": (*appState).controlSaveFile,
+	"updater":   (*appState).handleUpdaterControl,
 }
 
 // handleWindowControl dispatches /win/<id>/<action>. The id selects the target
@@ -369,6 +371,77 @@ func (a *appState) controlPickPath(w http.ResponseWriter, r *http.Request, e *wi
 		a.setPickerDirectory(filepath.Dir(path))
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"path": path})
+}
+
+// maxSaveFileBytes caps what save-file will take from a page. An exported
+// conversation with every image inlined is the largest thing that asks; a body
+// past this is refused before any dialog is shown.
+const maxSaveFileBytes = 64 << 20
+
+// controlSaveFile saves what the page hands over to a file the user chooses: the
+// native Save dialog, as a sheet on the requesting window, suggesting the name
+// the page proposed, then the bytes written exactly as sent. The WebView has no
+// download handling of its own, so this is how a page in the desktop app puts a
+// file on disk; a browser client has no native host, never reaches here, and
+// downloads instead.
+//
+// Answers {"path": ...} with where it was written, or "" when the user cancelled.
+// A request that could never be written (see saveFileRequest) is refused before
+// the dialog goes up.
+func (a *appState) controlSaveFile(w http.ResponseWriter, r *http.Request, e *winEntry) {
+	name, body, status := saveFileRequest(r)
+	if status != http.StatusOK {
+		w.WriteHeader(status)
+		return
+	}
+	dialog := a.app.Dialog.SaveFile().
+		SetFilename(name).
+		CanCreateDirectories(true).
+		AttachToWindow(e.win)
+	if dir := usableDirectory(a.pickerDirectory()); dir != "" {
+		dialog = dialog.SetDirectory(dir)
+	}
+	path, err := dialog.PromptForSingleSelection()
+	if err != nil {
+		logf("save-file dialog failed: %v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	if path == "" {
+		writeJSON(w, http.StatusOK, map[string]string{"path": ""})
+		return
+	}
+	if err := os.WriteFile(path, body, 0o644); err != nil {
+		logf("save-file write failed: %v", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	a.setPickerDirectory(filepath.Dir(path))
+	writeJSON(w, http.StatusOK, map[string]string{"path": path})
+}
+
+// saveFileRequest reads a save-file request: the suggested file name from
+// ?name= — its last path element only, whichever separator the page used, so a
+// name can never point the dialog somewhere — and the body, which is the file.
+// A missing name or body is 400 and a body past maxSaveFileBytes is 413; the
+// status is 200 when there is something to save.
+func saveFileRequest(r *http.Request) (name string, body []byte, status int) {
+	name = strings.TrimSpace(r.URL.Query().Get("name"))
+	name = strings.TrimSpace(name[strings.LastIndexAny(name, `/\`)+1:])
+	if name == "" || name == "." || name == ".." {
+		return "", nil, http.StatusBadRequest
+	}
+	body, err := io.ReadAll(io.LimitReader(r.Body, maxSaveFileBytes+1))
+	if err != nil {
+		return "", nil, http.StatusBadRequest
+	}
+	if len(body) > maxSaveFileBytes {
+		return "", nil, http.StatusRequestEntityTooLarge
+	}
+	if len(body) == 0 {
+		return "", nil, http.StatusBadRequest
+	}
+	return name, body, http.StatusOK
 }
 
 // pickerOptions decides what a path chooser offers, from the action that asked

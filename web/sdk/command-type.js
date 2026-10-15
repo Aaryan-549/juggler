@@ -48,7 +48,7 @@ import { validateManifest } from './lib/manifest.js';
  * A declarative side-effect that the host application handles after command execution.
  * Commands never perform these operations directly — they declare intent and the host dispatches.
  * @typedef {object} CommandSideEffect
- * @property {'openThread'|'setDraft'|'openCommandManager'} type - Side effect type
+ * @property {'openThread'|'setDraft'|'openCommandManager'|'openExportDialog'} type - Side effect type
  * @property {Record<string, any>} [data] - Side effect payload
  */
 

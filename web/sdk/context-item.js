@@ -1080,6 +1080,19 @@ class ContextItem {
   }
 
   /**
+   * Whether this tool's output is the contents of files — what a reader would
+   * call "my source code" rather than a report about it. A conversation export
+   * leaves such output out unless the user asks for file contents, separately
+   * from tool details in general. Default false; a tool that reads files back
+   * verbatim overrides it.
+   * @param {string} _toolName - The (lowercased) tool name being exported
+   * @returns {boolean} True when the output is file contents
+   */
+  static resultIsFileContent(_toolName) {
+    return false;
+  }
+
+  /**
    * Human-readable title for a tool-action in the properties-panel header and
    * item card. Lets a plugin that drives several distinct operations through
    * one tool (e.g. the plan tool's submit vs step actions) label each one for

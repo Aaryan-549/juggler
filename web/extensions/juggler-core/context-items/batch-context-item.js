@@ -408,6 +408,15 @@ class BatchContextItem extends ContextItem {
 
   /**
    * @override
+   * @param {string} toolName
+   * @returns {boolean} True for batch_read, which hands back the files themselves
+   */
+  static resultIsFileContent(toolName) {
+    return toolName === 'batch_read';
+  }
+
+  /**
+   * @override
    * @param {HTMLElement} wrapper
    * @param {import('juggler/context-item').ToolActionRenderContext} ctx
    * @returns {{ skipResultSection?: boolean } | void} Render result; set skipResultSection when output is rendered inline

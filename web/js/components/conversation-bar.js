@@ -57,6 +57,7 @@ import { whyNotRebind, moveNeedsConfirmation, rebindConversation } from '../serv
 import { extractErrorMessage } from '../../sdk/lib/error-utils.js';
 import { copyToClipboard } from '../../sdk/lib/clipboard.js';
 import { conversationToMarkdown } from '../utils/conversation-markdown.js';
+import { exportConversation } from './conversation-export-dialog.js';
 import './bin-modal.js';
 import './info-rail.js';
 import './workspace-box-header.js';
@@ -2139,6 +2140,26 @@ class ConversationBar extends JugglerElement {
   }
 
   /**
+   * Offer a conversation's export dialog. Loaded first, like the Markdown copy,
+   * since the tab may be one not opened this session. Resolves once the dialog
+   * is up; the dialog then runs on its own.
+   * @param {string} conversationId
+   * @private
+   * @async
+   */
+  async _exportConversationHtml(conversationId) {
+    if (!this._session) return;
+    try {
+      await this._session.ensureConversationLoaded(conversationId);
+      const conversation = this._session.getConversation(conversationId);
+      if (!conversation) return;
+      void exportConversation(conversation);
+    } catch (error) {
+      await showAlert(extractErrorMessage(error), 'Export Failed');
+    }
+  }
+
+  /**
    * Detach the tab from layout and fly it toward the Bin button.
    * No-op if motion is reduced or either element is missing. The tab is
    * removed from `_cachedElements` so the next render() cleanup pass
@@ -2874,6 +2895,7 @@ registerContextMenuProvider({
       { label: 'Rename', onClick: () => bar._enterRenameMode(convId) },
       { label: 'Duplicate', onClick: () => { void bar._duplicateConversation(convId); } },
       { label: 'Copy Conversation to Clipboard', onClick: () => { void bar._copyConversationMarkdown(convId); } },
+      { label: 'Export as HTML…', onClick: () => { void bar._exportConversationHtml(convId); } },
     ];
     // Omit "Move to Bin" mid-loop — same intent as the CSS that hides the
     // per-tab bin button while running. _binConversation enforces this too;

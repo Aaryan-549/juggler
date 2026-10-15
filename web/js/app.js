@@ -48,6 +48,7 @@ import { normalizeAttachments } from './utils/attachments.js';
 import { itemField } from '../sdk/lib/message.js';
 import { showAlert, showNotice } from './components/modal-dialog.js';
 import { openCommandManager } from './components/command-editor-dialog.js';
+import { exportConversation } from './components/conversation-export-dialog.js';
 import { setFaultSink, reportFault } from './utils/fault-report.js';
 import { apiUrl, serverPath } from './utils/api-url.js';
 import { startWordOfMouth, noteComposerSend } from './components/word-of-mouth.js';
@@ -518,11 +519,16 @@ class JugglerApp {
     // (project switches reload the page, so session:loaded carries the
     // current path each time).
     const syncWindowTitle = () => updateWindowTitle(session.projectPath || '');
-    session.subscribe(/** @param {{type: string}} event */ (event) => {
+    session.subscribe(/** @param {{type: string, data?: any}} event */ (event) => {
       if (event.type === 'session:loaded') syncWindowTitle();
       // A command (/commands) asked for the manager: the model only announces
       // it, because the dialog is app-level UI.
       else if (event.type === 'command-manager:open-requested') openCommandManager();
+      // /export asked for its conversation's export dialog, likewise.
+      else if (event.type === 'conversation-export:open-requested') {
+        const conversation = session.getConversation(event.data?.conversationId || '');
+        if (conversation) void exportConversation(conversation);
+      }
     });
     syncWindowTitle();
 
