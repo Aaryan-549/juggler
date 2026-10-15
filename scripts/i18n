@@ -441,7 +441,9 @@ function cmdPseudo(sdk) {
 /** @param {any} sdk */
 function cmdCheck(sdk) {
   let status = 0;
-  const read = (f) => (fs.existsSync(f) ? fs.readFileSync(f, 'utf8') : '');
+  // A Windows checkout has CRLF line endings (`* text=auto`); a catalogue is
+  // out of date only if its content differs.
+  const read = (f) => (fs.existsSync(f) ? fs.readFileSync(f, 'utf8').replace(/\r\n/g, '\n') : '');
   for (const target of targets()) {
     const { messages, problems } = extract(sdk, target);
     for (const p of problems) {
