@@ -4,12 +4,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import PinboardItemType from 'juggler/pinboard-item-type';
+import { translator } from 'juggler/i18n';
 import { basename } from 'juggler/item-utils';
 import { buildPickerPanel, createElement, injectStylesOnce } from 'juggler/ui';
 import { stat } from 'juggler/ops';
 import { fetchLiveFile, renderLiveFileBody } from '../lib/live-file.js';
 import { absoluteFilePinPath, normalizeFilePinParameters } from '../lib/file-pin-config.js';
 import { pathPinController } from '../lib/path-pin.js';
+
+const t = translator('@juggler/core');
 
 injectStylesOnce('file-pin-styles', `
 .file-pin {
@@ -82,7 +85,7 @@ class FilePin extends PinboardItemType {
    * @returns {true|string} True when a project is open.
    */
   canAdd(active) {
-    return active?.project?.path ? true : 'No project';
+    return active?.project?.path ? true : t('No project');
   }
 
   /**
@@ -97,13 +100,13 @@ class FilePin extends PinboardItemType {
     document.body.appendChild(overlay);
 
     const { element, promise, cancel } = buildPickerPanel({
-      title: 'Add a file to view',
+      title: t('Add a file to view'),
       // A folder is as pinnable as a file — a trailing slash names one, and the
       // pin shows its tree — so the prompt says both rather than only the common
       // half.
-      placeholder: 'File or folder path…',
+      placeholder: t('File or folder path…'),
       dirsOnly: false,
-      confirmLabel: 'Add',
+      confirmLabel: t('Add'),
       showCancel: true,
       // Almost every file worth watching is in the open project, and without
       // this the native chooser opens wherever the app last was.
@@ -164,7 +167,7 @@ class FilePin extends PinboardItemType {
    */
   describe(config, active) {
     const path = config?.path || '';
-    if (!path) return { title: this.name };
+    if (!path) return { title: t(this.name) };
     const name = basename(path) || path;
     return {
       title: config.isDirectory ? `${name}/` : name,
@@ -278,7 +281,7 @@ class FilePin extends PinboardItemType {
       const relative = projectRelative(path, context.active?.project?.path || '');
       body.setAttribute('data-code-ref-path', relative || path);
       body.toggleAttribute('data-code-ref-absolute', !relative);
-      body.replaceChildren(createElement('div', 'file-content-loading', 'Loading…'));
+      body.replaceChildren(createElement('div', 'file-content-loading', t('Loading…')));
 
       const result = await fetchLiveFile(path, {
         signal: context.signal,
@@ -300,7 +303,7 @@ class FilePin extends PinboardItemType {
       const total = result.totalLines || 0;
       if (!result.isDirectory && shown && total > shown) {
         body.appendChild(createElement('div', 'file-pin__note',
-          `First ${shown} lines of ${total}.`));
+          t('{shown, plural, other {First {shown} lines of {total}.}}', { shown, total })));
       }
     };
 

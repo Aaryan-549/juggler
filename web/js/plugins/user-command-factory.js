@@ -15,6 +15,7 @@
 import CommandType from 'juggler/command-type';
 import providersCache from '../services/providers-cache.js';
 import { buildModelConfig } from '../model/model-config.js';
+import { t } from '../../sdk/lib/i18n.js';
 
 const DEFAULT_ICON = 'icon-slash';
 
@@ -138,7 +139,7 @@ export function makeUserCommandClass(def) {
     async execute(args, rest) {
       const text = expandTemplate(def.body || '', args, rest);
       const thread = this.messageThread;
-      if (!thread) return { handled: true, error: true, message: 'No active conversation' };
+      if (!thread) return { handled: true, error: true, message: t('No active conversation') };
 
       switch (runMode) {
         case 'draft':

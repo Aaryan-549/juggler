@@ -40,6 +40,19 @@ import { getExtensionCapabilities } from '../../../js/services/extensions.js';
 import workspaceProviderRegistry from '../../../js/registries/workspace-provider-registry.js';
 import contextItemRegistry from '../../../js/registries/context-item-registry.js';
 import ProjectFolderWorkspaceProvider from '../workspaces/project-folder-workspace-provider.js';
+import { underPseudoLocale } from '../../../js-tests/utilities/pseudo-locale.js';
+import { isPseudoLocalized } from '../../../sdk/lib/i18n.js';
+
+/** juggler-core's English for what a folder says, standing in for its catalogue. */
+const CORE_TEXT = [
+  'Folder', 'There is no such folder.', 'That is a file, not a folder.',
+  'Commands run here. The rest of the project stays readable.',
+  "Couldn't use that folder: the session has no project.", "Couldn't use that folder: none was named.",
+  'That is not on the same drive as the project.',
+  'That is the project itself, which the panel offers above.', 'That is outside the project.',
+  "Couldn't use {dir}: there is no such folder.", "Couldn't use {dir}: that is a file, not a folder.",
+  'The folder is missing.', 'Nothing was built for a folder, so nothing is left of it.'
+];
 
 /**
  * @typedef {object} TestResult
@@ -478,6 +491,75 @@ export async function runTests() {
         if (outcome) await outcome.undo();
         await ops.shell({ command: `rm -rf ${folder}` }).catch(() => {});
       }
+    });
+
+    await run('everything a folder says to the user is translated under en-XA', async () => {
+      /** @type {Record<string, string>} */
+      const shown = {};
+      await underPseudoLocale('project-folder-test', async () => {
+        // Hooks called directly, with `stat` stubbed: nothing is registered and
+        // nothing on disk is looked at.
+        const provider = new ProjectFolderWorkspaceProvider({});
+        /** @type {any} */
+        let found = { exists: false };
+        const ctx = { session: { projectPath: '/1' }, ops: { stat: async () => found } };
+
+        const container = document.createElement('div');
+        provider.renderSetup(container, { ...ctx, values: { folder: '2' } });
+        shown['field label'] = String(container.querySelector('label')?.textContent);
+        /** @type {any} The private hooks, which a test may reach. */
+        const hooks = provider;
+        const form = hooks._form;
+        const note = () => String(form.note.childNodes[0]?.textContent);
+        /**
+         * Look for what the field holds now, as the debounced check would.
+         * @param {string} typed - The field's value.
+         */
+        const check = async (typed) => {
+          clearTimeout(form.checking);
+          form.input.value = typed;
+          await hooks._check();
+        };
+        await check('2');
+        shown['missing verdict'] = note();
+        found = { exists: true, isDirectory: false };
+        await check('2');
+        shown['file verdict'] = note();
+        found = { exists: true, isDirectory: true };
+        await check('2');
+        shown['found note'] = note();
+        await check('../3');
+        shown['outside verdict'] = note();
+        clearTimeout(form.checking);
+
+        /**
+         * What a call threw.
+         * @param {() => any} fn - The call.
+         * @returns {Promise<string>} Its message.
+         */
+        const thrown = async (fn) => {
+          try {
+            await fn();
+            return '(nothing thrown)';
+          } catch (e) {
+            return e instanceof Error ? e.message : String(e);
+          }
+        };
+        shown['no-project refusal'] = await thrown(() => hooks._places({ folder: '2' }, {}));
+        shown['nothing-named refusal'] = await thrown(() => hooks._places({ folder: '' }, ctx));
+        shown['project-itself refusal'] = await thrown(() => hooks._places({ folder: '.' }, ctx));
+        shown['outside refusal'] = await thrown(() => hooks._places({ folder: '../3' }, ctx));
+        found = { exists: false };
+        shown['provision missing'] = await thrown(() => provider.provision({ folder: '2' }, ctx));
+        found = { exists: true, isDirectory: false };
+        shown['provision file'] = await thrown(() => provider.provision({ folder: '2' }, ctx));
+
+        shown['missing status'] = String((await provider.status({ available: false }, {}))?.detail);
+        shown['cleanup message'] = String((await provider.cleanupPartial({}, {}))?.message);
+      }, { '@juggler/core': CORE_TEXT });
+
+      const english = Object.entries(shown).filter(([, text]) => !isPseudoLocalized(text));
+      assert(english.length === 0, `still English under en-XA: ${JSON.stringify(english)}`);
     });
 
     await run('a folder is seeded with the project\'s instructions as well as its own', async () => {

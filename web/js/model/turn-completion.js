@@ -24,6 +24,7 @@
  */
 
 import { TOOL_STATES } from '../../sdk/lib/message.js';
+import { markUntranslated } from '../../sdk/lib/i18n.js';
 import { isRestingStatus } from './processing-status.js';
 
 /**
@@ -119,10 +120,14 @@ export function observeUntil(conversation, predicate, { timeoutMs = 5000, signal
   const metadata = doc.metadata;
   const root = doc.root;
   const suffix = label ? `: ${label}` : '';
+  // English whatever the UI language: a one-shot run hands these to the CLI as
+  // its `errorText` (engine-one-shot.js), which prints them inside its own
+  // English, and the engine that runs this follows the UI locale.
+  const aborted = () => new Error(markUntranslated(`Aborted waiting for condition${suffix}`));
 
   return new Promise((resolve, reject) => {
     if (signal?.aborted) {
-      reject(new Error(`Aborted waiting for condition${suffix}`));
+      reject(aborted());
       return;
     }
 
@@ -135,12 +140,12 @@ export function observeUntil(conversation, predicate, { timeoutMs = 5000, signal
 
     const onAbort = () => {
       cleanup();
-      reject(new Error(`Aborted waiting for condition${suffix}`));
+      reject(aborted());
     };
 
     const timer = setTimeout(() => {
       cleanup();
-      reject(new Error(`Timeout waiting for condition${suffix}`));
+      reject(new Error(markUntranslated(`Timeout waiting for condition${suffix}`)));
     }, timeoutMs);
 
     const check = () => {
@@ -179,6 +184,6 @@ export async function waitForTurnOutcome(conversation, { sinceTurn, timeoutMs = 
     const state = inspectTurn(conversation, items, { sinceTurn });
     if (state.done) outcome = state;
     return state.done;
-  }, { timeoutMs, signal, label: label || 'turn complete' });
+  }, { timeoutMs, signal, label: label || markUntranslated('turn complete') });
   return { parked: outcome.parked, parkedTool: outcome.parkedTool };
 }

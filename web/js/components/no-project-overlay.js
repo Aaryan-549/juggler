@@ -21,6 +21,8 @@ import wsService from '../services/websocket.js';
 import providersCache from '../services/providers-cache.js';
 import { openSettings } from '../services/settings-launcher.js';
 import { extractUserMessage } from '../../sdk/lib/error-utils.js';
+import { t, htmlSlots, withHtml } from '../../sdk/lib/i18n.js';
+import { escapeHtml } from '../../sdk/lib/html.js';
 import { hasNativeHost, reportFolderDropped } from '../../sdk/lib/window-control.js';
 import { showAlert } from './modal-dialog.js';
 import { openProjectInWindow } from './project-opening.js';
@@ -211,37 +213,32 @@ class NoProjectOverlay extends HTMLElement {
     // remote client would be advertising something that silently does nothing,
     // and on a remote client the folder is on the wrong machine entirely.
     const canDropFolders = hasNativeHost();
+    const product = 'Juggler'; // i18n-ignore: the product name, which the logo spells out
+    const welcome = escapeHtml(t('Welcome to Juggler'));
+    const footnoteMarkup = {
+      shortcuts: `<button type="button" class="onboarding-link np-shortcuts">${escapeHtml(t('keyboard shortcuts'))}</button>`,
+    };
 
     this.innerHTML = `
-      <section class="onboarding-panel" aria-label="Welcome to Juggler">
-        <div class="onboarding-logo" role="img" aria-label="Juggler"></div>
-        <h1 class="np-heading">Welcome to Juggler</h1>
-        <p class="np-lead">
-          Juggler is an AI coding agent designed around transparency, control, and fast iteration.
-          It works inside one project folder at a time.
-        </p>
+      <section class="onboarding-panel" aria-label="${welcome}">
+        <div class="onboarding-logo" role="img" aria-label="${product}"></div>
+        <h1 class="np-heading">${welcome}</h1>
+        <p class="np-lead">${escapeHtml(t('Juggler is an AI coding agent designed around transparency, control, and fast iteration. It works inside one project folder at a time.'))}</p>
 
         <div class="np-actions">
-          <button type="button" class="np-action btn-primary np-open">Open an existing folder…</button>
-          <button type="button" class="np-action np-new">Create a new folder to work in…</button>
+          <button type="button" class="np-action btn-primary np-open">${escapeHtml(t('Open an existing folder…'))}</button>
+          <button type="button" class="np-action np-new">${escapeHtml(t('Create a new folder to work in…'))}</button>
         </div>
 
-        ${canDropFolders ? '<p class="np-drop-hint">Or drag a folder onto this window.</p>' : ''}
+        ${canDropFolders ? `<p class="np-drop-hint">${escapeHtml(t('Or drag a folder onto this window.'))}</p>` : ''}
 
         <div class="np-recents" hidden></div>
 
-        <p class="np-explainer">
-          A project folder is just a folder on your computer — a codebase, or an empty
-          folder to start something in. Juggler works inside it and nowhere else.
-        </p>
+        <p class="np-explainer">${escapeHtml(t('A project folder is just a folder on your computer — a codebase, or an empty folder to start something in. Juggler works inside it and nowhere else.'))}</p>
 
         <div class="np-provider" aria-live="polite"></div>
 
-        <p class="np-footnote">
-          Once a project is open, ask Juggler about itself — it explains its own tools and
-          features. Or browse the
-          <button type="button" class="onboarding-link np-shortcuts">keyboard shortcuts</button>.
-        </p>
+        <p class="np-footnote">${withHtml(t('Once a project is open, ask Juggler about itself — it explains its own tools and features. Or browse the {shortcuts}.', htmlSlots(footnoteMarkup)), footnoteMarkup)}</p>
       </section>
     `;
 
@@ -299,7 +296,7 @@ class NoProjectOverlay extends HTMLElement {
     host.innerHTML = '';
     const label = document.createElement('div');
     label.className = 'np-recents-label';
-    label.textContent = 'Recent';
+    label.textContent = t('Recent');
     host.appendChild(label);
 
     for (const path of shown) {
@@ -376,12 +373,12 @@ class NoProjectOverlay extends HTMLElement {
 
     if (names.length === 0) {
       host.classList.add('np-provider--none');
-      text.textContent = 'No AI provider connected. Juggler needs one before it can answer.';
+      text.textContent = t('No AI provider connected. Juggler needs one before it can answer.');
       host.appendChild(text);
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'onboarding-link np-connect';
-      btn.textContent = 'Connect one';
+      btn.textContent = t('Connect one');
       btn.addEventListener('click', () => openSettings('providers'));
       host.appendChild(btn);
       return;
@@ -390,7 +387,9 @@ class NoProjectOverlay extends HTMLElement {
     host.classList.remove('np-provider--none');
     const named = names.slice(0, PROVIDERS_NAMED).join(', ');
     const rest = names.length - PROVIDERS_NAMED;
-    text.textContent = rest > 0 ? `Connected: ${named} and ${rest} more` : `Connected: ${named}`;
+    text.textContent = rest > 0
+      ? t('Connected: {named} and {rest, plural, other {# more}}', { named, rest })
+      : t('Connected: {named}', { named });
     host.appendChild(text);
   }
 
@@ -406,7 +405,7 @@ class NoProjectOverlay extends HTMLElement {
       await openProjectInWindow(path, () => apiService.openProject(path));
       // The server broadcasts `project-changed`; the session listener reloads.
     } catch (err) {
-      await showAlert(extractUserMessage(err), 'Open project');
+      await showAlert(extractUserMessage(err), t('Open project'));
     }
   }
 }

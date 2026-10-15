@@ -25,6 +25,7 @@
  */
 
 import { assert } from '../utilities/test-helpers.js';
+import { underPseudoLocale, assertPseudoLocalized } from '../utilities/pseudo-locale.js';
 import '../../js/components/conversation-bar.js';
 import '../../js/components/no-conversations-overlay.js';
 
@@ -263,6 +264,24 @@ export async function runTests() {
     } finally {
       bar.style.width = savedWidth;
     }
+    passed++;
+
+    // --- 9: under en-XA the overlay shows no plain English ----------------
+    // The logo's label is the product name alone, which stays as written, so
+    // it is skipped from the walk and checked for itself.
+    await underPseudoLocale('test-no-conversations', () => {
+      const xa = /** @type {any} */ (document.createElement('no-conversations-overlay'));
+      container.appendChild(xa);
+      try {
+        xa.setSession(createStubSession('/1', []));
+        assertPseudoLocalized(xa, { skip: '.onboarding-logo', atLeast: 2, where: 'no conversations' });
+        const logo = xa.querySelector('.onboarding-logo');
+        assert(logo?.getAttribute('aria-label') === 'Juggler',
+          `the logo should be labelled with the product name, got "${logo?.getAttribute('aria-label')}"`);
+      } finally {
+        xa.remove();
+      }
+    });
     passed++;
 
   } catch (error) {

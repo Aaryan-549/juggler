@@ -31,6 +31,8 @@
 import { windowControlURL } from '../../sdk/lib/window-control.js';
 import { fetchJson } from '../services/http.js';
 import JugglerElement from './juggler-element.js';
+import { t } from '../../sdk/lib/i18n.js';
+import { escapeHtml } from '../../sdk/lib/html.js';
 
 // Caption glyphs, drawn as 1px strokes on a 10×10 grid so they stay crisp and
 // match the thin-line Windows convention. currentColor lets them inherit the
@@ -70,13 +72,16 @@ class WindowCaptionControls extends JugglerElement {
     const wails = /** @type {any} */ (window).wails || {};
 
     if (this.childElementCount === 0) {
+      const minimise = escapeHtml(t('Minimise'));
+      const maximise = escapeHtml(t('Maximise'));
+      const close = escapeHtml(t('Close'));
       this.innerHTML = `
                 <button type="button" class="window-caption-btn" data-action="minimise"
-                        aria-label="Minimise" title="Minimise">${svg(GLYPH.minimise)}</button>
+                        aria-label="${minimise}" title="${minimise}">${svg(GLYPH.minimise)}</button>
                 <button type="button" class="window-caption-btn" data-action="maximise"
-                        aria-label="Maximise" title="Maximise">${svg(GLYPH.maximise)}</button>
+                        aria-label="${maximise}" title="${maximise}">${svg(GLYPH.maximise)}</button>
                 <button type="button" class="window-caption-btn window-caption-btn--close" data-action="close"
-                        aria-label="Close" title="Close">${svg(GLYPH.close)}</button>
+                        aria-label="${close}" title="${close}">${svg(GLYPH.close)}</button>
             `;
     }
 
@@ -123,7 +128,7 @@ class WindowCaptionControls extends JugglerElement {
   _renderMaxGlyph(maximised) {
     if (!this._maxBtn) return;
     this._maxBtn.innerHTML = svg(maximised ? GLYPH.restore : GLYPH.maximise);
-    const label = maximised ? 'Restore' : 'Maximise';
+    const label = maximised ? t('Restore') : t('Maximise');
     this._maxBtn.setAttribute('aria-label', label);
     this._maxBtn.setAttribute('title', label);
   }

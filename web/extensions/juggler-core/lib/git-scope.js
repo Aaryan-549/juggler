@@ -13,6 +13,10 @@
  * @module lib/git-scope
  */
 
+import { translator, markForTranslation } from 'juggler/i18n';
+
+const t = translator('@juggler/core');
+
 /** The scope a pin with none set reviews: the working tree against HEAD. */
 export const DEFAULT_SCOPE = '@uncommitted';
 
@@ -23,20 +27,37 @@ export const SCOPE_MAX_LENGTH = 256;
 export const RECENT_SCOPES = 8;
 
 /**
- * The comparisons offered by name, in the order the control lists them.
+ * The comparisons offered by name, in the order the control lists them. Labels
+ * and descriptions are English source text, translated where they are drawn.
  * @type {ReadonlyArray<{id: string, label: string, description: string}>}
  */
 export const SCOPE_PRESETS = Object.freeze([
-  { id: '@uncommitted', label: 'Working tree', description: 'Working tree against HEAD, staged and unstaged together' },
-  { id: '@staged', label: 'Staged', description: 'Staged against HEAD' },
-  { id: '@unstaged', label: 'Unstaged', description: 'Working tree against the index' },
-  { id: '@branch', label: 'Branch', description: 'Working tree against the merge-base with the default branch' },
-  { id: '@last', label: 'Last commit', description: 'Last commit against its parent' },
+  {
+    id: '@uncommitted',
+    label: markForTranslation('Working tree'),
+    description: markForTranslation('Working tree against HEAD, staged and unstaged together'),
+  },
+  { id: '@staged', label: markForTranslation('Staged'), description: markForTranslation('Staged against HEAD') },
+  {
+    id: '@unstaged',
+    label: markForTranslation('Unstaged'),
+    description: markForTranslation('Working tree against the index'),
+  },
+  {
+    id: '@branch',
+    label: markForTranslation('Branch'),
+    description: markForTranslation('Working tree against the merge-base with the default branch'),
+  },
+  {
+    id: '@last',
+    label: markForTranslation('Last commit'),
+    description: markForTranslation('Last commit against its parent'),
+  },
 ]);
 
-/** What the custom field accepts, said once where it is typed. */
-export const SCOPE_SYNTAX = 'A git diff expression: main...HEAD, main..feature, HEAD~3, '
-  + '--merge-base main, --cached [rev], --worktree';
+/** What the custom field accepts, said once where it is typed (English source text). */
+export const SCOPE_SYNTAX = markForTranslation('A git diff expression: main...HEAD, main..feature, HEAD~3, '
+  + '--merge-base main, --cached [rev], --worktree');
 
 /**
  * A scope as it is stored: whitespace folded, the default for anything that is
@@ -60,12 +81,14 @@ export function scopePreset(scope) {
 }
 
 /**
- * What to call a scope in a few words: a preset by its name, an expression as typed.
+ * What to call a scope in a few words: a preset by its name, in the active
+ * locale, an expression as typed.
  * @param {string} scope - A normalized scope.
  * @returns {string} The name.
  */
 export function scopeName(scope) {
-  return scopePreset(scope)?.label || scope;
+  const preset = scopePreset(scope);
+  return preset ? t(preset.label) : scope;
 }
 
 /**

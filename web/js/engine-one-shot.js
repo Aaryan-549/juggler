@@ -15,11 +15,13 @@
  * it is already the call the new-conversation tool makes from here.
  *
  * Exactly one reply is sent, whatever happens, because the process on the other
- * end is blocked on it.
+ * end is blocked on it. Its words are for that process: the CLI prints
+ * `errorText` inside its own English, so they are marked untranslated.
  * @module engine-one-shot
  */
 
 import { extractErrorMessage } from '../sdk/lib/error-utils.js';
+import { markUntranslated } from '../sdk/lib/i18n.js';
 import { waitForTurnOutcome } from './model/turn-completion.js';
 import wsService from './services/websocket.js';
 
@@ -57,7 +59,7 @@ export async function runOneShot(session, request, ready) {
   const requestId = String(request?.requestId || '');
   const prompt = String(request?.prompt || '');
   const strategyId = String(request?.strategyId || 'yolo');
-  const name = String(request?.name || 'Run');
+  const name = String(request?.name || markUntranslated('Run'));
   const timeoutMs = Number(request?.timeoutMs) || DEFAULT_TIMEOUT_MS;
 
   /** @type {{status: string, conversationId: string, turns: number, finalText: string, parkedTool: string, errorText: string}} */
@@ -76,13 +78,13 @@ export async function runOneShot(session, request, ready) {
     // indistinguishable from a run that is slow to finish, and both are the
     // caller's to give up on.
     if (ready) await ready;
-    if (!session) throw new Error('the engine has no session to run in');
-    if (!prompt.trim()) throw new Error('there is no prompt to run');
+    if (!session) throw new Error(markUntranslated('the engine has no session to run in'));
+    if (!prompt.trim()) throw new Error(markUntranslated('there is no prompt to run'));
 
     const conversationId = await session.createConversation(name, { origin: 'one-shot-run' });
     result.conversationId = conversationId;
     const conversation = session.getConversation(conversationId);
-    if (!conversation) throw new Error(`conversation ${conversationId} was created but could not be opened`);
+    if (!conversation) throw new Error(markUntranslated(`conversation ${conversationId} was created but could not be opened`));
 
     configureForUnattendedUse(conversation, strategyId);
 
@@ -91,12 +93,12 @@ export async function runOneShot(session, request, ready) {
     const sinceTurn = conversation.completedTurns;
 
     const dropped = await conversation.sendMessage(prompt, null, conversation.rootMessageThread);
-    if (dropped) throw new Error(`the prompt was not delivered: ${dropped}`);
+    if (dropped) throw new Error(markUntranslated(`the prompt was not delivered: ${dropped}`));
 
     const { parked, parkedTool } = await waitForTurnOutcome(conversation, {
       sinceTurn,
       timeoutMs: timeoutMs + ENGINE_PATIENCE_MARGIN_MS,
-      label: 'one-shot run'
+      label: markUntranslated('one-shot run')
     });
 
     result.turns = Math.max(0, conversation.completedTurns - sinceTurn);
@@ -165,7 +167,7 @@ function lastErrorText(conversation) {
   for (let i = items.length - 1; i >= 0; i--) {
     const item = items[i];
     if (item?.get?.('type') !== 'error') continue;
-    return String(item.get('message') || item.get('content') || 'the turn ended in an error');
+    return String(item.get('message') || item.get('content') || markUntranslated('the turn ended in an error'));
   }
   return '';
 }

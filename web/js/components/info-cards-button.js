@@ -33,9 +33,12 @@ import {
   showCard,
   INFO_CARDS_CHANGED_EVENT,
 } from '../services/info-cards-manager.js';
+import infoCardRegistry from '../registries/info-card-registry.js';
+import { capabilityLabel } from '../utils/capability-label.js';
 import { presentPopup } from '../utils/popup-surface.js';
 import { applyMenuRoles, attachMenuKeyboard, focusMenuItem } from '../utils/menu-roles.js';
 import { CHECK_SVG, INFO_SVG, withAttrs } from '../utils/icons.js';
+import { t } from '../../sdk/lib/i18n.js';
 import JugglerElement from './juggler-element.js';
 
 // Sized to sit beside the bar's 1rem Bin icon.
@@ -77,8 +80,8 @@ class InfoCardsButton extends JugglerElement {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'info-cards-button';
-    btn.title = 'Show info cards';
-    btn.setAttribute('aria-label', 'Show info cards');
+    btn.title = t('Show info cards');
+    btn.setAttribute('aria-label', t('Show info cards'));
     btn.setAttribute('aria-haspopup', 'menu');
     btn.setAttribute('aria-expanded', 'false');
     btn.innerHTML = INFO_ICON_SVG;
@@ -169,15 +172,15 @@ class InfoCardsButton extends JugglerElement {
 
     const heading = document.createElement('li');
     heading.className = 'category-header';
-    heading.textContent = 'Info cards';
+    heading.textContent = t('Info cards');
     list.appendChild(heading);
 
     if (cards.length === 0) {
       const empty = document.createElement('li');
       empty.className = 'menu-item unavailable';
-      empty.textContent = 'No info cards.';
+      empty.textContent = t('No info cards.');
       list.appendChild(empty);
-      applyMenuRoles(list, 'Info cards');
+      applyMenuRoles(list, t('Info cards'));
       this._menu.replaceChildren(list);
       return;
     }
@@ -199,7 +202,8 @@ class InfoCardsButton extends JugglerElement {
 
       const label = document.createElement('span');
       label.className = 'menu-item-name';
-      label.textContent = card.name;
+      // A manifest literal, extracted into the owning extension's catalogue.
+      label.textContent = capabilityLabel(card.name, card.id, infoCardRegistry);
 
       row.append(check, label);
       row.addEventListener('click', (e) => {
@@ -211,7 +215,7 @@ class InfoCardsButton extends JugglerElement {
       list.appendChild(row);
     }
 
-    applyMenuRoles(list, 'Info cards');
+    applyMenuRoles(list, t('Info cards'));
     this._menu.replaceChildren(list);
   }
 

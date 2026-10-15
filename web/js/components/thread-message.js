@@ -8,6 +8,7 @@ import { getThreadStatus, getThreadDisplayContent, paintThreadSummary, paintThre
   threadHasWorkOutstanding } from '../utils/thread-display.js';
 import { applyCollapsible } from '../utils/collapsible.js';
 import { canonicalThread } from '../model/thread-alias.js';
+import { t } from '../../sdk/lib/i18n.js';
 
 /**
  * Character count above which a thread's markdown summary is clamped
@@ -117,7 +118,7 @@ class ThreadMessage extends HTMLElement {
     btn.className = 'thread-action-btn thread-stop-btn';
     btn.title = label;
     btn.setAttribute('aria-label', label);
-    btn.textContent = 'Stop';
+    btn.textContent = t('Stop');
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       // The run is the canonical thread's; an alias id names no transcript to
@@ -263,8 +264,8 @@ class ThreadMessage extends HTMLElement {
         // action it does not perform.
         (msgEl || body).appendChild(this._buildStopButton(
           status?.openRun === true
-            ? 'Stop waiting for this thread'
-            : 'Stop this thread'
+            ? t('Stop waiting for this thread')
+            : t('Stop this thread')
         ));
       }
 

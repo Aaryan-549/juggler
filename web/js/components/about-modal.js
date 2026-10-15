@@ -10,6 +10,8 @@ import { dragGuard } from '../utils/drag-guard.js';
 import JugglerElement from './juggler-element.js';
 import { apiUrl } from '../utils/api-url.js';
 import { durationToken } from '../utils/modal-scrim.js';
+import { t, markForTranslation, htmlSlots, withHtml } from '../../sdk/lib/i18n.js';
+import { escapeHtml } from '../../sdk/lib/html.js';
 
 /**
  * AboutModal - Shows information about the application
@@ -21,6 +23,9 @@ import { durationToken } from '../utils/modal-scrim.js';
  */
 /** ms between the box opening and the first club leaving the hand. */
 const CLUB_LEAD_IN = 600;
+
+/** Shown in place of the version when the server does not give one. */
+const UNKNOWN_VERSION = markForTranslation('Unknown');
 
 class AboutModal extends JugglerElement {
   constructor() {
@@ -74,7 +79,7 @@ class AboutModal extends JugglerElement {
       errorPrefix: '[AboutModal] Failed to fetch version',
       fallback: null,
     });
-    return data?.version || 'Unknown';
+    return data?.version || UNKNOWN_VERSION;
   }
 
   /**
@@ -137,36 +142,38 @@ class AboutModal extends JugglerElement {
       return;
     }
 
+    const author = { author: '<a href="https://github.com/julianstorer" target="_blank" rel="noopener noreferrer" style="white-space: nowrap">Julian Storer</a>' };
+    const version = this._version === UNKNOWN_VERSION ? t(UNKNOWN_VERSION) : this._version;
+    // i18n-ignore: the only literal text left is the site's URL, shown as written
     this.innerHTML = `
             <modal-backdrop class="about-backdrop"></modal-backdrop>
             <modal-panel class="about-container">
                 <header class="about-header">
                     <div class="about-logo">${LOGO_WITH_NAME_SVG}</div>
-                    <span class="about-version">${this._version}</span>
+                    <span class="about-version">${escapeHtml(version)}</span>
                 </header>
 
                 <main class="about-content">
                     <p class="about-description">
-                        A plugin-powered visual AI coding agent.
+                        ${escapeHtml(t('A plugin-powered visual AI coding agent.'))}
                     </p>
                     <p class="about-description">
-                        Created in a moment of madness by <a href="https://github.com/julianstorer" target="_blank" rel="noopener noreferrer" style="white-space: nowrap">Julian Storer</a>
+                        ${withHtml(t('Created in a moment of madness by {author}', htmlSlots(author)), author)}
                     </p>
                     <p class="about-description">
-                      Juggler is still very new, and I'd love to hear people's opinions about it -
-                      please visit the discord group to chat or hear more about the roadmap!
+                      ${escapeHtml(t('Juggler is still very new, and I\'d love to hear people\'s opinions about it - please visit the discord group to chat or hear more about the roadmap!'))}
                     </p>
                     <p class="about-link">
                         <a href="https://juggler.studio" target="_blank" rel="noopener noreferrer">https://juggler.studio</a>
                     </p>
                     <p class="about-link">
-                        <a href="https://discord.gg/HyqZwKvSMd" target="_blank" rel="noopener noreferrer">Click here to join the discord server</a>
+                        <a href="https://discord.gg/HyqZwKvSMd" target="_blank" rel="noopener noreferrer">${escapeHtml(t('Click here to join the discord server'))}</a>
                     </p>
                 </main>
 
                 <footer class="about-footer">
                     <button class="about-button btn-primary" id="about-close">
-                        Close
+                        ${escapeHtml(t('Close'))}
                     </button>
                 </footer>
             </modal-panel>

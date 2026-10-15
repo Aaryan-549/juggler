@@ -1,0 +1,365 @@
+//     ▄▄ ▄▄ ▄▄  ▄▄▄▄  ▄▄▄▄ ▄▄    ▄▄▄▄▄ ▄▄▄▄
+//     ██ ██ ██ ██ ▄▄ ██ ▄▄ ██    ██▄▄  ██▄█▄   Copyright (c) 2026 Julian Storer
+//   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
+
+/**
+ * The workspace dialogs — the move confirmation
+ * (`components/workspace-move-dialog.js`), the reconnect question
+ * (`components/workspace-reconnect-dialog.js`) and the finish dialog
+ * (`components/workspace-finish-dialog.js`) — and a workspace box's header
+ * (`components/workspace-box-header.js`) follow the UI language in every state
+ * they draw.
+ *
+ * Both run against stand-in sessions and conversations, so nothing is moved:
+ * the one move pressed is refused by a throw, and the reconnect's register
+ * call is answered by a fetch stub. The workspace provider registry holds only
+ * a stand-in provider for the duration, and is put back afterwards.
+ * @module unit-tests/workspace-dialogs-test
+ */
+
+import { openWorkspaceMove } from '../../js/components/workspace-move-dialog.js';
+import { openWorkspaceReconnect } from '../../js/components/workspace-reconnect-dialog.js';
+import { openWorkspaceFinish } from '../../js/components/workspace-finish-dialog.js';
+import '../../js/components/workspace-box-header.js';
+import { setupRows, adoptSetupRow } from '../../js/services/workspace-places.js';
+import workspaceProviderRegistry from '../../js/registries/workspace-provider-registry.js';
+import WorkspaceProvider from '../../sdk/workspace-provider.js';
+import { isPseudoLocalized } from '../../sdk/lib/i18n.js';
+import { assert, waitFor } from '../utilities/test-helpers.js';
+import { underPseudoLocale, shownStrings } from '../utilities/pseudo-locale.js';
+
+const PROVIDER_ID = 'i18n-dialogs-provider';
+
+/** A provider that finds one place with no workspace, and makes nothing. */
+class FindsOnePlace extends WorkspaceProvider {
+  static MANIFEST = {
+    id: PROVIDER_ID,
+    name: 'Somewhere, for testing',
+    version: '1.0.0',
+    description: 'Finds one place so the reconnect dialog has an offer to draw',
+  };
+
+  /** @type {boolean} Whether reconcile reports the place. */
+  static offering = false;
+
+  /**
+   * @param {any[]} workspaces - This provider's rows.
+   * @returns {Promise<any>} One orphaned artifact while offering, else none.
+   */
+  async reconcile(workspaces) {
+    void workspaces;
+    return {
+      orphanedWorkspaces: [],
+      orphanedArtifacts: FindsOnePlace.offering
+        ? [{ id: 'i18n-dialogs-1', label: '8', detail: '9', workspace: { root: '/2/8', label: '8', meta: {} } }]
+        : [],
+      confirmed: [],
+    };
+  }
+}
+
+const DIRTY_PROVIDER_ID = 'i18n-dialogs-dirty-provider';
+
+/** A provider whose every tree holds uncommitted work. */
+class HoldsWork extends WorkspaceProvider {
+  static MANIFEST = {
+    id: DIRTY_PROVIDER_ID,
+    name: 'Dirty, for testing',
+    version: '1.0.0',
+    description: 'Reports uncommitted work so a box header draws its mark',
+  };
+
+  /**
+   * @param {any} workspace - The row being reported on.
+   * @returns {Promise<any>} Uncommitted work, always.
+   */
+  async status(workspace) {
+    void workspace;
+    return { dirty: true };
+  }
+}
+
+/**
+ * A JSON response, as the server would send it.
+ * @param {number} status - HTTP status.
+ * @param {any} body - The body.
+ * @returns {Response} The response.
+ */
+const json = (status, body) => new window.Response(JSON.stringify(body), {
+  status, headers: { 'Content-Type': 'application/json' },
+});
+
+/**
+ * Run the workspace-dialogs tests.
+ * @returns {Promise<{passed: number, failed: number, errors: string[]}>} Aggregated test results.
+ */
+export async function runTests() {
+  /** @type {string[]} */
+  const errors = [];
+  let passed = 0;
+  let failed = 0;
+
+  /**
+   * @param {string} name
+   * @param {() => Promise<void>} fn
+   */
+  const run = async (name, fn) => {
+    try {
+      await fn();
+      passed++;
+    } catch (e) {
+      failed++;
+      errors.push(`${name}: ${e instanceof Error ? `${e.message}\n${e.stack}` : String(e)}`);
+    }
+  };
+
+  await run('en-XA: the move and reconnect dialogs draw no plain English in any state', async () => {
+    const registry = /** @type {any} */ (workspaceProviderRegistry);
+    const savedItems = new Map(registry.items);
+    const savedExtensions = new Map(registry.itemExtensions);
+    const savedPaths = new Map(registry.modulePaths);
+    registry.items.clear();
+    const added = registry.registerClass(FindsOnePlace, { extensionId: 'test', modulePath: '(test)' });
+    const originalFetch = window.fetch;
+    /** @type {'fail'|'succeed'} How the next register call is answered. */
+    let register = 'fail';
+
+    /** @type {{where: string, text: string}[]} */
+    const shown = [];
+    /**
+     * Record everything a dialog shows in one state.
+     * @param {string} where - The state.
+     * @param {string} [skip] - Data to leave out.
+     */
+    const collect = (where, skip) => {
+      const root = document.querySelector('.workspace-move-overlay');
+      assert(root, `a dialog on screen (${where})`);
+      const texts = shownStrings(/** @type {Element} */ (root), skip);
+      assert(texts.length >= 3, `the dialog drew something (${where}), got ${JSON.stringify(texts)}`);
+      for (const text of texts) shown.push({ where, text });
+    };
+    const overlay = () => /** @type {HTMLElement} */ (document.querySelector('.workspace-move-overlay'));
+
+    try {
+      assert(added.registered, `the stand-in provider registered, got ${JSON.stringify(added)}`);
+      await underPseudoLocale('workspace-dialogs-test', async () => {
+        window.fetch = /** @type {typeof fetch} */ (async (input, init) => {
+          if (String(input).includes('/session/workspaces') && init?.method === 'POST') {
+            return register === 'fail'
+              ? json(409, { error: '7' })
+              : json(200, { workspace: { id: 'ws_lost', root: '/2/8', label: '8', state: 'ready', providerId: PROVIDER_ID } });
+          }
+          return originalFetch(input, init);
+        });
+
+        // ---- Move: from a workspace to the project folder. ----
+        const session = {
+          projectPath: '/1',
+          workspaces: [],
+          getWorkspace: (/** @type {string} */ id) => (id === 'ws_from' ? { id, label: '4', root: '/5/6' } : undefined),
+          workspaceRoot: (/** @type {string} */ id) => (id === 'ws_from' ? '/5/6' : id ? '' : '/1'),
+        };
+        let throwOnAsk = false;
+        const moving = {
+          session,
+          workspaceId: 'ws_from',
+          get isProcessing() {
+            if (throwOnAsk) throw new Error('7');
+            return false;
+          },
+        };
+        const toProject = openWorkspaceMove(moving, '');
+        const dataSkip = '.workspace-move-from .workspace-move-now-label, .workspace-move-now-path';
+        collect('move, to the project folder', dataSkip);
+
+        // Pressed: the busy redraw happens before the first await, so it is on
+        // screen when the click returns; the throw then lands as the error.
+        throwOnAsk = true;
+        /** @type {HTMLButtonElement} */ (overlay().querySelector('.workspace-move-commit')).click();
+        assert(/** @type {HTMLButtonElement} */ (overlay().querySelector('.workspace-move-commit')).disabled,
+          'the press disables Move while it is in flight');
+        collect('move, in flight', dataSkip);
+        await waitFor(() => !!overlay()?.querySelector('.setup-error'), { description: 'the refusal' });
+        assert(overlay().querySelector('.setup-error')?.textContent === '7',
+          `the error is shown as given, got ${JSON.stringify(overlay().querySelector('.setup-error')?.textContent)}`);
+        collect('move, refused', `${dataSkip}, .setup-error`);
+        /** @type {HTMLElement} */ (overlay().querySelector('.workspace-move-cancel')).click();
+        assert((await toProject).moved === false, 'cancelling the move moves nothing');
+
+        // ---- Move: from the project folder to a workspace. ----
+        const fromProject = { session, workspaceId: '', isProcessing: false };
+        const toWorkspace = openWorkspaceMove(fromProject, 'ws_from');
+        collect('move, to a workspace', '.workspace-move-to .workspace-move-now-label, .workspace-move-now-path');
+        /** @type {HTMLElement} */ (overlay().querySelector('.workspace-move-close')).click();
+        assert((await toWorkspace).moved === false, 'closing the move moves nothing');
+
+        // ---- Reconnect: one conversation, nothing on offer. ----
+        const lost = { id: 'c1', workspaceId: 'ws_lost', session: /** @type {any} */ (null) };
+        const lonely = { conversations: new Map([['c1', lost]]), workspaces: [], projectPath: '/1' };
+        lost.session = lonely;
+        FindsOnePlace.offering = false;
+        const alone = openWorkspaceReconnect(lost);
+        assert(overlay().querySelector('.setup-row-detail'), 'with nothing on offer, the dialog says so');
+        collect('reconnect, one conversation, nothing on offer');
+        /** @type {HTMLElement} */ (overlay().querySelector('.workspace-move-cancel')).click();
+        assert((await alone).reconnected === false, 'cancelling reconnects nothing');
+
+        // ---- Reconnect: three conversations, one place on offer. ----
+        const many = { conversations: new Map(), workspaces: /** @type {any[]} */ ([]), projectPath: '/1' };
+        for (const id of ['c1', 'c2', 'c3']) many.conversations.set(id, { id, workspaceId: 'ws_lost', session: many });
+        const stranded = many.conversations.get('c1');
+        FindsOnePlace.offering = true;
+        const mine = `.setup-choice:not(:has([data-row-id*="${PROVIDER_ID}"]))`;
+        const offered = openWorkspaceReconnect(stranded);
+        try {
+          await waitFor(() => !!overlay()?.querySelector(`[data-row-id*="${PROVIDER_ID}"]`),
+            { description: 'the stand-in place to be offered' });
+          const offer = () => /** @type {HTMLElement} */ (overlay().querySelector(`[data-row-id*="${PROVIDER_ID}"]`));
+          collect('reconnect, three conversations, a place on offer',
+            `.setup-row-label, [data-row-id*="${PROVIDER_ID}"] .setup-row-detail, ${mine}`);
+
+          // The server refuses: its answer is shown as given.
+          register = 'fail';
+          offer().click();
+          await waitFor(() => !!overlay()?.querySelector('.setup-error'), { description: 'the server refusal' });
+          collect('reconnect, refused by the server',
+            `.setup-row-label, [data-row-id*="${PROVIDER_ID}"] .setup-row-detail, ${mine}, .setup-error`);
+
+          // The offer is taken elsewhere, then the stale row is pressed.
+          const stale = offer();
+          register = 'succeed';
+          const rowId = String(stale.dataset.rowId);
+          assert(await adoptSetupRow(many, rowId), 'the offer is taken from under the dialog');
+          stale.click();
+          await waitFor(() => !overlay()?.querySelector(`[data-row-id*="${PROVIDER_ID}"]`)
+            && !!overlay()?.querySelector('.setup-error'), { description: 'the "no longer on offer" error' });
+          collect('reconnect, the place went', mine);
+          /** @type {HTMLElement} */ (overlay().querySelector('.workspace-move-close')).click();
+          assert((await offered).reconnected === false, 'closing reconnects nothing');
+        } finally {
+          // The offer table outlives this suite; leave nothing of ours on it.
+          register = 'succeed';
+          for (const row of setupRows(many)) {
+            if (row.kind === 'adopt' && String(row.id).includes(PROVIDER_ID)) {
+              await adoptSetupRow(many, row.id).catch(() => {});
+            }
+          }
+          FindsOnePlace.offering = false;
+        }
+      });
+    } finally {
+      window.fetch = originalFetch;
+      document.querySelectorAll('.workspace-move-overlay').forEach((el) => el.remove());
+      registry.items.clear();
+      for (const [k, v] of savedItems) registry.items.set(k, v);
+      registry.itemExtensions.clear();
+      for (const [k, v] of savedExtensions) registry.itemExtensions.set(k, v);
+      registry.modulePaths.clear();
+      for (const [k, v] of savedPaths) registry.modulePaths.set(k, v);
+    }
+
+    const raw = shown.filter(({ text }) => !isPseudoLocalized(text));
+    assert(raw.length === 0, `plain English under en-XA: ${JSON.stringify(raw)}`);
+  });
+
+  await run('en-XA: the finish dialog draws no plain English in any state', async () => {
+    /** @type {{where: string, text: string}[]} */
+    const shown = [];
+    const overlay = () => /** @type {HTMLElement} */ (document.querySelector('.workspace-finish-overlay'));
+    /**
+     * Record everything the dialog shows in one state. What the ending
+     * declares and the file list's rows are data, written as digits, so a
+     * string of digits alone is the fixture's, not a message.
+     * @param {string} where - The state.
+     */
+    const collect = (where) => {
+      const root = overlay();
+      assert(root, `a dialog on screen (${where})`);
+      const texts = shownStrings(root).filter((text) => !/^[\d/\s]+$/.test(text));
+      assert(texts.length >= 3, `the dialog drew something (${where}), got ${JSON.stringify(texts)}`);
+      for (const text of texts) shown.push({ where, text });
+    };
+    const cancel = () => /** @type {HTMLElement} */ (overlay().querySelector('.workspace-finish-cancel')).click();
+
+    try {
+      await underPseudoLocale('workspace-finish-dialog-test', async () => {
+        // ---- Everything an ending can declare, over more files than are drawn. ----
+        const files = Array.from({ length: 60 }, (_, i) => ({ state: '7', path: `/8/${i}` }));
+        const full = openWorkspaceFinish({
+          id: 'commit',
+          label: '3',
+          description: '4',
+          prompt: {
+            label: '5', placeholder: '6', confirmLabel: '9', multiline: true, requiresWork: true, hint: '2',
+            alternative: { label: '1', hint: '0' },
+          },
+        }, { status: { dirty: true, files, fileCount: 1234 }, warning: '11', conversation: { id: 'c1' } });
+        assert(overlay().querySelector('.workspace-finish-work-rest'), 'more files than are drawn says how many more');
+        collect('every field declared, many files');
+        cancel();
+        assert((await full) === null, 'cancelling answers nothing');
+
+        // ---- Nothing to commit, one file listed. ----
+        const idle = openWorkspaceFinish({
+          id: 'commit', label: '3', prompt: { requiresWork: true, alternative: { label: '1' } },
+        }, { status: { dirty: false, files: [{ state: '7', path: '/8' }] }, conversation: { id: 'c1' } });
+        assert(overlay().querySelector('.setup-field-note-error'), 'with nothing changed, the field says so');
+        collect('nothing to commit, one file');
+        cancel();
+        await idle;
+
+        // ---- An ending that declares nothing at all: every fallback. ----
+        const bare = openWorkspaceFinish({ id: 'x' }, {});
+        collect('nothing declared');
+        /** @type {HTMLElement} */ (overlay().querySelector('.workspace-move-close')).click();
+        await bare;
+      });
+    } finally {
+      document.querySelectorAll('.workspace-finish-overlay').forEach((el) => el.remove());
+    }
+
+    const raw = shown.filter(({ text }) => !isPseudoLocalized(text));
+    assert(raw.length === 0, `plain English under en-XA: ${JSON.stringify(raw)}`);
+  });
+
+  await run('en-XA: a workspace box header holding uncommitted work says so in the UI language', async () => {
+    const registry = /** @type {any} */ (workspaceProviderRegistry);
+    const savedItems = new Map(registry.items);
+    const savedExtensions = new Map(registry.itemExtensions);
+    const savedPaths = new Map(registry.modulePaths);
+    const added = registry.registerClass(HoldsWork, { extensionId: 'test', modulePath: '(test)' });
+    const holder = document.createElement('div');
+    document.body.appendChild(holder);
+
+    /** @type {string[]} */
+    let texts = [];
+    try {
+      assert(added.registered, `the stand-in provider registered, got ${JSON.stringify(added)}`);
+      await underPseudoLocale('workspace-box-header-test', async () => {
+        const header = /** @type {any} */ (document.createElement('workspace-box-header'));
+        holder.appendChild(header);
+        header.setContext({
+          session: {},
+          workspace: { id: 'ws_dirty', label: '8', root: '/8', state: 'ready', providerId: DIRTY_PROVIDER_ID },
+        });
+        await waitFor(() => header.classList.contains('is-dirty'), { description: 'the uncommitted-work mark' });
+        assert(header.getAttribute('title'), 'a header holding work has a tooltip saying so');
+        texts = shownStrings(holder).filter((text) => !/^[\d/\s]+$/.test(text));
+      });
+    } finally {
+      holder.remove();
+      registry.items.clear();
+      for (const [k, v] of savedItems) registry.items.set(k, v);
+      registry.itemExtensions.clear();
+      for (const [k, v] of savedExtensions) registry.itemExtensions.set(k, v);
+      registry.modulePaths.clear();
+      for (const [k, v] of savedPaths) registry.modulePaths.set(k, v);
+    }
+
+    assert(texts.length >= 1, `the header showed its tooltip, got ${JSON.stringify(texts)}`);
+    const raw = texts.filter((text) => !isPseudoLocalized(text));
+    assert(raw.length === 0, `plain English under en-XA: ${JSON.stringify(raw)}`);
+  });
+
+  return { passed, failed, errors };
+}

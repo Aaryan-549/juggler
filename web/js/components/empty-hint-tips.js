@@ -32,6 +32,7 @@
 import JugglerElement from './juggler-element.js';
 import keyShortcutManager from '../services/key-shortcut-manager.js';
 import { allTips, isSeen, areTipsShown, TIPS_CHANGED_EVENT } from '../services/tips-manager.js';
+import { t } from '../../sdk/lib/i18n.js';
 
 /** @typedef {import('../services/tips-manager.js').Tip} Tip */
 
@@ -68,7 +69,7 @@ function chevron(dir) {
  */
 function rotation() {
   const touch = typeof window.matchMedia === 'function' && window.matchMedia(TOUCH_QUERY).matches;
-  return touch ? allTips().filter((t) => t.kind !== 'shortcut') : allTips();
+  return touch ? allTips().filter((tip) => tip.kind !== 'shortcut') : allTips();
 }
 
 class EmptyHintTips extends JugglerElement {
@@ -168,7 +169,7 @@ class EmptyHintTips extends JugglerElement {
     btn.className = which === 'prev'
       ? 'btn-ghost empty-hint-tips__nav empty-hint-tips__nav--prev'
       : 'btn-ghost empty-hint-tips__nav empty-hint-tips__nav--next';
-    btn.setAttribute('aria-label', which === 'prev' ? 'Previous tip' : 'Next tip');
+    btn.setAttribute('aria-label', which === 'prev' ? t('Previous tip') : t('Next tip'));
     btn.innerHTML = chevron(which === 'prev' ? 'left' : 'right');
     btn.addEventListener('click', () => {
       this.step(which === 'prev' ? -1 : 1);
@@ -237,7 +238,8 @@ class EmptyHintTips extends JugglerElement {
 
   /**
    * One tip's markup. Shortcut tips lead with the live key glyph, formatted now
-   * so a rebinding shows on the next render. Built with
+   * so a rebinding shows on the next render, and its English text
+   * is translated here. Built with
    * createElement/textContent (CSP-safe).
    * @param {Tip} tip
    * @returns {HTMLElement} The tip element.
@@ -258,11 +260,11 @@ class EmptyHintTips extends JugglerElement {
         title.appendChild(key);
       }
     }
-    title.appendChild(document.createTextNode(tip.title));
+    title.appendChild(document.createTextNode(t(tip.title)));
 
     const body = document.createElement('div');
     body.className = 'empty-hint-tips__body';
-    body.textContent = tip.body;
+    body.textContent = t(tip.body);
 
     slot.append(title, body);
     slot.setAttribute('data-tip-id', tip.id);

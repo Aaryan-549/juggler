@@ -22,6 +22,16 @@ import pinboardItemRegistry from '../../../js/registries/pinboard-item-registry.
 import pinboardStore from '../../../js/services/pinboard-store.js';
 import pinboardView from '../../../js/services/pinboard-view.js';
 import { assert } from '../../../js-tests/utilities/test-helpers.js';
+import { underPseudoLocale, shownStrings } from '../../../js-tests/utilities/pseudo-locale.js';
+import { isPseudoLocalized } from '../../../sdk/lib/i18n.js';
+
+/** juggler-core's English for this card, standing in for its catalogue. */
+const CORE_TEXT = [
+  'Checking…', 'No git repository', 'No changed files', 'Workspace: {workspace}',
+  'Review changes in the Pinboard', 'Open Git status in the Pinboard',
+  'Review changes', 'Open in the Pinboard', 'Review changes →',
+  '{count} changed', '{count} staged', '{changed} changed, {staged} staged',
+];
 
 /**
  * @typedef {object} TestResult
@@ -414,6 +424,39 @@ export async function runTests(_ctx) {
     // Nothing to assert about the DOM after removal; what matters is that
     // unsubscribing is what stops the shared poll when the last surface goes.
     assert(gitStatusCache.get() === null, 'the reset in teardown should have cleared the snapshot');
+  });
+
+  // --- en-XA ----------------------------------------------------------------
+
+  await test('en-XA: every state the card can be in is translated, the server\u2019s refusal is not', async () => {
+    await underPseudoLocale('git-status-card-test', async () => {
+      /** @type {string[]} */
+      const shown = [];
+      // Names are digits: the workspace and repo badges are data, the counts are
+      // numbers inside a message.
+      const states = /** @type {[string, any][]} */ ([
+        ['checking', null],
+        ['no repository', { root: '/tmp/1', workspace: '2', repos: [] }],
+        ['clean', { root: '/tmp/1', workspace: '2', repos: [repo()] }],
+        ['dirty, both sides', { root: '/tmp/1', workspace: '2', repos: [repo({ changed: 3, staged: 4, total: 7 })] }],
+        ['dirty, changed only', { root: '/tmp/1', repos: [repo({ changed: 3, total: 3 })] }],
+        ['dirty, staged only', { root: '/tmp/1', repos: [repo({ path: '5', staged: 4, total: 4 })] }],
+      ]);
+      for (const withPin of [false, true]) {
+        if (withPin) enableGitPin(); else pinboardItemRegistry.reset();
+        for (const [, status] of states) {
+          const m = await mount(status);
+          shown.push(...shownStrings(m.contentEl, '.info-card__git-repo'));
+          for (const badge of m.contentEl.querySelectorAll('.info-card__git-repo[title]')) {
+            shown.push(String(badge.getAttribute('title')));
+          }
+          m.teardown();
+        }
+      }
+      const raw = shown.filter((s) => !isPseudoLocalized(s));
+      assert(shown.length >= 20, `expected the states to show text, got ${JSON.stringify(shown)}`);
+      assert(raw.length === 0, `plain English under en-XA: ${JSON.stringify(raw)}`);
+    }, { '@juggler/core': CORE_TEXT });
   });
 
   return { passed, failed, errors };

@@ -27,6 +27,14 @@ import { writeFileOp } from '../../../js/services/ops-api.js';
 import pinboardItemRegistry from '../../../js/registries/pinboard-item-registry.js';
 import { addFilePath } from 'juggler/ui';
 import { assert } from '../../../js-tests/utilities/test-helpers.js';
+import { underPseudoLocale } from '../../../js-tests/utilities/pseudo-locale.js';
+import { isPseudoLocalized } from '../../../sdk/lib/i18n.js';
+
+/** juggler-core's English for this pin, standing in for its catalogue. */
+const CORE_TEXT = [
+  'No project', 'File', 'Add a file to view', 'File or folder path…', 'Add', 'Loading…', 'Refresh',
+  '{shown, plural, other {First {shown} lines of {total}.}}',
+];
 
 /**
  * @typedef {object} TestResult
@@ -769,6 +777,61 @@ export async function runTests(ctx) {
     assert(folder.querySelector('[aria-label="Copy path to clipboard"]') && folder.querySelector('reveal-button'),
       'but keeps the two that mean something for a folder');
     assert(!!pinButton(folder), 'and can be put on the board like anything else');
+  });
+
+  // ========================================================================
+  // en-XA
+  // ========================================================================
+
+  await test('en-XA: the add reason, tab, dialog, loading state, cut-short note and Refresh are translated', async () => {
+    await underPseudoLocale('file-pin-test', async () => {
+      /** @type {Record<string, string>} */
+      const shown = {};
+      shown['add reason'] = String(pin.canAdd(/** @type {any} */ ({ project: { path: '' } })));
+      shown['tab title'] = String(pin.describe({}, /** @type {any} */ ({ project: { path: '/1' } })).title);
+
+      // The dialog's own words. Its Cancel and Browse buttons are the picker's.
+      const { panel, input, answer, abort } = openDialog();
+      try {
+        shown['dialog title'] = String(panel.querySelector('.pp-title')?.textContent);
+        shown['dialog placeholder'] = String(input?.getAttribute('placeholder'));
+        shown['dialog confirm'] = String(panel.querySelector('.pp-btn-open')?.textContent).trim();
+      } finally {
+        abort.abort();
+        await answer;
+      }
+
+      // Every read is answered here, and cut short, so the note has to speak.
+      const realFetch = window.fetch;
+      window.fetch = /** @type {any} */ (async (/** @type {any} */ url, /** @type {any} */ init) => {
+        if (!String(url).includes('/ops/call')) return realFetch(url, init);
+        const { operation } = JSON.parse(init.body);
+        const data = operation === 'stat'
+          ? { exists: true, isDirectory: false }
+          : { path: '/1/2.txt', exists: true, content: '1\n2', lineCount: 2, totalLines: 7 };
+        return new window.Response(JSON.stringify({ success: true, data }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } });
+      });
+      try {
+        const mounted = mount({ path: '/1/2.txt' });
+        try {
+          shown.loading = String(mounted.body.querySelector('.file-content-loading')?.textContent);
+          const deadline = Date.now() + 5000;
+          while (!mounted.body.querySelector('.file-pin__note') && Date.now() < deadline) {
+            await new Promise((r) => { setTimeout(r, 20); });
+          }
+          shown['cut-short note'] = String(mounted.body.querySelector('.file-pin__note')?.textContent);
+          shown['refresh action'] = String(mounted.controller.getActions?.()[0]?.label);
+        } finally {
+          mounted.teardown();
+        }
+      } finally {
+        window.fetch = realFetch;
+      }
+
+      const raw = Object.entries(shown).filter(([, s]) => !isPseudoLocalized(s));
+      assert(raw.length === 0, `plain English under en-XA: ${JSON.stringify(raw)}`);
+    }, { '@juggler/core': CORE_TEXT });
   });
 
   return { passed, failed, errors };

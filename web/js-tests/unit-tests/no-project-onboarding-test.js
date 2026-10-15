@@ -29,6 +29,8 @@
 
 import { assert } from '../utilities/test-helpers.js';
 import { assertDialogPopover } from '../utilities/menu-assertions.js';
+import { underPseudoLocale, shownStrings } from '../utilities/pseudo-locale.js';
+import { t, isPseudoLocalized } from '../../sdk/lib/i18n.js';
 import { closePopupById } from '../../js/utils/popup-manager.js';
 import apiService from '../../js/services/api.js';
 import wsService from '../../js/services/websocket.js';
@@ -386,6 +388,87 @@ export async function runTests() {
     document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
     document.body.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     assert(!livePanel(), 'a click outside left the new-folder panel on screen');
+    passed++;
+
+    // --- 19: under en-XA every state the panel draws is translated ----------
+    // Paths and provider names are data, so the fixtures are digits; the
+    // recents themselves are nothing but a path and are skipped, as is the
+    // logo, whose label is the product name and stays as written. Everything
+    // seen is collected and judged once at the end, so a run before the fix
+    // lists all of it.
+    await underPseudoLocale('test-no-project', async () => {
+      /** @type {string[]} */
+      const raw = [];
+      /**
+       * @param {Element} root
+       * @param {string} where
+       * @param {string} [skip]
+       */
+      const collect = (root, where, skip = '.onboarding-logo, .np-recent') => {
+        const shown = shownStrings(root, skip);
+        assert(shown.length >= 1, `nothing shown (${where})`);
+        for (const s of shown) if (!isPseudoLocalized(s)) raw.push(`${where}: ${s}`);
+      };
+
+      // First run, nothing connected.
+      recents = [];
+      providers = [];
+      received = true;
+      const first = /** @type {any} */ (document.createElement('no-project-overlay'));
+      container.appendChild(first);
+      first.setSession(createStubSession(''));
+      await settle();
+      assert(!!first.querySelector('.np-connect'), 'the no-provider state was not drawn');
+      collect(first, 'first run, no provider');
+      const logo = first.querySelector('.onboarding-logo');
+      assert(logo?.getAttribute('aria-label') === 'Juggler',
+        `the logo should be labelled with the product name, got "${logo?.getAttribute('aria-label')}"`);
+
+      // Two providers connected, and more than the line names.
+      providers = [provider('1', true), provider('2', true), provider('3', true)];
+      wsService._emit('providers-update', providers);
+      collect(first, 'connected, with more');
+      // Exactly what the line names.
+      providers = [provider('1', true)];
+      wsService._emit('providers-update', providers);
+      collect(first, 'connected');
+      first.remove();
+
+      // A returning user: the recents list and its label.
+      recents = ['/1/2', '/3/4'];
+      const returningXa = /** @type {any} */ (document.createElement('no-project-overlay'));
+      container.appendChild(returningXa);
+      returningXa.setSession(createStubSession(''));
+      await settle();
+      assert(returningXa.querySelectorAll('.np-recent').length === 2, 'the recents were not drawn');
+      collect(returningXa, 'returning');
+
+      // The drop hint only draws under a native host, which this page never
+      // has; its message is checked straight from the catalogue.
+      const hint = t('Or drag a folder onto this window.');
+      if (!isPseudoLocalized(hint)) raw.push(`drop hint: ${hint}`);
+
+      // A failed open reports itself in an alert.
+      const realOpen = apiService.openProject;
+      apiService.openProject = () => Promise.reject(new Error('1'));
+      try {
+        /** @type {HTMLElement|null} */ (returningXa.querySelector('.np-recent'))?.click();
+        /** @returns {HTMLElement|null} The alert, once it is up. */
+        const alertEl = () => /** @type {HTMLElement|null} */ (document.querySelector('modal-dialog .modal-title'));
+        for (let i = 0; i < 50 && !alertEl()?.textContent?.trim().startsWith('['); i++) await Promise.resolve();
+        const modal = /** @type {HTMLElement|null} */ (document.querySelector('modal-dialog'));
+        assert(!!modal && !!alertEl(), 'a failed open showed no alert');
+        collect(/** @type {HTMLElement} */ (modal), 'open failed', '.modal-message');
+        /** @type {HTMLElement|null} */ (modal?.querySelector('.modal-button') ?? null)?.click();
+        await settle();
+      } finally {
+        apiService.openProject = realOpen;
+        endProjectOpen();
+        returningXa.remove();
+      }
+
+      assert(raw.length === 0, `plain English under en-XA: ${JSON.stringify(raw)}`);
+    });
     passed++;
   } catch (error) {
     failed++;

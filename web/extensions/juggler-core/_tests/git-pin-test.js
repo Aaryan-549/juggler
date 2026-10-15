@@ -17,6 +17,9 @@
 import GitPin from '../pins/git-pin.js';
 import gitReviewService from '../../../js/services/git-review-service.js';
 import { assert } from '../../../js-tests/utilities/test-helpers.js';
+import { underPseudoLocale } from '../../../js-tests/utilities/pseudo-locale.js';
+import { isPseudoLocalized } from '../../../sdk/lib/i18n.js';
+import { DEFAULT_SCOPE, SCOPE_PRESETS, SCOPE_SYNTAX } from '../lib/git-scope.js';
 
 /**
  * @typedef {object} TestResult
@@ -1296,6 +1299,29 @@ export async function runTests(_ctx) {
   });
 
   // --- the scope ------------------------------------------------------------
+
+  await test('en-XA: the scope presets, their descriptions and the expression syntax are translated where drawn', async () => {
+    await underPseudoLocale('git-pin-test', async () => {
+      const m = await mounted({ manifest: manifestOf([]) });
+      /** @type {string[]} */
+      const shown = [];
+      const select = /** @type {HTMLSelectElement} */ (m.body.querySelector('.git-pin__scope-select'));
+      for (const option of [...select.options].filter((o) => SCOPE_PRESETS.some((p) => p.id === o.value))) {
+        shown.push(option.textContent || '', option.title);
+      }
+      shown.push(/** @type {HTMLInputElement} */ (m.body.querySelector('.git-pin__scope-input')).title);
+      m.teardown();
+      // A scoped tab names its preset; an expression is data, shown as typed.
+      for (const preset of SCOPE_PRESETS.filter((p) => p.id !== DEFAULT_SCOPE)) {
+        shown.push(String(pin.describe({ scope: preset.id }).subtitle));
+      }
+      assert(shown.length === SCOPE_PRESETS.length * 3, `expected every preset drawn, got ${JSON.stringify(shown)}`);
+      const raw = shown.filter((s) => !isPseudoLocalized(s));
+      assert(raw.length === 0, `plain English under en-XA: ${JSON.stringify(raw)}`);
+      const typed = pin.describe({ scope: 'main...HEAD' }).subtitle;
+      assert(typed === 'main...HEAD', `an expression is shown as typed: ${typed}`);
+    }, { '@juggler/core': [...SCOPE_PRESETS.flatMap((p) => [p.label, p.description]), SCOPE_SYNTAX] });
+  });
 
   await test('a pin with no scope reviews the working tree against HEAD, as it always has', async () => {
     const m = await mounted({ manifest: manifestOf([{ path: 'a.js', index: 'M', worktree: '.' }]) });

@@ -28,9 +28,12 @@
  */
 
 import InfoCardType from 'juggler/info-card-type';
+import { translator } from 'juggler/i18n';
 import gitStatusCache from '../../../js/services/git-status-cache.js';
 import pinboardView from '../../../js/services/pinboard-view.js';
 import { countsPhrase, repoLabel } from '../lib/git-status.js';
+
+const t = translator('@juggler/core');
 
 /**
  * Make a body-styled line element. Used for the whole-card status messages
@@ -85,7 +88,7 @@ function inTree(workspace, nodes) {
   const badge = document.createElement('span');
   badge.className = 'info-card__git-repo';
   badge.textContent = workspace;
-  badge.title = `Workspace: ${workspace}`;
+  badge.title = t('Workspace: {workspace}', { workspace });
   row.appendChild(badge);
   return [row, ...nodes];
 }
@@ -117,13 +120,13 @@ function withLauncher(nodes, review = false) {
   const button = document.createElement('button');
   button.type = 'button';
   button.className = 'info-card__git-launch';
-  button.setAttribute('aria-label', review ? 'Review changes in the Pinboard' : 'Open Git status in the Pinboard');
-  button.title = review ? 'Review changes' : 'Open in the Pinboard';
+  button.setAttribute('aria-label', review ? t('Review changes in the Pinboard') : t('Open Git status in the Pinboard'));
+  button.title = review ? t('Review changes') : t('Open in the Pinboard');
   button.append(...nodes);
   if (review) {
     const cue = document.createElement('div');
     cue.className = 'info-card__git-review';
-    cue.textContent = 'Review changes →';
+    cue.textContent = t('Review changes →');
     button.appendChild(cue);
   }
   // addSource dedupes: the Git pin is a singleton, so a second click reveals the
@@ -145,17 +148,17 @@ function render(contentEl) {
     // reason is a conversation bound to a workspace that cannot be reached, and
     // the server's own words for that are better than any we would invent.
     const error = gitStatusCache.getError();
-    contentEl.replaceChildren(...withLauncher([line(error || 'Checking…')]));
+    contentEl.replaceChildren(...withLauncher([line(error || t('Checking…'))]));
     return;
   }
   const repos = snap.repos || [];
   if (repos.length === 0) {
-    contentEl.replaceChildren(...withLauncher(inTree(snap.workspace, [line('No git repository')])));
+    contentEl.replaceChildren(...withLauncher(inTree(snap.workspace, [line(t('No git repository'))])));
     return;
   }
   const dirty = repos.filter((r) => r.changed > 0 || r.staged > 0);
   if (dirty.length === 0) {
-    contentEl.replaceChildren(...withLauncher(inTree(snap.workspace, [line('No changed files')])));
+    contentEl.replaceChildren(...withLauncher(inTree(snap.workspace, [line(t('No changed files'))])));
     return;
   }
   // Only the lone-repo-at-root case hides its location; anything else labels.

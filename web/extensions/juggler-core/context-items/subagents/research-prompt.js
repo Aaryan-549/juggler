@@ -3,6 +3,7 @@
 //   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   Apache-2.0 - see LICENSE
 // SPDX-License-Identifier: Apache-2.0
 
+import { markUntranslated } from 'juggler/i18n';
 import { subagentBrief } from './subagent-brief.js';
 
 /**
@@ -13,15 +14,15 @@ import { subagentBrief } from './subagent-brief.js';
  * @type {string}
  */
 export const RESEARCH_GUIDANCE = subagentBrief({
-  label: 'RESEARCH',
-  scope: 'from the open web',
+  label: markUntranslated('RESEARCH'),
+  scope: markUntranslated('from the open web'),
   rules: [
-    'Read more than one source. A single page is a claim; agreement across '
-    + 'sources, or the primary docs, is evidence.',
-    'Check what is actually installed here before answering. You have `read`, '
+    markUntranslated('Read more than one source. A single page is a claim; agreement across '
+    + 'sources, or the primary docs, is evidence.'),
+    markUntranslated('Check what is actually installed here before answering. You have `read`, '
     + '`grep` and `glob` for exactly that — lockfiles, manifests, vendored '
-    + 'source. Advice for the wrong version is worse than no advice.',
-    'Cite a URL for every claim you make.',
-    'You have no shell and can change nothing: this is a reading job.'
+    + 'source. Advice for the wrong version is worse than no advice.'),
+    markUntranslated('Cite a URL for every claim you make.'),
+    markUntranslated('You have no shell and can change nothing: this is a reading job.')
   ]
 });

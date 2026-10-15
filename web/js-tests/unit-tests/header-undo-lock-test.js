@@ -19,9 +19,12 @@ import {
   initializeRegistries,
   createTestSession,
   createTestConversation,
-  assert
+  assert,
+  waitFor
 } from '../utilities/test-helpers.js';
 import { pingWorker } from '../utilities/worker-test-hooks.js';
+import { underPseudoLocale } from '../utilities/pseudo-locale.js';
+import { isPseudoLocalized } from '../../sdk/lib/i18n.js';
 import { setupHeaderControls } from '../../js/utils/header-controls.js';
 
 /**
@@ -95,7 +98,20 @@ export async function runTests() {
     const session = await createTestSession();
     const conversation = await createTestConversation(session);
 
-    setupHeaderControls(session);
+    // Keep hold of the header's session listener, so the en-XA case can redraw
+    // the project chip without telling the session's other subscribers anything.
+    /** @type {((event: {type: string}) => void)|null} */
+    let headerListener = null;
+    const realSubscribe = session.subscribe;
+    session.subscribe = /** @type {any} */ ((/** @type {any} */ fn) => {
+      headerListener = fn;
+      return realSubscribe.call(session, fn);
+    });
+    try {
+      setupHeaderControls(session);
+    } finally {
+      session.subscribe = realSubscribe;
+    }
 
     // Create a real undo group so canUndo() is true — otherwise "disabled"
     // would prove nothing (the button is disabled when there's nothing to
@@ -164,9 +180,54 @@ export async function runTests() {
       'Cmd/Ctrl+Z must work again once the worker idles'
     );
     passed++;
+
+    // --- en-XA: every title and label the header controls draw -------------
+    assert(!!headerListener, 'precondition: the header subscribed to the session');
+    const pathLabel = /** @type {HTMLElement} */ (root.querySelector('.ppd-path'));
+    const pathChip = /** @type {HTMLElement} */ (root.querySelector('#project-path-chip'));
+    const { default: apiService } = await import('../../js/services/api.js');
+    /** @type {string[]} */
+    const shown = [];
+    const savedPath = session.projectPath;
+    const realNewWindow = apiService.newWindow;
+    const realShowModal = /** @type {any} */ (window).showModal;
+    try {
+      await underPseudoLocale('test-header-controls', async () => {
+        conversation._doc.setMetadata('processingState', { status: 'streaming', turnCounter: 3 });
+        shown.push(undoBtn.title, redoBtn.title);
+        conversation._doc.setMetadata('processingState', { status: 'idle', turnCounter: 4 });
+        shown.push(undoBtn.title, redoBtn.title);
+
+        session.projectPath = '';
+        /** @type {any} */ (headerListener)({ type: 'session:loaded' });
+        shown.push(pathLabel.textContent || '', pathChip.title);
+        // A path of digits, so the data cannot read as English.
+        session.projectPath = '/1/2';
+        /** @type {any} */ (headerListener)({ type: 'session:loaded' });
+        assert(pathLabel.textContent === '/1/2', `the chip shows the path as given, got "${pathLabel.textContent}"`);
+        shown.push(...pathChip.title.split('\n'));
+
+        // A window that cannot be opened says so, under a translated title.
+        /** @type {any[]} */
+        const alerts = [];
+        /** @type {any} */ (window).showModal = async (/** @type {any} */ opts) => { alerts.push(opts); };
+        apiService.newWindow = async () => { throw new Error('1'); };
+        window.dispatchEvent(new CustomEvent('juggler:new-window'));
+        await waitFor(() => alerts.length > 0, { description: 'the new-window failure alert' });
+        shown.push(alerts[0].title);
+      });
+    } finally {
+      session.projectPath = savedPath;
+      apiService.newWindow = realNewWindow;
+      /** @type {any} */ (window).showModal = realShowModal;
+      /** @type {any} */ (headerListener)({ type: 'session:loaded' });
+    }
+    const raw = shown.filter((s) => !isPseudoLocalized(s));
+    assert(raw.length === 0, `plain English under en-XA (header controls): ${JSON.stringify(raw)}`);
+    passed++;
   } catch (e) {
     failed++;
-    errors.push(e instanceof Error ? e.message : String(e));
+    errors.push(e instanceof Error ? `${e.message}\n${e.stack}` : String(e));
   } finally {
     root.remove();
   }

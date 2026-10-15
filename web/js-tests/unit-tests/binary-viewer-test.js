@@ -21,6 +21,11 @@ import BinaryFileViewer from '../../extensions/juggler-core/viewers/binary-file-
 import TextFileViewer from '../../extensions/juggler-core/viewers/text-file-viewer.js';
 import ImageFileViewer from '../../extensions/juggler-core/viewers/image-file-viewer.js';
 import { createFileSource, toDescriptor } from '../../sdk/file-source.js';
+import { isPseudoLocalized } from '../../sdk/lib/i18n.js';
+import { underPseudoLocale, shownStrings } from '../utilities/pseudo-locale.js';
+
+/** The viewer's English messages, registered pseudo-localised under its extension id. */
+const CORE_TEXT = ['No viewer for this file.', 'Kind', 'Size', 'Modified', '.{ext} file', 'Binary', 'Unknown'];
 
 /**
  * @param {boolean} cond - Assertion condition
@@ -181,6 +186,43 @@ export async function runTests() {
   tally(check(
     !extracted.text && !!extracted.warning?.includes('cannot be read as text'),
     `extract() must contribute a warning and no text, got ${JSON.stringify(extracted)}`, errors));
+
+  // Under en-XA every word the panel draws is translated, in each of the three
+  // kinds it can name. The size and the modified time are formatted data (by
+  // `formatFileSize` and `formatRelativeDateTime`), so their cells are skipped;
+  // the file names are digits so the kind's extension can sit inside a message.
+  const xaDir = `binary-view-xa-${stamp}`;
+  try {
+    await underPseudoLocale('binary-viewer-test', async () => {
+      /** @type {Record<string, string>} */
+      const shown = {};
+      /**
+       * @param {string} where - Which state
+       * @param {HTMLElement} drawn - A rendered host
+       * @param {number} rows - How many fact rows it should hold
+       */
+      const collect = (where, drawn, rows) => {
+        const values = drawn.querySelectorAll('.binary-file-fact__value');
+        if (values.length !== rows) throw new Error(`${where}: expected ${rows} fact rows, found ${values.length}`);
+        values.forEach((v, i) => { if (i > 0) v.setAttribute('data-test-data', ''); });
+        shownStrings(drawn, '[data-test-data]').forEach((s, i) => { shown[`${where} ${i}`] = s; });
+      };
+      await writeFileOp({ path: `${xaDir}/7.7`, content: 'bytes nothing will show\n' });
+      collect('extension', await render(createFileSource({
+        path: `${xaDir}/7.7`, mime: '', size: 24, isBinary: true,
+      })), 3);
+      collect('binary', await render(createFileSource({ path: '7', mime: '', isBinary: true })), 1);
+      collect('unknown', await render(createFileSource({ path: '7', mime: '', isBinary: false })), 1);
+      const raw = Object.entries(shown).filter(([, s]) => !isPseudoLocalized(s));
+      if (raw.length) throw new Error(`plain English under en-XA: ${JSON.stringify(Object.fromEntries(raw))}`);
+    }, { '@juggler/core': CORE_TEXT });
+    passed++;
+  } catch (e) {
+    failed++;
+    errors.push(`en-XA: ${/** @type {Error} */ (e).message}`);
+  } finally {
+    await project.copyTree({ to: '.', delete: [xaDir] });
+  }
 
   return { passed, failed, errors };
 }

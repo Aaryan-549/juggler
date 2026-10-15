@@ -279,6 +279,7 @@ import { runTests as runThreadColumnLandingTests } from '../unit-tests/thread-co
 import { runTests as runJumpToAttentionRevealTests } from '../unit-tests/jump-to-attention-reveal-test.js';
 import { runTests as runColumnBuilderTests } from '../unit-tests/column-builder-test.js';
 import { runTests as runEmptyConversationHintTests } from '../unit-tests/empty-conversation-hint-test.js';
+import { runTests as runEmptyHintTipsTests } from '../unit-tests/empty-hint-tips-test.js';
 import { runTests as runNoConversationsOnboardingTests } from '../unit-tests/no-conversations-onboarding-test.js';
 import { runTests as runNoProjectOnboardingTests } from '../unit-tests/no-project-onboarding-test.js';
 import { runTests as runProjectPickerExternalTests } from '../unit-tests/project-picker-external-test.js';
@@ -365,7 +366,11 @@ import { runTests as runPermissionPopupRefreshTests } from '../unit-tests/permis
 import { runTests as runClipboardTests } from '../unit-tests/clipboard-test.js';
 import { runTests as runCopyButtonTests } from '../unit-tests/copy-button-test.js';
 import { runTests as runLiveTaskOutputTests } from '../unit-tests/live-task-output-test.js';
+import { runTests as runCodeBlockTests } from '../unit-tests/code-block-test.js';
+import { runTests as runWindowCaptionControlsTests } from '../unit-tests/window-caption-controls-test.js';
+import { runTests as runThinkingBlockTests } from '../unit-tests/thinking-block-test.js';
 import { runTests as runPropertiesPanelHelpersTests } from '../unit-tests/properties-panel-helpers-test.js';
+import { runTests as runWorkspaceDialogsTests } from '../unit-tests/workspace-dialogs-test.js';
 import { runTests as runContextItemBaseTests } from '../unit-tests/context-item-base-test.js';
 import { runTests as runCapabilityNameReadersTests } from '../unit-tests/capability-name-readers-test.js';
 import { runTests as runConnectivityTests } from '../unit-tests/connectivity-test.js';
@@ -761,6 +766,7 @@ const UNIT_TEST_SUITES = [
   { name: 'unit:jump-to-attention-reveal', run: runJumpToAttentionRevealTests, needsExclusiveRun: true },
   { name: 'unit:column-builder', run: runColumnBuilderTests },
   { name: 'unit:empty-conversation-hint', run: runEmptyConversationHintTests },
+  { name: 'unit:empty-hint-tips', run: runEmptyHintTipsTests },
   { name: 'unit:no-conversations-onboarding', run: runNoConversationsOnboardingTests },
   { name: 'unit:no-project-onboarding', run: runNoProjectOnboardingTests },
   { name: 'unit:project-picker-external', run: runProjectPickerExternalTests },
@@ -836,7 +842,11 @@ const UNIT_TEST_SUITES = [
   { name: 'unit:clipboard', run: runClipboardTests },
   { name: 'unit:copy-button', run: runCopyButtonTests },
   { name: 'unit:live-task-output', run: runLiveTaskOutputTests },
+  { name: 'unit:code-block', run: runCodeBlockTests },
+  { name: 'unit:window-caption-controls', run: runWindowCaptionControlsTests },
+  { name: 'unit:thinking-block', run: runThinkingBlockTests },
   { name: 'unit:properties-panel-helpers', run: runPropertiesPanelHelpersTests },
+  { name: 'unit:workspace-dialogs', run: runWorkspaceDialogsTests },
   { name: 'unit:context-item-base', run: runContextItemBaseTests },
   { name: 'unit:capability-name-readers', run: runCapabilityNameReadersTests },
   { name: 'unit:connectivity', run: runConnectivityTests },

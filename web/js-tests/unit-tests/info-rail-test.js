@@ -28,6 +28,8 @@
 
 import InfoCardType from 'juggler/info-card-type';
 import { assert } from '../utilities/test-helpers.js';
+import { underPseudoLocale, shownStrings } from '../utilities/pseudo-locale.js';
+import { pseudoLocalize, isPseudoLocalized } from '../../sdk/lib/i18n.js';
 import infoCardRegistry from '../../js/registries/info-card-registry.js';
 import { __allowInfoRailInTests } from '../../js/components/info-rail.js';
 import '../../js/components/conversation-bar.js';
@@ -192,6 +194,97 @@ export async function runTests(_ctx) {
       } finally {
         col.teardown();
       }
+    });
+
+    await run('en-XA: a card\u2019s eyebrow is translated in the catalogue of the extension that ships it', async () => {
+      // A stand-in extension id, so only the card's own catalogue can supply it.
+      const extensionId = '@test/info-rail-eyebrow';
+      infoCardRegistry.reset();
+      infoCardRegistry.registerClass(class EyebrowCard extends InfoCardType {
+        static MANIFEST = {
+          id: 'test-rail-eyebrow-card',
+          name: 'Eyebrow card',
+          version: '1.0.0',
+          description: 'Stand-in card with an eyebrow.',
+          eyebrow: 'Stand-in eyebrow',
+          priority: 100,
+        };
+
+        /** @returns {() => void} Teardown. */
+        mount() { return () => {}; }
+      }, { extensionId });
+      await underPseudoLocale('info-rail-test', () => {
+        const col = mountColumn({ height: 600, tabs: 1 });
+        try {
+          col.rail._reconcile();
+          const eyebrow = col.rail.querySelector('.info-card__eyebrow')?.textContent;
+          assert(eyebrow === pseudoLocalize('Stand-in eyebrow'),
+            `expected the eyebrow in its extension's catalogue, got ${JSON.stringify(eyebrow)}`);
+        } finally {
+          col.teardown();
+        }
+      }, { [extensionId]: ['Stand-in eyebrow'] });
+    });
+
+    await run('en-XA: the rail\u2019s chrome and the info-cards menu, in every state, are translated', async () => {
+      // A stand-in extension id, so the card's name can only come from its own catalogue.
+      const extensionId = '@test/info-rail-chrome';
+      infoCardRegistry.reset();
+      infoCardRegistry.registerClass(class ChromeCard extends InfoCardType {
+        static MANIFEST = {
+          id: 'test-rail-chrome-card',
+          name: 'Stand-in card',
+          version: '1.0.0',
+          description: 'Stand-in card for the chrome.',
+          eyebrow: 'Stand-in eyebrow',
+          priority: 100,
+        };
+
+        /** @returns {() => void} Teardown. */
+        mount() { return () => {}; }
+      }, { extensionId });
+      /** @type {string[]} */
+      const raw = [];
+      /**
+       * @param {string} where - The state drawn.
+       * @param {string[]} shown - What it showed.
+       */
+      const collect = (where, shown) => {
+        assert(shown.length > 0, `${where}: drew nothing`);
+        for (const s of shown) if (!isPseudoLocalized(s)) raw.push(`${where}: ${s}`);
+      };
+      await underPseudoLocale('info-rail-test', () => {
+        const col = mountColumn({ height: 600, tabs: 1 });
+        /** @type {any} */
+        let button = null;
+        try {
+          col.rail._reconcile();
+          assert(col.cards().length === 1, `expected the stand-in card mounted, got ${col.cards().length}`);
+          // The × is a glyph standing alone; its aria-label/title are checked on their own.
+          collect('rail', shownStrings(col.rail, '.info-card__close'));
+          const close = /** @type {HTMLElement} */ (col.rail.querySelector('.info-card__close'));
+          assert(!!close, 'the card has no close button');
+          collect('close button', [close.getAttribute('aria-label') || '', close.title].filter(Boolean));
+
+          button = col.rail.querySelector('info-cards-button');
+          assert(!!button, 'the rail has no info-cards button');
+          button._openMenu();
+          const menu = document.querySelector('.info-cards-menu');
+          assert(!!menu, 'the info-cards menu did not open');
+          collect('menu', shownStrings(/** @type {Element} */ (menu)));
+          button._closeMenu();
+
+          infoCardRegistry.reset();
+          button._openMenu();
+          const empty = document.querySelector('.info-cards-menu');
+          assert(!!empty, 'the empty info-cards menu did not open');
+          collect('empty menu', shownStrings(/** @type {Element} */ (empty)));
+        } finally {
+          button?._closeMenu();
+          col.teardown();
+        }
+      }, { [extensionId]: ['Stand-in card', 'Stand-in eyebrow'] });
+      assert(raw.length === 0, `plain English under en-XA: ${JSON.stringify(raw)}`);
     });
   } finally {
     // Realm-global, both of them: leave the rail switched off and the registry as

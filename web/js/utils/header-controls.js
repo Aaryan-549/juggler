@@ -18,6 +18,7 @@ import { showAlert } from '../components/modal-dialog.js';
 import { apiUrl } from './api-url.js';
 import { chooseProject, projectIsFixed, projectsOpenInNewWindow } from './project-open-mode.js';
 import { statusHoldsTurn } from '../model/processing-status.js';
+import { t, markForTranslation } from '../../sdk/lib/i18n.js';
 
 /**
  * @typedef {import('../model/session.js').default} Session
@@ -71,9 +72,8 @@ export function bindNetworkClients(button, { events = wsService, seed = fetchCli
 
   const show = (/** @type {number|null|undefined} */ total) => {
     const others = Math.max(0, (total || 1) - 1);
-    const label = others === 0
-      ? 'Network settings'
-      : `Network settings — ${others} other client${others === 1 ? '' : 's'} connected`;
+    const label = t('{count, plural, =0 {Network settings} one {Network settings — {count} other client connected} other {Network settings — {count} other clients connected}}',
+      { count: others });
     button.title = label;
     button.setAttribute('aria-label', label);
     if (count) count.textContent = String(others);
@@ -135,18 +135,18 @@ export function setupHeaderControls(session) {
 
   // A button disabled by a running turn says so; one disabled because there is
   // nothing to step through needs no explanation and keeps its plain name.
-  const BUSY_TITLE = 'Unavailable while the agent is running';
+  const BUSY_TITLE = markForTranslation('Unavailable while the agent is running');
   const updateButtons = () => {
     const busy = isBusy();
     const canUndo = !busy && !!currentConversation?.canUndo();
     const canRedo = !busy && !!currentConversation?.canRedo();
     if (undoBtn) {
       undoBtn.disabled = !canUndo;
-      undoBtn.title = busy ? BUSY_TITLE : 'Undo';
+      undoBtn.title = busy ? t(BUSY_TITLE) : t('Undo');
     }
     if (redoBtn) {
       redoBtn.disabled = !canRedo;
-      redoBtn.title = busy ? BUSY_TITLE : 'Redo';
+      redoBtn.title = busy ? t(BUSY_TITLE) : t('Redo');
     }
   };
 
@@ -182,8 +182,8 @@ export function setupHeaderControls(session) {
   const updateProjectPath = (/** @type {string} */ projectPath) => {
     if (!pathDisplay || !pathLabel) return;
     if (!projectPath) {
-      pathLabel.textContent = 'Set project folder';
-      if (pathChip) pathChip.title = 'Click to set the project folder';
+      pathLabel.textContent = t('Set project folder');
+      if (pathChip) pathChip.title = t('Click to set the project folder');
       pathDisplay.classList.add('is-empty');
     } else {
       pathLabel.textContent = projectPath;
@@ -193,13 +193,13 @@ export function setupHeaderControls(session) {
         // another project spawns a new window and leaves this one untouched; in
         // a browser/PWA, or a desktop window on a server the app did not start,
         // it switches in place (each folder carries its own tabs).
-        let action = 'Click to switch to a different project folder';
+        let action = t('Click to switch to a different project folder');
         if (projectIsFixed()) {
-          action = 'Click to open another project as its own session, from the sessions page';
+          action = t('Click to open another project as its own session, from the sessions page');
         } else if (projectsOpenInNewWindow()) {
-          action = 'Click to open another project in a new window — this one stays put.';
+          action = t('Click to open another project in a new window — this one stays put.');
         }
-        pathChip.title = `Current project folder: ${projectPath}\n${action}`;
+        pathChip.title = `${t('Current project folder: {path}', { path: projectPath })}\n${action}`;
       }
       pathDisplay.classList.remove('is-empty');
     }
@@ -238,7 +238,7 @@ export function setupHeaderControls(session) {
       await apiService.newWindow();
     } catch (err) {
       const { extractUserMessage } = await import('../../sdk/lib/error-utils.js');
-      await showAlert(extractUserMessage(err), 'New window');
+      await showAlert(extractUserMessage(err), t('New window'));
     }
   };
   if (newWindowBtn) {

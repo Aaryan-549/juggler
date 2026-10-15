@@ -21,6 +21,11 @@
 
 import PdfFileViewer from '../../extensions/juggler-core/viewers/pdf-file-viewer.js';
 import { createFileSource } from '../../sdk/file-source.js';
+import { isPseudoLocalized } from '../../sdk/lib/i18n.js';
+import { underPseudoLocale, shownStrings } from '../utilities/pseudo-locale.js';
+
+/** The viewer's English messages, registered pseudo-localised under its extension id. */
+const CORE_TEXT = ['{count, plural, one {{count} page} other {{count} pages}}'];
 
 /** A minimal one-page PDF whose only text is "Juggler PDF spike". */
 const PDF_BASE64 =
@@ -176,6 +181,43 @@ export async function runTests() {
       `render() should recover from a refused URL, but threw: ${/** @type {any} */ (err)?.message || err}`, errors));
   } finally {
     fallbackHost.remove();
+  }
+
+  // Under en-XA the page count in the header is translated; what extract()
+  // gives the model — page markers, the total, the degraded warning — stays
+  // English. The canvases are the document's own content, so only the header
+  // is walked.
+  const xaHost = document.createElement('div');
+  document.body.appendChild(xaHost);
+  try {
+    await underPseudoLocale('pdf-viewer-test', async () => {
+      const header = document.createElement('div');
+      const teardown = await viewer.render(pdfSource(), xaHost, { header });
+      if (typeof teardown === 'function') teardown();
+      const shown = shownStrings(header);
+      if (shown.length !== 1) throw new Error(`expected the page count alone in the header, got ${JSON.stringify(shown)}`);
+      const raw = shown.filter((s) => !isPseudoLocalized(s));
+
+      const model = await viewer.extract(pdfSource(), {});
+      const broken = await viewer.extract(createFileSource({
+        path: '7.pdf', mime: 'application/pdf', size: 7, isBinary: true,
+        bytes: async () => { throw new Error('7'); },
+      }), {});
+      const english = [
+        model.text?.includes('--- Page 1 ---') ? '' : `page marker: ${JSON.stringify(model.text)}`,
+        model.text?.includes('(1 pages total)') ? '' : `page total: ${JSON.stringify(model.text)}`,
+        broken.warning === 'PDF text extraction is not available: 7' ? '' : `warning: ${JSON.stringify(broken.warning)}`,
+      ].filter(Boolean);
+
+      if (raw.length) throw new Error(`plain English under en-XA: ${JSON.stringify(raw)}`);
+      if (english.length) throw new Error(`model text must stay English under en-XA: ${english.join('; ')}`);
+    }, { '@juggler/core': CORE_TEXT });
+    passed++;
+  } catch (e) {
+    failed++;
+    errors.push(`en-XA: ${/** @type {Error} */ (e).message}`);
+  } finally {
+    xaHost.remove();
   }
 
   return { passed, failed, errors };

@@ -4,9 +4,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import PinboardItemType from 'juggler/pinboard-item-type';
+import { translator } from 'juggler/i18n';
 import { createElement, extractErrorMessage, injectStylesOnce } from 'juggler/ui';
 import { reconcileParts, reconcileRows, setText } from '../lib/reconcile.js';
 import { pinEmpty } from '../lib/pin-empty.js';
+
+const t = translator('@juggler/core');
 
 injectStylesOnce('tasks-pin-styles', `
 .tasks-pin {
@@ -128,10 +131,10 @@ const ELAPSED_TICK_MS = 1000;
 function elapsed(startedAt, now) {
   if (!Number.isFinite(startedAt)) return '';
   const seconds = Math.max(0, Math.round((now - startedAt) / 1000));
-  if (seconds < 60) return `${seconds}s`;
+  if (seconds < 60) return t('{seconds}s', { seconds });
   const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m`;
-  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+  if (minutes < 60) return t('{minutes}m', { minutes });
+  return t('{hours}h {minutes}m', { hours: Math.floor(minutes / 60), minutes: minutes % 60 });
 }
 
 /**
@@ -163,7 +166,7 @@ function buildTaskRow(task, reveal, stop) {
   const stopBtn = document.createElement('button');
   stopBtn.type = 'button';
   stopBtn.className = 'tasks-pin__stop';
-  stopBtn.textContent = 'Stop';
+  stopBtn.textContent = t('Stop');
   stopBtn.addEventListener('click', () => stop(taskId, stopBtn));
 
   const actions = createElement('div', 'tasks-pin__actions');
@@ -205,9 +208,9 @@ function fillTaskRow(row, task, now) {
   // without the task list in front of it.
   if (row.dataset.at !== String(task.at)) row.dataset.at = String(task.at);
 
-  const reveals = `Reveal the action that started ${name}`;
+  const reveals = t('Reveal the action that started {name}', { name });
   if (open.getAttribute('aria-label') !== reveals) open.setAttribute('aria-label', reveals);
-  const stops = `Stop ${name}`;
+  const stops = t('Stop {name}', { name });
   if (stopBtn.getAttribute('aria-label') !== stops) stopBtn.setAttribute('aria-label', stops);
 
   setText(
@@ -264,7 +267,7 @@ class TasksPin extends PinboardItemType {
    * @returns {true|string} True when there is a conversation whose tasks to list.
    */
   canAdd(active) {
-    return active?.conversation ? true : 'No active conversation';
+    return active?.conversation ? true : t('No active conversation');
   }
 
   /**
@@ -275,7 +278,7 @@ class TasksPin extends PinboardItemType {
    * @returns {import('juggler/pinboard-item-type').PinDescription} The tab's words.
    */
   describe() {
-    return { title: this.name };
+    return { title: t(this.name) };
   }
 
   /**
@@ -354,8 +357,8 @@ class TasksPin extends PinboardItemType {
         // A null list is not the same as an empty one, and saying what the card
         // holds before anything has been asked would be a guess.
         const words = tasks === null
-          ? 'Looking…'
-          : 'Commands left running in the background appear here.';
+          ? t('Looking…')
+          : t('Commands left running in the background appear here.');
         parts.push({
           key: 'empty',
           build: () => pinEmpty(''),
@@ -382,14 +385,14 @@ class TasksPin extends PinboardItemType {
         parts.push({
           key: 'error',
           build: () => createElement('div', 'tasks-pin__error'),
-          fill: (el) => setText(el, `Couldn't check what's running. ${error}`),
+          fill: (el) => setText(el, t("Couldn't check what's running. {error}", { error })),
         });
       }
       if (stopError) {
         parts.push({
           key: 'stop-error',
           build: () => createElement('div', 'tasks-pin__error'),
-          fill: (el) => setText(el, `Couldn't stop it. ${stopError}`),
+          fill: (el) => setText(el, t("Couldn't stop it. {error}", { error: stopError })),
         });
       }
 
@@ -399,7 +402,7 @@ class TasksPin extends PinboardItemType {
       parts.push({
         key: 'note',
         build: () => createElement('div', 'tasks-pin__note'),
-        fill: (el) => setText(el, 'Only what this conversation started, and only while it runs.'),
+        fill: (el) => setText(el, t('Only what this conversation started, and only while it runs.')),
       });
       reconcileParts(body, parts);
 

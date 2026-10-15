@@ -4,6 +4,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import PinboardItemType from 'juggler/pinboard-item-type';
+import { translator } from 'juggler/i18n';
 import { createElement, createFileActions, createReviewPanel, injectStylesOnce } from 'juggler/ui';
 import { pinEmpty } from '../lib/pin-empty.js';
 import {
@@ -25,6 +26,8 @@ import {
   scopeName,
   scopePreset,
 } from '../lib/git-scope.js';
+
+const t = translator('@juggler/core');
 
 injectStylesOnce('git-pin-styles', `
 .git-pin {
@@ -387,9 +390,9 @@ class GitPin extends PinboardItemType {
     const select = /** @type {HTMLSelectElement} */ (createElement('select', 'git-pin__scope-select'));
     select.setAttribute('aria-label', 'Compare');
     for (const preset of SCOPE_PRESETS) {
-      const option = /** @type {HTMLOptionElement} */ (createElement('option', '', preset.label));
+      const option = /** @type {HTMLOptionElement} */ (createElement('option', '', t(preset.label)));
       option.value = preset.id;
-      option.title = preset.description;
+      option.title = t(preset.description);
       select.append(option);
     }
     const customOption = /** @type {HTMLOptionElement} */ (createElement('option', '', 'Custom…'));
@@ -402,7 +405,7 @@ class GitPin extends PinboardItemType {
     input.type = 'text';
     input.spellcheck = false;
     input.placeholder = 'main...HEAD';
-    input.title = SCOPE_SYNTAX;
+    input.title = t(SCOPE_SYNTAX);
     input.setAttribute('aria-label', 'Git diff expression');
     input.setAttribute('list', listId);
     const apply = /** @type {HTMLButtonElement} */ (createElement('button', 'git-pin__scope-apply', 'Show'));

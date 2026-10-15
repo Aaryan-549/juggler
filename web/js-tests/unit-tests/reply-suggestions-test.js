@@ -31,6 +31,8 @@ import { OpsError } from '../../js/services/ops-api.js';
 // fixture that invents its own is a fixture the production predicates ignore,
 // and the test then proves nothing while passing.
 import { MESSAGE_TYPES } from '../../sdk/lib/message.js';
+import { isPseudoLocalized } from '../../sdk/lib/i18n.js';
+import { underPseudoLocale, shownStrings } from '../utilities/pseudo-locale.js';
 
 /**
  * @typedef {object} TestResult
@@ -730,6 +732,32 @@ export async function runTests(_ctx) {
       document.removeEventListener('send-message', onSend);
       h.remove();
     }
+  });
+
+  // ---------------------------------------------------------------- en-XA
+
+  await run('the row\'s own label follows the UI language', async () => {
+    await underPseudoLocale('reply-suggestions-test', () => {
+      // The label sits on the row itself, so it is walked from a wrapper.
+      const wrap = document.createElement('div');
+      const row = /** @type {any} */ (document.createElement('reply-suggestions'));
+      wrap.appendChild(row);
+      document.body.appendChild(wrap);
+      try {
+        /** @type {string[]} */
+        const shown = [];
+        // Mounted before anything is offered: the label connectedCallback sets.
+        shown.push(...shownStrings(wrap));
+        // Offered with no label given: the update() default. Chips are data.
+        row.update(['1']);
+        shown.push(...shownStrings(wrap, '.reply-suggestion'));
+        assert(shown.length === 2, `expected both labels, got ${JSON.stringify(shown)}`);
+        const raw = shown.filter((s) => !isPseudoLocalized(s));
+        assert(raw.length === 0, `plain English under en-XA: ${JSON.stringify(raw)}`);
+      } finally {
+        wrap.remove();
+      }
+    });
   });
 
   return { passed, failed, errors };

@@ -4,6 +4,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import FileViewer from 'juggler/file-viewer';
+import { translator, markUntranslated } from 'juggler/i18n';
+
+const t = translator('@juggler/core');
 
 /**
  * Resolve a vendored asset next to this module. Static assets are served under a
@@ -201,7 +204,7 @@ class PdfFileViewer extends FileViewer {
     if (ctx.header) {
       const meta = document.createElement('span');
       meta.className = 'pdf-view-pagecount';
-      meta.textContent = doc.numPages === 1 ? '1 page' : `${doc.numPages} pages`;
+      meta.textContent = t('{count, plural, one {{count} page} other {{count} pages}}', { count: doc.numPages });
       ctx.header.appendChild(meta);
     }
 
@@ -288,7 +291,7 @@ class PdfFileViewer extends FileViewer {
           break;
         }
         const page = await doc.getPage(pageNumber);
-        const block = `--- Page ${pageNumber} ---\n${await readPageText(page)}`;
+        const block = markUntranslated(`--- Page ${pageNumber} ---\n${await readPageText(page)}`);
         // Stop BEFORE adding a page that would blow the budget, so the result is
         // always a whole number of pages.
         if (total + block.length > maxChars && parts.length > 0) {
@@ -300,11 +303,11 @@ class PdfFileViewer extends FileViewer {
       }
 
       const text = `<file path="${source.path}">\n${parts.join('\n\n')}\n</file>` +
-        (truncated ? `\n(Showing ${parts.length} of ${doc.numPages} pages.)` : `\n(${doc.numPages} pages total)`);
+        markUntranslated(truncated ? `\n(Showing ${parts.length} of ${doc.numPages} pages.)` : `\n(${doc.numPages} pages total)`);
       return { text, truncated };
     } catch (err) {
       return {
-        warning: `PDF text extraction is not available: ${/** @type {any} */ (err)?.message || err}`,
+        warning: markUntranslated(`PDF text extraction is not available: ${/** @type {any} */ (err)?.message || err}`),
       };
     } finally {
       // Always tear the worker down — an extraction that threw halfway would

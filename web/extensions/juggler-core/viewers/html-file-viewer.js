@@ -7,6 +7,9 @@ import FileViewer from 'juggler/file-viewer';
 import { extensionOf } from 'juggler/file-source';
 import { createFileContentBlock, formatFileContentForLLM } from 'juggler/item-utils';
 import { injectStylesOnce } from 'juggler/ui';
+import { translator } from 'juggler/i18n';
+
+const t = translator('@juggler/core');
 
 /**
  * What the preview frame may do. Scripts, forms and dialogs run; sharing the
@@ -55,11 +58,12 @@ const STYLES = `
  * highlighted and what the toggle calls it. SVG is framed exactly as HTML is: a
  * framed SVG document runs its scripts too, so it needs the same sandbox.
  * @param {import('juggler/file-source').FileSource} source - The file
- * @returns {{label: string, language: string}} Display name and source language
+ * @returns {{id: 'svg'|'html', language: string}} Which kind (the `select` key
+ *   of the messages that name it) and source language
  */
 function documentKind(source) {
   const svg = source.mime === 'image/svg+xml' || extensionOf(source.path || '') === 'svg';
-  return svg ? { label: 'SVG', language: 'xml' } : { label: 'HTML', language: 'html' };
+  return svg ? { id: 'svg', language: 'xml' } : { id: 'html', language: 'html' };
 }
 
 /**
@@ -74,7 +78,7 @@ function previewTarget(source) {
   // would be shown as something it is not.
   const offset = source.lineOffset || 1;
   if (offset > 1 || (source.lineCount && source.totalLines && source.lineCount < source.totalLines)) {
-    return { reason: 'Part of the file, so shown as source.' };
+    return { reason: t('Part of the file, so shown as source.') };
   }
   // pageURL where there is one: it puts the page in its own directory, so the
   // images, styles and scripts it links relatively load from beside it. url()
@@ -84,7 +88,7 @@ function previewTarget(source) {
   // Same-origin paths only. A text-backed source's URL is a data: stub, which
   // frame-src refuses and which would render as plain text if it did not.
   if (!/^\/(?!\/)/.test(url)) {
-    return { reason: 'Nothing to load it from, so shown as source.' };
+    return { reason: t('Nothing to load it from, so shown as source.') };
   }
   return { url };
 }
@@ -101,9 +105,11 @@ async function probe(url, signal) {
   try {
     const res = await fetch(url, { headers: { Range: 'bytes=0-0' }, signal });
     void res.body?.cancel();
-    return res.ok ? '' : `Couldn’t load the page (HTTP ${res.status}), so shown as source.`;
+    return res.ok ? '' : t('Couldn’t load the page (HTTP {status}), so shown as source.', { status: String(res.status) });
   } catch (err) {
-    return `Couldn’t load the page (${/** @type {any} */ (err)?.message || err}), so shown as source.`;
+    // The error is the browser's own text, shown as it came.
+    const error = String(/** @type {any} */ (err)?.message || err);
+    return t('Couldn’t load the page ({error}), so shown as source.', { error });
   }
 }
 
@@ -200,7 +206,8 @@ class HtmlFileViewer extends FileViewer {
       frame.setAttribute('referrerpolicy', 'no-referrer');
       // aria-label, not title: the pointer spends its time inside the page, where
       // a title would hover as a tooltip over whatever the user is doing.
-      frame.setAttribute('aria-label', source.path || `${kind.label} preview`);
+      frame.setAttribute('aria-label', source.path
+        || t('{kind, select, svg {SVG preview} other {HTML preview}}', { kind: kind.id }));
       frame.src = url;
       host.appendChild(frame);
     };
@@ -219,12 +226,13 @@ class HtmlFileViewer extends FileViewer {
         const toggle = document.createElement('button');
         toggle.type = 'button';
         toggle.className = 'html-view-toggle';
-        toggle.textContent = 'Source';
-        toggle.setAttribute('aria-label', `Show ${kind.label} source`);
+        const showSourceLabel = () => t('{kind, select, svg {Show SVG source} other {Show HTML source}}', { kind: kind.id });
+        toggle.textContent = t('Source');
+        toggle.setAttribute('aria-label', showSourceLabel());
         toggle.addEventListener('click', () => {
           previewing = !previewing;
-          toggle.textContent = previewing ? 'Source' : 'Preview';
-          toggle.setAttribute('aria-label', previewing ? `Show ${kind.label} source` : 'Show rendered preview');
+          toggle.textContent = previewing ? t('Source') : t('Preview');
+          toggle.setAttribute('aria-label', previewing ? showSourceLabel() : t('Show rendered preview'));
           if (previewing) showPreview(url);
           else void showSource();
         });

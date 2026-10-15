@@ -31,6 +31,7 @@ import { presentModal } from '../utils/modal-surface.js';
 import { setupRows, probeSetupAdoptions, adoptSetupRow } from '../services/workspace-places.js';
 import { extractErrorMessage } from '../../sdk/lib/error-utils.js';
 import { setupButton, buildPlaceRows, handlePlaceRowKey } from './workspace-setup-form.js';
+import { t } from '../../sdk/lib/i18n.js';
 
 /**
  * How many conversations are bound to a workspace, which is how many come back
@@ -99,7 +100,7 @@ export function openWorkspaceReconnect(conversation) {
         const restored = await adoptSetupRow(session, row.id, { id: strandedId });
         if (modal.closed) return;
         if (!restored) {
-          error = 'That place is no longer on offer.';
+          error = t('That place is no longer on offer.');
           render();
           return;
         }
@@ -127,18 +128,18 @@ export function openWorkspaceReconnect(conversation) {
       dialog.className = 'workspace-move-dialog';
       dialog.setAttribute('role', 'dialog');
       dialog.setAttribute('aria-modal', 'true');
-      dialog.setAttribute('aria-label', 'Where was this conversation working?');
+      dialog.setAttribute('aria-label', t('Where was this conversation working?'));
       root.appendChild(dialog);
 
       const header = document.createElement('div');
       header.className = 'workspace-move-header';
       const title = document.createElement('h2');
       title.className = 'workspace-move-title';
-      title.textContent = 'Where was this conversation working?';
+      title.textContent = t('Where was this conversation working?');
       header.appendChild(title);
       const close = setupButton('close-button workspace-move-close', '', () => modal.close(undefined));
-      close.setAttribute('aria-label', 'Close');
-      close.title = 'Close';
+      close.setAttribute('aria-label', t('Close'));
+      close.title = t('Close');
       const cross = document.createElement('span');
       cross.className = 'icon-close';
       close.appendChild(cross);
@@ -153,9 +154,7 @@ export function openWorkspaceReconnect(conversation) {
       explains.className = 'workspace-move-work';
       const lead = document.createElement('div');
       lead.className = 'workspace-move-work-lead';
-      lead.textContent = bound > 1
-        ? `${bound} conversations work in a workspace this session has no record of. Naming where it was puts it back for all of them.`
-        : 'This session has no record of the workspace this conversation works in. Naming where it was puts it back.';
+      lead.textContent = t('{count, plural, =0 {This session has no record of the workspace this conversation works in. Naming where it was puts it back.} one {This session has no record of the workspace this conversation works in. Naming where it was puts it back.} other {{count} conversations work in a workspace this session has no record of. Naming where it was puts it back for all of them.}}', { count: bound });
       explains.appendChild(lead);
       dialog.appendChild(explains);
 
@@ -163,14 +162,14 @@ export function openWorkspaceReconnect(conversation) {
       if (rows.length) {
         const heading = document.createElement('div');
         heading.className = 'setup-section-title';
-        heading.textContent = 'Places with no workspace';
+        heading.textContent = t('Places with no workspace');
         dialog.appendChild(heading);
 
         const group = buildPlaceRows({
           rows,
           selection: null,
-          label: 'Where this conversation was working',
-          adoptVerb: 'It was here',
+          label: t('Where this conversation was working'),
+          adoptVerb: t('It was here'),
           onSelect: () => {},
           onAdopt: (row) => { void reconnect(row); }
         });
@@ -181,7 +180,7 @@ export function openWorkspaceReconnect(conversation) {
         // is not coming back, and the ways out are on the banner behind this.
         const nothing = document.createElement('div');
         nothing.className = 'setup-row-detail';
-        nothing.textContent = 'No provider can find a place that has no workspace.';
+        nothing.textContent = t('No provider can find a place that has no workspace.');
         dialog.appendChild(nothing);
       }
 
@@ -194,7 +193,7 @@ export function openWorkspaceReconnect(conversation) {
 
       const actions = document.createElement('div');
       actions.className = 'setup-actions';
-      actions.appendChild(setupButton('btn-secondary workspace-move-cancel', 'Cancel',
+      actions.appendChild(setupButton('btn-secondary workspace-move-cancel', t('Cancel'),
         () => modal.close(undefined)));
       dialog.appendChild(actions);
     };

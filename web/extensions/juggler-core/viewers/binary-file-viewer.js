@@ -8,6 +8,9 @@ import { stat } from 'juggler/ops';
 import { extensionOf } from 'juggler/file-source';
 import { formatFileSize } from 'juggler/item-utils';
 import { createElement, injectStylesOnce, formatRelativeDateTime } from 'juggler/ui';
+import { translator, markUntranslated } from 'juggler/i18n';
+
+const t = translator('@juggler/core');
 
 injectStylesOnce('binary-file-viewer-styles', `
 .binary-file__note {
@@ -43,8 +46,8 @@ injectStylesOnce('binary-file-viewer-styles', `
 function kindOf(source) {
   if (source.mime) return source.mime;
   const ext = extensionOf(source.path || source.absPath || '');
-  if (ext) return `.${ext} file`;
-  return source.isBinary ? 'Binary' : 'Unknown';
+  if (ext) return t('.{ext} file', { ext });
+  return source.isBinary ? t('Binary') : t('Unknown');
 }
 
 /**
@@ -127,14 +130,14 @@ class BinaryFileViewer extends FileViewer {
     // rather than growing a row under the reader's eyes.
     const modified = await modifiedAt(source);
 
-    host.appendChild(createElement('div', 'binary-file__note', 'No viewer for this file.'));
+    host.appendChild(createElement('div', 'binary-file__note', t('No viewer for this file.')));
 
     const facts = createElement('div', 'binary-file__facts');
-    addFact(facts, 'Kind', kindOf(source));
-    if (source.size) addFact(facts, 'Size', formatFileSize(source.size));
+    addFact(facts, t('Kind'), kindOf(source));
+    if (source.size) addFact(facts, t('Size'), formatFileSize(source.size));
     if (modified !== null) {
       const { short, full } = formatRelativeDateTime(modified);
-      addFact(facts, 'Modified', short, full);
+      addFact(facts, t('Modified'), short, full);
     }
     host.appendChild(facts);
   }
@@ -145,7 +148,7 @@ class BinaryFileViewer extends FileViewer {
    */
   async extract(source) {
     const kind = source.mime || (source.isBinary ? 'binary' : 'this');
-    return { warning: `No viewer is available for ${kind} content, so it cannot be read as text.` };
+    return { warning: markUntranslated(`No viewer is available for ${kind} content, so it cannot be read as text.`) };
   }
 }
 

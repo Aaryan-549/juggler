@@ -26,13 +26,10 @@
  */
 
 import WorkspaceProvider from 'juggler/workspace-provider';
+import { translator } from 'juggler/i18n';
 import { field, nextFormSequence, showNote } from '../lib/setup-fields.js';
 
-/**
- * What a group made without a name is called, followed by a number.
- * @type {string}
- */
-const DEFAULT_NAME = 'Group';
+const t = translator('@juggler/core');
 
 /**
  * A group of conversations, working in the project.
@@ -72,9 +69,9 @@ class GroupWorkspaceProvider extends WorkspaceProvider {
   renderSetup(container, ctx) {
     const id = `group-name-${nextFormSequence()}`;
     container.replaceChildren();
-    const { input, note } = field(container, id, 'name', 'Name', 'Enter group name');
+    const { input, note } = field(container, id, 'name', t('Name'), t('Enter group name'));
     input.value = String(ctx?.values?.name ?? '');
-    showNote(note, 'Conversations in a group work in the project, exactly as they would outside it.');
+    showNote(note, t('Conversations in a group work in the project, exactly as they would outside it.'));
     this._form = { input };
   }
 
@@ -94,7 +91,7 @@ class GroupWorkspaceProvider extends WorkspaceProvider {
    */
   async provision(values, ctx) {
     const project = String(ctx?.session?.projectPath ?? '');
-    if (!project) throw new Error("Couldn't make a group: the session has no project.");
+    if (!project) throw new Error(t("Couldn't make a group: the session has no project."));
     const label = String(values?.name ?? '').trim() || nextGroupName(ctx.session);
     return { workspace: { root: project, label } };
   }
@@ -146,14 +143,14 @@ class GroupWorkspaceProvider extends WorkspaceProvider {
     return [
       {
         id: 'ungroup',
-        label: 'Ungroup',
-        description: 'Its conversations go back into the project, and the group is removed.'
+        label: t('Ungroup'),
+        description: t('Its conversations go back into the project, and the group is removed.')
       },
       {
         id: 'delete',
-        label: 'Delete group',
+        label: t('Delete group'),
         danger: true,
-        description: 'Its conversations go to the bin, and the group is removed. Nothing in the project changes.'
+        description: t('Its conversations go to the bin, and the group is removed. Nothing in the project changes.')
       }
     ];
   }
@@ -181,12 +178,14 @@ class GroupWorkspaceProvider extends WorkspaceProvider {
   async cleanupPartial(workspace, ctx) {
     void workspace;
     void ctx;
-    return { removed: true, message: 'Nothing was built for a group, so nothing is left of it.' };
+    return { removed: true, message: t('Nothing was built for a group, so nothing is left of it.') };
   }
 }
 
 /**
- * "Group N", for the lowest N no open group is already called.
+ * "Group N", for the lowest N no open group is already called. The name is
+ * made in the language the user is reading and stored as they would have typed
+ * it, so it is compared in that language too.
  * @param {any} session - The session whose groups these are.
  * @returns {string} The name.
  */
@@ -196,9 +195,14 @@ function nextGroupName(session) {
     if (row?.state === 'closed') continue;
     taken.add(String(row?.label ?? ''));
   }
+  /**
+   * @param {number} n - Which group.
+   * @returns {string} Its default name.
+   */
+  const named = (n) => t('Group {n}', { n: String(n) });
   let n = 1;
-  while (taken.has(`${DEFAULT_NAME} ${n}`)) n++;
-  return `${DEFAULT_NAME} ${n}`;
+  while (taken.has(named(n))) n++;
+  return named(n);
 }
 
 export default GroupWorkspaceProvider;

@@ -20,6 +20,7 @@ import { generateToolDefinitions } from './tool-generator.js';
 import { estimateValueTokens } from '../utils/token-estimate.js';
 import { isComposableTool } from './composable-tools.js';
 import contextItemRegistry from '../registries/context-item-registry.js';
+import { t } from '../../sdk/lib/i18n.js';
 
 /**
  * @typedef {object} ToolInventory
@@ -160,10 +161,12 @@ export function diffToolNames(sent, live) {
  * @returns {string} The summary, or '' when the lists match.
  */
 export function formatToolDrift(drift) {
-  const changes = [];
-  if (drift?.added.length) changes.push(`${drift.added.length} added`);
-  if (drift?.removed.length) changes.push(`${drift.removed.length} gone`);
-  return changes.join(', ');
+  const added = drift?.added.length || 0;
+  const removed = drift?.removed.length || 0;
+  if (added && removed) return t('{added} added, {removed} gone', { added, removed });
+  if (added) return t('{added} added', { added });
+  if (removed) return t('{removed} gone', { removed });
+  return '';
 }
 
 /**
@@ -173,8 +176,8 @@ export function formatToolDrift(drift) {
  */
 export function toolDriftDetail(drift) {
   return [
-    drift?.added.length ? `Added: ${drift.added.join(', ')}` : '',
-    drift?.removed.length ? `Gone: ${drift.removed.join(', ')}` : ''
+    drift?.added.length ? t('Added: {names}', { names: drift.added.join(', ') }) : '',
+    drift?.removed.length ? t('Gone: {names}', { names: drift.removed.join(', ') }) : ''
   ].filter(Boolean).join('\n');
 }
 
@@ -206,7 +209,7 @@ export function groupToolsByOrigin(tools) {
     const group = (buckets.get(key) || []).slice()
       .sort((a, b) => estimateValueTokens(b) - estimateValueTokens(a));
     return {
-      title: key === null ? 'Juggler tools' : `MCP · ${key}`,
+      title: key === null ? t('Juggler tools') : t('MCP · {server}', { server: key }),
       server: key,
       tools: group,
       tokens: group.reduce((sum, t) => sum + estimateValueTokens(t), 0)

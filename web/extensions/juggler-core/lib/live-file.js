@@ -21,6 +21,9 @@ import { readFile, getTree, stat } from 'juggler/ops';
 import { formatFileSize, injectFileContentStyles } from 'juggler/item-utils';
 import { fileSourceFromReadResult } from 'juggler/file-source';
 import { createElement } from 'juggler/ui';
+import { translator } from 'juggler/i18n';
+
+const t = translator('@juggler/core');
 
 injectFileContentStyles();
 
@@ -161,7 +164,7 @@ export async function fetchLiveFile(path, options = {}) {
  */
 function errorText(err) {
   const message = err instanceof Error ? err.message : String(err ?? '');
-  return message.trim() || 'unknown error';
+  return message.trim() || t('unknown error');
 }
 
 /**
@@ -192,9 +195,12 @@ export function liveFileSource(result, absolutePath, options = {}) {
  */
 export function liveFileInfo(result) {
   if (!result.exists) return '';
-  if (result.isDirectory) return result.totalLines ? `${result.totalLines} items` : '';
+  if (result.isDirectory) {
+    return result.totalLines ? t('{count, plural, other {{count} items}}', { count: result.totalLines }) : '';
+  }
   if (!result.size) return '';
-  return `${formatFileSize(result.size)} | ${result.totalLines || 0} lines`;
+  return t('{size} | {count, plural, other {{count} lines}}',
+    { size: formatFileSize(result.size), count: result.totalLines || 0 });
 }
 
 /**
@@ -219,13 +225,13 @@ export function renderLiveFileBody(container, result, options = {}) {
     // Only a read that found nothing there is "not found". Anything else names
     // its reason, or the user goes looking for a file that is plainly on disk.
     container.appendChild(createElement('div', 'file-content-not-found', result.error
-      ? `Couldn't read ${absolutePath}: ${result.error}`
-      : `File not found: ${absolutePath}`));
+      ? t("Couldn't read {path}: {error}", { path: absolutePath, error: result.error })
+      : t('File not found: {path}', { path: absolutePath })));
     return;
   }
 
   if (result.isDirectory) {
-    container.appendChild(createElement('pre', 'file-content-tree', result.content || '(empty)'));
+    container.appendChild(createElement('pre', 'file-content-tree', result.content || t('(empty)')));
     return;
   }
 

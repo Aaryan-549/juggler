@@ -19,8 +19,11 @@
  */
 
 import { assert } from '../utilities/test-helpers.js';
-import { getThreadStatus } from '../../js/utils/thread-display.js';
+import { underPseudoLocale, shownStrings } from '../utilities/pseudo-locale.js';
+import { isPseudoLocalized } from '../../sdk/lib/i18n.js';
+import { getThreadStatus, paintThreadSummary } from '../../js/utils/thread-display.js';
 import '../../js/components/thread-message.js';
+import contextItemRegistry from '../../js/registries/context-item-registry.js';
 
 /**
  * @param {unknown} e
@@ -227,6 +230,78 @@ export async function runTests() {
     }
     passed++;
   } catch (e) { failed++; errors.push(`mark tracks both ways: ${msg(e)}`); }
+
+  // --- 5: under en-XA, every state the tile draws is translated ---
+  // The goal, the summary and a running thread's live line are data (the call's
+  // goal, the child's answer, the footer's own wording), so those elements are
+  // skipped; everything else — status lines, Stop's text, title and aria-label,
+  // the cost pair — must be pseudo-localised. Collected across every state and
+  // asserted once, so a failure lists all of it.
+  // The lozenge depends on whether the lane's registry has loaded juggler-core:
+  // with it, the name is the thread capability's `getTypeName()`, translated
+  // in @juggler/core's catalogue; without it, core's own `Thread`. The test
+  // fixes the first so it does not hang on which suites ran in this lane
+  // before it, and hands that word to the stand-in @juggler/core catalogue (a
+  // scoped lookup never searches the test's own namespace).
+  const registryOriginal = { get: contextItemRegistry.get, getExtensionId: contextItemRegistry.getExtensionId };
+  const threadCapability = class { static getTypeName() { return 'Thread'; } static MANIFEST = { id: 'thread', name: 'Create Thread' }; };
+  contextItemRegistry.get = /** @type {any} */ ((/** @type {string} */ id) => (id === 'thread' ? threadCapability : registryOriginal.get.call(contextItemRegistry, id)));
+  contextItemRegistry.getExtensionId = (id) => (id === 'thread' ? '@juggler/core' : registryOriginal.getExtensionId.call(contextItemRegistry, id));
+  try {
+    /** @type {string[]} */
+    const raw = [];
+    let checked = 0;
+    await underPseudoLocale('test-thread-tile', () => {
+      /**
+       * @param {Element} root
+       * @param {string} where
+       * @param {string} skip
+       */
+      const collect = (root, where, skip) => {
+        const shown = shownStrings(root, skip);
+        checked += shown.length;
+        for (const s of shown) if (!isPseudoLocalized(s)) raw.push(`${where}: ${s}`);
+      };
+      /**
+       * @param {any} t
+       * @param {any} live
+       * @param {string} where
+       * @param {string} skip
+       */
+      const drawTile = (t, live, where, skip) => {
+        const tile = /** @type {any} */ (document.createElement('thread-message'));
+        document.body.appendChild(tile);
+        try {
+          tile.updateFromItem(t, live);
+          collect(tile, where, skip);
+        } finally {
+          tile.remove();
+        }
+      };
+      for (const state of states) {
+        const t = state.thread();
+        t.set('goal', '1');
+        drawTile(t, state.live, state.name,
+          // juggler-spinner.js draws its own "Loading" label; it is another file's slice.
+          state.kind === 'running' ? '.thread-goal, .thread-status-message > span, juggler-spinner' : '.thread-goal');
+      }
+      // At rest with a summary and the cost pair it closes on.
+      drawTile(thread({ goal: '1', result: '2', contextTokens: 3, resultTokens: 4 }), null, 'summary',
+        '.thread-goal, .thread-summary');
+      // A settled run with no result: "Idle" from the run record.
+      drawTile(thread({ ...openRunFields, goal: '1' }, [{ ...openRunItem, runStatus: 'completed' }]), null,
+        'settled, no result', '.thread-goal');
+      // The panel's body painted with no status at all.
+      const bare = document.createElement('div');
+      paintThreadSummary(bare, '');
+      collect(bare, 'not summarised', '');
+    }, { '@juggler/core': ['Thread'] });
+    assert(checked >= 20, `expected the walk to see at least 20 strings, saw ${checked}`);
+    assert(raw.length === 0, `plain English under en-XA: ${JSON.stringify(raw)}`);
+    passed++;
+  } catch (e) { failed++; errors.push(`en-XA: ${msg(e)}`); } finally {
+    Object.assign(contextItemRegistry, registryOriginal);
+  }
 
   return { passed, failed, errors };
 }

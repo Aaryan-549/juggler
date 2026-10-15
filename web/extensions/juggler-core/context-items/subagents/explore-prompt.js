@@ -3,6 +3,7 @@
 //   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   Apache-2.0 - see LICENSE
 // SPDX-License-Identifier: Apache-2.0
 
+import { markUntranslated } from 'juggler/i18n';
 import { subagentBrief } from './subagent-brief.js';
 
 /**
@@ -13,14 +14,14 @@ import { subagentBrief } from './subagent-brief.js';
  * @type {string}
  */
 export const EXPLORE_GUIDANCE = subagentBrief({
-  label: 'EXPLORE',
-  scope: 'about this codebase',
+  label: markUntranslated('EXPLORE'),
+  scope: markUntranslated('about this codebase'),
   rules: [
-    'Search the code, do not guess. Ground every claim in a file and line you '
-    + 'actually read.',
-    'You have the read tools and `bash` for inspection (`git log`, `git blame`). '
-    + 'You cannot edit anything, and you have no network access.',
-    'Prefer `query_code` when the answer is computable in one pass, and '
-    + '`batch_read` / `batch_grep` over many single calls.'
+    markUntranslated('Search the code, do not guess. Ground every claim in a file and line you '
+    + 'actually read.'),
+    markUntranslated('You have the read tools and `bash` for inspection (`git log`, `git blame`). '
+    + 'You cannot edit anything, and you have no network access.'),
+    markUntranslated('Prefer `query_code` when the answer is computable in one pass, and '
+    + '`batch_read` / `batch_grep` over many single calls.')
   ]
 });

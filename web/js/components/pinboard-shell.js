@@ -38,6 +38,7 @@ import { markPopupOpen, isAnyPopupOpen } from '../utils/popup-manager.js';
 import { attachSwipeDismiss } from '../utils/swipe-dismiss.js';
 import { extractErrorMessage } from '../../sdk/lib/error-utils.js';
 import { isPinboardView } from '../utils/view-mode.js';
+import { t } from '../../sdk/lib/i18n.js';
 import findBar from './find-bar.js';
 import { cachedWindowPref, getWindowPref, setWindowPref } from '../services/prefs.js';
 import './pinboard-panel.js';
@@ -158,7 +159,7 @@ class PinboardShell extends JugglerElement {
     panel.id = 'pinboard-panel';
     panel.className = 'pinboard-panel';
     panel.setAttribute('role', 'complementary');
-    panel.setAttribute('aria-label', 'Pinboard');
+    panel.setAttribute('aria-label', t('Pinboard'));
 
     const handle = document.createElement('div');
     handle.className = 'pinboard-resize-handle';
@@ -217,7 +218,7 @@ class PinboardShell extends JugglerElement {
     panel.id = 'pinboard-panel';
     panel.className = 'pinboard-panel';
     panel.setAttribute('role', 'main');
-    panel.setAttribute('aria-label', 'Pinboard');
+    panel.setAttribute('aria-label', t('Pinboard'));
     this.append(panel);
     this._panel = panel;
   }
@@ -291,7 +292,7 @@ class PinboardShell extends JugglerElement {
     if (hasProject && !this._loadStarted) {
       this._loadStarted = true;
       this._loaded = pinboardStore.load().catch((err) => {
-        pinboardView.setStatus(`Couldn't load the pinboard. ${extractErrorMessage(err)}`);
+        pinboardView.setStatus(t('Couldn\'t load the pinboard. {error}', { error: extractErrorMessage(err) }));
       });
     }
     const enabled = pinboardItemRegistry.getEnabledTypes();

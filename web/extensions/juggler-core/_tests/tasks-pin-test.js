@@ -21,6 +21,16 @@
 
 import TasksPin from '../pins/tasks-pin.js';
 import { assert } from '../../../js-tests/utilities/test-helpers.js';
+import { underPseudoLocale, shownStrings } from '../../../js-tests/utilities/pseudo-locale.js';
+import { isPseudoLocalized } from '../../../sdk/lib/i18n.js';
+
+/** juggler-core's English for this pin, standing in for its catalogue. */
+const CORE_TEXT = [
+  'No active conversation', 'Background tasks', 'Stop', 'Reveal the action that started {name}', 'Stop {name}',
+  '{seconds}s', '{minutes}m', '{hours}h {minutes}m', 'Looking…',
+  'Commands left running in the background appear here.', "Couldn't check what's running. {error}",
+  "Couldn't stop it. {error}", 'Only what this conversation started, and only while it runs.',
+];
 
 /**
  * @typedef {object} TestResult
@@ -441,6 +451,57 @@ export async function runTests(_ctx) {
     assert(m.watchers() === 1, `expected one watcher, got ${m.watchers()}`);
     m.teardown();
     assert(m.watchers() === 0, `expected none after teardown, got ${m.watchers()}`);
+  });
+
+  // --- en-XA ----------------------------------------------------------------
+
+  await test('en-XA: the add reason, tab, every state, row controls, elapsed times and errors are translated', async () => {
+    await underPseudoLocale('tasks-pin-test', async () => {
+      /** @type {Record<string, string>} */
+      const shown = {};
+      /**
+       * Gather what a mounted body shows. Commands, tools and labels are the
+       * task's own words — data — so they are left out.
+       * @param {string} where - The state's name.
+       * @param {HTMLElement} body - The pin's body.
+       */
+      const collect = (where, body) => {
+        shownStrings(body, '.tasks-pin__command, .tasks-pin__tool, .tasks-pin__label')
+          .forEach((s, i) => { shown[`${where} ${i}`] = s; });
+      };
+
+      shown['add reason'] = String(pin.canAdd(/** @type {any} */ ({ conversation: null })));
+      shown['tab title'] = String(pin.describe().title);
+
+      const looking = mount(null);
+      collect('looking', looking.body);
+      looking.teardown();
+
+      const empty = mount([]);
+      collect('empty', empty.body);
+      empty.teardown();
+
+      const now = Date.now();
+      const running = mount([
+        task('7', { toolName: '7', label: '7', at: now - 5000 }),
+        task('7', { toolName: '7', at: now - 90000 }),
+        task('', { toolName: '7', at: now - 3700000 }),
+      ], { error: '7' });
+      assert(running.body.querySelectorAll('.tasks-pin__elapsed').length === 3, 'expected three elapsed times');
+      assert(running.body.querySelector('.tasks-pin__error'), 'expected the check error');
+      collect('running', running.body);
+      running.teardown();
+
+      const failing = mount([task('7')], { stopFails: new Error('7') });
+      failing.stopButtons()[0].click();
+      await waitFor(() => failing.body.querySelector('.tasks-pin__error') !== null, 'the stop failure');
+      collect('stop failed', failing.body);
+      failing.teardown();
+
+      assert(Object.keys(shown).length > 12, `too little was checked: ${JSON.stringify(shown)}`);
+      const raw = Object.entries(shown).filter(([, s]) => !isPseudoLocalized(s));
+      assert(raw.length === 0, `plain English under en-XA: ${JSON.stringify(raw)}`);
+    }, { '@juggler/core': CORE_TEXT });
   });
 
   return { passed, failed, errors };

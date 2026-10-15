@@ -20,6 +20,7 @@
  */
 
 import { workspaceStatus } from '../services/workspace-provisioning.js';
+import { t } from '../../sdk/lib/i18n.js';
 
 /**
  * WorkspaceBoxHeader - a workspace, named above the conversations working in it.
@@ -127,7 +128,7 @@ class WorkspaceBoxHeader extends HTMLElement {
     this.classList.toggle('is-dirty', dirty);
     // A tooltip repeating a name the lozenge shows in full says nothing, so the
     // header's own is only to put the dirty dot into words.
-    if (dirty) this.title = 'Holding uncommitted work';
+    if (dirty) this.title = t('Holding uncommitted work');
     else this.removeAttribute('title');
   }
 

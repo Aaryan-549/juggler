@@ -23,6 +23,19 @@ import { createBoundOps } from '../../sdk/ops.js';
 import { createFileSource, fileSourceFromText, toDescriptor } from '../../sdk/file-source.js';
 import HtmlFileViewer from '../../extensions/juggler-core/viewers/html-file-viewer.js';
 import TextFileViewer from '../../extensions/juggler-core/viewers/text-file-viewer.js';
+import { isPseudoLocalized } from '../../sdk/lib/i18n.js';
+import { underPseudoLocale, shownStrings } from '../utilities/pseudo-locale.js';
+
+/** The viewer's English messages, registered pseudo-localised under its extension id. */
+const CORE_TEXT = [
+  'Part of the file, so shown as source.',
+  'Nothing to load it from, so shown as source.',
+  'Couldn’t load the page (HTTP {status}), so shown as source.',
+  'Couldn’t load the page ({error}), so shown as source.',
+  'Source', 'Preview', 'Show rendered preview',
+  '{kind, select, svg {Show SVG source} other {Show HTML source}}',
+  '{kind, select, svg {SVG preview} other {HTML preview}}',
+];
 
 const PAGE = '<!DOCTYPE html>\n<html><body><h1>Report</h1><script>document.title = "x";</script></body></html>\n';
 
@@ -276,6 +289,66 @@ export async function runTests() {
   ]);
   tally(check(!!html.text && html.text === text.text,
     'extract() must hand the model the same source text the text viewer does', errors));
+
+  // Under en-XA every note, the toggle in both states and the frame's fallback
+  // name are translated. The source block and the frame's content are the
+  // file's own text, so only the note, the header bar and the frame's
+  // aria-label are read. A source with no path gets the frame's own name.
+  try {
+    await underPseudoLocale('html-file-viewer-test', async () => {
+      /** @type {Record<string, string>} */
+      const shown = {};
+      /**
+       * @param {string} where - Which state
+       * @param {Element|null} el - What to read
+       */
+      const collect = (where, el) => {
+        if (!el) throw new Error(`${where}: nothing drawn`);
+        shownStrings(el).forEach((s, i) => { shown[`${where} ${i}`] = s; });
+      };
+      /**
+       * @param {string} where - Which state
+       * @param {import('juggler/file-source').FileSource} src - What to render
+       */
+      const note = async (where, src) => {
+        const r = await render(src);
+        try { collect(where, r.host.querySelector('.html-view-note')); } finally { dispose(r); }
+      };
+      await note('partial', servedSource({ lineOffset: 2, lineCount: 1 }));
+      await note('no url', fileSourceFromText({ path: '7.html', text: PAGE }));
+      await note('refused', servedSource({ url: () => '/api/session/files/content?path=%2Fnowhere%2Fmissing.html' }));
+      const realFetch = window.fetch;
+      window.fetch = async () => { throw new Error('7'); };
+      try {
+        await note('unreachable', servedSource());
+      } finally {
+        window.fetch = realFetch;
+      }
+      for (const [kind, over] of /** @type {const} */ ([
+        ['html', { path: '' }],
+        ['svg', { path: '', mime: 'image/svg+xml', text: SVG, size: SVG.length }],
+      ])) {
+        const r = await render(servedSource(over));
+        try {
+          const frame = r.host.querySelector('iframe');
+          shown[`${kind} frame`] = frame?.getAttribute('aria-label') || '';
+          collect(`${kind} previewing`, r.header.querySelector('.html-view-bar'));
+          /** @type {HTMLButtonElement|null} */ (r.header.querySelector('button'))?.click();
+          await new Promise((resolve) => setTimeout(resolve, 0));
+          collect(`${kind} source`, r.header.querySelector('.html-view-bar'));
+        } finally {
+          dispose(r);
+        }
+      }
+      const raw = Object.entries(shown).filter(([, s]) => !isPseudoLocalized(s));
+      if (raw.length) throw new Error(`plain English under en-XA: ${JSON.stringify(Object.fromEntries(raw))}`);
+      if (!/7/.test(shown['unreachable 0'] || '')) throw new Error(`the fetch error is missing: ${shown['unreachable 0']}`);
+    }, { '@juggler/core': CORE_TEXT });
+    passed++;
+  } catch (e) {
+    failed++;
+    errors.push(`en-XA: ${/** @type {Error} */ (e).message}`);
+  }
 
   return { passed, failed, errors };
 }

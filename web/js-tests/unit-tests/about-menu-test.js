@@ -15,6 +15,8 @@
 
 import { assert, waitFor } from '../utilities/test-helpers.js';
 import '../../js/components/about-modal.js';
+import { underPseudoLocale, shownStrings } from '../utilities/pseudo-locale.js';
+import { isPseudoLocalized } from '../../sdk/lib/i18n.js';
 
 /**
  * @returns {Promise<{passed: number, failed: number, errors: string[]}>} Aggregated test results.
@@ -146,9 +148,42 @@ export async function runTests() {
     /** @type {HTMLElement} */ (modal.querySelector('#about-close')).click();
     assert(clubs.every(club => club.getAnimations().length === 0), 'closing must cancel airborne clubs');
     passed++;
+
+    // --- en-XA: everything the box says is translated ------------------------
+    // A box of its own, opened directly, whose /version answer carries no
+    // version, so the "Unknown" it shows instead is checked too.
+    /** @type {string[]} */
+    const shown = [];
+    const fresh = /** @type {any} */ (document.createElement('about-modal'));
+    try {
+      await underPseudoLocale('test-about-modal', async () => {
+        const realFetch = window.fetch;
+        window.fetch = /** @type {any} */ ((/** @type {any} */ input, /** @type {any} */ init) => (
+          String(input?.url ?? input).includes('/version')
+            ? Promise.resolve(new window.Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } }))
+            : realFetch.call(window, input, init)));
+        try {
+          document.body.appendChild(fresh);
+          await fresh.open();
+        } finally {
+          window.fetch = realFetch;
+        }
+        // The logo is the product name; the site URL and the author's name
+        // are data, drawn as written.
+        shown.push(...shownStrings(fresh,
+          '.about-logo, a[href="https://juggler.studio"], a[href="https://github.com/julianstorer"]'));
+        assert(shown.length >= 6, `the box drew its text, got ${JSON.stringify(shown)}`);
+      });
+    } finally {
+      fresh.querySelector('#about-close')?.click();
+      fresh.remove();
+    }
+    const raw = shown.filter((s) => !isPseudoLocalized(s));
+    assert(raw.length === 0, `plain English under en-XA (about box): ${JSON.stringify(raw)}`);
+    passed++;
   } catch (e) {
     failed++;
-    errors.push(`about-menu: ${/** @type {any} */ (e)?.message || e}`);
+    errors.push(`about-menu: ${/** @type {any} */ (e)?.message || e}\n${/** @type {any} */ (e)?.stack || ''}`);
   } finally {
     const close = /** @type {HTMLElement|null} */ (modal.querySelector('#about-close'));
     if (close) close.click();

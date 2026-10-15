@@ -47,6 +47,9 @@
  */
 
 import { providers, isHidden, hideCard, INFO_CARDS_CHANGED_EVENT } from '../services/info-cards-manager.js';
+import infoCardRegistry from '../registries/info-card-registry.js';
+import { capabilityLabel } from '../utils/capability-label.js';
+import { t } from '../../sdk/lib/i18n.js';
 import './info-cards-button.js';
 import JugglerElement from './juggler-element.js';
 
@@ -360,14 +363,16 @@ class InfoRail extends JugglerElement {
 
     const eyebrow = document.createElement('span');
     eyebrow.className = 'info-card__eyebrow';
-    eyebrow.textContent = provider.eyebrow;
+    // A manifest literal, extracted into the owning extension's catalogue.
+    eyebrow.textContent = capabilityLabel(provider.eyebrow, provider.id, infoCardRegistry);
     header.appendChild(eyebrow);
 
     const close = document.createElement('button');
     close.type = 'button';
     close.className = 'info-card__close';
-    close.setAttribute('aria-label', `Hide ${provider.name}`);
-    close.title = `Hide ${provider.name}`;
+    const hideLabel = t('Hide {name}', { name: capabilityLabel(provider.name, provider.id, infoCardRegistry) });
+    close.setAttribute('aria-label', hideLabel);
+    close.title = hideLabel;
     close.textContent = '×';
     close.addEventListener('click', (e) => { e.stopPropagation(); hideCard(provider.id); });
     header.appendChild(close);

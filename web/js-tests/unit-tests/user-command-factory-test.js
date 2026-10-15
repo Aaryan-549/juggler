@@ -18,6 +18,8 @@ import { expandTemplate, makeUserCommandClass } from '../../js/plugins/user-comm
 import { parseInvocation } from '../../js/services/slash-command-handler.js';
 import providersCache from '../../js/services/providers-cache.js';
 import { assert } from '../utilities/test-helpers.js';
+import { underPseudoLocale } from '../utilities/pseudo-locale.js';
+import { isPseudoLocalized } from '../../sdk/lib/i18n.js';
 
 /**
  * @typedef {object} TestResult
@@ -302,6 +304,35 @@ export async function runTests(_ctx) {
     const res = await cmd.execute([]);
     assert(res.handled === true && res.error === true, 'handled error result');
   });
+
+  // ---- en-XA ----
+
+  // The notice is UI text; the command's name, description and expanded prompt
+  // are the user's own and stay exactly as written.
+  await test('under en-XA the notice is translated and the user\'s text is not', () => underPseudoLocale('user-command-factory-test', async () => {
+    const def = {
+      name: 'review-pr', scope: 'user', path: '/x',
+      frontmatter: { description: 'Review a PR' }, body: 'Review $1',
+    };
+    const Cls = makeUserCommandClass(def);
+    /** @type {string[]} */
+    const problems = [];
+
+    const res = await new Cls({ messageThread: undefined }).execute([]);
+    if (!isPseudoLocalized(String(res.message))) problems.push(`notice ${JSON.stringify(res.message)}`);
+
+    const m = /** @type {any} */ (Cls).MANIFEST;
+    if (m.name !== 'Review Pr') problems.push(`name ${JSON.stringify(m.name)}`);
+    if (m.description !== 'Review a PR') problems.push(`description ${JSON.stringify(m.description)}`);
+
+    /** @type {any} */
+    let sent = null;
+    const fakeThread = { threadItemId: null, conversation: { sendMessage: (/** @type {any} */ text) => { sent = text; return Promise.resolve(null); } } };
+    await new Cls({ messageThread: fakeThread }).execute(['42']);
+    if (sent !== 'Review 42') problems.push(`prompt ${JSON.stringify(sent)}`);
+
+    assert(problems.length === 0, `under en-XA: ${JSON.stringify(problems)}`);
+  }));
 
   return { passed, failed, errors };
 }

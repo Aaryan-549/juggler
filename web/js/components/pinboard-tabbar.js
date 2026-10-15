@@ -26,6 +26,7 @@
 import JugglerElement from './juggler-element.js';
 import { startReorderDrag } from '../utils/reorder-drag.js';
 import { createDragGrip, pointerMayGrab } from '../utils/drag-grip.js';
+import { t } from '../../sdk/lib/i18n.js';
 
 /** The id the active tab labels — the one body the panel mounts into. */
 export const PINBOARD_BODY_ID = 'pinboard-body';
@@ -86,13 +87,13 @@ class PinboardTabbar extends JugglerElement {
     const list = document.createElement('div');
     list.className = 'pinboard-tabbar__list';
     list.setAttribute('role', 'tablist');
-    list.setAttribute('aria-label', 'Pinned items');
+    list.setAttribute('aria-label', t('Pinned items'));
 
     const add = document.createElement('button');
     add.type = 'button';
     add.className = 'pinboard-tabbar__add';
-    add.title = 'Add pin';
-    add.setAttribute('aria-label', 'Add pin');
+    add.title = t('Add pin');
+    add.setAttribute('aria-label', t('Add pin'));
     add.setAttribute('aria-haspopup', 'menu');
     add.setAttribute('aria-expanded', 'false');
     add.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" aria-hidden="true"><path d="${ADD_ICON_PATH}"/></svg>`;
@@ -216,7 +217,7 @@ class PinboardTabbar extends JugglerElement {
     // The label is for anything that cannot see a bin. A tooltip would only put
     // the same words under the pointer, on a control whose glyph has never
     // needed them.
-    remove.setAttribute('aria-label', `Remove ${tab.title} from Pinboard`);
+    remove.setAttribute('aria-label', t('Remove {title} from Pinboard', { title: tab.title }));
   }
 
   /**

@@ -28,6 +28,7 @@ import { rebindConversation } from '../services/workspace-rebinding.js';
 import { extractErrorMessage } from '../../sdk/lib/error-utils.js';
 import { createFileActions } from '../utils/properties-panel-helpers.js';
 import { setupButton } from './workspace-setup-form.js';
+import { t } from '../../sdk/lib/i18n.js';
 
 /**
  * Ask whether this conversation should move, and move it if so.
@@ -61,7 +62,7 @@ export function openWorkspaceMove(conversation, workspaceId) {
      * @returns {{label: string, path: string}} Its name and its address.
      */
     const describe = (id) => {
-      if (!id) return { label: 'The project folder', path: session?.projectPath || '' };
+      if (!id) return { label: t('The project folder'), path: session?.projectPath || '' };
       const workspace = session?.getWorkspace?.(id);
       // The id is the last resort rather than a lie: a workspace this window
       // cannot resolve is one the move is about to be refused for, and the
@@ -133,7 +134,7 @@ export function openWorkspaceMove(conversation, workspaceId) {
           modal.close({ moved: true, workspaceId: target });
           return;
         }
-        error = result.message || `Couldn't move the conversation.`;
+        error = result.message || t(`Couldn't move the conversation.`);
       } catch (failure) {
         // The press is answered whatever happens. Every refusal is phrased to be
         // shown here, but a throw nobody expected would leave the dialog as it
@@ -163,18 +164,18 @@ export function openWorkspaceMove(conversation, workspaceId) {
       dialog.className = 'workspace-move-dialog';
       dialog.setAttribute('role', 'dialog');
       dialog.setAttribute('aria-modal', 'true');
-      dialog.setAttribute('aria-label', 'Move this conversation');
+      dialog.setAttribute('aria-label', t('Move this conversation'));
       root.appendChild(dialog);
 
       const header = document.createElement('div');
       header.className = 'workspace-move-header';
       const title = document.createElement('h2');
       title.className = 'workspace-move-title';
-      title.textContent = 'Move this conversation';
+      title.textContent = t('Move this conversation');
       header.appendChild(title);
       const close = setupButton('close-button workspace-move-close', '', () => modal.close(undefined));
-      close.setAttribute('aria-label', 'Close');
-      close.title = 'Close';
+      close.setAttribute('aria-label', t('Close'));
+      close.title = t('Close');
       const cross = document.createElement('span');
       cross.className = 'icon-close';
       close.appendChild(cross);
@@ -185,8 +186,8 @@ export function openWorkspaceMove(conversation, workspaceId) {
       body.className = 'workspace-move-body';
       dialog.appendChild(body);
 
-      body.appendChild(placeBlock('workspace-move-from', 'Working in', currentId));
-      body.appendChild(placeBlock('workspace-move-to', 'Moving to', target));
+      body.appendChild(placeBlock('workspace-move-from', t('Working in'), currentId));
+      body.appendChild(placeBlock('workspace-move-to', t('Moving to'), target));
 
       if (error) {
         const failure = document.createElement('div');
@@ -197,9 +198,9 @@ export function openWorkspaceMove(conversation, workspaceId) {
 
       const actions = document.createElement('div');
       actions.className = 'workspace-move-footer';
-      actions.appendChild(setupButton('btn-secondary workspace-move-cancel', 'Cancel',
+      actions.appendChild(setupButton('btn-secondary workspace-move-cancel', t('Cancel'),
         () => modal.close(undefined)));
-      const move = setupButton('btn-primary workspace-move-commit', 'Move',
+      const move = setupButton('btn-primary workspace-move-commit', t('Move', undefined, { context: 'button' }),
         () => { void commit(); });
       move.disabled = moving;
       actions.appendChild(move);

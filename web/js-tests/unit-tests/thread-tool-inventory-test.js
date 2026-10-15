@@ -16,10 +16,13 @@
  */
 
 import { assert } from '../utilities/test-helpers.js';
+import { underPseudoLocale } from '../utilities/pseudo-locale.js';
+import { isPseudoLocalized } from '../../sdk/lib/i18n.js';
 import {
   attachProgramSdk,
   diffToolNames,
   formatToolDrift,
+  groupToolsByOrigin,
   splitToolsByStrategy,
   strategyDisplayName,
   toolDriftDetail,
@@ -242,6 +245,41 @@ export async function runTests(_ctx) {
     assert(excludedFromProgram.join(',') === 'keep_notes,other_program',
       `the offered tools a program cannot call are named, all but the program itself: ${excludedFromProgram}`);
     assert(offered[3].description === 'Run a program', 'the input definitions are not mutated');
+  });
+
+  // Under en-XA: the drift line, its tooltip and the group headings are UI text
+  // (the System Prompt panel and the transaction panel draw them), so they come
+  // out pseudo-localised; the program tool's description is what the model is
+  // sent, so it stays the English it was given. Tool and server names are
+  // digits, so they are data the check can see past.
+  await run('en-XA: drift and group titles are translated, the tool schema is not', async () => {
+    /** @type {string[]} */
+    const problems = [];
+    await underPseudoLocale('thread-tool-inventory-test', () => {
+      const drift = diffToolNames([{ name: '1' }, { name: '2' }, { name: '3' }], [{ name: '1' }, { name: '4' }]);
+      const shown = {
+        both: formatToolDrift(drift),
+        added: formatToolDrift(diffToolNames([{ name: '1' }], [{ name: '1' }, { name: '4' }])),
+        gone: formatToolDrift(diffToolNames([{ name: '1' }, { name: '2' }], [{ name: '1' }])),
+        ...Object.fromEntries(toolDriftDetail(drift).split('\n').map((line, i) => [`detail${i}`, line])),
+        ...Object.fromEntries(groupToolsByOrigin([{ name: '5' }, { name: 'mcp__7__8' }])
+          .map((g, i) => [`group${i}`, g.title])),
+      };
+      for (const [where, text] of Object.entries(shown)) {
+        if (!isPseudoLocalized(text)) problems.push(`${where} shown in English: ${JSON.stringify(text)}`);
+      }
+      if (!('detail1' in shown)) problems.push(`expected two detail lines, got ${JSON.stringify(shown)}`);
+      if (!('group1' in shown)) problems.push(`expected two groups, got ${JSON.stringify(shown)}`);
+
+      const sent = attachProgramSdk(
+        [{ name: 'read', description: 'Read' }, { name: 'program_tool', description: 'Run a program', programSdk: true }],
+        () => () => 'SDK', () => true
+      ).find((t) => t.name === 'program_tool');
+      if (sent?.description !== 'Run a program\n\nSDK') {
+        problems.push(`the model's tool description changed under en-XA: ${JSON.stringify(sent?.description)}`);
+      }
+    });
+    assert(problems.length === 0, problems.join('; '));
   });
 
   return { passed, failed, errors };

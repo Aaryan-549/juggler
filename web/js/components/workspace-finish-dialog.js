@@ -44,6 +44,7 @@
 
 import { presentModal } from '../utils/modal-surface.js';
 import { setupButton } from './workspace-setup-form.js';
+import { t } from '../../sdk/lib/i18n.js';
 
 /** Sole counter behind field ids, so a label binds to its own field. */
 let sequence = 0;
@@ -91,7 +92,8 @@ function workList(status) {
 
   const count = document.createElement('div');
   count.className = 'workspace-finish-work-count';
-  count.textContent = total === 1 ? '1 file will be committed' : `${total} files will be committed`;
+  count.textContent = t('{count, plural, one {{count} file will be committed} other {{count} files will be committed}}',
+    { count: total });
   box.appendChild(count);
 
   const list = document.createElement('div');
@@ -117,7 +119,7 @@ function workList(status) {
   if (hidden > 0) {
     const rest = document.createElement('div');
     rest.className = 'workspace-finish-work-rest';
-    rest.textContent = `…and ${hidden} more.`;
+    rest.textContent = t('{count, plural, one {…and {count} more.} other {…and {count} more.}}', { count: hidden });
     list.appendChild(rest);
   }
 
@@ -174,7 +176,7 @@ export function openWorkspaceFinish(option, context = {}) {
     dialog.className = 'workspace-move-dialog';
     dialog.setAttribute('role', 'dialog');
     dialog.setAttribute('aria-modal', 'true');
-    dialog.setAttribute('aria-label', text(option?.label) || 'Finish');
+    dialog.setAttribute('aria-label', text(option?.label) || t('Finish', undefined, { context: 'dialog name' }));
     modal.root.appendChild(dialog);
 
     const header = document.createElement('div');
@@ -185,8 +187,8 @@ export function openWorkspaceFinish(option, context = {}) {
     header.appendChild(title);
     const dismiss = setupButton('close-button workspace-move-close', '',
       () => modal.close(undefined));
-    dismiss.setAttribute('aria-label', 'Close');
-    dismiss.title = 'Close';
+    dismiss.setAttribute('aria-label', t('Close'));
+    dismiss.title = t('Close');
     const cross = document.createElement('span');
     cross.className = 'icon-close';
     dismiss.appendChild(cross);
@@ -246,7 +248,7 @@ export function openWorkspaceFinish(option, context = {}) {
     const note = document.createElement('div');
     note.className = 'setup-field-note';
     note.textContent = idle
-      ? 'Nothing has changed here, so there is nothing to put a message on.'
+      ? t('Nothing has changed here, so there is nothing to put a message on.')
       : text(prompt.hint);
     if (idle) note.classList.add('setup-field-note-error');
     row.appendChild(note);
@@ -278,7 +280,7 @@ export function openWorkspaceFinish(option, context = {}) {
 
     const actions = document.createElement('div');
     actions.className = 'workspace-move-footer';
-    actions.appendChild(setupButton('btn-secondary workspace-finish-cancel', 'Cancel',
+    actions.appendChild(setupButton('btn-secondary workspace-finish-cancel', t('Cancel'),
       () => modal.close(undefined)));
 
     const submit = () => {
@@ -289,7 +291,7 @@ export function openWorkspaceFinish(option, context = {}) {
     // The act, not the sentence: the ending's own label names a row in a menu
     // beside other rows, and this is a button in a row of buttons.
     const commit = setupButton('btn-primary workspace-finish-commit',
-      text(prompt.confirmLabel) || text(option?.label) || 'Continue', submit);
+      text(prompt.confirmLabel) || text(option?.label) || t('Continue'), submit);
     actions.appendChild(commit);
     dialog.appendChild(actions);
 

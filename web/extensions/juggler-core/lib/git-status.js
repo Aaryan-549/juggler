@@ -12,6 +12,10 @@
  * @module lib/git-status
  */
 
+import { translator } from 'juggler/i18n';
+
+const t = translator('@juggler/core');
+
 /**
  * @typedef {import('juggler/pinboard-item-type').PinGitRepo} GitRepo
  * @typedef {import('juggler/pinboard-item-type').PinGitFile} GitFile
@@ -37,10 +41,12 @@ export function repoLabel(root, repoPath) {
  * @returns {string} e.g. '2 changed, 1 staged', or '' when the tree is clean.
  */
 export function countsPhrase(repo) {
-  const parts = [];
-  if (repo.changed > 0) parts.push(`${repo.changed} changed`);
-  if (repo.staged > 0) parts.push(`${repo.staged} staged`);
-  return parts.join(', ');
+  const changed = repo.changed > 0;
+  const staged = repo.staged > 0;
+  if (changed && staged) return t('{changed} changed, {staged} staged', { changed: repo.changed, staged: repo.staged });
+  if (changed) return t('{count} changed', { count: repo.changed });
+  if (staged) return t('{count} staged', { count: repo.staged });
+  return '';
 }
 
 /**

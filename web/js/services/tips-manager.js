@@ -20,6 +20,7 @@
 
 import keyShortcutManager from './key-shortcut-manager.js';
 import { cachedUserPref, setUserPref, notifyPrefChanged, reconcilePref } from './prefs.js';
+import { markForTranslation } from '../../sdk/lib/i18n.js';
 
 /** The user preference holding `{ seen: string[], off?: true }`. */
 const PREF_NAME = 'juggler-tips';
@@ -32,8 +33,8 @@ export const TIPS_CHANGED_EVENT = 'juggler:tips-changed';
  * @typedef {object} Tip
  * @property {string} id - Stable identifier, also the "seen" key.
  * @property {'shortcut'|'feature'} kind - Shortcut tips render a live key glyph.
- * @property {string} title - Short headline.
- * @property {string} body - One-line explanation.
+ * @property {string} title - Short headline, in English; the view translates it.
+ * @property {string} body - One-line explanation, in English; the view translates it.
  * @property {string} [shortcutId] - For `kind:'shortcut'`, the KeyShortcutManager
  *   id — the view formats it live so the glyph stays platform-correct.
  */
@@ -57,31 +58,31 @@ export const TIPS_CHANGED_EVENT = 'juggler:tips-changed';
  * @type {Array<{kind: 'shortcut', id: string, body: string} | Tip>}
  */
 const TIPS = [
-  { kind: 'shortcut', id: 'new-conversation', body: 'Spin up another conversation and switch to it — run several in parallel.' },
-  { kind: 'shortcut', id: 'jump-to-attention', body: 'Jump straight to whichever conversation is waiting on you, landing on its pending approval.' },
-  { kind: 'shortcut', id: 'strategy-switch', body: 'Flip the active strategy from the composer; hold to open the full strategy menu.' },
-  { kind: 'shortcut', id: 'cycle-model', body: 'Tap to flip back to your previous model; hold to open the full model menu — no mouse needed.' },
+  { kind: 'shortcut', id: 'new-conversation', body: markForTranslation('Spin up another conversation and switch to it — run several in parallel.') },
+  { kind: 'shortcut', id: 'jump-to-attention', body: markForTranslation('Jump straight to whichever conversation is waiting on you, landing on its pending approval.') },
+  { kind: 'shortcut', id: 'strategy-switch', body: markForTranslation('Flip the active strategy from the composer; hold to open the full strategy menu.') },
+  { kind: 'shortcut', id: 'cycle-model', body: markForTranslation('Tap to flip back to your previous model; hold to open the full model menu — no mouse needed.') },
   {
     id: 'workspaces',
     kind: 'feature',
-    title: 'Workspaces',
-    body: 'A workspace is a custom environment for the LLM to work in — e.g. a git worktree, or a copy to try '
+    title: markForTranslation('Workspaces'),
+    body: markForTranslation('A workspace is a custom environment for the LLM to work in — e.g. a git worktree, or a copy to try '
       + 'something risky in. Make one at the foot of the conversation list, then start '
-      + 'conversations in it or drag them across.',
+      + 'conversations in it or drag them across.'),
   },
-  { kind: 'shortcut', id: 'toggle-file-editing', body: 'Flip between letting the agent edit files freely and asking you first.' },
-  { kind: 'shortcut', id: 'pause-conversation', body: 'Pause after the current step finishes — a non-destructive stop, instead of a hard cancel.' },
-  { kind: 'shortcut', id: 'next-tab', body: 'Step through your conversation list without leaving the keyboard; Previous conversation steps back.' },
-  { kind: 'shortcut', id: 'cycle-thinking', body: 'Nudge the current model\u2019s thinking level up or down; hold to open the level popover.' },
-  { kind: 'shortcut', id: 'find-in-conversation', body: 'Search the text of whatever you\u2019re reading — the conversation, a properties panel, a pin.' },
+  { kind: 'shortcut', id: 'toggle-file-editing', body: markForTranslation('Flip between letting the agent edit files freely and asking you first.') },
+  { kind: 'shortcut', id: 'pause-conversation', body: markForTranslation('Pause after the current step finishes — a non-destructive stop, instead of a hard cancel.') },
+  { kind: 'shortcut', id: 'next-tab', body: markForTranslation('Step through your conversation list without leaving the keyboard; Previous conversation steps back.') },
+  { kind: 'shortcut', id: 'cycle-thinking', body: markForTranslation('Nudge the current model\u2019s thinking level up or down; hold to open the level popover.') },
+  { kind: 'shortcut', id: 'find-in-conversation', body: markForTranslation('Search the text of whatever you\u2019re reading — the conversation, a properties panel, a pin.') },
   {
     id: 'paste-images',
     kind: 'feature',
-    title: 'Paste a screenshot',
-    body: 'Paste an image straight into the composer to attach it to your prompt.',
+    title: markForTranslation('Paste a screenshot'),
+    body: markForTranslation('Paste an image straight into the composer to attach it to your prompt.'),
   },
-  { kind: 'shortcut', id: 'rename-conversation', body: 'Give the current conversation a memorable name, straight from the keyboard.' },
-  { kind: 'shortcut', id: 'bin-conversation', body: 'Clear a conversation out of the way — you can restore it from the Bin anytime.' },
+  { kind: 'shortcut', id: 'rename-conversation', body: markForTranslation('Give the current conversation a memorable name, straight from the keyboard.') },
+  { kind: 'shortcut', id: 'bin-conversation', body: markForTranslation('Clear a conversation out of the way — you can restore it from the Bin anytime.') },
 ];
 
 /**

@@ -7,6 +7,9 @@ import ContextItem from 'juggler/context-item';
 import { formatFileContentForLLM, injectFileContentStyles } from 'juggler/item-utils';
 import { fileSourceFromText } from 'juggler/file-source';
 import { createElement, addFilePath } from 'juggler/ui';
+import { translator, markUntranslated } from 'juggler/i18n';
+
+const t = translator('@juggler/core');
 
 injectFileContentStyles();
 
@@ -86,12 +89,14 @@ class DroppedFileContextItem extends ContextItem {
    */
   async onToolCall(_toolName, params) {
     if (typeof params.content !== 'string') {
-      throw new Error('Missing required parameter: content');
+      // The thrown error is the item's outcome error, which stays English.
+      throw new Error(markUntranslated('Missing required parameter: content'));
     }
     this.data.content = params.content;
     this.data.filename = typeof params.filename === 'string' && params.filename
       ? params.filename
-      : 'dropped file';
+      // Stored with the snapshot and used as the model's `<file>` label: data.
+      : markUntranslated('dropped file');
   }
 
   /**
@@ -99,18 +104,18 @@ class DroppedFileContextItem extends ContextItem {
    * @returns {import('juggler/context-item').ResultStatusMessage} Status UI config
    */
   getStatusUI() {
-    const name = this.data.filename || 'Dropped File';
-    return { typeName: 'Dropped File', summary: name, status: 'success' };
+    const name = this.data.filename || t('Dropped File');
+    return { typeName: t('Dropped File'), summary: name, status: 'success' };
   }
 
   /** @returns {string} Item title */
   getTitle() {
-    return this.data.filename || 'Dropped File';
+    return this.data.filename || t('Dropped File');
   }
 
   /** @returns {string} Brief summary for transaction display */
   getBriefSummary() {
-    return this.data.filename ? `Dropped file: ${this.data.filename}` : 'Dropped file';
+    return this.data.filename ? t('Dropped file: {filename}', { filename: this.data.filename }) : t('Dropped file');
   }
 
   /**
@@ -127,7 +132,7 @@ class DroppedFileContextItem extends ContextItem {
     const lineCount = content.split('\n').length;
     return formatFileContentForLLM({
       content,
-      path: this.data.filename || 'dropped file',
+      path: this.data.filename || markUntranslated('dropped file'),
       lineOffset: 1,
       lineCount,
       totalLines: lineCount
@@ -147,8 +152,8 @@ class DroppedFileContextItem extends ContextItem {
 
     const content = this.data.content || '';
     if (!content) {
-      addFilePath(container, this.data.filename || 'Dropped file');
-      container.appendChild(createElement('div', 'file-content-loading', '(empty)'));
+      addFilePath(container, this.data.filename || t('Dropped file'));
+      container.appendChild(createElement('div', 'file-content-loading', t('(empty)')));
       return container;
     }
 
@@ -157,7 +162,7 @@ class DroppedFileContextItem extends ContextItem {
     // captured and only ever resolves to the text viewer.
     const view = /** @type {any} */ (document.createElement('file-view'));
     view.setSource(fileSourceFromText({
-      path: this.data.filename || 'Dropped file',
+      path: this.data.filename || t('Dropped file'),
       text: content,
     }));
     container.appendChild(view);

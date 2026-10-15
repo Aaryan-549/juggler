@@ -3,6 +3,7 @@
 //   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
 
 import { escapeHtml } from '../../sdk/lib/html.js';
+import { t } from '../../sdk/lib/i18n.js';
 
 /**
  * Thinking Block Component
@@ -18,7 +19,7 @@ class ThinkingBlock extends HTMLElement {
             <div class="thinking-block ${expanded ? 'expanded' : 'collapsed'}">
                 <button class="thinking-block-header" type="button" aria-expanded="${expanded}">
                     <span class="thinking-block-icon">${expanded ? '▼' : '▶'}</span>
-                    <span class="thinking-block-title">Extended Thinking</span>
+                    <span class="thinking-block-title">${escapeHtml(t('Extended Thinking'))}</span>
                     ${signature ? `<span class="thinking-block-signature">${escapeHtml(signature)}</span>` : ''}
                 </button>
                 <div class="thinking-block-content ${expanded ? '' : 'hidden'}">

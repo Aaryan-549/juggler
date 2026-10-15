@@ -23,6 +23,7 @@
  *   6. Below 900px, help and zoom fold into a "…" menu that offers them back,
  *      with their shortcuts.
  *   7. Tooltips name shortcuts, and never restore a title that changed under them.
+ *   8. Under en-XA the network button's title and accessible name are translated.
  * @module unit-tests/header-bar-test
  */
 
@@ -33,6 +34,8 @@ import { setupHeaderOverflowMenu } from '../../js/utils/header-overflow-menu.js'
 import { assertMenuShape } from '../utilities/menu-assertions.js';
 import keyShortcutManager from '../../js/services/key-shortcut-manager.js';
 import tooltipManager from '../../js/services/tooltip-manager.js';
+import { underPseudoLocale } from '../utilities/pseudo-locale.js';
+import { isPseudoLocalized } from '../../sdk/lib/i18n.js';
 
 /**
  * @param {unknown} e
@@ -483,6 +486,43 @@ export async function runTests() {
     }
     passed++;
   } catch (e) { failed++; errors.push(`tooltips: ${msg(e)}`); }
+
+  // --- 8: under en-XA the network button's name is translated, count and all ---
+  try {
+    const { root, get } = mountButtons(served, ['network-button']);
+    /** @type {Set<(data: any) => void>} */
+    const heard = new Set();
+    const events = {
+      on: (/** @type {string} */ _type, /** @type {(data: any) => void} */ fn) => { heard.add(fn); },
+      off: (/** @type {string} */ _type, /** @type {(data: any) => void} */ fn) => { heard.delete(fn); },
+    };
+    const clientsChanged = (/** @type {number} */ count) => {
+      const clients = Array.from({ length: count }, (_, i) => ({ id: `c${i}`, viewerId: `v${i}` }));
+      for (const fn of [...heard]) fn({ count, clients });
+    };
+    /** @type {string[]} */
+    const shown = [];
+    try {
+      await underPseudoLocale('test-header-bar', async () => {
+        const binding = bindNetworkClients(get('network-button'), { events, seed: async () => 1 });
+        try {
+          await binding.ready;
+          const button = get('network-button');
+          for (const total of [1, 2, 4]) {
+            clientsChanged(total);
+            shown.push(button.title, String(button.getAttribute('aria-label')));
+          }
+        } finally {
+          binding.dispose();
+        }
+      });
+    } finally {
+      root.remove();
+    }
+    const raw = shown.filter((s) => !isPseudoLocalized(s));
+    assert(raw.length === 0, `plain English under en-XA (network button): ${JSON.stringify(raw)}`);
+    passed++;
+  } catch (e) { failed++; errors.push(`network button en-XA: ${msg(e)}`); }
 
   return { passed, failed, errors };
 }

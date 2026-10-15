@@ -27,6 +27,11 @@ import DroppedFileContextItem from '../context-items/dropped-file-context-item.j
 import { normalizeDraft } from '../../../js/utils/attachments.js';
 import { initializeRegistries, assert } from '../../../js-tests/utilities/test-helpers.js';
 import '../../../js/components/composer.js';
+import { underPseudoLocale, shownStrings } from '../../../js-tests/utilities/pseudo-locale.js';
+import { isPseudoLocalized } from '../../../sdk/lib/i18n.js';
+
+/** juggler-core's English for this plugin, standing in for its catalogue. */
+const CORE_TEXT = ['Dropped File', 'Dropped file', 'Dropped file: {filename}', '(empty)'];
 
 /**
  * Mount an <composer-box> offscreen and bind its listeners synchronously (render()
@@ -292,6 +297,54 @@ export async function runTests() {
     } finally {
       container.remove();
     }
+  });
+
+  // ── 5. en-XA: what the item shows is UI text, what the model reads is not ──
+
+  await test('under en-XA the item\'s own words are translated and the model\'s text stays English', async () => {
+    await underPseudoLocale('dropped-file-test', async () => {
+      /** @type {Record<string, string>} */
+      const shown = {};
+      const context = { id: 'DROP_xa', session: {}, conversation: {}, messageThread: {} };
+
+      // A drop whose name is digits reads as data inside each message.
+      const named = new DroppedFileContextItem(/** @type {any} */ (context));
+      await named.onToolCall('dropped-file', { filename: '1', content: '2' });
+      shown['brief summary, named'] = named.getBriefSummary();
+      shown['type name'] = String(/** @type {any} */ (named.getStatusUI()).typeName);
+
+      // The fallbacks drawn when no filename was captured.
+      const unnamed = new DroppedFileContextItem(/** @type {any} */ (context));
+      unnamed.data = { filename: '', content: '' };
+      shown['title, unnamed'] = unnamed.getTitle();
+      shown['brief summary, unnamed'] = unnamed.getBriefSummary();
+      shown['row, unnamed'] = String(/** @type {any} */ (unnamed.getStatusUI()).summary);
+      const emptyPanel = unnamed.createPropertiesPanelElement();
+      shownStrings(emptyPanel).forEach((s, i) => { shown[`empty panel ${i}`] = s; });
+      unnamed.data = { filename: '', content: '3' };
+      const view = /** @type {any} */ (unnamed.createPropertiesPanelElement().querySelector('file-view'));
+      assert(view?._source, 'the panel must hand the file view a source');
+      shown['panel path, unnamed'] = String(view._source.path);
+
+      // The model's text never follows the UI language.
+      /** @type {string[]} */
+      const modelProblems = [];
+      const defaulted = new DroppedFileContextItem(/** @type {any} */ (context));
+      await defaulted.onToolCall('dropped-file', { filename: '', content: '4' });
+      if (defaulted.data.filename !== 'dropped file') modelProblems.push(`stored filename ${JSON.stringify(defaulted.data.filename)}`);
+      const text = await defaulted.createContextText();
+      if (!text.includes('<file path="dropped file">')) modelProblems.push(`context text ${JSON.stringify(text)}`);
+      try {
+        await defaulted.onToolCall('dropped-file', { filename: '5' });
+        modelProblems.push('no throw for missing content');
+      } catch (/** @type {any} */ e) {
+        if (e.message !== 'Missing required parameter: content') modelProblems.push(`error ${JSON.stringify(e.message)}`);
+      }
+
+      const raw = Object.entries(shown).filter(([, s]) => !isPseudoLocalized(s));
+      assert(raw.length === 0 && modelProblems.length === 0,
+        `plain English under en-XA: ${JSON.stringify(raw)}; model text changed: ${JSON.stringify(modelProblems)}`);
+    }, { '@juggler/core': CORE_TEXT });
   });
 
   return { passed, failed, errors };

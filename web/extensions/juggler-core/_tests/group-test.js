@@ -37,6 +37,18 @@ import { openWorkspaceCreate, workspaceCreatePlaces } from '../../../js/componen
 import { getExtensionCapabilities } from '../../../js/services/extensions.js';
 import workspaceProviderRegistry from '../../../js/registries/workspace-provider-registry.js';
 import GroupWorkspaceProvider from '../workspaces/group-workspace-provider.js';
+import { underPseudoLocale } from '../../../js-tests/utilities/pseudo-locale.js';
+import { isPseudoLocalized } from '../../../sdk/lib/i18n.js';
+
+/** juggler-core's English for what a group says, standing in for its catalogue. */
+const CORE_TEXT = [
+  'Name', 'Enter group name',
+  'Conversations in a group work in the project, exactly as they would outside it.',
+  "Couldn't make a group: the session has no project.", 'Group {n}',
+  'Ungroup', 'Its conversations go back into the project, and the group is removed.',
+  'Delete group', 'Its conversations go to the bin, and the group is removed. Nothing in the project changes.',
+  'Nothing was built for a group, so nothing is left of it.'
+];
 
 /**
  * @typedef {object} TestResult
@@ -302,6 +314,42 @@ export async function runTests() {
         if (inside?.id) await session.bin.deletePermanently(inside.id).catch(() => {});
         if (workspaceId) await unregisterWorkspace(workspaceId).catch(() => {});
       }
+    });
+
+    await run('everything a group says to the user is translated under en-XA', async () => {
+      /** @type {Record<string, string>} */
+      const shown = {};
+      await underPseudoLocale('group-test', async () => {
+        // Hooks called directly with plain contexts: no row is registered, so
+        // nothing here reaches the server's workspaces.
+        const provider = new GroupWorkspaceProvider({});
+
+        const container = document.createElement('div');
+        provider.renderSetup(container, { values: {} });
+        shown['field label'] = String(container.querySelector('label')?.textContent);
+        shown['field placeholder'] = String(container.querySelector('input')?.placeholder);
+        shown['field note'] = String(container.querySelector('.setup-field-note')?.textContent);
+
+        try {
+          await provider.provision({ name: '' }, { session: {} });
+          shown['no-project refusal'] = '(nothing thrown)';
+        } catch (e) {
+          shown['no-project refusal'] = e instanceof Error ? e.message : String(e);
+        }
+
+        const made = await provider.provision({ name: '' }, { session: { projectPath: '/1', workspaces: [] } });
+        shown['default name'] = String(made?.workspace?.label);
+
+        for (const option of provider.finishOptions({})) {
+          shown[`${option.id} label`] = String(option.label);
+          shown[`${option.id} description`] = String(option.description);
+        }
+
+        shown['cleanup message'] = String((await provider.cleanupPartial({}, {}))?.message);
+      }, { '@juggler/core': CORE_TEXT });
+
+      const english = Object.entries(shown).filter(([, text]) => !isPseudoLocalized(text));
+      assert(english.length === 0, `still English under en-XA: ${JSON.stringify(english)}`);
     });
 
     await run('the extension really ships it, which is one glob and no registration', async () => {

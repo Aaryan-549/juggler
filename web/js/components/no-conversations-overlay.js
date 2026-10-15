@@ -15,6 +15,9 @@
  * show together: that one needs a project absent, this one needs it present.
  */
 
+import { t } from '../../sdk/lib/i18n.js';
+import { escapeHtml } from '../../sdk/lib/html.js';
+
 class NoConversationsOverlay extends HTMLElement {
   constructor() {
     super();
@@ -84,10 +87,11 @@ class NoConversationsOverlay extends HTMLElement {
 
   /** @private */
   _render() {
+    const product = 'Juggler'; // i18n-ignore: the product name, which the logo spells out
     this.innerHTML = `
-      <section class="onboarding-panel" aria-label="No conversations">
-        <div class="onboarding-logo" role="img" aria-label="Juggler"></div>
-        <p>Click '+ New conversation' in the sidebar to start one.</p>
+      <section class="onboarding-panel" aria-label="${escapeHtml(t('No conversations'))}">
+        <div class="onboarding-logo" role="img" aria-label="${product}"></div>
+        <p>${escapeHtml(t('Click \'+ New conversation\' in the sidebar to start one.'))}</p>
       </section>
     `;
   }

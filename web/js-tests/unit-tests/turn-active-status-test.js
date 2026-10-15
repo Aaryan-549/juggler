@@ -25,7 +25,8 @@ import { assert } from '../utilities/test-helpers.js';
 import Conversation from '../../js/model/conversation.js';
 import Session from '../../js/model/session.js';
 import { isConversationBusy } from '../../js/registries/reload-registries.js';
-import { inspectTurn } from '../../js/model/turn-completion.js';
+import { inspectTurn, observeUntil, waitForTurnOutcome } from '../../js/model/turn-completion.js';
+import { underPseudoLocale } from '../utilities/pseudo-locale.js';
 
 /** Statuses the worker writes while a turn is in flight. */
 const RUNNING = ['preparing', 'streaming', 'processing_tools', 'retrying', 'compacting', 'mock-paused'];
@@ -132,6 +133,51 @@ export async function runTests() {
     assert(!inspectTurn({ processingState: { activity: 'awaiting_llm' } }, []).done,
       'a frame carrying no status yet has not settled');
   });
+
+  // The wait's rejections are not UI text: `engine-one-shot.js` hands them to
+  // the CLI as the run's `errorText`, which prints them inside its own English
+  // (`cmd/juggler/app/one_shot.go`). The engine follows the UI locale, so they
+  // must stay English under en-XA.
+  try {
+    /** @type {string[]} */
+    const problems = [];
+    await underPseudoLocale('turn-active-status-test', async () => {
+      const conversation = {
+        _doc: {
+          metadata: { observe() {}, unobserve() {}, get() { return undefined; } },
+          root: { observeDeep() {}, unobserveDeep() {} },
+        },
+        rootMessageThread: { items: [] },
+        completedTurns: 0,
+      };
+      /**
+       * @param {Promise<unknown>} wait
+       * @param {string} expected
+       */
+      const expectRejection = async (wait, expected) => {
+        try {
+          await wait;
+          problems.push(`expected a rejection reading ${JSON.stringify(expected)}`);
+        } catch (e) {
+          const message = e instanceof Error ? e.message : String(e);
+          if (message !== expected) problems.push(`got ${JSON.stringify(message)}, want ${JSON.stringify(expected)}`);
+        }
+      };
+      const aborted = new AbortController();
+      aborted.abort();
+      await expectRejection(waitForTurnOutcome(conversation, { sinceTurn: 0, signal: aborted.signal }),
+        'Aborted waiting for condition: turn complete');
+      await expectRejection(waitForTurnOutcome(conversation, { sinceTurn: 0, timeoutMs: 1 }),
+        'Timeout waiting for condition: turn complete');
+      await expectRejection(observeUntil(conversation, () => false, { timeoutMs: 1 }),
+        'Timeout waiting for condition');
+    });
+    assert(problems.length === 0, problems.join('; '));
+    passed++;
+  } catch (e) {
+    failed++;
+    errors.push(`turn-completion-errors-stay-english: ${e instanceof Error ? e.message : String(e)}`);
+  }
 
   return { passed, failed, errors };
 }

@@ -1813,6 +1813,63 @@ export async function runTests(_ctx) {
       });
       assert(raw.length === 0, `plain English under en-XA: ${JSON.stringify(raw)}`);
     });
+
+    await run('under en-XA the tab strip, the panel\'s name and a failed load speak the user\'s language', async () => {
+      pinboardItemRegistry.registerClass(PlainNamePin, { extensionId: I18N_EXT });
+      /** @type {string[]} */
+      const raw = [];
+      const check = (/** @type {string} */ where, /** @type {string[]} */ shown, atLeast = 1) => {
+        if (shown.length < atLeast) raw.push(`${where}: expected ${atLeast} strings, found ${shown.length}`);
+        for (const s of shown) if (!isPseudoLocalized(s)) raw.push(`${where}: ${s}`);
+      };
+      const realLoad = pinboardStore.load;
+      await underPseudoLocale('pinboard-shell-test', async () => {
+        const { shell, teardown } = await mountShell([
+          { id: 'pin_a', type: 'i18n-plain', config: {} },
+          { id: 'pin_b', type: 'i18n-plain', config: {} },
+        ]);
+        try {
+          pinboardView.open();
+          await settle();
+          const attr = (/** @type {Element|null} */ el, /** @type {string} */ name) => el?.getAttribute(name) || '';
+          check('panel name', [attr(shell.querySelector('#pinboard-panel'), 'aria-label')]);
+          check('tab list name', [attr(shell.querySelector('.pinboard-tabbar__list'), 'aria-label')]);
+          const add = shell.querySelector('.pinboard-tabbar__add');
+          check('add button', [attr(add, 'title'), attr(add, 'aria-label')], 2);
+          const removes = [...shell.querySelectorAll('.pinboard-tab__remove')].map((el) => attr(el, 'aria-label'));
+          check('remove buttons', removes, 2);
+
+          // The detached board (its own window) names its panel through the
+          // same seam; built on a stand-in host, since this page is not one.
+          /** @type {any} */
+          const host = { append(/** @type {any} */ el) { this.el = el; } };
+          shell._buildDetached.call(host);
+          check('detached panel name', [attr(host.el, 'aria-label')]);
+        } finally {
+          teardown();
+        }
+
+        // A board that fails to load says so in one message around the error.
+        pinboardStore.load = () => Promise.reject(new Error('42'));
+        const failed = await mountShell([]);
+        try {
+          pinboardView.open();
+          await settle();
+          const status = failed.shell.querySelector('.pinboard-panel__status')?.textContent
+            || pinboardView.getStatus();
+          if (!status.includes(' 42')) raw.push(`load failure keeps the error: ${status}`);
+          check('load failure status', [status.replace(' 42', '')]);
+        } finally {
+          pinboardStore.load = realLoad;
+          failed.teardown();
+        }
+      }, {
+        [I18N_EXT]: ['Plain probe'],
+        test: ['Probe', 'Broken', 'Actions', 'Watch something…', 'Keys', 'Tall'],
+      });
+      pinboardStore.load = realLoad;
+      assert(raw.length === 0, `plain English under en-XA: ${JSON.stringify(raw)}`);
+    });
   } finally {
     pinboardItemRegistry.reset();
     pinboardStore.reset();

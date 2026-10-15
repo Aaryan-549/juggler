@@ -33,8 +33,11 @@
 
 import WorkspaceProvider from 'juggler/workspace-provider';
 import { extractErrorMessage } from 'juggler/ui';
+import { translator } from 'juggler/i18n';
 import { join, relativePath } from '../lib/workspace-paths.js';
 import { nextFormSequence, pathField, showNote } from '../lib/setup-fields.js';
+
+const t = translator('@juggler/core');
 
 /**
  * How long after the last keystroke the folder is looked for. The same pause the
@@ -91,7 +94,8 @@ class ProjectFolderWorkspaceProvider extends WorkspaceProvider {
     const id = `project-folder-${nextFormSequence()}`;
     container.replaceChildren();
     const { input, note } = pathField(
-      container, id, 'folder', 'Folder', 'packages/ui',
+      // i18n-ignore: the placeholder is an example path, not words
+      container, id, 'folder', t('Folder'), 'packages/ui',
       { dirsOnly: true, projectRelative: true });
 
     // What the section last reported, when there is any: a provision that was
@@ -154,16 +158,16 @@ class ProjectFolderWorkspaceProvider extends WorkspaceProvider {
     if (this._form !== form || String(form.input?.value ?? '').trim() !== typed) return;
 
     if (!found?.exists) {
-      form.verdict = 'There is no such folder.';
+      form.verdict = t('There is no such folder.');
     } else if (!found.isDirectory) {
-      form.verdict = 'That is a file, not a folder.';
+      form.verdict = t('That is a file, not a folder.');
     } else {
       form.verdict = '';
     }
 
     showNote(
       form.note,
-      form.verdict || 'Commands run here. The rest of the project stays readable.',
+      form.verdict || t('Commands run here. The rest of the project stays readable.'),
       { error: Boolean(form.verdict), path: form.verdict ? '' : places.dir });
     this._report();
   }
@@ -225,18 +229,18 @@ class ProjectFolderWorkspaceProvider extends WorkspaceProvider {
    */
   _places(values, ctx) {
     const project = String(ctx?.session?.projectPath ?? '');
-    if (!project) throw new Error("Couldn't use that folder: the session has no project.");
+    if (!project) throw new Error(t("Couldn't use that folder: the session has no project."));
 
     const typed = String(values?.folder ?? '').trim().replace(/[/\\]+$/, '');
-    if (!typed) throw new Error("Couldn't use that folder: none was named.");
+    if (!typed) throw new Error(t("Couldn't use that folder: none was named."));
 
     const dir = join(project, typed);
     const rel = relativePath(project, dir);
-    if (rel === null) throw new Error('That is not on the same drive as the project.');
+    if (rel === null) throw new Error(t('That is not on the same drive as the project.'));
     if (rel === '.') {
-      throw new Error('That is the project itself, which the panel offers above.');
+      throw new Error(t('That is the project itself, which the panel offers above.'));
     }
-    if (rel.startsWith('..')) throw new Error('That is outside the project.');
+    if (rel.startsWith('..')) throw new Error(t('That is outside the project.'));
     return { project, rel, dir };
   }
 
@@ -256,8 +260,8 @@ class ProjectFolderWorkspaceProvider extends WorkspaceProvider {
     const { rel, dir } = this._places(values, ctx);
 
     const found = await ctx.ops.stat({ path: dir });
-    if (!found?.exists) throw new Error(`Couldn't use ${dir}: there is no such folder.`);
-    if (!found.isDirectory) throw new Error(`Couldn't use ${dir}: that is a file, not a folder.`);
+    if (!found?.exists) throw new Error(t("Couldn't use {dir}: there is no such folder.", { dir }));
+    if (!found.isDirectory) throw new Error(t("Couldn't use {dir}: that is a file, not a folder.", { dir }));
 
     return { workspace: { root: dir, label: rel, meta: { folder: rel } } };
   }
@@ -278,7 +282,7 @@ class ProjectFolderWorkspaceProvider extends WorkspaceProvider {
   async status(workspace, ctx) {
     void ctx;
     if (workspace.available === false) {
-      return { detail: 'The folder is missing.', available: false };
+      return { detail: t('The folder is missing.'), available: false };
     }
     return { available: true };
   }
@@ -330,7 +334,7 @@ class ProjectFolderWorkspaceProvider extends WorkspaceProvider {
   async cleanupPartial(workspace, ctx) {
     void workspace;
     void ctx;
-    return { removed: true, message: 'Nothing was built for a folder, so nothing is left of it.' };
+    return { removed: true, message: t('Nothing was built for a folder, so nothing is left of it.') };
   }
 }
 
