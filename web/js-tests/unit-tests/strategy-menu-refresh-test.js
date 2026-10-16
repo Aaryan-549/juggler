@@ -22,6 +22,8 @@ import { assertMenuShape } from '../utilities/menu-assertions.js';
 import strategyRegistry from '../../js/registries/strategy-registry.js';
 import { REGISTRIES_RELOADED } from '../../js/registries/reload-registries.js';
 import { registerSettingsOpener } from '../../js/services/settings-launcher.js';
+import { underPseudoLocale, shownStrings } from '../utilities/pseudo-locale.js';
+import { isPseudoLocalized } from '../../sdk/lib/i18n.js';
 import '../../js/components/strategy-selector.js';
 
 /**
@@ -259,6 +261,71 @@ export async function runTests(_ctx) {
       for (const [k, v] of snapshot) strategyRegistry.items.set(k, v);
       selector.remove(); // disconnectedCallback → removes the listener
     }
+  });
+
+  await run('every state the selector draws is translated under en-XA', async () => {
+    const STRATEGY_EXT = 'test-i18n-strategies';
+    const NAME = 'Careful Planner';
+    const DESCRIPTION = 'Plans before it acts.';
+    const realManifests = strategyRegistry.getAllManifests;
+    const realExtensionId = strategyRegistry.getExtensionId;
+    /** @type {any[]} */
+    let stand = [];
+    /** @type {Array<{where: string, text: string}>} */
+    const said = [];
+    /**
+     * @param {string} where
+     * @param {Element} root
+     */
+    const collect = (where, root) => {
+      for (const text of shownStrings(root)) said.push({ where, text });
+    };
+    let selector = /** @type {any} */ (null);
+    try {
+      await underPseudoLocale('strategy-menu-refresh-test', async () => {
+        strategyRegistry.getAllManifests = /** @type {any} */ (() => stand);
+        strategyRegistry.getExtensionId = (id) => (id.startsWith('test-i18n-') ? STRATEGY_EXT : null);
+
+        // ── no strategies: the chip has nothing to name, the menu is empty ──
+        stand = [];
+        selector = /** @type {any} */ (document.createElement('strategy-selector'));
+        document.body.appendChild(selector);
+        selector.setMessageThread(/** @type {any} */ ({ currentStrategyId: 'test-i18n-gone' }));
+        selector._dropdownOpen = true;
+        selector.render();
+        assert(!!selector.querySelector('.strategy-dropdown'), 'the empty menu must render');
+        collect('empty', selector);
+        selector._dropdownOpen = false;
+
+        // ── two strategies, one selected, menu open ──
+        stand = [1, 2].map((n) => ({
+          id: `test-i18n-${n}`,
+          manifest: { name: NAME, description: DESCRIPTION },
+          modulePath: '(test)',
+          extensionId: STRATEGY_EXT,
+        }));
+        selector.loadStrategies();
+        selector.setMessageThread(/** @type {any} */ ({ currentStrategyId: 'test-i18n-1' }));
+        selector._dropdownOpen = true;
+        selector.render();
+        assert(selector.querySelectorAll('.strategy-item[data-strategy-id]').length === 2, 'both stand-ins must be listed');
+        collect('open', selector);
+
+        // ── the selected strategy is no longer registered ──
+        selector._dropdownOpen = false;
+        selector.setMessageThread(/** @type {any} */ ({ currentStrategyId: 'test-i18n-gone' }));
+        selector.render();
+        collect('missing', selector);
+      }, { [STRATEGY_EXT]: [NAME, DESCRIPTION] });
+    } finally {
+      strategyRegistry.getAllManifests = realManifests;
+      strategyRegistry.getExtensionId = realExtensionId;
+      selector?.remove();
+    }
+
+    assert(said.length >= 10, `the selector drew too little: ${JSON.stringify(said)}`);
+    const raw = said.filter(({ text }) => !isPseudoLocalized(text));
+    assert(raw.length === 0, `plain English under en-XA: ${JSON.stringify(raw)}`);
   });
 
   return { passed, failed, errors };

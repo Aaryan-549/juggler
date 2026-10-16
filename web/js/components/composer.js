@@ -29,6 +29,8 @@ import tooltipManager from '../services/tooltip-manager.js';
 import { CONTEXT_CACHE_IMPACT_CHANGED } from '../services/context-cache-impact.js';
 import { isDesktopWindow } from '../../sdk/lib/window-control.js';
 import { isConversationalItemType } from '../../sdk/lib/message.js';
+import { t, formatNumber } from '../../sdk/lib/i18n.js';
+import { escapeHtml } from '../../sdk/lib/html.js';
 import {
   COMPOSER_IDLE_MS,
   COMPOSER_LONG_THREAD_ITEMS,
@@ -830,7 +832,7 @@ class Composer extends HTMLElement {
       // "there is nothing to press this for" state — and says what it is
       // waiting for, since unlike an empty box the reason is not self-evident.
       sendBtn.classList.toggle('is-empty', empty || this.sendBlocked);
-      const title = this.sendBlocked && this._sendBlockedReason ? this._sendBlockedReason : 'Send message';
+      const title = this.sendBlocked && this._sendBlockedReason ? this._sendBlockedReason : t('Send message');
       sendBtn.setAttribute('title', title);
       sendBtn.setAttribute('aria-label', title);
     }
@@ -846,8 +848,8 @@ class Composer extends HTMLElement {
     if (button) {
       button.disabled = busy;
       button.title = busy
-        ? 'Wait for the current turn to finish before creating a new thread'
-        : 'Create a new sub-thread';
+        ? t('Wait for the current turn to finish before creating a new thread')
+        : t('Create a new sub-thread');
     }
     this.querySelectorAll('[data-command="thread"], [data-action="new-thread"]').forEach((row) => {
       row.classList.toggle('disabled', busy);
@@ -1420,11 +1422,10 @@ class Composer extends HTMLElement {
     // blob all fit); past it the user should put the data in a file and point
     // the model at it instead.
     if (message.length > MAX_MESSAGE_CHARS) {
-      this.showWarning(
-        `Message is too large (${message.length.toLocaleString()} characters, ` +
-        `max ${MAX_MESSAGE_CHARS.toLocaleString()}). Save it to a file and ` +
-        `reference the path instead.`
-      );
+      this.showWarning(t(
+        'Message is too large ({length} characters, max {max}). Save it to a file and reference the path instead.',
+        { length: formatNumber(message.length), max: formatNumber(MAX_MESSAGE_CHARS) },
+      ));
       return 'message too large';
     }
 
@@ -1648,7 +1649,7 @@ class Composer extends HTMLElement {
     if (textarea) {
       if (blocked) {
         textarea.disabled = true;
-        textarea.placeholder = reason || 'Input blocked';
+        textarea.placeholder = reason || t('Input blocked');
         textarea.setAttribute('data-blocked', 'true');
       } else {
         textarea.disabled = false;
@@ -2092,7 +2093,7 @@ class Composer extends HTMLElement {
    */
   _createThread() {
     if (this._conversation?.isTurnActive()) {
-      this.showWarning('Wait for the current turn to finish before creating a new thread.');
+      this.showWarning(t('Wait for the current turn to finish before creating a new thread.'));
       return;
     }
     const textarea = this.querySelector('textarea');
@@ -2192,7 +2193,7 @@ class Composer extends HTMLElement {
       menu.appendChild(item);
     }
 
-    applyMenuRoles(menu, 'Commands');
+    applyMenuRoles(menu, t('Commands'));
     // presentPopup (in _openCommandsMenu) owns body-append and teardown.
     this._commandsMenu = menu;
   }
@@ -2320,7 +2321,7 @@ class Composer extends HTMLElement {
       hint.className = 'menu-item menu-item-hint';
       const text = document.createElement('span');
       text.className = 'menu-hint-text';
-      text.textContent = 'No skills installed.';
+      text.textContent = t('No skills installed.');
       hint.appendChild(text);
       menu.appendChild(hint);
     } else {
@@ -2336,14 +2337,14 @@ class Composer extends HTMLElement {
     const manage = document.createElement('li');
     manage.className = 'menu-item skill-menu-manage';
     manage.dataset.action = 'manage-skills';
-    manage.textContent = 'Manage skills…';
+    manage.textContent = t('Manage skills…');
     manage.addEventListener('click', () => {
       this._closeSkillMenu();
       openSettings('skills');
     });
     menu.appendChild(manage);
 
-    applyMenuRoles(menu, 'Skills');
+    applyMenuRoles(menu, t('Skills'));
     this._skillMenu = menu;
   }
 
@@ -2504,7 +2505,7 @@ class Composer extends HTMLElement {
     // Schedule-send ("send later") is a rarely-used control, so on touch it
     // lives here rather than on the inline row. The row opens the same picker as
     // the inline clock button (which stays visible only while armed).
-    addRow('Send later', CLOCK_SVG, () => toggleSchedulePicker(this));
+    addRow(t('Send later'), CLOCK_SVG, () => toggleSchedulePicker(this));
 
     /**
      * Append a closed-by-default collapsible section of pre-built rows (native
@@ -2544,7 +2545,7 @@ class Composer extends HTMLElement {
       });
       return row;
     });
-    addSection('Slash commands', [manageRow, browseRow, ...commandRows]);
+    addSection(t('Slash commands'), [manageRow, browseRow, ...commandRows]);
 
     // Skills section (collapsed) — this thread's frozen snapshot, standing in for
     // the inline `$` picker on touch. Selecting one splices `$name ` into the
@@ -2576,21 +2577,21 @@ class Composer extends HTMLElement {
     manageSkillsRow.dataset.action = 'manage-skills';
     const manageSkillsLabel = document.createElement('span');
     manageSkillsLabel.className = 'actions-sheet-label';
-    manageSkillsLabel.textContent = 'Manage skills…';
+    manageSkillsLabel.textContent = t('Manage skills…');
     manageSkillsRow.appendChild(manageSkillsLabel);
     manageSkillsRow.addEventListener('click', () => {
       this._closeActionsSheet();
       openSettings('skills');
     });
-    addSection('Skills', [manageSkillsRow, ...skillRows]);
+    addSection(t('Skills'), [manageSkillsRow, ...skillRows]);
 
     // New Thread closes the sheet — it starts a fresh sub-thread rather than
     // acting on this composer, so it sits apart at the bottom below the command
     // and skill sections.
-    addRow('New Thread', THREAD_ARROW_SVG, () => this._createThread(), 'new-thread');
+    addRow(t('New Thread'), THREAD_ARROW_SVG, () => this._createThread(), 'new-thread');
     this._updateNewThreadControls();
 
-    applyMenuRoles(menu, 'More actions');
+    applyMenuRoles(menu, t('More actions'));
     this._actionsSheet = menu;
     this._actionsSheetOpen = true;
     this._actionsSheetCleanup = presentPopup({
@@ -2627,7 +2628,7 @@ class Composer extends HTMLElement {
                 <composer-config-strip></composer-config-strip>
                 <composer-box-attachments></composer-box-attachments>
                 <textarea
-                    aria-label="Message input"
+                    aria-label="${escapeHtml(t('Message input'))}"
                     autocorrect="off"
                     autocapitalize="off"
                     spellcheck="false"
@@ -2642,49 +2643,49 @@ class Composer extends HTMLElement {
                     </input-controls-config>
                     <input-controls-actions>
                         <button class="commands-button input-ctrl-btn" id="commands-button"
-                                title="Commands"
-                                aria-label="Commands menu"
+                                title="${escapeHtml(t('Commands'))}"
+                                aria-label="${escapeHtml(t('Commands menu'))}"
                                 aria-haspopup="menu" aria-expanded="false">
                             <span class="icon-slash"></span>
                         </button>
                         <button class="skill-button input-ctrl-btn" id="skill-button"
-                                title="Load a skill ($)"
-                                aria-label="Load a skill"
+                                title="${escapeHtml(t('Load a skill ($)'))}"
+                                aria-label="${escapeHtml(t('Load a skill'))}"
                                 aria-haspopup="menu" aria-expanded="false">
                             <span class="skill-glyph" aria-hidden="true">$</span>
                         </button>
                         <button class="more-actions-btn input-ctrl-btn" id="more-actions-button"
-                                title="More actions"
-                                aria-label="More actions"
+                                title="${escapeHtml(t('More actions'))}"
+                                aria-label="${escapeHtml(t('More actions'))}"
                                 aria-haspopup="menu" aria-expanded="false">
                             <span class="more-actions-icon">${KEBAB_SVG}</span>
                         </button>
                         <button class="schedule-send-btn input-ctrl-btn"
-                                title="Send later"
-                                aria-label="Send later"
+                                title="${escapeHtml(t('Send later'))}"
+                                aria-label="${escapeHtml(t('Send later'))}"
                                 aria-haspopup="dialog" aria-expanded="false">
                             <span class="schedule-send-icon">${CLOCK_SVG}</span>
                             <span class="schedule-send-countdown" hidden></span>
                         </button>
                     </input-controls-actions>
                     <input-controls-send>
-                        <button class="new-thread-btn input-ctrl-btn" title="Create a new sub-thread">
-                            New Thread
+                        <button class="new-thread-btn input-ctrl-btn" title="${escapeHtml(t('Create a new sub-thread'))}">
+                            ${escapeHtml(t('New Thread'))}
                             <span class="new-thread-arrow">${THREAD_ARROW_SVG}</span>
                         </button>
                         <button class="context-cache-warning-btn" id="context-cache-warning" hidden
-                                title="Items in the conversation have changed, so the next message will cause a cache-miss"
-                                aria-label="Items in the conversation have changed, so the next message will cause a cache-miss">
+                                title="${escapeHtml(t('Items in the conversation have changed, so the next message will cause a cache-miss'))}"
+                                aria-label="${escapeHtml(t('Items in the conversation have changed, so the next message will cause a cache-miss'))}">
                             <span class="icon-warning" aria-hidden="true"></span>
                         </button>
                         <button class="attach-btn input-ctrl-btn" id="attach-button"
-                                title="Attach files — or drop or paste them here"
-                                aria-label="Attach files">
+                                title="${escapeHtml(t('Attach files — or drop or paste them here'))}"
+                                aria-label="${escapeHtml(t('Attach files'))}">
                             <span class="attach-icon">${PAPERCLIP_SVG}</span>
                         </button>
                         <button class="send-btn is-empty" id="send-button"
-                                title="Send message"
-                                aria-label="Send message">
+                                title="${escapeHtml(t('Send message'))}"
+                                aria-label="${escapeHtml(t('Send message'))}">
                             <span class="send-icon">${SEND_ARROW_SVG}</span>
                         </button>
                     </input-controls-send>

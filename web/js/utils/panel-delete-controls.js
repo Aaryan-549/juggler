@@ -2,6 +2,9 @@
 //     ██ ██ ██ ██ ▄▄ ██ ▄▄ ██    ██▄▄  ██▄█▄   Copyright (c) 2026 Julian Storer
 //   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
 
+import { t } from '../../sdk/lib/i18n.js';
+import { escapeHtml } from '../../sdk/lib/html.js';
+
 /**
  * Append standard Delete / Delete up to here / Delete from here buttons to a container.
  * Buttons use properties-panel-btn danger styling, matching other properties panels.
@@ -24,11 +27,11 @@ export function appendDeleteControls(container, parentThread, itemId, onDelete, 
   const makeBtn = (/** @type {string} */ label) => {
     const btn = document.createElement('button');
     btn.className = 'properties-panel-btn danger';
-    btn.innerHTML = `<span class="icon-trashcan"></span> ${label}`;
+    btn.innerHTML = `<span class="icon-trashcan"></span> ${escapeHtml(label)}`;
     return btn;
   };
 
-  const deleteBtn = makeBtn('Delete');
+  const deleteBtn = makeBtn(t('Delete'));
   if (deleteBlockedReason) {
     deleteBtn.disabled = true;
     deleteBtn.title = deleteBlockedReason;
@@ -41,7 +44,7 @@ export function appendDeleteControls(container, parentThread, itemId, onDelete, 
   // (the items it removes may be the ones the turn is waiting on), and it is
   // what offers the footer's undo.
   if (parentThread.findIndexByItemId(itemId) > 0) {
-    const upBtn = makeBtn('Delete up to here');
+    const upBtn = makeBtn(t('Delete up to here'));
     upBtn.addEventListener('click', () => {
       const index = parentThread.findIndexByItemId(itemId);
       if (index > 0) parentThread.conversation.deleteUpToWithCleanup(parentThread, index);
@@ -49,7 +52,7 @@ export function appendDeleteControls(container, parentThread, itemId, onDelete, 
     container.appendChild(upBtn);
   }
 
-  const fromBtn = makeBtn('Delete from here');
+  const fromBtn = makeBtn(t('Delete from here'));
   fromBtn.addEventListener('click', () => {
     const index = parentThread.findIndexByItemId(itemId);
     if (index >= 0) parentThread.conversation.deleteAfterWithCleanup(parentThread, index);

@@ -29,6 +29,7 @@ import { REGISTRIES_RELOADED } from '../../js/registries/reload-registries.js';
 import { __resetPopupManagerForTests, isAnyPopupOpen } from '../../js/utils/popup-manager.js';
 import PinboardItemType from 'juggler/pinboard-item-type';
 import '../../js/components/pinboard-shell.js';
+import { composeForThread } from '../../js/components/pinboard-content.js';
 import { budgetFor } from '../utilities/test-deadline.js';
 import { underPseudoLocale, shownStrings } from '../utilities/pseudo-locale.js';
 import { t, isPseudoLocalized } from '../../sdk/lib/i18n.js';
@@ -337,6 +338,47 @@ class ThrowingAddPin extends PinboardItemType {
   mount(container) {
     container.textContent = '3';
     return { teardown: () => {} };
+  }
+}
+
+/** The context the ActingPin was last mounted with, for the review service. */
+let actingContext = /** @type {any} */ (null);
+
+/** A type with an icon action and two behind the overflow, labelled by the pin. */
+class ActingPin extends PinboardItemType {
+  static MANIFEST = {
+    id: 'i18n-acting',
+    name: 'Acting probe',
+    version: '1.0.0',
+    description: 'A pin with toolbar actions',
+  };
+
+  mount(container, pinContext) {
+    actingContext = pinContext;
+    container.textContent = '4';
+    const label = (/** @type {string} */ s) => t(s, undefined, { namespace: I18N_EXT });
+    return {
+      teardown: () => {},
+      getActions: () => [
+        { id: 'spin', label: label('Spin'), icon: 'refresh', primary: true, run: () => {} },
+        { id: 'later', label: label('Later on'), run: () => {} },
+        { id: 'elsewhere', label: label('Elsewhere'), run: () => {} },
+      ],
+    };
+  }
+}
+
+/** A type that throws on mount, for the host's error state. */
+class FailingPin extends PinboardItemType {
+  static MANIFEST = {
+    id: 'i18n-failing',
+    name: 'Failing probe',
+    version: '1.0.0',
+    description: 'A pin that fails to mount',
+  };
+
+  mount() {
+    throw new Error('42');
   }
 }
 
@@ -1868,6 +1910,118 @@ export async function runTests(_ctx) {
         test: ['Probe', 'Broken', 'Actions', 'Watch something…', 'Keys', 'Tall'],
       });
       pinboardStore.load = realLoad;
+      assert(raw.length === 0, `plain English under en-XA: ${JSON.stringify(raw)}`);
+    });
+
+    await run('under en-XA the body\'s placeholders, toolbar, overflow and review refusals speak the user\'s language', async () => {
+      pinboardItemRegistry.registerClass(ActingPin, { extensionId: I18N_EXT });
+      pinboardItemRegistry.registerClass(FailingPin, { extensionId: I18N_EXT });
+      /** @type {string[]} */
+      const raw = [];
+      const check = (/** @type {string} */ where, /** @type {string[]} */ shown, atLeast = 1) => {
+        if (shown.length < atLeast) raw.push(`${where}: expected ${atLeast} strings, found ${shown.length}`);
+        for (const s of shown) if (!isPseudoLocalized(s)) raw.push(`${where}: ${s}`);
+      };
+      /**
+       * @param {() => Promise<unknown>} fn - The call expected to refuse.
+       * @returns {Promise<string>} What it threw.
+       */
+      const thrown = async (fn) => {
+        try {
+          await fn();
+          return 'did not throw';
+        } catch (e) {
+          return e instanceof Error ? e.message : String(e);
+        }
+      };
+      await underPseudoLocale('pinboard-shell-test', async () => {
+        // An empty board.
+        const empty = await mountShell([]);
+        try {
+          pinboardView.open();
+          await settle();
+          const line = empty.shell.querySelector('.pinboard-empty');
+          assert(!!line, 'an empty board draws its placeholder');
+          check('empty board', shownStrings(/** @type {Element} */ (line)), 2);
+          // The header's toggle, which the shell adopts, is named in the user's language.
+          check('header toggle', [empty.toggle.title, String(empty.toggle.getAttribute('aria-label'))], 2);
+        } finally {
+          empty.teardown();
+        }
+
+        // A pin whose type nothing provides; the type id is data, in digits.
+        const missing = await mountShell([{ id: 'pin_missing', type: '9', config: {} }]);
+        try {
+          pinboardView.open();
+          await settle();
+          const box = missing.shell.querySelector('.pinboard-placeholder');
+          assert(!!box, 'a missing type draws its placeholder');
+          const lines = shownStrings(/** @type {Element} */ (box));
+          if (!lines.some((s) => s.includes('"9"'))) raw.push(`missing type keeps the id: ${lines.join(' | ')}`);
+          check('missing type', lines, 2);
+        } finally {
+          missing.teardown();
+        }
+
+        // A pin whose mount throws: the lead is ours, the error is data.
+        const broken = await mountShell([{ id: 'pin_failing', type: 'i18n-failing', config: {} }]);
+        try {
+          pinboardView.open();
+          await settle();
+          const box = broken.shell.querySelector('.pinboard-placeholder');
+          assert(!!box, 'a failed mount draws the error state');
+          assert(box?.querySelector('.pinboard-placeholder__error')?.textContent === '42',
+            'the error is shown as given');
+          check('error state', shownStrings(/** @type {Element} */ (box), '.pinboard-placeholder__error'), 1);
+        } finally {
+          broken.teardown();
+        }
+
+        // A pin with actions, and the overflow open.
+        actingContext = null;
+        const acting = await mountShell([{ id: 'pin_acting', type: 'i18n-acting', config: {} }]);
+        try {
+          pinboardView.open();
+          await settle();
+          const toolbar = acting.shell.querySelector('.pinboard-item-toolbar');
+          assert(!!toolbar, 'the acting pin has a toolbar');
+          check('toolbar', shownStrings(/** @type {Element} */ (toolbar), '.pinboard-item-toolbar__more'), 3);
+          const more = acting.shell.querySelector('.pinboard-item-toolbar__more');
+          assert(!!more, 'two unpictured actions earn the overflow');
+          check('overflow button', [more?.getAttribute('aria-label') || ''], 1);
+          more.click();
+          const menu = document.querySelector('.pinboard-item-toolbar-menu');
+          assert(!!menu, 'the overflow opens');
+          check('overflow menu', shownStrings(/** @type {Element} */ (menu)), 3);
+          more.click();
+
+          // The review service's refusals, which the review panel shows.
+          assert(!!actingContext, 'the acting pin was mounted');
+          const review = actingContext.services.review;
+          check('review save refusal', [await thrown(() => review.save({ comments: [] }))]);
+          check('review compose refusal', [await thrown(() => review.compose())]);
+          const content = region(acting.shell);
+          content._reviewThread = () => ({ gitReviewDraft: { comments: [] } });
+          try {
+            check('empty review refusal', [await thrown(() => review.compose())]);
+          } finally {
+            delete content._reviewThread;
+          }
+        } finally {
+          if (document.querySelector('.pinboard-item-toolbar-menu')) acting.shell.querySelector('.pinboard-item-toolbar__more')?.click();
+          acting.teardown();
+        }
+
+        // A review sent as a message that the conversation refused, with its reason.
+        const refused = await thrown(() => composeForThread({
+          threadItemId: null,
+          conversation: { getTabElement: () => null, sendMessage: async () => '42' },
+        }, '7'));
+        if (!refused.includes('42')) raw.push(`send failure keeps the reason: ${refused}`);
+        check('send failure', [refused.replace('42', '')]);
+      }, {
+        [I18N_EXT]: ['Acting probe', 'Failing probe', 'Spin', 'Later on', 'Elsewhere'],
+      });
       assert(raw.length === 0, `plain English under en-XA: ${JSON.stringify(raw)}`);
     });
   } finally {

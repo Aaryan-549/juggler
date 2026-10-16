@@ -335,7 +335,7 @@ export async function runTests() {
         // Nor is it this refusal's to make: a conversation whose workspace is
         // being built is stopped at the composer, which says what it is waiting
         // for, rather than here, which would say it is lost.
-        assert(early._unusableWorkspace() === '',
+        assert(early._unusableWorkspace() === null,
           `and a binding still being built is not called unusable, got ${JSON.stringify(early._unusableWorkspace())}`);
       } finally {
         session.workspaces = saved;

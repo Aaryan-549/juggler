@@ -8,6 +8,7 @@ import { getPaintedTheme, getMode } from '../utils/theme-manager.js';
 import { getCurrentZoom } from '../utils/zoom-manager.js';
 import { fetchJson } from './http.js';
 import { apiUrl } from '../utils/api-url.js';
+import { t } from '../../sdk/lib/i18n.js';
 
 /**
  * The full session payload returned by GET /api/session. Mirrors the shape
@@ -440,6 +441,7 @@ class APIService {
       method: 'PUT',
       headers: { 'Content-Type': 'application/octet-stream' },
       body: yjsData,
+      // i18n-ignore: no caller shows this error
       errorPrefix: 'Failed to save conversation binary'
     });
   }
@@ -657,7 +659,7 @@ class APIService {
     if (path) params.set('project', path);
     const url = windowControlURL('new', `?${params.toString()}`);
     if (!url) return; // no native host (browser tab) — nothing to open
-    await fetchJson(url, { method: 'POST', errorPrefix: 'Could not open a new window' });
+    await fetchJson(url, { method: 'POST', errorPrefix: t('Could not open a new window') });
   }
 
   /**
@@ -696,7 +698,7 @@ class APIService {
     }
     const url = windowControlURL('new', `?${params.toString()}`);
     if (!url) return; // no native host (browser tab) — nothing to open
-    await fetchJson(url, { method: 'POST', errorPrefix: "Couldn't open that board" });
+    await fetchJson(url, { method: 'POST', errorPrefix: t("Couldn't open that board") });
   }
 
   /**
@@ -733,7 +735,7 @@ class APIService {
       method: 'POST',
       headers: { 'Content-Type': file.type || 'application/octet-stream' },
       body: file,
-      errorPrefix: 'Asset upload failed'
+      errorPrefix: t('Asset upload failed')
     });
   }
 

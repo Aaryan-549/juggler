@@ -16,7 +16,10 @@
  * One rendering serves both audiences: the viewer shows it through the standard
  * markdown block, and the model reads the same text in its context block and in
  * each step action's tool_result echo, so the list the user reads and the list
- * the model reads cannot drift apart. The options add to the model's copy only,
+ * the model reads cannot drift apart. The one difference is language: the
+ * viewer's copy (`forDisplay`) draws its headings, labels and plan status in the
+ * viewer's language, and the model's copy stays English. The other options add
+ * to the model's copy only,
  * where it needs what the viewer conveys by other means — a step's executing
  * thread, which the transcript shows, and its status in words, which the viewer
  * draws as a distinct box. The traffic runs the other way once: the viewer's
@@ -27,6 +30,31 @@
 
 import { createElement, injectStylesOnce, taskMarker, taskStatusWord } from 'juggler/ui';
 import { createTextBlock } from 'juggler/item-utils';
+import { translator, markForTranslation, markUntranslated } from 'juggler/i18n';
+
+const t = translator('@juggler/core');
+
+/**
+ * A plan's status as the viewer shows it on the status line. The model reads
+ * the raw status.
+ * @type {Record<'planning'|'approved'|'executing'|'completed', string>}
+ */
+const PLAN_STATUS_LABELS = {
+  planning: markForTranslation('planning'),
+  approved: markForTranslation('approved'),
+  executing: markForTranslation('executing'),
+  completed: markForTranslation('completed'),
+};
+
+/**
+ * A plan status in the viewer's language, or the raw value for an unknown one.
+ * @param {string} status - Plan status, e.g. 'executing'.
+ * @returns {string} The label.
+ */
+function planStatusLabel(status) {
+  const label = PLAN_STATUS_LABELS[/** @type {keyof typeof PLAN_STATUS_LABELS} */ (status)];
+  return label ? t(label) : status;
+}
 
 injectStylesOnce('task-progress-styles', `
 .task-progress {
@@ -113,6 +141,7 @@ export function taskProgress(items) {
  * @param {object} [opts] - Rendering options.
  * @param {boolean} [opts.includeThreadIds] - Append the executing sub-thread's id to a step (LLM text only).
  * @param {boolean} [opts.statusWords] - Append the status in words to a step (LLM text only).
+ * @param {boolean} [opts.forDisplay] - Draw headings, labels and the plan status in the viewer's language (UI text only).
  * @returns {string} Markdown, or '' when the plan has no steps.
  */
 export function renderPlanMarkdown(planData, opts = {}) {
@@ -120,11 +149,20 @@ export function renderPlanMarkdown(planData, opts = {}) {
   if (steps.length === 0) return '';
 
   const { completed } = taskProgress(steps);
-  const lines = [
-    `# Plan${planData.title ? ': ' + planData.title : ''}`,
-    `Status: ${planData.status || 'planning'} | Progress: ${completed}/${steps.length} completed`,
-    ''
-  ];
+  const status = planData.status || 'planning';
+  const lines = opts.forDisplay
+    ? [
+      `# ${planData.title ? t('Plan: {title}', { title: planData.title }) : t('Plan')}`,
+      t('Status: {status} | Progress: {completed}/{total} completed', {
+        status: planStatusLabel(status), completed, total: steps.length,
+      }),
+      ''
+    ]
+    : [
+      markUntranslated(`# Plan${planData.title ? ': ' + planData.title : ''}`),
+      markUntranslated(`Status: ${status} | Progress: ${completed}/${steps.length} completed`),
+      ''
+    ];
 
   for (const [i, step] of steps.entries()) {
     const indent = markerIndent(i + 1);
@@ -138,7 +176,10 @@ export function renderPlanMarkdown(planData, opts = {}) {
     }
     lines.push(line);
     if (step.result) {
-      lines.push(`${indent}Result: ${indentContinuation(step.result, indent)}`);
+      const result = indentContinuation(step.result, indent);
+      lines.push(indent + (opts.forDisplay
+        ? t('Result: {result}', { result })
+        : markUntranslated(`Result: ${result}`)));
     }
   }
 
@@ -151,6 +192,7 @@ export function renderPlanMarkdown(planData, opts = {}) {
  * @param {Array<Record<string, any>>} todos - The list to render.
  * @param {object} [opts] - Rendering options.
  * @param {boolean} [opts.statusWords] - Append the status in words to an item (LLM text only).
+ * @param {boolean} [opts.forDisplay] - Draw the heading and progress line in the viewer's language (UI text only).
  * @returns {string} Markdown, or '' when the list is empty.
  */
 export function renderTodoMarkdown(todos, opts = {}) {
@@ -158,11 +200,17 @@ export function renderTodoMarkdown(todos, opts = {}) {
   if (list.length === 0) return '';
 
   const { completed } = taskProgress(list);
-  const lines = [
-    '# Todo list',
-    `Progress: ${completed}/${list.length} completed`,
-    ''
-  ];
+  const lines = opts.forDisplay
+    ? [
+      `# ${t('Todo list')}`,
+      t('Progress: {completed}/{total} completed', { completed, total: list.length }),
+      ''
+    ]
+    : [
+      markUntranslated('# Todo list'),
+      markUntranslated(`Progress: ${completed}/${list.length} completed`),
+      ''
+    ];
 
   for (const [i, todo] of list.entries()) {
     const words = opts.statusWords ? taskStatusWord(todo.status) : '';
@@ -225,7 +273,7 @@ function createTaskListBlock(markdown, items) {
  * @returns {HTMLElement} Rendered markdown element.
  */
 export function createPlanBlock(planData) {
-  return createTaskListBlock(renderPlanMarkdown(planData), planData?.steps || []);
+  return createTaskListBlock(renderPlanMarkdown(planData, { forDisplay: true }), planData?.steps || []);
 }
 
 /**
@@ -234,5 +282,5 @@ export function createPlanBlock(planData) {
  * @returns {HTMLElement} Rendered markdown element.
  */
 export function createTodoBlock(todos) {
-  return createTaskListBlock(renderTodoMarkdown(todos), todos || []);
+  return createTaskListBlock(renderTodoMarkdown(todos, { forDisplay: true }), todos || []);
 }

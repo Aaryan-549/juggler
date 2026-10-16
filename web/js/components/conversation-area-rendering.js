@@ -49,6 +49,8 @@ import { itemGoal } from '../model/thread-alias.js';
 import { liveMessageForThread } from '../utils/thread-display.js';
 import { rebindConversation } from '../services/workspace-rebinding.js';
 import { openWorkspaceReconnect } from './workspace-reconnect-dialog.js';
+import { t } from '../../sdk/lib/i18n.js';
+import { displayConversationName } from '../model/conversation-naming.js';
 
 /** @typedef {import('../../sdk/lib/message.js').Message} Message */
 
@@ -129,7 +131,7 @@ export function ensurePendingMessages(area, messageList) {
     zone.className = PENDING_ZONE_CLASS;
     const label = document.createElement('div');
     label.className = 'pending-messages-label';
-    label.textContent = 'Queued';
+    label.textContent = t('Queued');
     zone.appendChild(label);
   }
   // Keep the zone pinned at the very end (after the footer).
@@ -171,8 +173,8 @@ function ensureQueuedDeleteButton(area, el, itemId) {
     button = document.createElement('button');
     button.type = 'button';
     button.className = 'queued-message-delete-btn icon-btn';
-    button.title = 'Remove from queue';
-    button.setAttribute('aria-label', 'Remove queued message');
+    button.title = t('Remove from queue');
+    button.setAttribute('aria-label', t('Remove queued message'));
     button.innerHTML = '<span class="icon-trashcan"></span>';
     button.addEventListener('click', (event) => {
       event.preventDefault();
@@ -307,14 +309,14 @@ export function ensureWorkspaceBanner(area, messageList) {
     const open = document.createElement('button');
     open.type = 'button';
     open.className = 'workspace-banner-open';
-    open.title = 'Show this workspace';
+    open.title = t('Show this workspace');
 
     const lead = document.createElement('span');
     lead.className = 'workspace-banner-lead';
     // The noun, not a preposition: the menu, the create dialog and the move dialog
     // all call this thing a workspace, and the banner is where a reader meets it
     // first.
-    lead.textContent = 'Workspace';
+    lead.textContent = t('Workspace');
     open.appendChild(lead);
     if (label) {
       const name = document.createElement('span');
@@ -359,21 +361,26 @@ export function ensureWorkspaceBanner(area, messageList) {
  * @returns {string} The line, or '' for a binding that is nobody's problem yet.
  */
 function strandedLead(workspace) {
-  if (!workspace) return 'There is no record of the workspace this conversation works in.';
+  if (!workspace) return t('There is no record of the workspace this conversation works in.');
   if (workspace.state === 'provisioning') return '';
 
+  // The label the user gave it, else its root: data either way, drawn as given.
   const label = workspace.label || workspace.root;
   if (workspace.state === 'closed') {
     // Reached by the conversations that did NOT do it — the one that did is back
     // in the project before the row is tombstoned. So it says who, and it says
     // what this conversation's position now is: nothing refuses a message typed
-    // here, and the turn would die in the server.
-    const closedBy = typeof workspace.meta?.closedBy === 'string' ? workspace.meta.closedBy : '';
-    return `The workspace ${label} was finished with${closedBy ? ` by ${closedBy}` : ''}.`
-      + ' This conversation has nowhere to work until you choose.';
+    // here, and the turn would die in the server. Who is the finishing
+    // conversation's name (or id): data.
+    // Stored as the closer's name or id; a placeholder name is drawn in the UI language.
+    const closedBy = typeof workspace.meta?.closedBy === 'string' && workspace.meta.closedBy
+      ? displayConversationName(workspace.meta.closedBy)
+      : '';
+    return t('The workspace {label} was finished with{named, select, yes { by {closedBy}} other {}}. This conversation has nowhere to work until you choose.',
+      { label, named: closedBy ? 'yes' : 'no', closedBy });
   }
   return workspace.available === false
-    ? `The workspace ${label} is not where it was.`
+    ? t('The workspace {label} is not where it was.', { label })
     : '';
 }
 
@@ -420,7 +427,7 @@ function ensureStrandedBanner(conversation, binding, existing, messageList) {
       const found = document.createElement('button');
       found.type = 'button';
       found.className = 'workspace-banner-reconnect';
-      found.textContent = 'Put it back…';
+      found.textContent = t('Put it back…');
       found.addEventListener('click', () => { void openWorkspaceReconnect(conversation); });
       banner.appendChild(found);
     }
@@ -428,7 +435,7 @@ function ensureStrandedBanner(conversation, binding, existing, messageList) {
     const rebind = document.createElement('button');
     rebind.type = 'button';
     rebind.className = 'workspace-banner-rebind';
-    rebind.textContent = 'Work in the project';
+    rebind.textContent = t('Work in the project');
     rebind.addEventListener('click', () => { void rebindConversation(conversation, ''); });
     banner.appendChild(rebind);
 
@@ -474,7 +481,7 @@ export function removeAllElements(messageList) {
  * @returns {string} The label to show above the block.
  */
 function threadResultLabel(text) {
-  return text ? 'Summary' : 'Not summarised';
+  return text ? t('Summary') : t('Not summarised');
 }
 
 /**
@@ -493,7 +500,7 @@ function renderThreadResultBody(body, text) {
     decorateCodeBlocks(body);
     return;
   }
-  body.textContent = 'The folded transcript is intact in this thread. Re-summarise to write a summary for it.';
+  body.textContent = t('The folded transcript is intact in this thread. Re-summarise to write a summary for it.');
 }
 
 /**
@@ -606,9 +613,9 @@ export function ensureThreadResult(area, messageList, footer) {
   const resummariseBtn = document.createElement('button');
   resummariseBtn.type = 'button';
   resummariseBtn.className = 'thread-result-resummarise-btn';
-  resummariseBtn.title = 'Summarise this fold again';
-  resummariseBtn.setAttribute('aria-label', 'Summarise this fold again');
-  resummariseBtn.textContent = 'Re-summarise';
+  resummariseBtn.title = t('Summarise this fold again');
+  resummariseBtn.setAttribute('aria-label', t('Summarise this fold again'));
+  resummariseBtn.textContent = t('Re-summarise');
   resummariseBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     const tid = threadYMap?.get?.('itemId');
@@ -918,7 +925,7 @@ function createToolActionElement(message, itemIndex) {
 function createErrorBubble(message, itemIndex) {
   /** @type {Record<string, string>} */
   const attributes = {
-    content: message.get('summary') || message.get('message') || message.get('content') || 'An error occurred'
+    content: message.get('summary') || message.get('message') || message.get('content') || t('An error occurred')
   };
   // The worker classifies the failure; the row only reads the verdict. Matching
   // on the error text here instead would put the taxonomy in two places and let

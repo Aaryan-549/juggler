@@ -67,6 +67,9 @@ import { runTests as runKeylessSignInStatusTests } from '../unit-tests/keyless-s
 import { runTests as runTokenCacheUnknownTests } from '../unit-tests/token-cache-unknown-test.js';
 import { runTests as runCompactionStatusTests } from '../unit-tests/compaction-status-test.js';
 import { runTests as runStatusMessageFormatTests } from '../unit-tests/status-message-format-test.js';
+import { runTests as runStatusMessageBuilderTests } from '../unit-tests/status-message-builder-test.js';
+import { runTests as runConversationAreaRenderingTests } from '../unit-tests/conversation-area-rendering-test.js';
+import { runTests as runConversationAreaTests } from '../unit-tests/conversation-area-test.js';
 import { runTests as runTrailingTurnOutcomeTests } from '../unit-tests/trailing-turn-outcome-test.js';
 import { runTests as runContextItemPersistenceTests } from '../unit-tests/context-item-persistence-test.js';
 import { runTests as runContextItemSeedExecuteTests } from '../unit-tests/context-item-seed-execute-test.js';
@@ -220,10 +223,12 @@ import { runTests as runConversationRenameTests } from '../unit-tests/conversati
 import { runTests as runWorkspacePanelTests } from '../unit-tests/workspace-panel-test.js';
 import { runTests as runBinUndoToastTests } from '../unit-tests/bin-undo-toast-test.js';
 import { runTests as runBinFooterTests } from '../unit-tests/bin-footer-test.js';
+import { runTests as runConversationBarTests } from '../unit-tests/conversation-bar-test.js';
 import { runTests as runBinGhostResurrectionTests } from '../unit-tests/bin-ghost-resurrection-test.js';
 import { runTests as runBinEmptyMenuTests } from '../unit-tests/bin-empty-menu-test.js';
 import { runTests as runBinSizeNoticeTests } from '../unit-tests/bin-size-notice-test.js';
 import { runTests as runAboutMenuTests } from '../unit-tests/about-menu-test.js';
+import { runTests as runUpdateUiTests } from '../unit-tests/update-ui-test.js';
 import { runTests as runModalScrimTests } from '../unit-tests/modal-scrim-test.js';
 import { runTests as runRestoreSelectPanelTests } from '../unit-tests/restore-select-panel-test.js';
 import { runTests as runConversationFocusPolicyTests } from '../unit-tests/conversation-focus-policy-test.js';
@@ -269,6 +274,8 @@ import { runTests as runPinboardTasksTests } from '../unit-tests/pinboard-tasks-
 import { runTests as runPinboardGitReviewTests } from '../unit-tests/pinboard-git-review-test.js';
 import { runTests as runReviewDraftTests } from '../unit-tests/review-draft-test.js';
 import { runTests as runReviewSendTests } from '../unit-tests/review-send-test.js';
+import { runTests as runReviewPanelTests } from '../unit-tests/review-panel-test.js';
+import { runTests as runDiffViewerTests } from '../unit-tests/diff-viewer-test.js';
 import { runTests as runPinboardRetentionTests } from '../unit-tests/pinboard-retention-test.js';
 import { runTests as runWsListenerIsolationTests } from '../unit-tests/ws-listener-isolation-test.js';
 import { runTests as runIconsTests } from '../unit-tests/icons-test.js';
@@ -370,11 +377,13 @@ import { runTests as runClipboardTests } from '../unit-tests/clipboard-test.js';
 import { runTests as runCopyButtonTests } from '../unit-tests/copy-button-test.js';
 import { runTests as runLiveTaskOutputTests } from '../unit-tests/live-task-output-test.js';
 import { runTests as runComposerAttachmentsTests } from '../unit-tests/composer-attachments-test.js';
+import { runTests as runComposerTests } from '../unit-tests/composer-test.js';
 import { runTests as runCodeBlockTests } from '../unit-tests/code-block-test.js';
 import { runTests as runWindowCaptionControlsTests } from '../unit-tests/window-caption-controls-test.js';
 import { runTests as runUIEventManagerTests } from '../unit-tests/ui-event-manager-test.js';
 import { runTests as runThinkingBlockTests } from '../unit-tests/thinking-block-test.js';
 import { runTests as runPropertiesPanelHelpersTests } from '../unit-tests/properties-panel-helpers-test.js';
+import { runTests as runPropertiesPanelTests } from '../unit-tests/properties-panel-test.js';
 import { runTests as runWorkspaceDialogsTests } from '../unit-tests/workspace-dialogs-test.js';
 import { runTests as runContextItemBaseTests } from '../unit-tests/context-item-base-test.js';
 import { runTests as runCapabilityNameReadersTests } from '../unit-tests/capability-name-readers-test.js';
@@ -389,11 +398,13 @@ import { runTests as runReconnectPolicyTests } from '../unit-tests/reconnect-pol
 import { runTests as runResyncOfflineEditTests } from '../unit-tests/resync-offline-edit-test.js';
 import { runTests as runOpenDuringLoadTests } from '../unit-tests/open-during-load-test.js';
 import { runTests as runSessionLoadFailureTests } from '../unit-tests/session-load-failure-test.js';
+import { runTests as runAppMessagesTests } from '../unit-tests/app-messages-test.js';
 import { runTests as runPopupBackButtonTests } from '../unit-tests/popup-back-button-test.js';
 import { runTests as runPopupSurfaceTests } from '../unit-tests/popup-surface-test.js';
 import { runTests as runModelDisplayTests } from '../unit-tests/model-display-test.js';
 import { runTests as runEngineProjectSwitchTests } from '../unit-tests/engine-project-switch-test.js';
 import { runTests as runWindowTitleTests } from '../unit-tests/window-title-test.js';
+import { runTests as runConversationNoticesTests } from '../unit-tests/conversation-notices-test.js';
 import './golden-comparator.js'; // Initialize window.__integrationTestHelpers
 import logger from './test-logger.js';
 import {
@@ -519,6 +530,9 @@ const UNIT_TEST_SUITES = [
   { name: 'unit:token-cache-unknown', run: runTokenCacheUnknownTests },
   { name: 'unit:compaction-status', run: runCompactionStatusTests },
   { name: 'unit:status-message-format', run: runStatusMessageFormatTests },
+  { name: 'unit:status-message-builder', run: runStatusMessageBuilderTests },
+  { name: 'unit:conversation-area-rendering', run: runConversationAreaRenderingTests },
+  { name: 'unit:conversation-area', run: runConversationAreaTests },
   { name: 'unit:trailing-turn-outcome', run: runTrailingTurnOutcomeTests },
   { name: 'unit:key-shortcut-manager', run: runKeyShortcutManagerTests },
   // Exclusive: the Escape preference is one localStorage key on an origin every
@@ -729,10 +743,12 @@ const UNIT_TEST_SUITES = [
   // shared origin can move.
   { name: 'unit:bin-undo-toast', run: runBinUndoToastTests },
   { name: 'unit:bin-footer', run: runBinFooterTests },
+  { name: 'unit:conversation-bar', run: runConversationBarTests },
   { name: 'unit:bin-ghost-resurrection', run: runBinGhostResurrectionTests },
   { name: 'unit:bin-empty-menu', run: runBinEmptyMenuTests },
   { name: 'unit:bin-size-notice', run: runBinSizeNoticeTests },
   { name: 'unit:about-menu', run: runAboutMenuTests },
+  { name: 'unit:update-ui', run: runUpdateUiTests },
   { name: 'unit:modal-scrim', run: runModalScrimTests },
   { name: 'unit:restore-select-panel', run: runRestoreSelectPanelTests },
   { name: 'unit:conversation-focus-policy', run: runConversationFocusPolicyTests },
@@ -757,6 +773,8 @@ const UNIT_TEST_SUITES = [
   { name: 'unit:pinboard-git-review', run: runPinboardGitReviewTests },
   { name: 'unit:review-draft', run: runReviewDraftTests },
   { name: 'unit:review-send', run: runReviewSendTests },
+  { name: 'unit:review-panel', run: runReviewPanelTests },
+  { name: 'unit:diff-viewer', run: runDiffViewerTests },
   { name: 'unit:pinboard-retention', run: runPinboardRetentionTests },
   { name: 'unit:ws-listener-isolation', run: runWsListenerIsolationTests },
   { name: 'unit:icons', run: runIconsTests },
@@ -851,11 +869,13 @@ const UNIT_TEST_SUITES = [
   { name: 'unit:copy-button', run: runCopyButtonTests },
   { name: 'unit:live-task-output', run: runLiveTaskOutputTests },
   { name: 'unit:composer-attachments', run: runComposerAttachmentsTests },
+  { name: 'unit:composer', run: runComposerTests },
   { name: 'unit:code-block', run: runCodeBlockTests },
   { name: 'unit:window-caption-controls', run: runWindowCaptionControlsTests },
   { name: 'unit:ui-event-manager', run: runUIEventManagerTests },
   { name: 'unit:thinking-block', run: runThinkingBlockTests },
   { name: 'unit:properties-panel-helpers', run: runPropertiesPanelHelpersTests },
+  { name: 'unit:properties-panel', run: runPropertiesPanelTests },
   { name: 'unit:workspace-dialogs', run: runWorkspaceDialogsTests },
   { name: 'unit:context-item-base', run: runContextItemBaseTests },
   { name: 'unit:capability-name-readers', run: runCapabilityNameReadersTests },
@@ -870,11 +890,13 @@ const UNIT_TEST_SUITES = [
   { name: 'unit:resync-offline-edit', run: runResyncOfflineEditTests },
   { name: 'unit:open-during-load', run: runOpenDuringLoadTests },
   { name: 'unit:session-load-failure', run: runSessionLoadFailureTests },
+  { name: 'unit:app-messages', run: runAppMessagesTests },
   { name: 'unit:popup-back-button', run: runPopupBackButtonTests },
   { name: 'unit:popup-surface', run: runPopupSurfaceTests, needsExclusiveRun: true },
   { name: 'unit:model-display', run: runModelDisplayTests },
   { name: 'unit:engine-project-switch', run: runEngineProjectSwitchTests },
   { name: 'unit:window-title', run: runWindowTitleTests },
+  { name: 'unit:conversation-notices', run: runConversationNoticesTests },
 ];
 
 /**

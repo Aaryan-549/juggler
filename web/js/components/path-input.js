@@ -24,6 +24,7 @@
 
 import { fetchPathCompletions, fetchFileCompletions } from '../services/completions-api.js';
 import { applyListboxRoles, linkListbox, setActiveOption } from '../utils/listbox-roles.js';
+import { t } from '../../sdk/lib/i18n.js';
 
 /**
  * Matching quote pairs that can wrap a copied path. macOS Finder's "Copy as
@@ -237,7 +238,7 @@ class PathInput extends HTMLElement {
     }
     // A list the field drives, not a menu: focus stays in the field, and the
     // highlighted row is announced through it (see _highlight).
-    applyListboxRoles(menu, 'Path suggestions');
+    applyListboxRoles(menu, t('Path suggestions'));
     if (this._input) linkListbox(this._input, menu);
 
     // Portal to <body> with fixed positioning so the menu escapes every

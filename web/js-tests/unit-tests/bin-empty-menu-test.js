@@ -216,6 +216,7 @@ export async function runTests() {
         rows: [
           { id: 'conv_a', name: '7', lastModifiedAt: daysAgo(40) },
           { id: 'conv_b', name: '', lastModifiedAt: daysAgo(10) },
+          { id: 'conv_c', name: 'Untitled 3', lastModifiedAt: daysAgo(5) },
         ],
         bin: {
           sizeBytes: BIN_LARGE_BYTES,
@@ -236,10 +237,15 @@ export async function runTests() {
       shown.push(...shownStrings(panel(), skip));
       const untitled = xaModal.querySelector('.bin-row[data-conversation-id="conv_b"] .bin-row-name');
       shown.push(untitled?.textContent || '');
+      const three = xaModal.querySelector('.bin-row[data-conversation-id="conv_c"] .bin-row-name')?.textContent || '';
+      assert(three.includes('3'), `en-XA: "Untitled 3" lost its number: "${three}"`);
+      shown.push(three);
 
       /** @type {HTMLElement} */ (xaModal.querySelector('.bin-row[data-conversation-id="conv_a"] .bin-restore')).click();
       await settle();
       /** @type {HTMLElement} */ (xaModal.querySelector('.bin-row[data-conversation-id="conv_b"] .bin-delete')).click();
+      await settle();
+      /** @type {HTMLElement} */ (xaModal.querySelector('.bin-row[data-conversation-id="conv_c"] .bin-delete')).click();
       await settle();
 
       const button = /** @type {HTMLButtonElement} */ (xaModal.querySelector('.bin-empty-now'));

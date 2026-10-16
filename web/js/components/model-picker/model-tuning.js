@@ -23,6 +23,7 @@
  */
 
 import { escapeHtml } from '../../../sdk/lib/html.js';
+import { markForTranslation, t } from '../../../sdk/lib/i18n.js';
 
 /**
  * @typedef {object} TuningModelEntry
@@ -33,13 +34,32 @@ import { escapeHtml } from '../../../sdk/lib/html.js';
  */
 
 /**
- * Title-case a native thinking-level string for the segmented control's full
- * label (e.g. "medium" → "Medium", "xhigh" → "Xhigh"). The button chip shows the
- * raw string verbatim.
+ * Labels for the thinking levels the built-in providers advertise, keyed by
+ * their native id.
+ * @type {Record<string, string>}
+ */
+const THINKING_LEVEL_LABELS = {
+  off: markForTranslation('Off'),
+  none: markForTranslation('None'),
+  minimal: markForTranslation('Minimal'),
+  low: markForTranslation('Low'),
+  medium: markForTranslation('Medium'),
+  high: markForTranslation('High'),
+  xhigh: markForTranslation('Xhigh'),
+  max: markForTranslation('Max'),
+};
+
+/**
+ * The segmented control's full label for a native thinking-level string: a
+ * known level's translated label (e.g. "medium" → "Medium"), otherwise the
+ * provider's own word, title-cased as data. The button chip shows the raw
+ * string verbatim.
  * @param {string} level - The native level string.
- * @returns {string} The level with its first letter upper-cased.
+ * @returns {string} The label to show.
  */
 export function thinkingLabel(level) {
+  const label = Object.hasOwn(THINKING_LEVEL_LABELS, level) ? THINKING_LEVEL_LABELS[level] : '';
+  if (label) return t(label);
   return level ? level.charAt(0).toUpperCase() + level.slice(1) : level;
 }
 
@@ -163,7 +183,9 @@ class ModelTuning extends HTMLElement {
 
     const active = this._activeLevel();
     const def = this._modelEntry?.defaultThinkingLevel;
-    const defaultLabel = def ? `Default (${thinkingLabel(def)})` : 'Default';
+    const defaultLabel = def
+      ? t('Default ({level})', { level: thinkingLabel(def) }, { context: 'thinking effort' })
+      : t('Default', undefined, { context: 'thinking effort' });
 
     const seg = (/** @type {string} */ level, /** @type {string} */ label) => {
       const isActive = level === active;
@@ -175,8 +197,8 @@ class ModelTuning extends HTMLElement {
 
     return `
             <div class="model-thinking">
-                <div class="model-thinking-label">Thinking</div>
-                <div class="thinking-segmented" role="radiogroup" aria-label="Thinking level">${segments.join('')}</div>
+                <div class="model-thinking-label">${escapeHtml(t('Thinking'))}</div>
+                <div class="thinking-segmented" role="radiogroup" aria-label="${escapeHtml(t('Thinking level'))}">${segments.join('')}</div>
             </div>`;
   }
 
@@ -202,14 +224,14 @@ class ModelTuning extends HTMLElement {
     };
 
     const segments = [
-      seg('', 'Standard', ''),
+      seg('', t('Standard', undefined, { context: 'serving speed' }), ''),
       ...tiers.map(t => seg(t.id, t.name || t.id, t.description || '')),
     ];
 
     return `
             <div class="model-speed">
-                <div class="model-speed-label">Speed</div>
-                <div class="tier-segmented" role="radiogroup" aria-label="Serving speed">${segments.join('')}</div>
+                <div class="model-speed-label">${escapeHtml(t('Speed'))}</div>
+                <div class="tier-segmented" role="radiogroup" aria-label="${escapeHtml(t('Serving speed'))}">${segments.join('')}</div>
             </div>`;
   }
 

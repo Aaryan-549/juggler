@@ -15,6 +15,7 @@
  */
 
 import { formatBytes } from './format.js';
+import { markUntranslated } from '../../sdk/lib/i18n.js';
 
 /**
  * @typedef {{id:string, mime:string, filename:string, bytes:number, width:number, height:number}} AssetRef
@@ -89,7 +90,7 @@ export function normalizeTextFiles(raw) {
       : t)
     .filter((/** @type {any} */ t) => t && typeof t.content === 'string')
     .map((/** @type {any} */ t) => ({
-      filename: typeof t.filename === 'string' ? t.filename : 'dropped file',
+      filename: typeof t.filename === 'string' ? t.filename : markUntranslated('dropped file'),
       content: t.content,
       bytes: typeof t.bytes === 'number' ? t.bytes : 0
     }));

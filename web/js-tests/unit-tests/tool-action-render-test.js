@@ -406,5 +406,66 @@ export async function runTests() {
     passed++;
   } catch (e) { failed++; errors.push(`en-XA item renderers: ${e.message}`); }
 
+  // G — en-XA: every fallback the transcript row itself draws, in every state,
+  // for a tool no plugin draws a status UI for. The registry is pinned (no
+  // plugin claims a tool name; action id '1' is a bare class with no manifest
+  // name) so the lane's real registry decides nothing. Tool names, errors and
+  // results are digits — data — and a string with no letter is left out.
+  const realRegistry = {
+    get: contextItemRegistry.get,
+    getAll: contextItemRegistry.getAll,
+    getByToolName: contextItemRegistry.getByToolName,
+  };
+  try {
+    class Bare {}
+    contextItemRegistry.getByToolName = /** @type {any} */ (() => undefined);
+    contextItemRegistry.get = /** @type {any} */ ((/** @type {string} */ id) => (id === '1' ? Bare : undefined));
+    contextItemRegistry.getAll = /** @type {any} */ (() => []);
+    await underPseudoLocale('tool-action-render-test', async () => {
+      /** @type {{where: string, text: string}[]} */
+      const shown = [];
+      const collect = (/** @type {string} */ where, /** @type {string[]} */ strings) => {
+        for (const text of strings) if (/\p{L}/u.test(text)) shown.push({ where, text });
+      };
+      const row = (/** @type {Record<string, any>} */ fields) => {
+        const r = /** @type {any} */ (document.createElement('tool-action-message'));
+        r._getConversation = () => ({ session: {} });
+        r._getMessageThread = () => ({ items: [] });
+        r._getItem = () => fakeItem(fields);
+        r._wrapWithIcon = (/** @type {HTMLElement} */ c) => c;
+        return r;
+      };
+      const drawn = (/** @type {string} */ where, /** @type {Record<string, any>} */ fields) => {
+        const r = row(fields);
+        r.render();
+        assert(r.childElementCount > 0, `${where}: nothing drawn`);
+        collect(where, shownStrings(r));
+      };
+
+      // The footer's busy label, with and without a tool name.
+      collect('busy, named', [row({ state: TOOL_STATES.RUNNING, toolName: '5' }).getBusyState()?.message || '<none>']);
+      collect('busy, unnamed', [row({ state: TOOL_STATES.RUNNING }).getBusyState()?.message || '<none>']);
+
+      drawn('pending approval', { state: TOOL_STATES.PENDING, toolName: '5' });
+      drawn('running', { state: TOOL_STATES.RUNNING, toolName: '5' });
+      drawn('cancelled, named', { state: TOOL_STATES.CANCELLED, toolName: '5', result: { cancelled: true } });
+      drawn('cancelled, unnamed', { state: TOOL_STATES.CANCELLED, result: { cancelled: true } });
+      drawn('unknown tool', { state: 'completed', toolName: '5', result: { fullResult: { success: false } } });
+      drawn('completed', { state: 'completed', toolName: '5', result: { fullResult: { actionId: '1', success: true } } });
+      drawn('failed', { state: 'completed', toolName: '5', result: { fullResult: { actionId: '1', success: false, error: '7' } } });
+      drawn('result cancelled', { state: 'completed', toolName: '5', result: { fullResult: { actionId: '1', cancelled: true } } });
+      drawn('result blocked', { state: 'completed', toolName: '5', result: { fullResult: { actionId: '1', blocked: true } } });
+
+      // The review row above the approval buttons, before a strategy labels it.
+      collect('review row, unlabelled', shownStrings(row({})._buildReviewStatusRow(undefined, true)));
+
+      const raw = shown.filter((s) => !isPseudoLocalized(s.text));
+      assert(shown.length >= 10, `expected at least 10 strings, found ${shown.length}: ${JSON.stringify(shown)}`);
+      assert(raw.length === 0, `plain English under en-XA: ${JSON.stringify(raw)}`);
+    });
+    passed++;
+  } catch (e) { failed++; errors.push(`en-XA tool-action row: ${e.message}`); }
+  finally { Object.assign(contextItemRegistry, realRegistry); }
+
   return { passed, failed, errors };
 }

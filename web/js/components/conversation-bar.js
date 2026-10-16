@@ -20,8 +20,9 @@
  * @property {typeof ConversationBar} ConversationBar - ConversationBar class
  */
 
-import { MAX_CONVERSATIONS, CONVERSATION_LIMIT_MESSAGE } from '../model/session.js';
-import { UNTITLED_BASE } from '../model/conversation-naming.js';
+import { MAX_CONVERSATIONS } from '../model/session.js';
+import { showConversationLimitAlert } from '../services/app-notices.js';
+import { displayConversationName } from '../model/conversation-naming.js';
 import { BIN_LARGE_BYTES, MAX_CONVERSATION_NAME_LENGTH, MAX_WORKSPACE_LABEL_LENGTH } from '../utils/constants.js';
 import { setupColumnResize, applyColumnWidthPx } from '../utils/column-resize.js';
 import { startReorderDrag, settledRect, holdGestureLive } from '../utils/reorder-drag.js';
@@ -58,12 +59,14 @@ import { extractErrorMessage } from '../../sdk/lib/error-utils.js';
 import { copyToClipboard } from '../../sdk/lib/clipboard.js';
 import { conversationToMarkdown } from '../utils/conversation-markdown.js';
 import { exportConversation } from './conversation-export-dialog.js';
+import { t, markForTranslation } from '../../sdk/lib/i18n.js';
+import { escapeHtml } from '../../sdk/lib/html.js';
 import './bin-modal.js';
 import './info-rail.js';
 import './workspace-box-header.js';
 
 // What a tab says while the model is naming it, in place of its name.
-const AUTO_NAMING_LABEL = 'Auto-naming…';
+const AUTO_NAMING_LABEL = markForTranslation('Auto-naming…');
 
 // How long a press of Auto-name shows the label on its own say-so. The server's
 // `naming-started` replaces the mark with one of its own within a moment; this
@@ -913,7 +916,7 @@ class ConversationBar extends JugglerElement {
     }
 
     if (!this._session) {
-      this.innerHTML = '<div class="conversation-bar-empty">No session loaded</div>';
+      this.innerHTML = `<div class="conversation-bar-empty">${escapeHtml(t('No session loaded'))}</div>`;
       return;
     }
 
@@ -1014,10 +1017,10 @@ class ConversationBar extends JugglerElement {
       undoToast = document.createElement('button');
       undoToast.className = 'conversation-bin-undo';
       undoToast.type = 'button';
-      undoToast.title = 'Put the conversation you just binned back';
-      undoToast.setAttribute('aria-label', 'Restore the conversation from the bin');
+      undoToast.title = t('Put the conversation you just binned back');
+      undoToast.setAttribute('aria-label', t('Restore the conversation from the bin'));
       undoToast.hidden = true;
-      undoToast.innerHTML = `${UNDO_SVG}<span>Restore from Bin</span>`;
+      undoToast.innerHTML = `${UNDO_SVG}<span>${escapeHtml(t('Restore from Bin'))}</span>`;
       undoToast.addEventListener('click', () => this._undoBin());
       this._cachedElements.set('bin-undo', undoToast);
       footer.appendChild(undoToast);
@@ -1028,9 +1031,9 @@ class ConversationBar extends JugglerElement {
     if (!binBtn) {
       binBtn = document.createElement('button');
       binBtn.className = 'btn-ghost conversation-bin-button';
-      binBtn.title = 'View binned conversations';
-      binBtn.setAttribute('aria-label', 'Open bin');
-      binBtn.innerHTML = `${BIN_ICON_SVG}<span class="conversation-bin-label">Bin</span><span class="conversation-bin-size" hidden></span><span class="conversation-bin-count" hidden></span>`;
+      binBtn.title = t('View binned conversations');
+      binBtn.setAttribute('aria-label', t('Open bin'));
+      binBtn.innerHTML = `${BIN_ICON_SVG}<span class="conversation-bin-label">${escapeHtml(t('Bin'))}</span><span class="conversation-bin-size" hidden></span><span class="conversation-bin-count" hidden></span>`;
       binBtn.addEventListener('click', () => this._openBinModal());
       this._cachedElements.set('bin-button', binBtn);
       footer.appendChild(binBtn);
@@ -1058,12 +1061,13 @@ class ConversationBar extends JugglerElement {
       if (sizeEl.textContent !== sizeText) sizeEl.textContent = sizeText;
       sizeEl.hidden = !showSize;
     }
-    let binTitle = 'View binned conversations';
+    let binTitle = t('View binned conversations');
     if (count > 0) {
-      const items = `${count} ${count === 1 ? 'conversation' : 'conversations'}`;
       binTitle = sizeBytes > 0
-        ? `View binned conversations — ${items} (${formatBytes(sizeBytes)})`
-        : `View binned conversations — ${items}`;
+        ? t('{count, plural, one {View binned conversations — {count} conversation ({size})} other {View binned conversations — {count} conversations ({size})}}',
+          { count, size: formatBytes(sizeBytes) })
+        : t('{count, plural, one {View binned conversations — {count} conversation} other {View binned conversations — {count} conversations}}',
+          { count });
     }
     if (binBtn.title !== binTitle) binBtn.title = binTitle;
 
@@ -1087,8 +1091,8 @@ class ConversationBar extends JugglerElement {
       // column and the words where tab names start.
       addButton.innerHTML = `
         <button class="conversation-add" type="button"
-                title="New conversation" data-shortcut-id="new-conversation"
-                aria-label="Create new conversation">${ADD_ICON_SVG}<span class="conversation-box-new-label"><span class="conversation-box-new-label-full">New conversation</span><span class="conversation-box-new-label-short">Conversation</span></span></button>
+                title="${escapeHtml(t('New conversation'))}" data-shortcut-id="new-conversation"
+                aria-label="${escapeHtml(t('Create new conversation'))}">${ADD_ICON_SVG}<span class="conversation-box-new-label"><span class="conversation-box-new-label-full">${escapeHtml(t('New conversation'))}</span><span class="conversation-box-new-label-short">${escapeHtml(t('Conversation'))}</span></span></button>
       `;
       this._cachedElements.set('add-button', addButton);
 
@@ -1115,8 +1119,8 @@ class ConversationBar extends JugglerElement {
       newWorkspace.className = 'conversation-box-new';
       newWorkspace.innerHTML = `
         <button class="conversation-box-new-button" type="button"
-                 title="Create a new workspace, or a group to keep conversations together"
-                 aria-label="New workspace or group">${ADD_ICON_SVG}<span class="conversation-box-new-label"><span class="conversation-box-new-label-full">New workspace or group</span><span class="conversation-box-new-label-short">Workspace/Group</span></span></button>
+                 title="${escapeHtml(t('Create a new workspace, or a group to keep conversations together'))}"
+                 aria-label="${escapeHtml(t('New workspace or group'))}">${ADD_ICON_SVG}<span class="conversation-box-new-label"><span class="conversation-box-new-label-full">${escapeHtml(t('New workspace or group'))}</span><span class="conversation-box-new-label-short">${escapeHtml(t('Workspace/Group'))}</span></span></button>
       `;
       this._cachedElements.set('new-workspace', newWorkspace);
       newWorkspace.querySelector('button')?.addEventListener('click', () => { void this._createWorkspace(); });
@@ -1259,10 +1263,10 @@ class ConversationBar extends JugglerElement {
           <workspace-box-header class="conversation-box-header"></workspace-box-header>
         </div>
         <button class="conversation-box-add" type="button"
-                title="New conversation in this workspace"
-                aria-label="New conversation in this workspace">${ADD_ICON_SVG}</button>
+                title="${escapeHtml(t('New conversation in this workspace'))}"
+                aria-label="${escapeHtml(t('New conversation in this workspace'))}">${ADD_ICON_SVG}</button>
         <menu class="conversation-box-tabs">
-          <li class="conversation-box-empty" hidden>(empty)</li>
+          <li class="conversation-box-empty" hidden>${escapeHtml(t('(empty)'))}</li>
         </menu>
       `;
       this._workspaceBoxes.set(workspace.id, box);
@@ -1640,12 +1644,12 @@ class ConversationBar extends JugglerElement {
    * @private
    */
   _renderOrUpdateTab(conv, visibleId, container) {
-    const name = conv.name || UNTITLED_BASE;
+    const name = displayConversationName(conv.name);
     const isActive = conv.id === visibleId;
     // While the model is naming the tab, the tab says so in place of the name it
     // is about to lose (shimmering: .is-auto-naming in conversation-bar.css).
     const autoNaming = this._session?.isAutoNaming?.(conv.id) ?? false;
-    const label = autoNaming ? AUTO_NAMING_LABEL : name;
+    const label = autoNaming ? t(AUTO_NAMING_LABEL) : name;
 
     // Get existing tab element or create new one
     let tab = /** @type {HTMLElement|null} */ (this._cachedElements.get(conv.id));
@@ -1727,11 +1731,11 @@ class ConversationBar extends JugglerElement {
     if (!binButton) {
       binButton = document.createElement('button');
       binButton.className = 'conversation-tab-bin';
-      binButton.title = 'Move conversation to bin';
+      binButton.title = t('Move conversation to bin');
       // The tooltip-manager appends the platform-correct combo (e.g. " (⌘⌫)")
       // from this shortcut id — no hard-coded key text in the markup.
       binButton.setAttribute('data-shortcut-id', 'bin-conversation');
-      binButton.setAttribute('aria-label', `Move ${name} to bin`);
+      binButton.setAttribute('aria-label', t('Move {name} to bin', { name }));
       binButton.innerHTML = BIN_ICON_SVG;
       tab.appendChild(binButton);
 
@@ -1741,7 +1745,7 @@ class ConversationBar extends JugglerElement {
       });
     } else {
       // Only when it changed — an attribute write invalidates on every render.
-      const binLabel = `Move ${name} to bin`;
+      const binLabel = t('Move {name} to bin', { name });
       if (binButton.getAttribute('aria-label') !== binLabel) {
         binButton.setAttribute('aria-label', binLabel);
       }
@@ -2074,8 +2078,8 @@ class ConversationBar extends JugglerElement {
     } catch (e) {
       console.error('[ConversationBar] restore from bin failed:', e);
       await showAlert(
-        `Couldn’t restore it from the bin: ${/** @type {any} */ (e)?.message || e}`,
-        'Restore failed'
+        t('Couldn’t restore it from the bin: {error}', { error: String(/** @type {any} */ (e)?.message || e) }),
+        t('Restore failed')
       );
     }
   }
@@ -2106,10 +2110,7 @@ class ConversationBar extends JugglerElement {
   async _duplicateConversation(conversationId) {
     if (!this._session) return;
     if (this._session.conversations.size >= MAX_CONVERSATIONS) {
-      await showAlert(
-        CONVERSATION_LIMIT_MESSAGE,
-        'Too many conversations'
-      );
+      await showConversationLimitAlert();
       return;
     }
     const newId = await this._session.duplicateConversation(conversationId);
@@ -2133,9 +2134,9 @@ class ConversationBar extends JugglerElement {
       const conversation = this._session.getConversation(conversationId);
       if (!conversation) return;
       await copyToClipboard(conversationToMarkdown(conversation));
-      showNotice('Conversation copied to clipboard');
+      showNotice(t('Conversation copied to clipboard'));
     } catch (error) {
-      await showAlert(extractErrorMessage(error), 'Copy Failed');
+      await showAlert(extractErrorMessage(error), t('Copy Failed'));
     }
   }
 
@@ -2155,7 +2156,7 @@ class ConversationBar extends JugglerElement {
       if (!conversation) return;
       void exportConversation(conversation);
     } catch (error) {
-      await showAlert(extractErrorMessage(error), 'Export Failed');
+      await showAlert(extractErrorMessage(error), t('Export Failed'));
     }
   }
 
@@ -2284,10 +2285,7 @@ class ConversationBar extends JugglerElement {
     // model enforces the same limit (so duplicate/other paths can't exceed it);
     // pre-checking here keeps the "+" UX side-effect-free (no rename popover).
     if (this._session.conversations.size >= MAX_CONVERSATIONS) {
-      await showAlert(
-        CONVERSATION_LIMIT_MESSAGE,
-        'Too many conversations'
-      );
+      await showConversationLimitAlert();
       return;
     }
 
@@ -2373,12 +2371,12 @@ class ConversationBar extends JugglerElement {
           // invalid closes it: the editor has nothing to add that the empty
           // result doesn't already say.
           if (code === 'COLLISION') {
-            return `“${newName}” is already used by another conversation.`;
+            return t('“{name}” is already used by another conversation.', { name: newName });
           }
           if (code !== 'INVALID') {
             await showAlert(
-              `Couldn't rename the conversation: ${/** @type {any} */ (e)?.message || e}`,
-              'Rename failed'
+              t("Couldn't rename the conversation: {error}", { error: String(/** @type {any} */ (e)?.message || e) }),
+              t('Rename failed')
             );
           }
           return '';
@@ -2399,8 +2397,8 @@ class ConversationBar extends JugglerElement {
         const autoNameBtn = document.createElement('button');
         autoNameBtn.type = 'button';
         autoNameBtn.className = 'conversation-tab-auto-name';
-        autoNameBtn.textContent = 'Auto-name';
-        autoNameBtn.title = 'Let the model name this conversation from your first message';
+        autoNameBtn.textContent = t('Auto-name');
+        autoNameBtn.title = t('Let the model name this conversation from your first message');
         autoNameBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); });
         autoNameBtn.addEventListener('click', (e) => {
           e.preventDefault();
@@ -2485,7 +2483,7 @@ class ConversationBar extends JugglerElement {
           // the editor was open, a label longer than it stores — the name is
           // still in the field to be fixed or abandoned, so the editor stays
           // open and says what happened.
-          return `Couldn't rename it: ${/** @type {any} */ (e)?.message || e}`;
+          return t("Couldn't rename it: {error}", { error: String(/** @type {any} */ (e)?.message || e) });
         }
       },
     });
@@ -2670,7 +2668,7 @@ class ConversationBar extends JugglerElement {
             ? openWorkspaceMove(dragged, landedIn)
             : rebindConversation(dragged, landedIn).then(
               ({ done, message }) => {
-                if (!done) showNotice(message || `Couldn't move the conversation.`);
+                if (!done) showNotice(message || t(`Couldn't move the conversation.`));
                 return { moved: done };
               },
               (/** @type {unknown} */ error) => {
@@ -2892,10 +2890,10 @@ registerContextMenuProvider({
     if (!bar || !convId) return null;
     /** @type {import('../services/context-menu-service.js').ContextMenuItem[]} */
     const items = [
-      { label: 'Rename', onClick: () => bar._enterRenameMode(convId) },
-      { label: 'Duplicate', onClick: () => { void bar._duplicateConversation(convId); } },
-      { label: 'Copy Conversation to Clipboard', onClick: () => { void bar._copyConversationMarkdown(convId); } },
-      { label: 'Export as HTML…', onClick: () => { void bar._exportConversationHtml(convId); } },
+      { label: t('Rename'), onClick: () => bar._enterRenameMode(convId) },
+      { label: t('Duplicate'), onClick: () => { void bar._duplicateConversation(convId); } },
+      { label: t('Copy Conversation to Clipboard'), onClick: () => { void bar._copyConversationMarkdown(convId); } },
+      { label: t('Export as HTML…'), onClick: () => { void bar._exportConversationHtml(convId); } },
     ];
     // Omit "Move to Bin" mid-loop — same intent as the CSS that hides the
     // per-tab bin button while running. _binConversation enforces this too;
@@ -2903,7 +2901,7 @@ registerContextMenuProvider({
     if (!bar._isConversationBusy(convId)) {
       items.push(
         { separator: true },
-        { label: 'Move to Bin', danger: true, onClick: () => { void bar._binConversation(convId); } }
+        { label: t('Move to Bin'), danger: true, onClick: () => { void bar._binConversation(convId); } }
       );
     }
     return items;
@@ -2928,7 +2926,7 @@ registerContextMenuProvider({
     const workspaceId = /** @type {HTMLElement} */ (subject).dataset.workspaceId || '';
     if (!bar || !workspaceId) return null;
     /** @type {import('../services/context-menu-service.js').ContextMenuItem[]} */
-    const items = [{ label: 'Rename', onClick: () => bar._enterWorkspaceRenameMode(workspaceId) }];
+    const items = [{ label: t('Rename'), onClick: () => bar._enterWorkspaceRenameMode(workspaceId) }];
     const endings = bar._groupEndingItems(workspaceId);
     if (endings.length) items.push({ separator: true }, ...endings);
     return items;

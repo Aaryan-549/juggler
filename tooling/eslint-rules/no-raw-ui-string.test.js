@@ -72,8 +72,6 @@ tester.run('no-raw-ui-string', rule, {
     "import { translator as makeTranslator } from '../sdk/lib/i18n.js';\nconst translate = makeTranslator('@me/ext'); class A { label = translate('Close'); m() { return translate('Open'); } }",
     "import { translator } from './other.js';\nconst tr = translator('@me/ext'); const LABEL = tr('Close');",
     "const tr = translator('@me/ext'); const LABEL = tr('Close');",
-    // rawStrings off (a pending file): only the module-scope check runs.
-    { code: fn("el.textContent = 'Close';"), options: [{ rawStrings: false }] },
   ],
   invalid: [
     { code: fn("el.textContent = 'Close';"), errors: [raw] },
@@ -119,11 +117,9 @@ tester.run('no-raw-ui-string', rule, {
     { code: "import { translator } from 'juggler/i18n';\nconst tr = translator('@me/ext'); const LABEL = tr('Close');", errors: [moduleScope] },
     { code: "import { translator as makeTranslator } from '../sdk/lib/i18n.js';\nconst translate = makeTranslator('@me/ext'); const OPTIONS = [{ label: translate('System') }];", errors: [moduleScope] },
     { code: "import { translator } from 'juggler/i18n';\nconst tr = translator('@me/ext'); class A { static LABEL = tr('Close'); static { tr('Open'); } }", errors: [moduleScope, moduleScope] },
-    { code: "import { translator as makeTranslator } from 'juggler/i18n';\nconst tr = makeTranslator('@me/ext'); const LABEL = tr('Close');", options: [{ rawStrings: false }], errors: [moduleScope] },
+    { code: "import { translator as makeTranslator } from 'juggler/i18n';\nconst tr = makeTranslator('@me/ext'); const LABEL = tr('Close');", errors: [moduleScope] },
     // Extraction collects imports and declarations before examining calls.
     { code: "const LABEL = tr('Close'); const tr = makeTranslator('@me/ext');\nimport { translator as makeTranslator } from 'juggler/i18n';", errors: [moduleScope] },
-    // ...and is flagged in a pending file too.
-    { code: `${IMPORT}const LABEL = t('Close');`, options: [{ rawStrings: false }], errors: [moduleScope] },
   ],
 });
 

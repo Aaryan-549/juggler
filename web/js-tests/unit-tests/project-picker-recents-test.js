@@ -10,36 +10,57 @@
  */
 
 import { assert } from '../utilities/test-helpers.js';
+import { budgetFor, testGeneration } from '../utilities/test-deadline.js';
 import { underPseudoLocale, shownStrings } from '../utilities/pseudo-locale.js';
 import { t, isPseudoLocalized } from '../../sdk/lib/i18n.js';
 import apiService from '../../js/services/api.js';
 import { closePopupById } from '../../js/utils/popup-manager.js';
-import { endProjectOpen } from '../../js/components/project-opening.js';
+import { endProjectOpen, openProjectInWindow } from '../../js/components/project-opening.js';
 import { buildPickerPanel, openProjectPicker, openNewProjectPanel } from '../../js/components/project-picker.js';
 
 /**
- * Yield to timers until `ready()` holds, or give up after a generous bound.
+ * Yield to timers until `ready()` holds, riding the test's deadline (`ms` is
+ * the nominal, used only when none is armed). Gives up early once the test it
+ * belongs to has been abandoned.
  * @param {() => unknown} ready
  * @param {number} [ms]
  * @returns {Promise<boolean>} Whether it came true.
  */
 async function waitUntil(ready, ms = 3000) {
-  const end = Date.now() + ms;
+  const gen = testGeneration();
+  const end = Date.now() + budgetFor(ms);
   while (!ready()) {
-    if (Date.now() > end) return false;
+    if (Date.now() > end || testGeneration() !== gen) return false;
     await new Promise((r) => setTimeout(r, 10));
   }
   return true;
 }
 
 /**
- * Wait for a promise to settle, or report that it never did.
+ * Wait for a promise to settle, riding the test's deadline (`ms` is the
+ * nominal), or report that it never did.
  * @template T
  * @param {Promise<T>} promise
  * @param {number} ms
  * @returns {Promise<T|'pending'>} The settled value, or 'pending'
  */
 function settleWithin(promise, ms) {
+  return Promise.race([promise, new Promise((r) => setTimeout(() => r('pending'), budgetFor(ms)))]);
+}
+
+/**
+ * Report whether a promise is still pending after a fixed `ms`.
+ *
+ * The one wait here that deliberately does not ride the deadline: it proves
+ * something does NOT happen, so patience buys nothing — load can only make a
+ * pending promise look more pending, never fail the check — and a budgeted
+ * wait would spend up to six times its nominal on every passing run.
+ * @template T
+ * @param {Promise<T>} promise
+ * @param {number} ms
+ * @returns {Promise<T|'pending'>} The settled value, or 'pending'
+ */
+function pendingAfter(promise, ms) {
   return Promise.race([promise, new Promise((r) => setTimeout(() => r('pending'), ms))]);
 }
 
@@ -101,7 +122,7 @@ export async function runTests() {
     document.body.appendChild(element);
     try {
       clickRecent(element, '/work/gone');
-      const got = await settleWithin(promise, 300);
+      const got = await pendingAfter(promise, 300);
       assert(got === 'pending', `picker resolved ${JSON.stringify(got)} for an invalid path`);
       const status = element.querySelector('.pp-status')?.textContent || '';
       assert(status.includes('No such folder'), `status was "${status}"`);
@@ -193,12 +214,22 @@ export async function runTests() {
         w.showModal = async (/** @type {any} */ opts) => { modals.push(opts); return modalAnswer; };
 
         // --- the shared panel, every default, every status ---
-        /** @type {(r: any) => void} */
-        let answer = () => {};
+        // The validator answers every call with the current step's result,
+        // not just the call the click made. The panel focuses its path input
+        // 50ms after it is built (focusWhenShown), and that focus re-emits
+        // path-change, so a second, debounced validation can start mid-step;
+        // a stub that answered only the click's call left that one pending
+        // forever and the status stuck on "checking".
+        /** @type {any} */
+        let next;
         const { element, cancel } = buildPickerPanel({
           recents: ['/1/2'],
           onNewWindow: () => {},
-          validate: () => new Promise((r) => { answer = r; }),
+          validate: async () => {
+            await null;
+            if (next instanceof Error) throw next;
+            return next;
+          },
         });
         document.body.appendChild(element);
         cleanups.push(() => { cancel(); element.remove(); });
@@ -210,10 +241,9 @@ export async function runTests() {
          * @returns {Promise<string|null>} The status it settled on.
          */
         const statusFor = async (result) => {
+          next = result;
           recent.click();
           check(status.textContent, 'checking');
-          if (result instanceof Error) answer(Promise.reject(result));
-          else answer(result);
           const before = status.className;
           assert(await waitUntil(() => status.className !== before), 'the status never settled');
           return status.textContent;
@@ -314,6 +344,75 @@ export async function runTests() {
       if (hadExternal === undefined) delete root.dataset.externalServer;
       else root.dataset.externalServer = hadExternal;
     }
+  });
+
+  await run('under en-XA the opening overlay names the folder in the UI language', async () => {
+    // The request is held open while the line is read, then refused, which
+    // takes the overlay down without the reload a successful open schedules.
+    /** @type {string} */
+    let line = '';
+    try {
+      await underPseudoLocale('project-opening-test', async () => {
+        await openProjectInWindow('/1/2/', async () => {
+          const message = document.querySelector('.loading-overlay[data-loading-overlay="opening-project"] .loading-overlay__message');
+          assert(!!message, 'the opening overlay is on screen while the request is in flight');
+          line = message?.textContent || '';
+          throw new Error('7');
+        }).catch((/** @type {any} */ error) => {
+          assert(error?.message === '7', `the refusal is rethrown, got ${JSON.stringify(error?.message)}`);
+        });
+      });
+    } finally {
+      endProjectOpen();
+    }
+    assert(line.includes('2') && !line.includes('1'), `the line names the folder, not its path, got ${JSON.stringify(line)}`);
+    assert(isPseudoLocalized(line), `plain English under en-XA: ${JSON.stringify(line)}`);
+  });
+
+  await run('under en-XA the busy confirm names an untitled conversation in the UI language', async () => {
+    const root = document.documentElement;
+    const hadWindowMode = root.dataset.windowMode;
+    const hadExternal = root.dataset.externalServer;
+    const real = { getRecents: apiService.getRecents, checkProject: apiService.checkProject };
+    const w = /** @type {any} */ (window);
+    const realShowModal = w.showModal;
+    /** @type {any[]} */
+    const modals = [];
+    const chip = document.createElement('button');
+    chip.id = 'project-path-chip';
+    chip.style.cssText = 'position:absolute;left:-9999px;top:-9999px;';
+    document.body.appendChild(chip);
+    let message = '';
+    try {
+      await underPseudoLocale('test-project-picker-busy', async () => {
+        // Declined, so nothing is opened.
+        w.showModal = async (/** @type {any} */ opts) => { modals.push(opts); return false; };
+        delete root.dataset.windowMode;
+        delete root.dataset.externalServer;
+        apiService.getRecents = async () => ({ paths: ['/1/2'] });
+        apiService.checkProject = async (/** @type {string} */ p) => ({ valid: true, path: p });
+        const busySession = /** @type {any} */ ({ busyConversationNames: async () => ['Untitled 3', '4'] });
+        const switching = openProjectPicker('/1', busySession);
+        const popup = /** @type {HTMLElement|null} */ (document.querySelector('.pp-panel-popup'));
+        assert(!!popup, 'the switching picker never presented');
+        assert(await waitUntil(() => popup?.querySelector('.pp-recent-item')), 'the recents never drew');
+        /** @type {HTMLElement} */ (/** @type {HTMLElement} */ (popup).querySelector('.pp-recent-item')).click();
+        await switching;
+        message = modals.find((m) => m.type === 'confirm')?.message || '';
+      });
+    } finally {
+      closePopupById('project-picker');
+      endProjectOpen();
+      w.showModal = realShowModal;
+      Object.assign(apiService, real);
+      chip.remove();
+      if (hadWindowMode === undefined) delete root.dataset.windowMode;
+      else root.dataset.windowMode = hadWindowMode;
+      if (hadExternal === undefined) delete root.dataset.externalServer;
+      else root.dataset.externalServer = hadExternal;
+    }
+    assert(message.includes('3') && message.includes('4'), `the confirm lists both, got ${JSON.stringify(message)}`);
+    assert(isPseudoLocalized(message), `plain English under en-XA: ${JSON.stringify(message)}`);
   });
 
   return { passed, failed, errors };

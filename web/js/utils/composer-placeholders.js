@@ -17,6 +17,7 @@
  */
 
 import { MESSAGE_TYPES, TOOL_STATES } from '../../sdk/lib/message.js';
+import { t, markForTranslation } from '../../sdk/lib/i18n.js';
 
 /**
  * How quiet a thread must have been for its composer to read as returning to an
@@ -52,40 +53,40 @@ export const COMPOSER_LONG_THREAD_ITEMS = 250;
 export const COMPOSER_PLACEHOLDERS = Object.freeze({
   /** A conversation with no history yet — seeded context items don't count. */
   fresh: Object.freeze([
-    'Type your message…',
-    'What would you like to build?',
-    'Describe your task…',
+    markForTranslation('Type your message…'),
+    markForTranslation('What would you like to build?'),
+    markForTranslation('Describe your task…'),
   ]),
 
   /** Mid-flow, with nothing in particular to report. The common case. */
   ready: Object.freeze([
-    'Type your message…',
-    'Enter your command…',
-    'Your turn…',
+    markForTranslation('Type your message…'),
+    markForTranslation('Enter your command…'),
+    markForTranslation('Your turn…'),
   ]),
 
   /** The last turn was cancelled — by the user, or by an action that preempted it. */
   cancelled: Object.freeze([
-    'Stopped. What would you like instead?',
-    'Stopped. Your move…',
+    markForTranslation('Stopped. What would you like instead?'),
+    markForTranslation('Stopped. Your move…'),
   ]),
 
   /** The last turn ended in an error. */
   error: Object.freeze([
-    'That failed. What would you like to try?',
-    'Not that way, then. Your call…',
+    markForTranslation('That failed. What would you like to try?'),
+    markForTranslation('Not that way, then. Your call…'),
   ]),
 
   /** Coming back to a conversation that has been quiet for a long time. */
   idle: Object.freeze([
-    'Welcome back. Type your message…',
-    'Welcome back. Where would you like to pick up?',
+    markForTranslation('Welcome back. Type your message…'),
+    markForTranslation('Welcome back. Where would you like to pick up?'),
   ]),
 
   /** A thread long past the point of comfort. */
   long: Object.freeze([
-    "This one's getting long. What next?",
-    "Quite an epic, this. What's your next move?",
+    markForTranslation("This one's getting long. What next?"),
+    markForTranslation("Quite an epic, this. What's your next move?"),
   ]),
 });
 
@@ -126,9 +127,9 @@ export function trailingTurnOutcome(items) {
 }
 
 /**
- * Pick a placeholder line for a conversation state. An unknown state, or a
- * bucket emptied by editing, falls back to `ready` — the placeholder is never
- * blank, whatever the lists say.
+ * Pick a placeholder line for a conversation state, in the UI language. An
+ * unknown state, or a bucket emptied by editing, falls back to `ready` — the
+ * placeholder is never blank, whatever the lists say.
  * @param {string} state - A key of {@link COMPOSER_PLACEHOLDERS}
  * @returns {string} The line to show
  */
@@ -136,5 +137,6 @@ export function pickComposerPlaceholder(state) {
   const bucket = COMPOSER_PLACEHOLDERS[state];
   const lines = bucket && bucket.length ? bucket : (COMPOSER_PLACEHOLDERS.ready ?? []);
   if (!lines.length) return '';
-  return lines[Math.floor(Math.random() * lines.length)] ?? '';
+  const line = lines[Math.floor(Math.random() * lines.length)];
+  return line ? t(line) : '';
 }

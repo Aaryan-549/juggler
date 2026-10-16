@@ -7,6 +7,8 @@ import { getUpdaterState, startInstall } from '../services/updater-control.js';
 import { fetchJson } from '../services/http.js';
 import JugglerElement from './juggler-element.js';
 import { apiUrl } from '../utils/api-url.js';
+import { t } from '../../sdk/lib/i18n.js';
+import { escapeHtml } from '../../sdk/lib/html.js';
 
 /**
  * <update-button> — the single header affordance for updates. It merges the two
@@ -58,8 +60,8 @@ class UpdateButton extends JugglerElement {
 
   connectedCallback() {
     this.innerHTML = `
-      <button type="button" class="update-btn" title="Update available">
-        <span class="update-btn__label">Update</span>
+      <button type="button" class="update-btn" title="${escapeHtml(t('Update available'))}">
+        <span class="update-btn__label">${escapeHtml(t('Update'))}</span>
         <span class="update-btn__pct" aria-hidden="true"></span>
         <span class="update-btn__dot" aria-hidden="true"></span>
       </button>`;
@@ -172,11 +174,11 @@ class UpdateButton extends JugglerElement {
    */
   _label(vm) {
     if (vm.present) {
-      if (vm.updaterState === 'downloading') return 'Downloading update…';
-      if (vm.updaterState === 'verifying' || vm.updaterState === 'installing') return 'Preparing update…';
-      if (vm.updaterState === 'ready') return 'Update & restart...';
+      if (vm.updaterState === 'downloading') return t('Downloading update…');
+      if (vm.updaterState === 'verifying' || vm.updaterState === 'installing') return t('Preparing update…');
+      if (vm.updaterState === 'ready') return t('Update & restart...');
     }
-    return 'Update';
+    return t('Update');
   }
 
   /**
@@ -241,9 +243,9 @@ class UpdateButton extends JugglerElement {
       this._btn.classList.toggle('update-btn--error', vm.present && st === 'error');
       // Tint the pill background to download progress when we have a percentage.
       this._btn.style.setProperty('--update-pct', vm.pct === null ? '0%' : `${Math.round(vm.pct)}%`);
-      this._btn.title = st === 'ready' ? 'Install the downloaded update and reopen'
-        : st === 'error' ? (vm.error || 'Update failed — click for details')
-          : 'Update available';
+      this._btn.title = st === 'ready' ? t('Install the downloaded update and reopen')
+        : st === 'error' ? (vm.error || t('Update failed — click for details'))
+          : t('Update available');
 
       // One-shot attention pulse the first time the pill appears.
       if (!this._wasVisible) {

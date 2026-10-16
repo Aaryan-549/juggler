@@ -22,6 +22,8 @@ import { assert } from '../utilities/test-helpers.js';
 import { __resetPopupManagerForTests } from '../../js/utils/popup-manager.js';
 import { CompletionMenu } from '../../js/components/completion-menu.js';
 import '../../js/components/path-input.js';
+import { underPseudoLocale } from '../utilities/pseudo-locale.js';
+import { isPseudoLocalized } from '../../sdk/lib/i18n.js';
 
 /**
  * Assert a field controls an open listbox of options, and return the options.
@@ -159,6 +161,32 @@ export async function runTests() {
     } catch (e) {
       failed++;
       errors.push('path-input: ' + (e instanceof Error ? e.message : String(e)));
+    } finally {
+      host.remove();
+    }
+  }
+
+  // ── <path-input> under en-XA: the list's accessible name is translated ─────
+  {
+    const host = /** @type {any} */ (document.createElement('path-input'));
+    host.style.cssText = 'position:absolute;left:-9999px;top:-9999px;width:300px;';
+    document.body.appendChild(host);
+    try {
+      /** @type {string} */
+      let name = '';
+      await underPseudoLocale('autocomplete-aria-test', () => {
+        const input = /** @type {HTMLInputElement} */ (host.querySelector('input'));
+        host._openMenu(['/1/', '/1/2/']);
+        const list = document.getElementById(/** @type {string} */ (input.getAttribute('aria-controls')));
+        assert(!!list, 'path-input under en-XA: the list opened');
+        name = list?.getAttribute('aria-label') || '';
+        host.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+      });
+      assert(isPseudoLocalized(name), `path-input: plain English under en-XA: ${JSON.stringify(name)}`);
+      passed++;
+    } catch (e) {
+      failed++;
+      errors.push('path-input en-XA: ' + (e instanceof Error ? e.message : String(e)));
     } finally {
       host.remove();
     }

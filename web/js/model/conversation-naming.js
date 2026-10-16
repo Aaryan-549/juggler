@@ -17,6 +17,7 @@
  */
 
 import { MAX_CONVERSATION_NAME_LENGTH } from '../utils/constants.js';
+import { t } from '../../sdk/lib/i18n.js';
 
 /** The bare display/folder fallback for a conversation that has no name yet. */
 export const UNTITLED_BASE = 'Untitled';
@@ -34,6 +35,21 @@ export const UNTITLED_NAME_RE = /^Untitled (\d+)$/;
  */
 export function untitledName(n) {
   return `${UNTITLED_BASE} ${n}`;
+}
+
+/**
+ * The name to show for a conversation. The placeholder names are stored in
+ * English — the server's IsUntitledName and auto-namer match them — so they are
+ * translated here, where they are drawn, keeping N as data. Any other name is
+ * the user's (or the model's) and is shown as stored.
+ * @param {string|null|undefined} name - The stored name.
+ * @returns {string} The name in the UI language.
+ */
+export function displayConversationName(name) {
+  if (!name || name === UNTITLED_BASE) return t('Untitled');
+  const match = UNTITLED_NAME_RE.exec(name);
+  if (match) return t('Untitled {n}', { n: match[1] });
+  return name;
 }
 
 /**

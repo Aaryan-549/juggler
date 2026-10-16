@@ -7,6 +7,9 @@ import FileViewer from 'juggler/file-viewer';
 import { extensionOf } from 'juggler/file-source';
 import { formatFileSize } from 'juggler/item-utils';
 import { createImageThumb, injectStylesOnce } from 'juggler/ui';
+import { translator, markUntranslated } from 'juggler/i18n';
+
+const t = translator('@juggler/core');
 
 /** Injected on first render only: `extract()` runs in the engine, which has no DOM. */
 const STYLES = `
@@ -138,7 +141,7 @@ class MediaFileViewer extends FileViewer {
         objectURL = URL.createObjectURL(new Blob([bytes], { type: source.mime || 'application/octet-stream' }));
         src = objectURL;
       } catch (err) {
-        host.appendChild(note(`Couldn’t load this file: ${/** @type {any} */ (err)?.message || err}`));
+        host.appendChild(note(t('Couldn’t load this file: {error}', { error: String(/** @type {any} */ (err)?.message || err) })));
         return;
       }
     }
@@ -152,14 +155,14 @@ class MediaFileViewer extends FileViewer {
     /** @type {HTMLElement} */
     let el;
     if (kind === 'image') {
-      el = createImageThumb({ src, alt: source.path || 'image', className: 'file-view-image' });
+      el = createImageThumb({ src, alt: source.path || t('image'), className: 'file-view-image' });
     } else {
       media = document.createElement(kind);
       media.className = 'media-view-player';
       media.controls = true;
       media.preload = 'metadata';
       if (kind === 'video') /** @type {HTMLVideoElement} */ (media).playsInline = true;
-      media.setAttribute('aria-label', source.path || kind);
+      media.setAttribute('aria-label', source.path || t('{kind, select, audio {audio} other {video}}', { kind }));
       media.src = src;
       el = media;
     }
@@ -167,8 +170,8 @@ class MediaFileViewer extends FileViewer {
     // macOS on HEVC, HEIC, TIFF…) says so rather than leaving a dead player.
     el.addEventListener('error', () => {
       el.replaceWith(note(kind === 'image'
-        ? 'This image format can’t be displayed here.'
-        : `This ${kind} format can’t be played here.`));
+        ? t('This image format can’t be displayed here.')
+        : t('{kind, select, audio {This audio format can’t be played here.} other {This video format can’t be played here.}}', { kind })));
     }, { once: true });
     host.appendChild(el);
 
@@ -196,9 +199,9 @@ class MediaFileViewer extends FileViewer {
       .filter(Boolean).join(', ');
     const detail = what ? ` (${what})` : '';
     if (kind === 'image') {
-      return { warning: `This image${detail} cannot be attached for viewing (unsupported format or too large), and cannot be read as text.` };
+      return { warning: markUntranslated(`This image${detail} cannot be attached for viewing (unsupported format or too large), and cannot be read as text.`) };
     }
-    return { warning: `This is ${kind} content${detail}, which cannot be read as text.` };
+    return { warning: markUntranslated(`This is ${kind} content${detail}, which cannot be read as text.`) };
   }
 }
 

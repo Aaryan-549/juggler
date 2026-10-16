@@ -39,6 +39,7 @@ import { raiseThisWindow, closeThisWindow, isDesktopWindow } from '../../sdk/lib
 import { ownerLink, satelliteLink, canLinkBoards, onLinkAvailability, frameHintOf } from '../services/pinboard-link.js';
 import { isPinboardView, boardConversationId, ownerViewerId } from '../utils/view-mode.js';
 import { dragGuard } from '../utils/drag-guard.js';
+import { displayConversationName } from '../model/conversation-naming.js';
 import './pinboard-tabbar.js';
 import './pinboard-content.js';
 
@@ -820,6 +821,10 @@ class PinboardPanel extends JugglerElement {
    * @private
    */
   _activeContext() {
+    // The name as it is drawn — a placeholder in the UI language — or '' for
+    // a conversation that has none.
+    const titleOf = (/** @type {any} */ conversation) =>
+      (conversation.name ? displayConversationName(conversation.name) : '');
     const session = /** @type {any} */ (this._session);
     const path = session?.projectPath || '';
     const project = { path, displayName: baseName(path) };
@@ -827,14 +832,14 @@ class PinboardPanel extends JugglerElement {
       const conversation = session?.getConversation?.(boardConversationId()) || null;
       return {
         project,
-        conversation: conversation ? { id: conversation.id, title: conversation.name || '' } : null,
+        conversation: conversation ? { id: conversation.id, title: titleOf(conversation) } : null,
         thread: conversation ? { id: null } : null,
       };
     }
     const conversation = session?.getVisibleConversation?.() || null;
     return {
       project,
-      conversation: conversation ? { id: conversation.id, title: conversation.name || '' } : null,
+      conversation: conversation ? { id: conversation.id, title: titleOf(conversation) } : null,
       thread: conversation ? { id: focusedThreadId() } : null,
     };
   }

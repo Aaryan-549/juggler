@@ -785,8 +785,7 @@ lint-css: node-deps
 	@node scripts/lint-css-arch
 
 ## lint-i18n: Check that web/i18n/en.json and the en-XA pseudo-locale match the
-## t() calls in the source, and that tooling/i18n-pending.txt names only files
-## that exist. Whole-tree by nature, so it always runs in full.
+## t() calls in the source. Whole-tree by nature, so it always runs in full.
 lint-i18n: node-deps
 	@node scripts/i18n check
 

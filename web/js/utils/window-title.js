@@ -17,6 +17,7 @@
  */
 
 import { isDesktopWindow, postWindowControl } from '../../sdk/lib/window-control.js';
+import { t } from '../../sdk/lib/i18n.js';
 
 /**
  * Derive the window title from the session's project path: the app name plus
@@ -32,7 +33,7 @@ export function windowTitleForProject(projectPath) {
   // Both separators: the desktop app reports native paths, so Windows projects
   // arrive backslash-separated.
   const dirName = (projectPath || '').replace(/[/\\]+$/, '').split(/[/\\]/).pop();
-  return 'Juggler - ' + (dirName || 'New Window');
+  return 'Juggler - ' + (dirName || t('New Window')); // i18n-ignore: product name
 }
 
 /**

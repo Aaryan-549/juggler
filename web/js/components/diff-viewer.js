@@ -13,6 +13,7 @@ import { languageForPath } from '../../sdk/lib/languages.js';
 import { registerContextMenuProvider, codeReferenceMenuItem } from '../services/context-menu-service.js';
 import { copyToClipboard } from '../../sdk/lib/clipboard.js';
 import { isAbsolutePath } from '../utils/code-selection.js';
+import { t, formatNumber, markForTranslation } from '../../sdk/lib/i18n.js';
 
 /** @typedef {import('../lib/diff-types.js').DiffHunk} DiffHunk */
 /** @typedef {import('../lib/diff-types.js').DiffLine} DiffLine */
@@ -58,7 +59,7 @@ export const SPLIT_MIN_REM = 40;
  * panel is theirs to widen, and a diff in the Pinboard docked at 20rem is the
  * common way to meet this.
  */
-const SPLIT_TOO_NARROW = 'Two columns need a wider panel.';
+const SPLIT_TOO_NARROW = markForTranslation('Two columns need a wider panel.');
 
 /**
  * The root font size, which the zoom preference sets.
@@ -71,10 +72,10 @@ function remInPx() {
 
 /** How a file with no text patch to show says so, by the status git gave it. */
 const STATUS_NOTICES = {
-  binary: 'Binary file. No text diff.',
-  conflicted: 'Unresolved merge conflict.',
-  truncated: 'This patch was cut short; the counts cover the whole file.',
-  large: 'This file is too large to diff here.',
+  binary: markForTranslation('Binary file. No text diff.'),
+  conflicted: markForTranslation('Unresolved merge conflict.'),
+  truncated: markForTranslation('This patch was cut short; the counts cover the whole file.'),
+  large: markForTranslation('This file is too large to diff here.'),
 };
 
 /**
@@ -167,16 +168,41 @@ function lineNumberCell(side, number) {
 }
 
 /**
+ * A line number inside a sentence: localised digits, but never grouped, since a
+ * line number is read as a name rather than as a quantity.
+ * @param {number} line - The line number.
+ * @returns {string} The number as it reads in a label.
+ */
+function lineNumber(line) {
+  return formatNumber(line, { useGrouping: false });
+}
+
+/**
  * How one side of a hunk reads aloud.
- * @param {string} label - "Old" or "new".
+ * @param {'old'|'new'} side - Which file's numbering.
  * @param {number} start - First line covered.
  * @param {number} count - Lines covered.
  * @returns {string} A literal phrase for the hunk's accessible label.
  */
-function sideRange(label, start, count) {
-  if (count <= 0) return `no ${label} lines`;
-  if (count === 1) return `${label} line ${start}`;
-  return `${label} lines ${start} to ${start + count - 1}`;
+function sideRange(side, start, count) {
+  if (count <= 0) return t('{side, select, old {no old lines} other {no new lines}}', { side });
+  if (count === 1) {
+    return t('{side, select, old {old line {start}} other {new line {start}}}', { side, start: lineNumber(start) });
+  }
+  return t('{side, select, old {old lines {start} to {end}} other {new lines {start} to {end}}}',
+    { side, start: lineNumber(start), end: lineNumber(start + count - 1) });
+}
+
+/**
+ * How a hunk reads aloud: what it covers in each file.
+ * @param {DiffHunk} hunk - The hunk.
+ * @returns {string} The hunk's accessible label.
+ */
+function hunkLabel(hunk) {
+  return t('{oldRange}, {newRange}', {
+    oldRange: sideRange('old', hunk.oldStart, hunk.oldCount),
+    newRange: sideRange('new', hunk.newStart, hunk.newCount),
+  });
 }
 
 /**
@@ -500,18 +526,18 @@ class DiffViewer extends HTMLElement {
     const notices = [];
 
     if (this.mode === 'loading') {
-      return { hunks: [], notices: [{ kind: 'loading', text: 'Loading…' }], added: 0, removed: 0, drawable: false };
+      return { hunks: [], notices: [{ kind: 'loading', text: t('Loading…') }], added: 0, removed: 0, drawable: false };
     }
     if (this.mode === 'error') {
-      notices.push({ kind: 'error', text: "Couldn't load this diff.", detail: this.errorText });
+      notices.push({ kind: 'error', text: t("Couldn't load this diff."), detail: this.errorText });
       return { hunks: [], notices, added: 0, removed: 0, drawable: false };
     }
 
     const patch = this.patch;
     if (this.mode === 'patch' && patch) {
-      if (patch.binary) notices.push({ kind: 'binary', text: STATUS_NOTICES.binary });
-      if (patch.conflicted) notices.push({ kind: 'conflicted', text: STATUS_NOTICES.conflicted });
-      if (patch.truncated) notices.push({ kind: 'truncated', text: STATUS_NOTICES.truncated });
+      if (patch.binary) notices.push({ kind: 'binary', text: t(STATUS_NOTICES.binary) });
+      if (patch.conflicted) notices.push({ kind: 'conflicted', text: t(STATUS_NOTICES.conflicted) });
+      if (patch.truncated) notices.push({ kind: 'truncated', text: t(STATUS_NOTICES.truncated) });
       // The patch was produced at some context width, and the reader may have
       // asked for a narrower one since. Regrouping gives them that immediately
       // and exactly; a wider one has to come from whoever fetched this, and until
@@ -531,7 +557,7 @@ class DiffViewer extends HTMLElement {
     const hunks = computeDiff(this.oldContent, this.newContent, this.startLineNumber,
       contextToRender(this.effectiveContext()));
     if (hunks === null) {
-      notices.push({ kind: 'large', text: STATUS_NOTICES.large });
+      notices.push({ kind: 'large', text: t(STATUS_NOTICES.large) });
       return { hunks: [], notices, added: 0, removed: 0, drawable: false };
     }
 
@@ -558,7 +584,7 @@ class DiffViewer extends HTMLElement {
     this.innerHTML = `
       <diff-content>
         <diff-header>
-          ${escapeHtml(this.filePath || 'File diff')}
+          ${escapeHtml(this.filePath || t('File diff'))}
         </diff-header>
         ${this.renderControls(view)}
         ${model.notices.map((notice) => this.renderNotice(notice)).join('')}
@@ -611,14 +637,15 @@ class DiffViewer extends HTMLElement {
 
     // On the group rather than on the buttons: a disabled button does not
     // reliably answer the pointer, so a title on one is a title nobody reads.
-    const why = this._wide ? '' : ` title="${escapeAttr(SPLIT_TOO_NARROW)}"`;
+    const why = this._wide ? '' : ` title="${escapeAttr(t(SPLIT_TOO_NARROW))}"`;
 
     return '<div class="diff-controls">'
-      + `<span class="diff-view-switch" role="group" aria-label="Diff layout"${why}>`
-      + button('inline', 'Unified') + button('split', 'Split')
+      + `<span class="diff-view-switch" role="group" aria-label="${escapeAttr(t('Diff layout'))}"${why}>`
+      + button('inline', t('Unified', undefined, { context: 'diff layout' }))
+      + button('split', t('Split', undefined, { context: 'diff layout' }))
       + '</span>'
-      + '<label class="diff-context-picker">Context'
-      + `<select class="diff-context-select" aria-label="Unchanged lines to show around each change">${options}</select>`
+      + `<label class="diff-context-picker">${escapeHtml(t('Context', undefined, { context: 'unchanged diff lines' }))}`
+      + `<select class="diff-context-select" aria-label="${escapeAttr(t('Unchanged lines to show around each change'))}">${options}</select>`
       + '</label>'
       + '</div>';
   }
@@ -651,9 +678,14 @@ class DiffViewer extends HTMLElement {
    * @private
    */
   diffLabel() {
-    const path = this.filePath || 'this file';
+    const path = this.filePath;
+    const named = path ? 'yes' : 'no';
     const from = this.patch?.oldPath;
-    return from && from !== this.filePath ? `Diff of ${path}, renamed from ${from}` : `Diff of ${path}`;
+    if (from && from !== path) {
+      return t('{named, select, yes {Diff of {path}, renamed from {from}} other {Diff of this file, renamed from {from}}}',
+        { named, path, from });
+    }
+    return t('{named, select, yes {Diff of {path}} other {Diff of this file}}', { named, path });
   }
 
   /**
@@ -678,12 +710,12 @@ class DiffViewer extends HTMLElement {
    */
   renderInlineView(hunks, drawable) {
     if (!hunks || hunks.length === 0) {
-      return drawable ? '<diff-no-changes>No changes</diff-no-changes>' : '';
+      return drawable ? `<diff-no-changes>${escapeHtml(t('No changes'))}</diff-no-changes>` : '';
     }
 
     let html = '';
     for (const hunk of hunks) {
-      const label = `${sideRange('old', hunk.oldStart, hunk.oldCount)}, ${sideRange('new', hunk.newStart, hunk.newCount)}`;
+      const label = hunkLabel(hunk);
       const heading = hunk.heading ? ` ${hunk.heading}` : '';
       html += `<diff-hunk role="group" aria-label="${escapeAttr(label)}">`;
       html += `<diff-hunk-header>${escapeHtml(`@@ -${hunk.oldStart},${hunk.oldCount} +${hunk.newStart},${hunk.newCount} @@${heading}`)}</diff-hunk-header>`;
@@ -708,12 +740,12 @@ class DiffViewer extends HTMLElement {
    */
   renderSplitView(hunks, drawable) {
     if (!hunks || hunks.length === 0) {
-      return drawable ? '<diff-no-changes>No changes</diff-no-changes>' : '';
+      return drawable ? `<diff-no-changes>${escapeHtml(t('No changes'))}</diff-no-changes>` : '';
     }
 
     let html = '';
     for (const hunk of hunks) {
-      const label = `${sideRange('old', hunk.oldStart, hunk.oldCount)}, ${sideRange('new', hunk.newStart, hunk.newCount)}`;
+      const label = hunkLabel(hunk);
       const heading = hunk.heading ? ` ${hunk.heading}` : '';
       html += `<diff-hunk role="group" aria-label="${escapeAttr(label)}">`;
       html += `<diff-hunk-header>${escapeHtml(`@@ -${hunk.oldStart},${hunk.oldCount} +${hunk.newStart},${hunk.newCount} @@${heading}`)}</diff-hunk-header>`;
@@ -810,8 +842,8 @@ class DiffViewer extends HTMLElement {
    */
   renderAnchor(side, number) {
     if (this._readOnly || number === null) return '';
-    const where = this.filePath ? ` in ${this.filePath}` : '';
-    const label = `Add comment to ${side} line ${number}${where}`;
+    const label = t('Add comment to {side, select, old {old} other {new}} line {line}{named, select, yes { in {path}} other {}}',
+      { side, line: lineNumber(number), named: this.filePath ? 'yes' : 'no', path: this.filePath });
     return `<button type="button" class="diff-comment-btn" data-side="${side}" data-line="${number}"`
       + ` title="${escapeAttr(label)}" aria-label="${escapeAttr(label)}">+</button>`;
   }
@@ -853,13 +885,13 @@ class DiffViewer extends HTMLElement {
     let html = '<diff-file-comments>';
     if (whole.length > 0) {
       html += '<div class="diff-file-comment-list">'
-        + '<h4 class="diff-comment-heading">Comments on this file</h4>'
+        + `<h4 class="diff-comment-heading">${escapeHtml(t('Comments on this file'))}</h4>`
         + whole.map((annotation) => this.renderComment(annotation, false)).join('')
         + '</div>';
     }
     if (stale.length > 0) {
       html += '<div class="diff-file-comment-list stale">'
-        + '<h4 class="diff-comment-heading">Outdated comments</h4>'
+        + `<h4 class="diff-comment-heading">${escapeHtml(t('Outdated comments'))}</h4>`
         + stale.map((annotation) => this.renderComment(annotation, true)).join('')
         + '</div>';
     }
@@ -878,8 +910,8 @@ class DiffViewer extends HTMLElement {
       ? `<pre class="diff-comment-quote">${escapeHtml(annotation.lineText.join('\n'))}</pre>`
       : '';
     const actions = this._readOnly ? '' : '<div class="diff-comment-actions">'
-      + `<button type="button" class="diff-comment-edit" aria-label="${escapeAttr(`Edit comment on ${about}`)}">Edit</button>`
-      + `<button type="button" class="diff-comment-delete" aria-label="${escapeAttr(`Delete comment on ${about}`)}">Delete</button>`
+      + `<button type="button" class="diff-comment-edit" aria-label="${escapeAttr(t('Edit comment on {about, select, file {{named, select, yes {{path}} other {this file}}} other {{side, select, old {old} other {new}} {span, select, range {lines {start} to {line}} other {line {line}}} in {named, select, yes {{path}} other {this file}}}}', about))}">${escapeHtml(t('Edit'))}</button>`
+      + `<button type="button" class="diff-comment-delete" aria-label="${escapeAttr(t('Delete comment on {about, select, file {{named, select, yes {{path}} other {this file}}} other {{side, select, old {old} other {new}} {span, select, range {lines {start} to {line}} other {line {line}}} in {named, select, yes {{path}} other {this file}}}}', about))}">${escapeHtml(t('Delete'))}</button>`
       + '</div>';
     const id = typeof annotation.id === 'string' ? annotation.id : '';
     const body = typeof annotation.body === 'string' ? annotation.body : '';
@@ -891,18 +923,28 @@ class DiffViewer extends HTMLElement {
   }
 
   /**
-   * What a comment is about, said literally enough for a label.
+   * What a comment is about, said literally enough for a label: the parameters
+   * of the edit and delete buttons' messages.
    * @param {DiffAnnotation} annotation - The comment.
-   * @returns {string} The subject phrase.
+   * @returns {Record<string, string>} Whether it is on the file or a line, which
+   *   side, whether a range, the lines, and the path.
    * @private
    */
   commentSubject(annotation) {
-    const where = this.filePath || 'this file';
+    const named = this.filePath ? 'yes' : 'no';
+    const path = this.filePath;
     const line = this.anchorLine(annotation);
-    if (annotation.side === 'file' || line === null) return where;
+    if (annotation.side === 'file' || line === null) return { about: 'file', named, path };
     const start = annotation.startLine;
-    const span = typeof start === 'number' && start !== line ? `lines ${start} to ${line}` : `line ${line}`;
-    return `${annotation.side} ${span} in ${where}`;
+    return {
+      about: 'line',
+      side: annotation.side === 'old' ? 'old' : 'new',
+      span: typeof start === 'number' && start !== line ? 'range' : 'one',
+      start: typeof start === 'number' ? lineNumber(start) : '',
+      line: lineNumber(line),
+      named,
+      path,
+    };
   }
 
   /**
@@ -1122,15 +1164,15 @@ registerContextMenuProvider({
     const lineText = clicked?.querySelector('.line-content')?.textContent || '';
     /** @type {import('../services/context-menu-service.js').ContextMenuItem[]} */
     const items = [{
-      label: 'Copy file path',
+      label: t('Copy file path'),
       disabled: !filePath,
       onClick: () => { void copyToClipboard(filePath).catch(() => {}); },
     }, {
-      label: 'Copy line',
+      label: t('Copy line'),
       disabled: !lineText,
       onClick: () => { void copyToClipboard(lineText).catch(() => {}); },
     }, {
-      label: 'Copy new content',
+      label: t('Copy new content'),
       disabled: !newContent,
       onClick: () => { void copyToClipboard(newContent).catch(() => {}); },
     }];

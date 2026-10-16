@@ -7,6 +7,7 @@ import apiService from '../services/api.js';
 import { createImageThumb } from '../utils/image-lightbox.js';
 import { applyCollapsible } from '../utils/collapsible.js';
 import { renderMarkdownWrapped, decorateCodeBlocks, looksLikeMarkdown } from '../../sdk/lib/markdown.js';
+import { t } from '../../sdk/lib/i18n.js';
 
 /**
  * Character count above which an over-long user message is clamped behind a
@@ -120,7 +121,7 @@ class UserMessage extends BaseMessage {
     for (const ref of attachments) {
       grid.appendChild(createImageThumb({
         src: apiService.assetURL(conversationId, ref.id),
-        alt: ref.filename || 'attachment',
+        alt: ref.filename || t('attachment'),
         className: 'user-message-attachment',
         width: ref.width,
         height: ref.height,

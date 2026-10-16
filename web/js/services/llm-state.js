@@ -3,6 +3,7 @@
 //   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
 
 import { StatusMessageBuilder } from './status-message-builder.js';
+import { t } from '../../sdk/lib/i18n.js';
 
 // The elapsed-time ticker uses requestAnimationFrame in the viewer. The engine
 // worker has no rAF, so fall back to a timer there — it only needs ~1Hz updates.
@@ -575,7 +576,7 @@ class LLMState {
       case 'retry':
         return StatusMessageBuilder.buildRetryStatus((/** @type {any} */ (data)));
       case 'error':
-        return StatusMessageBuilder.buildErrorStatus(data.message || 'Unknown error');
+        return StatusMessageBuilder.buildErrorStatus(data.message || t('Unknown error'));
       case 'cancelled':
         return StatusMessageBuilder.buildCancelledStatus();
       case 'custom':
@@ -850,7 +851,7 @@ class LLMState {
 
       case 'retrying':
         this.start(conversationId, frame.startedAt, threadItemId);
-        this.updateStatus(conversationId, 'custom', { ...tokenData, message: message || 'Retrying' }, threadItemId);
+        this.updateStatus(conversationId, 'custom', { ...tokenData, message: message || t('Retrying') }, threadItemId);
         break;
 
       // A summarizer run (/compact, /handoff, or context recovery). Its LLM
@@ -858,7 +859,7 @@ class LLMState {
       // is the only progress the user sees for the whole run.
       case 'compacting':
         this.start(conversationId, frame.startedAt, threadItemId);
-        this.updateStatus(conversationId, 'custom', { ...tokenData, message: message || 'Summarizing conversation' }, threadItemId);
+        this.updateStatus(conversationId, 'custom', { ...tokenData, message: message || t('Summarizing conversation') }, threadItemId);
         break;
 
       case 'idle':
@@ -895,7 +896,7 @@ class LLMState {
         // the self-heal was already spent): surface the warning and restore the
         // user's text so they can act on it.
         if (conversation) {
-          conversation.showWarning(message || 'Validation error');
+          conversation.showWarning(message || t('Validation error'));
           conversation.restorePendingMessage();
         }
         this._stopThread(conversationId, key);

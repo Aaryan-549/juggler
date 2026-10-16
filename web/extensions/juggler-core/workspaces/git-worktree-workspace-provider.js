@@ -32,6 +32,9 @@ import api from '../../../js/services/api.js';
 import { branchPhrase, countsPhrase, divergencePhrase, fileStatusWords } from '../lib/git-status.js';
 import { baseName, join, parentOf, relativePath } from '../lib/workspace-paths.js';
 import { choice, field, nextFormSequence, showNote } from '../lib/setup-fields.js';
+import { markUntranslated, translator } from 'juggler/i18n';
+
+const t = translator('@juggler/core');
 
 /**
  * How long a setup hook may take before it is killed.
@@ -111,13 +114,14 @@ function slug(branch) {
  * builds shell commands should still decline to be talked out of its own
  * quoting, and the refusal costs one line.
  * @param {string} value - What is about to be quoted.
- * @param {string} what - What to call it if it is refused.
+ * @param {'repo'|'branch'|'base'|'location'} what - Which value it is, for the refusal.
  * @returns {string} The value, when it is safe.
  * @throws {Error} When it is not.
  */
 function shellSafe(value, what) {
   if (UNQUOTABLE.test(value)) {
-    throw new Error(`Couldn't use that ${what}: ${JSON.stringify(value)} contains a character that cannot appear in a command.`);
+    throw new Error(t("{what, select, repo {Couldn't use that repository path: {value} contains a character that cannot appear in a command.} branch {Couldn't use that branch name: {value} contains a character that cannot appear in a command.} base {Couldn't use that base: {value} contains a character that cannot appear in a command.} other {Couldn't use that location: {value} contains a character that cannot appear in a command.}}",
+      { what, value: JSON.stringify(value) }));
   }
   return value;
 }
@@ -176,24 +180,23 @@ function singleQuoted(value) {
 }
 
 /**
- * A plain lead, and under it whatever git said about it.
+ * What git said about a command that refused, to go under a plain lead.
  *
- * Above rather than instead of: the lead says which command refused, which is
+ * Under rather than instead of: the lead says which command refused, which is
  * the part a reader needs to know what they are being told, and git's own text
  * is the part that says what to do about it. Dropping either leaves a message
- * that cannot be acted on.
+ * that cannot be acted on. Each caller has two whole messages, the lead with
+ * `{detail}` under it and the lead alone, and picks by whether this is empty.
  *
  * The shell operation merges both streams into `stdout` and answers with an
  * empty `stderr`, so `stdout` is read first — a message built from `stderr`
  * alone reaches for a field that is always empty and reports the lead by itself
  * every time.
- * @param {string} lead - What could not be done, in plain words.
  * @param {any} result - What the shell answered with.
- * @returns {string} The two, or the lead alone when git said nothing at all.
+ * @returns {string} Git's own text, or '' when it said nothing at all.
  */
-function gitSaid(lead, result) {
-  const said = String(result?.stdout || result?.stderr || '').trim();
-  return said ? `${lead}\n\n${said}` : lead;
+function gitSaid(result) {
+  return String(result?.stdout || result?.stderr || '').trim();
 }
 
 /**
@@ -285,9 +288,11 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
     };
 
     container.replaceChildren();
-    const base = field(container, ids.base, 'base', 'Base', 'HEAD');
-    const branch = field(container, ids.branch, 'branch', 'Branch', 'feat/tunnels');
-    const location = field(container, ids.location, 'location', 'Location', 'beside the repository');
+    // i18n-ignore: git's own name for where the repository is standing
+    const base = field(container, ids.base, 'base', t('Base'), 'HEAD');
+    // i18n-ignore: an example branch name, which is git's to read
+    const branch = field(container, ids.branch, 'branch', t('Branch'), 'feat/tunnels');
+    const location = field(container, ids.location, 'location', t('Location'), t('beside the repository'));
 
     // What the section last reported, when there is any: a provision that was
     // cancelled or failed puts the form back, and re-filling it by hand is a
@@ -392,7 +397,7 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
     // the one that IS the base workspace has no such name, so it borrows the
     // directory's.
     const baseRoot = this._formPlaces(form.ctx, '').repoRoot;
-    const { select } = choice(form.container, form.ids.repo, 'repo', 'Repository',
+    const { select } = choice(form.container, form.ids.repo, 'repo', t('Repository'),
       repos.map(path => ({ value: path, label: path || baseName(baseRoot) || '.' })));
     // Above the three fields it scopes, which means moving it: the rest of the
     // form was built while this was still being asked about.
@@ -455,9 +460,9 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
       return;
     }
 
-    const projectName = baseName(this._formPlaces(form.ctx, '').repoRoot) || 'the project';
+    const projectName = baseName(this._formPlaces(form.ctx, '').repoRoot);
     if (!form.scope) {
-      const { select, note } = choice(form.container, form.ids.scope, 'scope', 'Worktree', [
+      const { select, note } = choice(form.container, form.ids.scope, 'scope', t('Worktree'), [
         { value: 'project', label: '' },
         { value: 'repo', label: '' }
       ]);
@@ -470,8 +475,9 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
       select.addEventListener('change', () => { this._scopeChosen(); });
     }
 
-    form.scope.options[0].textContent = `${projectName}, with ${form.repoRel} in it`;
-    form.scope.options[1].textContent = `${form.repoRel} on its own`;
+    form.scope.options[0].textContent = t('{target, select, named {{project}, with {repo} in it} other {the project, with {repo} in it}}',
+      { target: projectName ? 'named' : 'unnamed', project: projectName, repo: form.repoRel });
+    form.scope.options[1].textContent = t('{repo} on its own', { repo: form.repoRel });
     form.scopeRow.hidden = false;
 
     // A restored answer is the user's and stands. Otherwise the hook decides:
@@ -496,12 +502,12 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
     const form = this._form;
     if (!form?.scopeNote) return;
     if (form.scopeWanted === 'repo') {
-      showNote(form.scopeNote, `Only ${form.repoRel}. Nothing of the project around it comes with it.`);
+      showNote(form.scopeNote, t('Only {repo}. Nothing of the project around it comes with it.', { repo: form.repoRel }));
       return;
     }
     showNote(form.scopeNote, form.hasSetupHook
-      ? `${form.repoRel} starts uninitialised; ${SETUP_HOOK} runs in the new tree.`
-      : `${form.repoRel} starts uninitialised — there is no ${SETUP_HOOK} to fill it in.`);
+      ? t('{repo} starts uninitialised; {hook} runs in the new tree.', { repo: form.repoRel, hook: SETUP_HOOK })
+      : t('{repo} starts uninitialised — there is no {hook} to fill it in.', { repo: form.repoRel, hook: SETUP_HOOK }));
   }
 
   /**
@@ -667,7 +673,7 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
     const named = form.branch.value.trim();
     showNote(
       form.branchNote,
-      named && form.verdicts.get(named) === false ? 'git will not take that as a branch name.' : '',
+      named && form.verdicts.get(named) === false ? t('git will not take that as a branch name.') : '',
       { error: true }
     );
   }
@@ -783,8 +789,8 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
    */
   _repoRoot(values, ctx) {
     const baseRoot = ctx?.session?.workspaceRoot?.(ctx?.baseWorkspaceId ?? '');
-    if (!baseRoot) throw new Error("Couldn't make a worktree: the base workspace has no root.");
-    const chosen = shellSafe(String(values?.repo ?? '').trim(), 'repository path');
+    if (!baseRoot) throw new Error(t("Couldn't make a worktree: the base workspace has no root."));
+    const chosen = shellSafe(String(values?.repo ?? '').trim(), 'repo');
     // A submodule can be worked on from either end, and `scope` says which was
     // asked for. `project` makes the enclosing repository the subject: the tree
     // is a tree of that, and the submodule arrives inside it as a submodule —
@@ -808,15 +814,15 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
    * @returns {{repoRoot: string, repoRel: string, location: string, treeRel: string, branch: string, base: string}} Everywhere involved.
    */
   _places(values, ctx) {
-    const branch = shellSafe(String(values?.branch ?? '').trim(), 'branch name');
-    if (!branch) throw new Error("Couldn't make a worktree: no branch was named.");
+    const branch = shellSafe(String(values?.branch ?? '').trim(), 'branch');
+    if (!branch) throw new Error(t("Couldn't make a worktree: no branch was named."));
     const base = shellSafe(String(values?.base ?? 'HEAD').trim() || 'HEAD', 'base');
 
     const { repoRel, repoRoot, beside } = this._repoRoot(values, ctx);
     const location = String(values?.location ?? '').trim() || defaultLocation(repoRoot, branch, beside);
     const treeRel = relativePath(repoRoot, location);
     if (!treeRel) {
-      throw new Error(`Couldn't make a worktree at ${location}: it is not on the same drive as ${repoRoot}.`);
+      throw new Error(t("Couldn't make a worktree at {location}: it is not on the same drive as {repoRoot}.", { location, repoRoot }));
     }
     // The relative path is what the commands below are given, and so it is the
     // one that has to survive being quoted. The absolute location is checked by
@@ -860,7 +866,7 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
     const result = await this._inRepo(ctx, repoRel, command, params);
     if (!result?.success) {
       const said = String(result?.stderr || result?.stdout || '').trim();
-      throw new Error(said || `\`${command}\` failed with no output (exit ${result?.exitCode}).`);
+      throw new Error(said || t('`{command}` failed with no output (exit {code}).', { command, code: String(result?.exitCode) }));
     }
     return result;
   }
@@ -898,7 +904,7 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
 
     if (!result?.success) {
       const said = String(result?.error || result?.stdout || '').trim();
-      throw new Error(said || `\`${command}\` failed with no output (exit ${result?.exitCode}).`);
+      throw new Error(said || t('`{command}` failed with no output (exit {code}).', { command, code: String(result?.exitCode) }));
     }
     return result;
   }
@@ -918,7 +924,7 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
 
     const isRepo = await this._inRepo(ctx, repoRel, 'git rev-parse --git-dir');
     if (!isRepo?.success) {
-      throw new Error(`Couldn't make a worktree: ${repoRoot} is not a git repository.`);
+      throw new Error(t("Couldn't make a worktree: {repoRoot} is not a git repository.", { repoRoot }));
     }
 
     // Refuse rather than write into something that is already there. This is
@@ -927,7 +933,7 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
     // somebody else made and we merely failed to add to.
     const occupied = await this._inRepo(ctx, repoRel, `test -e "${treeRel}"`);
     if (occupied?.success) {
-      throw new Error(`Couldn't make a worktree at ${location}: there is already something there.`);
+      throw new Error(t("Couldn't make a worktree at {location}: there is already something there.", { location }));
     }
 
     // A branch that already exists is checked out rather than created, and is
@@ -944,7 +950,7 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
       branchCreatedByUs
     };
 
-    ctx.progress('Creating the worktree', location);
+    ctx.progress(t('Creating the worktree'), location);
     // Both records of how to undo this go in before the step, so there is no
     // instant in which a tree exists that nothing knows how to remove. The cost
     // is that this compensation routinely runs for a tree that was never made,
@@ -971,7 +977,7 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
       // wait — so it is one step that keeps talking, saying what the hook itself
       // is saying. The step names the work; the hook's own output, which is the
       // only thing that knows how far along it is, is the detail under it.
-      const step = 'Setting the worktree up';
+      const step = t('Setting the worktree up');
       ctx.progress(step, SETUP_HOOK);
       await this._mustStream(
         ctx,
@@ -1007,7 +1013,7 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
   async status(workspace, ctx) {
     const repoDir = String(workspace?.meta?.repoDir ?? '');
     if (workspace.available === false) {
-      return { detail: 'The worktree directory is missing.', available: false };
+      return { detail: t('The worktree directory is missing.'), available: false };
     }
 
     const answer = await api.getGitStatus(workspace.id, { signal: ctx.signal });
@@ -1015,7 +1021,7 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
     if (!repo) {
       // A registered root that is no longer a repository: removed by hand, or
       // never one. Worth saying rather than reporting a clean tree.
-      return { detail: 'No git repository there.', available: true };
+      return { detail: t('No git repository there.'), available: true };
     }
 
     let changed = repo.changed;
@@ -1049,9 +1055,9 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
       // are about to commit into, and every other line about this place — the
       // root, the branch, the counts — is true of a worktree of any of them.
       detail: [
-        repoDir ? `repo ${baseName(repoDir)}` : '',
-        repo.detached || !repo.branch ? branchPhrase(repo) : `branch ${repo.branch}`,
-        countsPhrase(mine) || 'clean',
+        repoDir ? t('repo {name}', { name: baseName(repoDir) }) : '',
+        repo.detached || !repo.branch ? branchPhrase(repo) : t('branch {branch}', { branch: repo.branch }),
+        countsPhrase(mine) || t('clean'),
         divergencePhrase(repo)
       ].filter(Boolean).join(' · '),
       badge: dirty ? 'dirty' : '',
@@ -1123,44 +1129,47 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
   finishOptions(workspace) {
     const meta = workspace?.meta ?? {};
     const branch = String(meta?.branch ?? '');
-    const repo = baseName(String(meta?.repoDir ?? '')) || 'the repository';
+    const repo = baseName(String(meta?.repoDir ?? ''));
+    // Named when the record says which; a phrase standing in for it otherwise.
+    const branchTarget = branch ? 'named' : 'none';
+    const repoTarget = repo ? 'named' : 'none';
     return [
       {
         id: 'commit',
-        label: 'Commit the changes',
+        label: t('Commit the changes'),
         keepsWorkspace: true,
-        description: `Commits everything here onto ${branch || 'its branch'}. You carry on working in this workspace.`,
+        description: t('{target, select, named {Commits everything here onto {branch}. You carry on working in this workspace.} other {Commits everything here onto its branch. You carry on working in this workspace.}}', { target: branchTarget, branch }),
         prompt: {
-          label: 'Message',
-          placeholder: 'What this work does',
-          confirmLabel: 'Commit',
+          label: t('Message'),
+          placeholder: t('What this work does'),
+          confirmLabel: t('Commit'),
           multiline: true,
           requiresWork: true,
-          hint: 'What changed and why, in the words you would use to someone who has not read it.',
+          hint: t('What changed and why, in the words you would use to someone who has not read it.'),
           alternative: {
-            label: 'Let this conversation write it',
-            hint: 'It has read the work; the commit happens on its next turn.'
+            label: t('Let this conversation write it'),
+            hint: t('It has read the work; the commit happens on its next turn.')
           }
         }
       },
       {
         id: 'land',
-        label: `Fast-forward ${repo} to ${branch || 'this branch'}`,
+        label: t('Fast-forward {repoTarget, select, named {{repo}} other {the repository}} to {branchTarget, select, named {{branch}} other {this branch}}', { repoTarget, repo, branchTarget, branch }),
         keepsWorkspace: true,
-        description: `Runs git merge --ff-only ${branch || 'this branch'} in ${repo}, moving the branch it has checked out to this one. Git refuses it if that branch has diverged. The worktree is untouched.`
+        description: t('Runs git merge --ff-only {branchTarget, select, named {{branch}} other {this branch}} in {repoTarget, select, named {{repo}} other {the repository}}, moving the branch it has checked out to this one. Git refuses it if that branch has diverged. The worktree is untouched.', { repoTarget, repo, branchTarget, branch })
       },
       {
         id: 'unbind',
-        label: 'Close the workspace, keep the worktree',
-        description: `The worktree and ${branch || 'its branch'} stay on disk, ready to be adopted again. Conversations here go to the bin, which they can be restored from.`
+        label: t('Close the workspace, keep the worktree'),
+        description: t('{target, select, named {The worktree and {branch} stay on disk, ready to be adopted again. Conversations here go to the bin, which they can be restored from.} other {The worktree and its branch stay on disk, ready to be adopted again. Conversations here go to the bin, which they can be restored from.}}', { target: branchTarget, branch })
       },
       {
         id: 'discard',
-        label: 'Close the workspace and delete the worktree',
+        label: t('Close the workspace and delete the worktree'),
         danger: true,
         description: meta.branchCreatedByUs && branch
-          ? `Deletes the worktree and the branch ${branch}, with every commit on it. Conversations here go to the bin, which they can be restored from.`
-          : 'Deletes the worktree and everything in it, committed or not. The branch was not ours to make, so it stays. Conversations here go to the bin, which they can be restored from.'
+          ? t('Deletes the worktree and the branch {branch}, with every commit on it. Conversations here go to the bin, which they can be restored from.', { branch })
+          : t('Deletes the worktree and everything in it, committed or not. The branch was not ours to make, so it stays. Conversations here go to the bin, which they can be restored from.')
       }
     ];
   }
@@ -1185,13 +1194,18 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
         // What happened to the tree. Where the conversations that were working
         // in it have gone is the host's to say — it is the host that moves
         // them, and how many there were is not a thing a provider knows.
-        message: `Stopped using ${meta.dir ?? 'the worktree'}. It and ${branch || 'its branch'} are still there.`
+        message: t('Stopped using {dirTarget, select, named {{dir}} other {the worktree}}. It and {branchTarget, select, named {{branch}} other {its branch}} are still there.', {
+          dirTarget: meta.dir === null || meta.dir === undefined ? 'none' : 'named',
+          dir: meta.dir === null || meta.dir === undefined ? '' : String(meta.dir),
+          branchTarget: branch ? 'named' : 'none',
+          branch
+        })
       };
     }
     if (actionId === 'commit') return this._commit(workspace, ctx);
     if (actionId === 'land') return this._land(workspace, ctx);
     if (actionId === 'discard') return this._discard(workspace, ctx);
-    return { done: false, message: `${this.getManifest().name} has no action "${actionId}".` };
+    return { done: false, message: t('{name} has no action "{actionId}".', { name: this.getManifest().name, actionId }) };
   }
 
   /**
@@ -1213,15 +1227,17 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
     if (!message) {
       const conversation = ctx?.conversation;
       if (!conversation?.sendMessage) {
-        return { done: false, message: 'There is no message to commit under, and nobody here to write one.' };
+        return { done: false, message: t('There is no message to commit under, and nobody here to write one.') };
       }
+      // The model reads this, so it stays English whatever the UI language.
+      const request = `Commit the work in this worktree${branch ? ` (branch ${branch})` : ''}, with a message describing it.`;
       await conversation.sendMessage(
-        `Commit the work in this worktree${branch ? ` (branch ${branch})` : ''}, with a message describing it.`,
+        markUntranslated(request),
         null,
         conversation.rootMessageThread,
         { consumeComposer: false }
       );
-      return { done: false, message: 'Asked this conversation to write the commit.' };
+      return { done: false, message: t('Asked this conversation to write the commit.') };
     }
 
     // No identity of ours is passed: this is the user's commit, in the user's
@@ -1230,7 +1246,13 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
     const staged = await ctx.ops.shell(
       { command: 'git add -A', timeout: COMMIT_TIMEOUT_MS }, ctx.signal);
     if (!staged?.success) {
-      return { done: false, message: gitSaid('Couldn’t stage the changes.', staged) };
+      const detail = gitSaid(staged);
+      return {
+        done: false,
+        message: detail
+          ? t('Couldn’t stage the changes.\n\n{detail}', { detail })
+          : t('Couldn’t stage the changes.')
+      };
     }
 
     const committed = await ctx.ops.shell(
@@ -1240,14 +1262,20 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
       // Not a failure: it is what a second press lands on, and what a tree
       // already committed from a terminal answers. Told as the fact it is.
       if (/nothing to commit/i.test(said)) {
-        return { done: false, message: 'Nothing had changed here, so nothing was committed.' };
+        return { done: false, message: t('Nothing had changed here, so nothing was committed.') };
       }
-      return { done: false, message: gitSaid('Couldn’t make the commit.', committed) };
+      const detail = gitSaid(committed);
+      return {
+        done: false,
+        message: detail
+          ? t('Couldn’t make the commit.\n\n{detail}', { detail })
+          : t('Couldn’t make the commit.')
+      };
     }
     // Never `done`: a commit is not a way of being finished with the place it
     // was made in. The workspace stays in use, which is what the menu promised
     // when it put this row outside the endings.
-    return { done: false, message: `Committed on ${branch || 'its branch'}.` };
+    return { done: false, message: t('{target, select, named {Committed on {branch}.} other {Committed on its branch.}}', { target: branch ? 'named' : 'none', branch }) };
   }
 
   /**
@@ -1259,7 +1287,7 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
    * exactly as the provision named it when it made the tree.
    * @param {any} workspace - The row being acted on.
    * @param {any} ctx - The context, for the session and the base workspace.
-   * @param {string} why - What cannot be done from here, for the refusal.
+   * @param {'merge' | 'remove'} why - What cannot be done from here, for the refusal.
    * @returns {{repoRel: string, problem: string}} Where it is, or why not.
    */
   _repoFromBase(workspace, ctx, why) {
@@ -1267,9 +1295,17 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
     const baseRoot = String(ctx?.session?.workspaceRoot?.(ctx?.baseWorkspaceId ?? '') ?? '');
     const repoRel = meta.repoDir && baseRoot ? relativePath(baseRoot, String(meta.repoDir)) : null;
     if (!repoRel) {
+      const params = {
+        repoTarget: meta.repoDir ? 'named' : 'none',
+        repo: meta.repoDir ? String(meta.repoDir) : '',
+        baseTarget: baseRoot ? 'named' : 'none',
+        base: baseRoot
+      };
       return {
         repoRel: '',
-        problem: `${meta.repoDir || 'The repository'} cannot be reached from ${baseRoot || 'the base workspace'}, so ${why}.`
+        problem: why === 'merge'
+          ? t('{repoTarget, select, named {{repo}} other {The repository}} cannot be reached from {baseTarget, select, named {{base}} other {the base workspace}}, so there is nowhere to merge it into.', params)
+          : t('{repoTarget, select, named {{repo}} other {The repository}} cannot be reached from {baseTarget, select, named {{base}} other {the base workspace}}, so the worktree is not ours to remove from here.', params)
       };
     }
     return { repoRel, problem: '' };
@@ -1309,10 +1345,10 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
     const meta = workspace?.meta ?? {};
     const branch = String(meta?.branch ?? '');
     if (!branch) {
-      return { done: false, message: 'There is no record of which branch this worktree is on, so there is nothing to merge.' };
+      return { done: false, message: t('There is no record of which branch this worktree is on, so there is nothing to merge.') };
     }
 
-    const where = this._repoFromBase(workspace, ctx, 'there is nowhere to merge it into');
+    const where = this._repoFromBase(workspace, ctx, 'merge');
     if (where.problem) return { done: false, message: where.problem };
 
     // Uncommitted work stays where it is — landing moves commits — so it is
@@ -1327,33 +1363,42 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
     if (uncommitted.length) {
       return {
         done: false,
-        message: `This worktree has ${uncommitted.length === 1 ? 'an uncommitted change' : `${uncommitted.length} uncommitted changes`}. Commit them first — a fast-forward moves commits, and these would be left behind.`
+        message: t('{count, plural, one {This worktree has an uncommitted change. Commit them first — a fast-forward moves commits, and these would be left behind.} other {This worktree has {count} uncommitted changes. Commit them first — a fast-forward moves commits, and these would be left behind.}}', { count: uncommitted.length })
       };
     }
 
     const head = await this._inRepoFromBase(ctx, where.repoRel, 'git rev-parse --abbrev-ref HEAD');
     if (!head?.success) {
-      return { done: false, message: gitSaid('Couldn’t ask the repository which branch it has out.', head) };
+      const detail = gitSaid(head);
+      return {
+        done: false,
+        message: detail
+          ? t('Couldn’t ask the repository which branch it has out.\n\n{detail}', { detail })
+          : t('Couldn’t ask the repository which branch it has out.')
+      };
     }
     const into = String(head?.stdout ?? '').trim();
     if (!into || into === 'HEAD') {
       return {
         done: false,
-        message: `${baseName(String(meta.repoDir))} has a detached HEAD, so there is no branch to fast-forward to ${branch}.`
+        message: t('{repo} has a detached HEAD, so there is no branch to fast-forward to {branch}.', { repo: baseName(String(meta.repoDir)), branch })
       };
     }
 
     const merged = await this._inRepoFromBase(ctx, where.repoRel, `git merge --ff-only "${branch}"`);
     if (!merged?.success) {
+      const detail = gitSaid(merged);
       return {
         done: false,
-        message: gitSaid(`${into} has moved on since this worktree was made, so it cannot be fast-forwarded to ${branch}. A merge or a rebase is a job for you and git.`, merged)
+        message: detail
+          ? t('{into} has moved on since this worktree was made, so it cannot be fast-forwarded to {branch}. A merge or a rebase is a job for you and git.\n\n{detail}', { into, branch, detail })
+          : t('{into} has moved on since this worktree was made, so it cannot be fast-forwarded to {branch}. A merge or a rebase is a job for you and git.', { into, branch })
       };
     }
     if (/already up to date/i.test(String(merged?.stdout ?? ''))) {
-      return { done: false, message: `${into} is already up to date with ${branch}.` };
+      return { done: false, message: t('{into} is already up to date with {branch}.', { into, branch }) };
     }
-    return { done: false, message: `Fast-forwarded ${into} to ${branch}.` };
+    return { done: false, message: t('Fast-forwarded {into} to {branch}.', { into, branch }) };
   }
 
   /**
@@ -1385,11 +1430,11 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
     if (!meta.repoDir || !treeRel) {
       return {
         done: false,
-        message: 'There is no record of where this worktree came from, so it is not ours to remove.'
+        message: t('There is no record of where this worktree came from, so it is not ours to remove.')
       };
     }
 
-    const where = this._repoFromBase(workspace, ctx, 'the worktree is not ours to remove from here');
+    const where = this._repoFromBase(workspace, ctx, 'remove');
     if (where.problem) return { done: false, message: where.problem };
     const repoRel = where.repoRel;
 
@@ -1406,7 +1451,11 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
     if (/REMOVED/.test(String(result?.stdout ?? ''))) {
       return {
         done: true,
-        message: `Removed ${meta.dir}${meta.branchCreatedByUs && branch ? ` and ${branch}` : ''}.`
+        message: t('{target, select, branch {Removed {dir} and {branch}.} other {Removed {dir}.}}', {
+          target: meta.branchCreatedByUs && branch ? 'branch' : 'tree',
+          dir: String(meta.dir),
+          branch
+        })
       };
     }
     // Why git could not remove it matters more than the fact, and the shell op
@@ -1415,7 +1464,7 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
     // field that is always empty and report the bare fallback every time.
     return {
       done: false,
-      message: String(result?.stderr || result?.stdout || '').trim() || `${meta.dir} is still there.`
+      message: String(result?.stderr || result?.stdout || '').trim() || t('{dir} is still there.', { dir: String(meta.dir) })
     };
   }
 
@@ -1487,7 +1536,7 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
         if (!tree) {
           orphanedWorkspaces.push({
             ...workspace,
-            reason: `${workspace.meta?.dir ?? workspace.root} is not a worktree of ${repoDir} any more.`
+            reason: t('{dir} is not a worktree of {repo} any more.', { dir: String(workspace.meta?.dir ?? workspace.root), repo: repoDir })
           });
           continue;
         }
@@ -1497,7 +1546,12 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
           orphanedWorkspaces.push({
             ...workspace,
             tombstone: true,
-            reason: `${workspace.meta?.dir ?? workspace.root} is on ${tree.branch || 'no branch'} now, not ${expected}.`
+            reason: t('{target, select, named {{dir} is on {branch} now, not {expected}.} other {{dir} is on no branch now, not {expected}.}}', {
+              target: tree.branch ? 'named' : 'none',
+              dir: String(workspace.meta?.dir ?? workspace.root),
+              branch: tree.branch,
+              expected
+            })
           });
           continue;
         }
@@ -1512,7 +1566,7 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
         orphanedArtifacts.push({
           id: `${repoDir}\u0000${rel}`,
           label: tree.branch || baseName(dir),
-          detail: `${dir} — a worktree of ${baseName(repoDir)} with no workspace`,
+          detail: t('{dir} — a worktree of {repo} with no workspace', { dir, repo: baseName(repoDir) }),
           workspace: {
             root: dir,
             label: tree.branch || baseName(dir),
@@ -1554,7 +1608,7 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
   async cleanupPartial(workspace, ctx) {
     const meta = workspace?.meta ?? {};
     if (!meta.repoDir || !meta.treeRel) {
-      return { removed: false, message: 'Nothing was checkpointed, so there is nothing to undo.' };
+      return { removed: false, message: t('Nothing was checkpointed, so there is nothing to undo.') };
     }
 
     const projectPath = ctx.session?.projectPath ?? '';
@@ -1573,8 +1627,8 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
     // question the host has — is there anything left to worry about.
     const left = await this._inRepo(ctx, repoRel, `test -e "${treeRel}"`);
     return left?.success
-      ? { removed: false, message: `${meta.dir} is still there and could not be removed.` }
-      : { removed: true, message: `Removed ${meta.dir}.` };
+      ? { removed: false, message: t('{dir} is still there and could not be removed.', { dir: String(meta.dir) }) }
+      : { removed: true, message: t('Removed {dir}.', { dir: String(meta.dir) }) };
   }
 }
 

@@ -5,7 +5,6 @@
 import js from '@eslint/js';
 import jsdoc from 'eslint-plugin-jsdoc';
 import stylistic from '@stylistic/eslint-plugin';
-import { readFileSync } from 'node:fs';
 import { URL } from 'node:url';
 import noAbsoluteApiUrl from './eslint-rules/no-absolute-api-url.js';
 import noRawUiString from './eslint-rules/no-raw-ui-string.js';
@@ -19,11 +18,6 @@ const jugglerPlugin = {
 // UI source: every file a user can see text from. Tests and vendored code are not.
 const UI_FILES = ['web/js/**/*.js', 'web/sdk/**/*.js', 'web/extensions/**/*.js', 'web/machine/**/*.js'];
 const NOT_UI = ['web/js/vendor/**', 'web/extensions/**/_tests/**/*.js'];
-
-// The files not yet migrated to t() — the i18n ratchet. See the rule's header
-// and `node scripts/i18n status`. A line is only ever deleted.
-const I18N_PENDING = readFileSync(new URL('./i18n-pending.txt', import.meta.url), 'utf8')
-  .split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith('#'));
 
 export default [
   js.configs.recommended,
@@ -358,24 +352,13 @@ export default [
   // ===================================================================
   // UI text goes through t() (juggler/no-raw-ui-string)
   // ===================================================================
-  // Every UI file is checked for t() at module scope. Raw user-visible
-  // strings are checked everywhere except the files still listed in
-  // tooling/i18n-pending.txt, so new files are covered from the start and
-  // the backlog can only shrink.
+  // Every UI file: raw user-visible strings, and t() at module scope.
   {
     files: UI_FILES,
     ignores: NOT_UI,
     plugins: { juggler: jugglerPlugin },
     rules: {
-      'juggler/no-raw-ui-string': ['error', { rawStrings: false }],
-    },
-  },
-  {
-    files: UI_FILES,
-    ignores: [...NOT_UI, ...I18N_PENDING],
-    plugins: { juggler: jugglerPlugin },
-    rules: {
-      'juggler/no-raw-ui-string': ['error', { rawStrings: true }],
+      'juggler/no-raw-ui-string': 'error',
     },
   },
   // ===================================================================

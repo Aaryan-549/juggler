@@ -18,7 +18,7 @@ import { showAlert } from '../components/modal-dialog.js';
 import { apiUrl } from './api-url.js';
 import { chooseProject, projectIsFixed, projectsOpenInNewWindow } from './project-open-mode.js';
 import { statusHoldsTurn } from '../model/processing-status.js';
-import { t, markForTranslation } from '../../sdk/lib/i18n.js';
+import { t, markForTranslation, htmlSlots, withHtml } from '../../sdk/lib/i18n.js';
 
 /**
  * @typedef {import('../model/session.js').default} Session
@@ -68,7 +68,6 @@ async function fetchClientCount() {
  */
 export function bindNetworkClients(button, { events = wsService, seed = fetchClientCount } = {}) {
   const clients = /** @type {HTMLElement|null} */ (button.querySelector('.network-button__clients'));
-  const count = /** @type {HTMLElement|null} */ (button.querySelector('.network-button__count'));
 
   const show = (/** @type {number|null|undefined} */ total) => {
     const others = Math.max(0, (total || 1) - 1);
@@ -76,11 +75,27 @@ export function bindNetworkClients(button, { events = wsService, seed = fetchCli
       { count: others });
     button.title = label;
     button.setAttribute('aria-label', label);
-    if (count) count.textContent = String(others);
-    if (clients) clients.hidden = others === 0;
+    if (clients) {
+      // One sentence with the count in it. The count is the badge; the words
+      // around it are the suffix, shown only where the header has room.
+      const markup = { number: `<span class="network-button__count">${others}</span>` };
+      clients.innerHTML = withHtml(t('{count, plural, other {{number} connected}}', htmlSlots(markup, { count: others })), markup);
+      for (const node of Array.from(clients.childNodes)) {
+        if (node.nodeType !== Node.TEXT_NODE) continue;
+        const suffix = document.createElement('span');
+        suffix.className = 'network-button__suffix';
+        node.replaceWith(suffix);
+        suffix.append(node);
+      }
+      clients.hidden = others === 0;
+    }
     // Lets a wide header turn the badge into a "N connected" label.
     button.classList.toggle('has-clients', others > 0);
   };
+
+  // Alone until the server says otherwise; this also names the button in the
+  // user's language over the markup's English.
+  show(1);
 
   let disposed = false;
   const onChange = (/** @type {any} */ data) => show(windowsOfTheirOwn(data?.clients));

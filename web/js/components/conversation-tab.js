@@ -9,6 +9,8 @@
  */
 
 import { isThreadMessage } from '../../sdk/lib/message.js';
+import { t } from '../../sdk/lib/i18n.js';
+import { escapeHtml } from '../../sdk/lib/html.js';
 import { findFirstPendingApprovalId } from '../model/thread-navigation.js';
 import { ColumnSelectionState } from '../utils/column-selection.js';
 import { rootFontSizePx, columnScrollDelta } from '../utils/column-resize.js';
@@ -2002,9 +2004,9 @@ class ConversationTab extends JugglerElement {
       overlay.innerHTML = `
         <div class="conversation-tab-loading-content">
           <div class="conversation-tab-loading-message">
-            Failed to load conversation
+            ${escapeHtml(t('Failed to load conversation'))}
           </div>
-          <button type="button" class="conversation-tab-loading-retry">Retry</button>
+          <button type="button" class="conversation-tab-loading-retry">${escapeHtml(t('Retry'))}</button>
         </div>
       `;
       const retryBtn = overlay.querySelector('.conversation-tab-loading-retry');

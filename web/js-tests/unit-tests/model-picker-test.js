@@ -39,6 +39,10 @@ import usageStatsCache from '../../js/services/usage-stats-cache.js';
 import { SHEET_QUERY } from '../../js/utils/popup-surface.js';
 import { presentPopup } from '../../js/utils/popup-surface.js';
 import { registerSettingsOpener } from '../../js/services/settings-launcher.js';
+import providersCache from '../../js/services/providers-cache.js';
+import { formatTokens } from '../../js/utils/format.js';
+import { isPseudoLocalized } from '../../sdk/lib/i18n.js';
+import { shownStrings, underPseudoLocale } from '../utilities/pseudo-locale.js';
 import '../../js/components/model-picker/model-picker.js';
 
 /**
@@ -950,6 +954,176 @@ export async function runTests(_ctx) {
   } finally {
     void setMachinePref(VIEW_STATE_KEY, savedViewState);
   }
+
+  // Every state the picker and its tuning dials draw, under en-XA. Model,
+  // provider, level and tier names are data (digits here); the picker's own
+  // words are not. Elements holding nothing but data are skipped, and the
+  // messages nested in them (notes, chip titles, the context size) are read on
+  // their own. The tables the picker draws from — recents, usage, the provider
+  // switch — are stubbed, so nothing reaches the server.
+  await run('en-XA: every picker and tuning state is translated', async () => {
+    /**
+     * Put a stubbed method back exactly as it was: an own property restored, an
+     * inherited one uncovered.
+     * @param {any} obj - The singleton.
+     * @param {string} key - The method's name.
+     * @returns {() => void} The restorer.
+     */
+    const saveMethod = (obj, key) => {
+      const own = Object.prototype.hasOwnProperty.call(obj, key);
+      const original = obj[key];
+      return () => {
+        if (own) obj[key] = original;
+        else delete obj[key];
+      };
+    };
+    const restorers = [
+      saveMethod(usageStatsCache, 'refresh'),
+      saveMethod(usageStatsCache, 'get'),
+      saveMethod(providersCache, 'switchProvider'),
+    ];
+    /** @type {any} */
+    let picker = null;
+    /** @type {any} */
+    let tuning = null;
+    try {
+      /** @type {any} */ (usageStatsCache).refresh = async () => {};
+      /** @type {any} */ (usageStatsCache).get = () => null;
+      /** @type {any} */ (providersCache).switchProvider = async () => { throw 'refused'; };
+      await underPseudoLocale('model-picker-test', async () => {
+        /** @type {string[]} */
+        const shown = [];
+        /**
+         * @param {string} where - The state being drawn.
+         * @param {string|null|undefined} s - What it showed.
+         */
+        const see = (where, s) => {
+          assert(!!s, `${where}: nothing drawn`);
+          shown.push(/** @type {string} */ (s));
+        };
+        // Elements whose whole text is data.
+        const DATA = '.menu-header-label, .model-item-name, .recent-model-name, .recent-model-provider,'
+          + ' .model-current-name, .model-current-sub, model-tuning';
+        /**
+         * Everything the picker shows outside the data elements.
+         * @param {string} where - The state being drawn.
+         */
+        const seeAll = (where) => {
+          const strings = shownStrings(picker, DATA);
+          assert(strings.length > 0, `${where}: nothing drawn`);
+          for (const s of strings) see(where, s);
+        };
+
+        /** @type {any} */
+        const entry = { id: '7', displayName: '7', contextWindow: 1000, windowAssumed: true,
+          thinkingLevels: ['low', 'high'], defaultThinkingLevel: 'high',
+          serviceTiers: [{ id: '5', name: '5', description: '6' }] };
+        const ready = { name: '4', displayName: '4', available: true,
+          switchTo: { provider: '3', displayName: '3', reason: '' },
+          modelsWithContext: [entry, { id: '8', displayName: '8', contextWindow: 1000, hidden: true }] };
+        const login = { name: '2', displayName: '2', available: false, authType: 'oauth_bearer',
+          modelsWithContext: [{ id: '1', displayName: '1' }] };
+        const unset = { name: '0', displayName: '0', available: false,
+          modelsWithContext: [{ id: '9', displayName: '9' }] };
+
+        picker = /** @type {any} */ (document.createElement('model-picker'));
+        picker.providers = [];
+        picker.loading = true;
+        picker.render();
+
+        // Loading, then no providers at all (the none row and the empty card).
+        seeAll('loading');
+        see('picker aria-label', picker.getAttribute('aria-label'));
+        picker.loading = false;
+        seeAll('no providers');
+        see('none row', picker.querySelector('.no-model .model-item-name')?.textContent);
+
+        // Recents carrying a thinking level and a serving tier.
+        const originalFetch = window.fetch;
+        window.fetch = /** @type {any} */ (async () => ({ ok: true, json: async () => ({
+          models: [{ provider: '4', model: '7', thinking: '1', serviceTier: '5' }] }) }));
+        try {
+          await recentModels.refresh();
+        } finally {
+          window.fetch = originalFetch;
+        }
+
+        // Every provider state: ready, login required, not configured.
+        picker.providers = [ready, login, unset];
+        picker.value = { provider: '4', model: '7' };
+        picker.render();
+        seeAll('providers');
+        const notes = [...picker.querySelectorAll('.menu-item-note')];
+        assert(notes.length === 2, `two unavailable-provider notes expected — got ${notes.length}`);
+        for (const note of notes) see('unavailable note', note.textContent);
+        const chips = [...picker.querySelectorAll('.recent-model-chip')];
+        assert(chips.length === 2, `a thinking chip and a speed chip expected — got ${chips.length}`);
+        for (const chip of chips) {
+          const title = chip.getAttribute('title');
+          see('recent chip title', title);
+          assert(String(title).includes(chip.textContent || '?'), `the chip's value is kept — got "${title}"`);
+        }
+        const sub = picker.querySelector('.model-current-sub')?.firstChild?.textContent || '';
+        see('context size', sub.split(' · ')[1]);
+        const assumed = picker.querySelector('.model-window-assumed');
+        assert(String(assumed?.getAttribute('title')).includes(formatTokens(1000)), 'the assumed size is kept');
+
+        // Each list view, as the provider toggle names it.
+        for (const state of ['none', 'top', 'all']) {
+          picker._resolveViewState = () => state;
+          picker.render();
+          const toggle = picker.querySelector('.provider-view-toggle');
+          see(`toggle ${state}`, toggle?.textContent);
+          see(`toggle ${state} title`, toggle?.getAttribute('title'));
+        }
+        delete picker._resolveViewState;
+
+        // The hidden model in use.
+        picker.value = { provider: '4', model: '8' };
+        picker.render();
+        see('hidden note', picker.querySelector('.menu-item-note:not(.unavailable .menu-item-note)')?.textContent);
+
+        // A provider switch that fails without saying why.
+        picker.value = { provider: '4', model: '7' };
+        picker.render();
+        const switchButton = picker.querySelector('.model-provider-switch');
+        await picker._switchProvider(switchButton);
+        see('switch failure', switchButton?.getAttribute('title'));
+
+        // Search: a match, then nothing.
+        const input = /** @type {HTMLInputElement} */ (picker.querySelector('.model-picker-filter-input'));
+        input.value = '7';
+        input.dispatchEvent(new Event('input'));
+        seeAll('search match');
+        input.value = '6';
+        input.dispatchEvent(new Event('input'));
+        seeAll('search, no match');
+
+        // The tuning dials: every known level, an unknown one (data), Standard,
+        // and each form of Default.
+        tuning = /** @type {any} */ (document.createElement('model-tuning'));
+        tuning.modelEntry = { thinkingLevels: ['off', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', '9'],
+          defaultThinkingLevel: 'high', serviceTiers: [{ id: '5', name: '5', description: '6' }] };
+        for (const s of shownStrings(tuning, '[data-thinking-level="9"], [data-service-tier="5"]')) see('tuning', s);
+        const unknown = tuning.querySelector('[data-thinking-level="9"]');
+        assert(unknown?.textContent === '9', `an unknown level is shown as given — got "${unknown?.textContent}"`);
+        tuning.modelEntry = { thinkingLevels: ['low'], defaultThinkingLevel: '' };
+        see('bare default', tuning.querySelector('[data-thinking-level=""]')?.textContent);
+        tuning.modelEntry = { thinkingLevels: ['low', '9'], defaultThinkingLevel: '9' };
+        const unknownDefault = tuning.querySelector('[data-thinking-level=""]')?.textContent;
+        see('unknown default', unknownDefault);
+        assert(String(unknownDefault).includes('9'), `the default level is named — got "${unknownDefault}"`);
+
+        const raw = shown.filter((s) => !isPseudoLocalized(s));
+        assert(raw.length === 0, `plain English under en-XA: ${JSON.stringify(raw)}`);
+      });
+    } finally {
+      for (const restore of restorers) restore();
+      picker?.remove();
+      tuning?.remove();
+      await clearRecents();
+    }
+  });
 
   return { passed, failed, errors };
 }

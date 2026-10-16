@@ -47,6 +47,7 @@ import { modelLabel, modelLabelFromList } from '../../model/model-display.js';
 import { formatTokens } from '../../utils/format.js';
 import { renderUsageRow } from '../../utils/usage-renderer.js';
 import { escapeHtml } from '../../../sdk/lib/html.js';
+import { htmlSlots, t, withHtml } from '../../../sdk/lib/i18n.js';
 import { CHECK_SVG } from '../../utils/icons.js';
 import JugglerElement from '../juggler-element.js';
 import { cachedMachinePref, setMachinePref } from '../../services/prefs.js';
@@ -120,7 +121,7 @@ class ModelPicker extends JugglerElement {
     /** @type {ModelConfigShape} @private - The config currently in effect. */
     this._value = null;
     /** @type {string} @private - Label for the bottom row that selects nothing. */
-    this._noneLabel = 'No model';
+    this._noneLabel = t('No model');
     /**
      * @type {string} @private - Label for the optional Off row. Empty (the
      * default) leaves the row out entirely, so only a host with a genuine
@@ -525,9 +526,9 @@ class ModelPicker extends JugglerElement {
    */
   _unavailableHint(provider) {
     if (provider.authType === 'oauth_bearer') {
-      return provider.authHint || 'Login required';
+      return provider.authHint || t('Login required');
     }
-    return provider.authHint || 'Provider not configured';
+    return provider.authHint || t('Provider not configured');
   }
 
   /**
@@ -588,6 +589,7 @@ class ModelPicker extends JugglerElement {
       const isCurrent = this._value?.provider === provider.name && this._value?.model === model.id;
       if (disabledNote) {
         return this._selectionItem({
+          // i18n-ignore: markup around a model name (data) and an already-translated note
           label: `${escapeHtml(displayName)} <span class="menu-item-note">${escapeHtml(disabledNote)}</span>`,
           active: isCurrent,
           classes: 'unavailable',
@@ -597,7 +599,7 @@ class ModelPicker extends JugglerElement {
       // so, rather than showing it as an ordinary choice the picker would
       // otherwise never offer.
       const label = model.hidden
-        ? `${escapeHtml(displayName)} <span class="menu-item-note">hidden</span>`
+        ? `${escapeHtml(displayName)} <span class="menu-item-note">${escapeHtml(t('hidden'))}</span>`
         : escapeHtml(displayName);
       return this._selectionItem({
         label,
@@ -607,7 +609,7 @@ class ModelPicker extends JugglerElement {
       });
     });
 
-    const toggle = `<button type="button" class="provider-view-toggle" data-provider="${escapeHtml(provider.name)}" title="Toggle model list: none / top / all">${state}</button>`;
+    const toggle = `<button type="button" class="provider-view-toggle" data-provider="${escapeHtml(provider.name)}" title="${escapeHtml(t('Toggle model list: none / top / all'))}">${escapeHtml(t('{state, select, none {none} top {top} other {all}}', { state }))}</button>`;
     const header = `<li class="menu-header provider-menu-header"><span class="menu-header-label">${escapeHtml(provider.displayName)}</span>${toggle}</li>`;
     const group = items.length ? `<menu class="menu-group">${items.join('')}</menu>` : '';
     return `${header}${group}`;
@@ -650,7 +652,7 @@ class ModelPicker extends JugglerElement {
       // distinct by tier as well as level, so a row that dropped its tier chip
       // would be a second identical-looking row.
       const chip = r.thinking
-        ? `<span class="recent-model-chip" title="Thinking: ${escapeHtml(r.thinking)}">${escapeHtml(r.thinking)}</span>`
+        ? `<span class="recent-model-chip" title="${escapeHtml(t('Thinking: {level}', { level: r.thinking }))}">${escapeHtml(r.thinking)}</span>`
         : '';
       // The provider's own name for the tier when the catalog still carries it,
       // otherwise the stored id verbatim — the row states what is stored.
@@ -659,7 +661,7 @@ class ModelPicker extends JugglerElement {
           .find((/** @type {{id: string}} */ t) => t.id === r.serviceTier)?.name || r.serviceTier
         : '';
       const tierChip = tierName
-        ? `<span class="recent-model-chip" title="Speed: ${escapeHtml(tierName)}">${escapeHtml(tierName)}</span>`
+        ? `<span class="recent-model-chip" title="${escapeHtml(t('Speed: {tier}', { tier: tierName }))}">${escapeHtml(tierName)}</span>`
         : '';
       const thinkingAttr = ` data-thinking="${escapeHtml(r.thinking || '')}"`;
       const tierAttr = ` data-service-tier="${escapeHtml(r.serviceTier || '')}"`;
@@ -670,7 +672,7 @@ class ModelPicker extends JugglerElement {
                 </li>`;
     }).join('');
 
-    return `<div class="model-picker-recent-label">Recent</div><menu class="recent-model-list">${items}</menu>`;
+    return `<div class="model-picker-recent-label">${escapeHtml(t('Recent'))}</div><menu class="recent-model-list">${items}</menu>`;
   }
 
   /**
@@ -684,7 +686,7 @@ class ModelPicker extends JugglerElement {
       return `
                 <li class="menu-item unavailable">
                     <juggler-spinner style="--size: 0.875rem"></juggler-spinner>
-                    <span>Loading providers…</span>
+                    <span>${escapeHtml(t('Loading providers…'))}</span>
                 </li>
             `;
     }
@@ -703,13 +705,17 @@ class ModelPicker extends JugglerElement {
     if (menuProviders.length === 0) {
       // No usable provider — either the cache is empty or every provider is
       // missing credentials. Point at the footer action that fixes it.
+      // The quoted action is the footer row's own label, so it follows it.
+      const markup = { br: '<br/>' };
+      const hint = withHtml(t('No providers yet.{br}Choose "{action}" to add credentials.',
+        htmlSlots(markup, { action: t('Manage LLM providers…') })), markup);
       content += `
                 <li class="menu-item menu-item-hint">
-                    <span class="menu-hint-text">No providers yet.<br/>Choose "Manage LLM providers…" to add credentials.</span>
+                    <span class="menu-hint-text">${hint}</span>
                 </li>
             `;
     } else if (!sections && this._filter) {
-      content += '<li class="menu-item menu-item-hint"><span class="menu-hint-text">Nothing.</span></li>';
+      content += `<li class="menu-item menu-item-hint"><span class="menu-hint-text">${escapeHtml(t('Nothing.'))}</span></li>`;
     }
     content += sections;
 
@@ -785,8 +791,8 @@ class ModelPicker extends JugglerElement {
     if (!cfg?.provider || !cfg?.model) {
       return `
             <div class="model-current">
-                <div class="model-current-label">Current model</div>
-                <div class="model-current-name model-current-name--muted">No model selected</div>
+                <div class="model-current-label">${escapeHtml(t('Current model'))}</div>
+                <div class="model-current-name model-current-name--muted">${escapeHtml(t('No model selected'))}</div>
             </div>`;
     }
 
@@ -796,7 +802,7 @@ class ModelPicker extends JugglerElement {
     const ctx = entry?.contextWindow || 0;
 
     const subParts = [providerLabel];
-    if (ctx > 0) subParts.push(`${formatTokens(ctx)} context`);
+    if (ctx > 0) subParts.push(t('{size} context', { size: formatTokens(ctx) }));
 
     // A window the server never reported is the provider's blanket fallback,
     // and it decides when the conversation compacts and how long a reply may
@@ -806,12 +812,12 @@ class ModelPicker extends JugglerElement {
       && (entry.providerContextWindow === undefined || entry.providerContextWindow === null);
     const assumedHTML = assumed
       ? ` · <button type="button" class="model-window-assumed" data-provider="${escapeHtml(cfg.provider)}" data-model="${escapeHtml(cfg.model)}"
-                    title="${escapeHtml(`The server didn't report this model's context window, so Juggler assumed ${formatTokens(ctx)}. Click to set the real size in Settings.`)}">assumed</button>`
+                    title="${escapeHtml(t("The server didn't report this model's context window, so Juggler assumed {size}. Click to set the real size in Settings.", { size: formatTokens(ctx) }))}">${escapeHtml(t('assumed'))}</button>`
       : '';
 
     return `
             <div class="model-current">
-                <div class="model-current-label">Current model</div>
+                <div class="model-current-label">${escapeHtml(t('Current model'))}</div>
                 <div class="model-current-name">${escapeHtml(modelLabel(entry?.displayName, cfg.model))}</div>
                 <div class="model-current-sub">${escapeHtml(subParts.join(' · '))}${assumedHTML}</div>${this._switchHTML(providerEntry)}${this._usageHTML(cfg.provider)}
             </div>`;
@@ -831,8 +837,8 @@ class ModelPicker extends JugglerElement {
     if (!target?.provider) return '';
     return `
                 <div class="model-current-switch" title="${escapeHtml(target.reason || '')}">
-                    <span class="model-current-switch-text">${escapeHtml(target.displayName)} reads this server's real context windows.</span>
-                    <button type="button" class="model-provider-switch" data-from="${escapeHtml(providerEntry.name)}" data-to="${escapeHtml(target.provider)}">Switch</button>
+                    <span class="model-current-switch-text">${escapeHtml(t("{provider} reads this server's real context windows.", { provider: target.displayName }))}</span>
+                    <button type="button" class="model-provider-switch" data-from="${escapeHtml(providerEntry.name)}" data-to="${escapeHtml(target.provider)}">${escapeHtml(t('Switch'))}</button>
                 </div>`;
   }
 
@@ -856,7 +862,7 @@ class ModelPicker extends JugglerElement {
       this._pick(switched || to, model);
     } catch (err) {
       button.disabled = false;
-      button.title = httpErrorText(err, "Couldn't switch provider");
+      button.title = httpErrorText(err, t("Couldn't switch provider"));
     }
   }
 
@@ -882,7 +888,7 @@ class ModelPicker extends JugglerElement {
     // A dialog, not a menu: it holds a filter field, the tuning controls and
     // buttons beside its rows.
     this.setAttribute('role', 'dialog');
-    this.setAttribute('aria-label', 'Choose a model');
+    this.setAttribute('aria-label', t('Choose a model'));
     // Seed the non-destructive-update caches with what we're about to write, so a
     // later refresh only rewrites what genuinely differs from this DOM.
     this._lastListHTML = this._listHTML();
@@ -902,7 +908,7 @@ class ModelPicker extends JugglerElement {
             <div class="model-picker-recent">${this._lastRecentHTML}</div>
             <div class="model-picker-list">
                 <div class="model-picker-filter">
-                    <input type="text" class="model-picker-filter-input field-input" aria-label="Filter models" placeholder="Filter models" value="${escapeHtml(this._filter)}">
+                    <input type="text" class="model-picker-filter-input field-input" aria-label="${escapeHtml(t('Filter models'))}" placeholder="${escapeHtml(t('Filter models'))}" value="${escapeHtml(this._filter)}">
                 </div>
                 <menu class="model-picker-rows">${this._lastListHTML}</menu>
             </div>

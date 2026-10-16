@@ -34,6 +34,7 @@
 import { windowControlURL } from '../../sdk/lib/window-control.js';
 import { extractErrorMessage } from '../../sdk/lib/error-utils.js';
 import { fetchJson, HttpError } from './http.js';
+import { t } from '../../sdk/lib/i18n.js';
 
 /** The "no in-app updater" answer used whenever there is no native host. */
 const ABSENT = /** @type {UpdaterState} */ ({ present: false });
@@ -113,6 +114,6 @@ export async function requestRestart({ force = false } = {}) {
     if (err.status === 409) {
       return { status: 'busy', busy: body.busy, message: body.message };
     }
-    return { status: 'error', message: body.error || `Restart failed (HTTP ${err.status})` };
+    return { status: 'error', message: body.error || t('Restart failed (HTTP {status})', { status: err.status }) };
   }
 }

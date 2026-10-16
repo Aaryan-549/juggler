@@ -21,7 +21,7 @@ import pinboardItemRegistry from '../../../js/registries/pinboard-item-registry.
 import { createPinControl } from '../../../js/utils/properties-panel-helpers.js';
 import { assert } from '../../../js-tests/utilities/test-helpers.js';
 import '../../../js/components/properties-panel.js';
-import { underPseudoLocale } from '../../../js-tests/utilities/pseudo-locale.js';
+import { underPseudoLocale, assertPseudoLocalized } from '../../../js-tests/utilities/pseudo-locale.js';
 import { isPseudoLocalized } from '../../../sdk/lib/i18n.js';
 
 /** juggler-core's English for this pin, standing in for its catalogue. */
@@ -387,8 +387,6 @@ export async function runTests(_ctx) {
       shown['reveal label'] = String(empty.controller.getActions()[0]?.label);
       empty.teardown();
 
-      // The list block itself is `createTodoBlock`'s, shared with the model's
-      // text, and is not this pin's to translate; only the line above it is.
       const named = mount(todoFound(twoTodos, { threadId: 't1', label: '1', inherited: true }));
       shown['source line'] = String(named.body.querySelector('.task-list-pin__source')?.textContent);
       named.teardown();
@@ -396,9 +394,29 @@ export async function runTests(_ctx) {
       shown['source line, unnamed thread'] = String(unnamed.body.querySelector('.task-list-pin__source')?.textContent);
       unnamed.teardown();
 
+      // The list block: its heading and progress line are the pin's to show
+      // translated. Item text is data, so the list items are skipped.
+      const digitTodos = [{ content: '1', status: 'completed' }, { content: '2', status: 'in_progress' }];
+      const block = mount(todoFound(digitTodos));
+      const markdown = /** @type {HTMLElement} */ (block.body.querySelector('.markdown'));
+      assert(!!markdown, 'the pin drew no todo block');
+      assertPseudoLocalized(markdown, { skip: 'li', atLeast: 2, where: 'todo block' });
+      block.teardown();
+
       const raw = Object.entries(shown).filter(([, s]) => !isPseudoLocalized(s));
       assert(raw.length === 0, `plain English under en-XA: ${JSON.stringify(raw)}`);
-    }, { '@juggler/core': CORE_TEXT });
+
+      // The same list as the model reads it in its context block stays English.
+      const item = new TodoContextItem(/** @type {any} */ ({ id: 'ci_todo', session: {}, conversation: {}, messageThread: {} }));
+      item.setTodos(digitTodos);
+      const context = item.createContextText(/** @type {any} */ ({
+        helpers: { xml: (/** @type {string} */ tag, /** @type {string} */ body) => `<${tag}>${body}</${tag}>` },
+      }));
+      assert(context.includes('# Todo list\nProgress: 1/2 completed\n'),
+        `the model's todo heading is not English: ${JSON.stringify(context)}`);
+      assert(context.includes('[/] 2 _(in progress)_'),
+        `the model's status words are not English: ${JSON.stringify(context)}`);
+    }, { '@juggler/core': [...CORE_TEXT, 'Todo list', 'Progress: {completed}/{total} completed'] });
   });
 
   return { passed, failed, errors };

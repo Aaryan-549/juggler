@@ -21,25 +21,29 @@
  * @module utils/clipboard
  */
 
+import { t } from './i18n.js';
+
 /**
  * Build a human-readable explanation for why copying is impossible, naming the
  * real cause so the user can act on it.
- * @returns {string} The failure message.
+ * @param {{isSecureContext?: boolean, location?: {host?: string, protocol?: string}}} [page] -
+ *   The page to explain it for; the current window by default.
+ * @returns {string} The failure message, in the UI language.
  */
-export function clipboardUnavailableMessage() {
-  const loc = typeof window !== 'undefined' ? window.location : undefined;
-  const host = (loc && loc.host) || 'this page';
-  const insecure = typeof window !== 'undefined'
-        && window.isSecureContext === false
+export function clipboardUnavailableMessage(page = typeof window !== 'undefined' ? window : undefined) {
+  const loc = page ? page.location : undefined;
+  const host = (loc && loc.host) || '';
+  const known = host ? 'yes' : 'no';
+  const insecure = !!page
+        && page.isSecureContext === false
         && !!loc
         && loc.protocol === 'http:';
   if (insecure) {
-    return `Couldn't copy: browsers only allow clipboard access on secure (https://) pages, `
-            + `localhost, or the Juggler desktop app — and this page is served over plain http `
-            + `(${host}). Open Juggler in the desktop app, or browse over https/localhost, to copy.`;
+    return t("Couldn't copy: browsers only allow clipboard access on secure (https://) pages, localhost, or the Juggler desktop app — and this page is served over plain http ({known, select, yes {{host}} other {this page}}). Open Juggler in the desktop app, or browse over https/localhost, to copy.",
+      { known, host });
   }
-  return `Couldn't copy: this browser blocked clipboard access. Make sure the page has focus and `
-        + `that clipboard permissions aren't denied for ${host}.`;
+  return t("Couldn't copy: this browser blocked clipboard access. Make sure the page has focus and that clipboard permissions aren't denied for {known, select, yes {{host}} other {this page}}.",
+    { known, host });
 }
 
 /**

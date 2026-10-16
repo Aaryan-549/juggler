@@ -20,6 +20,8 @@ import { generateToolDefinitions } from './tool-generator.js';
 import { estimateValueTokens } from '../utils/token-estimate.js';
 import { isComposableTool } from './composable-tools.js';
 import contextItemRegistry from '../registries/context-item-registry.js';
+import strategyRegistry from '../registries/strategy-registry.js';
+import { capabilityLabel } from '../utils/capability-label.js';
 import { t } from '../../sdk/lib/i18n.js';
 
 /**
@@ -108,13 +110,17 @@ export function splitToolsByStrategy(all, strategy) {
 /**
  * A strategy's human name for the "withheld by …" line, falling back through the
  * manifest to the class name so the line never reads "withheld by undefined".
+ * The manifest name is translated in the catalogue of the extension that ships
+ * the strategy; the id and class-name fallbacks are identifiers and shown as
+ * they are. Only the System Prompt panel reads this name.
  * @param {any} strategy - Strategy instance.
  * @returns {string} Display name, or '' when nothing usable is available.
  */
 export function strategyDisplayName(strategy) {
   if (!strategy) return '';
   const manifest = strategy.constructor?.MANIFEST;
-  return String(manifest?.name || manifest?.id || strategy.constructor?.name || '');
+  if (manifest?.name) return capabilityLabel(String(manifest.name), manifest.id, strategyRegistry);
+  return String(manifest?.id || strategy.constructor?.name || '');
 }
 
 /**

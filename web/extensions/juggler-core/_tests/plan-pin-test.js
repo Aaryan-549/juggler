@@ -23,13 +23,19 @@ import PlanContextItem from '../context-items/plan-context-item.js';
 import pinboardItemRegistry from '../../../js/registries/pinboard-item-registry.js';
 import { createPinControl } from '../../../js/utils/properties-panel-helpers.js';
 import { assert } from '../../../js-tests/utilities/test-helpers.js';
-import { underPseudoLocale } from '../../../js-tests/utilities/pseudo-locale.js';
+import { underPseudoLocale, assertPseudoLocalized } from '../../../js-tests/utilities/pseudo-locale.js';
 import { isPseudoLocalized } from '../../../sdk/lib/i18n.js';
 
 /** juggler-core's English for this pin, standing in for its catalogue. */
 const CORE_TEXT = [
   'No active conversation', 'If the conversation contains a plan, this shows its current state',
   'From {label}', 'From a parent thread', 'Reveal in conversation',
+];
+
+/** juggler-core's English for the plan block the pin draws (`lib/task-lists.js`). */
+const BLOCK_TEXT = [
+  'Plan', 'Plan: {title}', 'Status: {status} | Progress: {completed}/{total} completed',
+  'planning', 'approved', 'executing', 'completed', 'Result: {result}',
 ];
 
 /**
@@ -428,8 +434,6 @@ export async function runTests(_ctx) {
       shown['reveal label'] = String(empty.controller.getActions()[0]?.label);
       empty.teardown();
 
-      // The plan block itself is `createPlanBlock`'s, shared with the model's
-      // text, and is not this pin's to translate; only the line above it is.
       const named = mount(planFound(twoSteps, { threadId: 't1', label: '1', inherited: true }));
       shown['source line'] = String(named.body.querySelector('.task-list-pin__source')?.textContent);
       shown['reveal label, with a plan'] = String(named.controller.getActions()[0]?.label);
@@ -438,9 +442,41 @@ export async function runTests(_ctx) {
       shown['source line, unnamed thread'] = String(unnamed.body.querySelector('.task-list-pin__source')?.textContent);
       unnamed.teardown();
 
+      // The plan block: its heading, status line and result line are the
+      // pin's to show translated. Step text is data, so the list items are
+      // skipped and the result line inside one is read on its own.
+      const digitPlan = {
+        title: '7', status: 'executing', steps: [
+          { content: '1', status: 'completed', threadItemId: null, result: '9' },
+          { content: '2', status: 'pending', threadItemId: null, result: null },
+        ],
+      };
+      const block = mount({ ...planFound(digitPlan.steps), data: digitPlan });
+      const markdown = /** @type {HTMLElement} */ (block.body.querySelector('.markdown'));
+      assert(!!markdown, 'the pin drew no plan block');
+      assertPseudoLocalized(markdown, { skip: 'li', atLeast: 2, where: 'plan block' });
+      // The item reads as its step text, '1', run straight into the result line.
+      const resultLine = (markdown.querySelector('li')?.textContent || '').trim().replace(/^1/, '').trim();
+      assert(isPseudoLocalized(resultLine), `result line ${JSON.stringify(resultLine)}`);
+      block.teardown();
+
       const raw = Object.entries(shown).filter(([, s]) => !isPseudoLocalized(s));
       assert(raw.length === 0, `plain English under en-XA: ${JSON.stringify(raw)}`);
-    }, { '@juggler/core': CORE_TEXT });
+
+      // The same plan as the model reads it, in its context block and in a
+      // step action's echo, stays English.
+      const item = new PlanContextItem(/** @type {any} */ ({ id: 'ci_plan', session: {}, conversation: {}, messageThread: {} }));
+      item.data = digitPlan;
+      const context = item.createContextText(/** @type {any} */ ({
+        helpers: { xml: (/** @type {string} */ tag, /** @type {string} */ body) => `<${tag}>${body}</${tag}>` },
+      }));
+      const echo = PlanContextItem._renderPlanEcho(digitPlan);
+      for (const [where, text] of Object.entries({ context, echo })) {
+        assert(text.includes('# Plan: 7\nStatus: executing | Progress: 1/2 completed\n'),
+          `${where}: the model's plan heading is not English: ${JSON.stringify(text)}`);
+        assert(text.includes('   Result: 9'), `${where}: the model's result line is not English: ${JSON.stringify(text)}`);
+      }
+    }, { '@juggler/core': [...CORE_TEXT, ...BLOCK_TEXT] });
   });
 
   return { passed, failed, errors };

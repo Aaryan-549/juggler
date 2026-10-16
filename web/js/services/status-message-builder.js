@@ -8,6 +8,7 @@
  */
 
 import { formatDuration, formatTokens } from '../utils/format.js';
+import { t, formatNumber } from '../../sdk/lib/i18n.js';
 
 /**
  * Non-breaking space. The footer status line wraps freely, so every space that
@@ -173,7 +174,7 @@ export class StatusMessageBuilder {
     // Labels stay unadorned here; the busy marker is added at the render seam.
     const hasOutput = data.outputTokens !== undefined && data.outputTokens > 0;
     const description = data.description ? this._plainActivity(data.description) : '';
-    const lead = description || ((!hasOutput && data.phase) ? data.phase : 'Receiving');
+    const lead = description || ((!hasOutput && data.phase) ? data.phase : t('Receiving'));
     const parts = [lead];
 
     // Append token counts when available; the lead label stays so the user
@@ -186,20 +187,21 @@ export class StatusMessageBuilder {
       const cached = data.cachedTokens;
 
       if (input !== undefined && input > 0) {
-        const totalTokens = input + output;
-        const tokenWord = totalTokens === 1 ? 'token' : 'tokens';
-        const out = `${formatTokens(output)}${NBSP}${tokenWord}`;
-        // The arrow binds to the count before it, so a wrap puts the arrow at
-        // the end of the line rather than dangling one at the start of the next.
+        // The plural follows the total, as the English always has. The arrow
+        // binds to the count before it, so a wrap puts the arrow at the end of
+        // the line rather than dangling one at the start of the next.
+        const total = input + output;
         if (cached !== undefined && cached > 0) {
-          const cachePercent = Math.round((cached / input) * 100);
-          parts.push(`${formatTokens(input)} (${cachePercent}%${NBSP}cached)${NBSP}→ ${out}`);
+          const percent = formatNumber(Math.round((cached / input) * 100));
+          parts.push(t('{total, plural, one {{input} ({percent}%\u00A0cached)\u00A0→ {output}\u00A0token} other {{input} ({percent}%\u00A0cached)\u00A0→ {output}\u00A0tokens}}',
+            { total, input: formatTokens(input), percent, output: formatTokens(output) }));
         } else {
-          parts.push(`${formatTokens(input)}${NBSP}→ ${out}`);
+          parts.push(t('{total, plural, one {{input}\u00A0→ {output}\u00A0token} other {{input}\u00A0→ {output}\u00A0tokens}}',
+            { total, input: formatTokens(input), output: formatTokens(output) }));
         }
       } else {
-        const tokenWord = output === 1 ? 'token' : 'tokens';
-        parts.push(`${formatTokens(output)}${NBSP}${tokenWord}`);
+        parts.push(t('{total, plural, one {{count}\u00A0token} other {{count}\u00A0tokens}}',
+          { total: output, count: formatTokens(output) }));
       }
     }
 
@@ -217,7 +219,7 @@ export class StatusMessageBuilder {
    * @returns {string} Formatted status message
    */
   static buildPreparingStatus(data = {}) {
-    return this._withElapsed('Preparing request', data);
+    return this._withElapsed(t('Preparing request'), data);
   }
 
   /**
@@ -231,9 +233,9 @@ export class StatusMessageBuilder {
    */
   static buildWaitingStatus(data = {}) {
     const elapsed = data.elapsedTime ?? 0;
-    let label = 'Waiting for response';
-    if (elapsed >= RESTATE_AFTER_MS.waitingLong) label = 'Still nothing back';
-    else if (elapsed >= RESTATE_AFTER_MS.waitingQuiet) label = 'Nothing back yet';
+    let label = t('Waiting for response');
+    if (elapsed >= RESTATE_AFTER_MS.waitingLong) label = t('Still nothing back');
+    else if (elapsed >= RESTATE_AFTER_MS.waitingQuiet) label = t('Nothing back yet');
     return this._withElapsed(label, data);
   }
 
@@ -244,7 +246,7 @@ export class StatusMessageBuilder {
    */
   static buildUploadingStatus(data) {
     const sizeKB = Math.ceil(data.payloadSize / 1024);
-    return this._withElapsed(`Uploading context ${sizeKB.toLocaleString()}${NBSP}KB`, data);
+    return this._withElapsed(t('Uploading context {size}\u00A0KB', { size: formatNumber(sizeKB) }), data);
   }
 
   /**
@@ -257,8 +259,8 @@ export class StatusMessageBuilder {
    */
   static buildProcessingToolsStatus(data = {}) {
     const label = (data.elapsedTime ?? 0) >= RESTATE_AFTER_MS.toolsLong
-      ? 'Tools still running'
-      : 'Waiting for tools to finish';
+      ? t('Tools still running')
+      : t('Waiting for tools to finish');
     return this._withElapsed(label, data);
   }
 
@@ -268,7 +270,7 @@ export class StatusMessageBuilder {
    * @returns {string} Formatted status message
    */
   static buildExecutingActionStatus(data = {}) {
-    return this._withElapsed('Running action', data);
+    return this._withElapsed(t('Running action'), data);
   }
 
   /**
@@ -277,7 +279,8 @@ export class StatusMessageBuilder {
    * @returns {string} Formatted status message
    */
   static buildRetryStatus(data) {
-    return this._withElapsed(`Retrying attempt${NBSP}${data.attempt}/${data.maxRetries}`, data);
+    return this._withElapsed(t('Retrying attempt\u00A0{attempt}/{maxRetries}',
+      { attempt: formatNumber(data.attempt), maxRetries: formatNumber(data.maxRetries) }), data);
   }
 
   /**
@@ -286,7 +289,7 @@ export class StatusMessageBuilder {
    * @returns {string} Formatted error status message
    */
   static buildErrorStatus(message) {
-    return `Error: ${message}`;
+    return t('Error: {message}', { message });
   }
 
   /**
@@ -294,7 +297,7 @@ export class StatusMessageBuilder {
    * @returns {string} Cancellation status message
    */
   static buildCancelledStatus() {
-    return 'Operation cancelled';
+    return t('Operation cancelled');
   }
 
   /**

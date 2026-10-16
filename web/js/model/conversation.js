@@ -22,6 +22,8 @@ import { statusHoldsTurn } from './processing-status.js';
 import strategyRegistry from '../registries/strategy-registry.js';
 import contextItemRegistry from '../registries/context-item-registry.js';
 import { TURN_CANCELLED_NOTICE } from '../utils/constants.js';
+import { t } from '../../sdk/lib/i18n.js';
+import { displayConversationName } from './conversation-naming.js';
 import { recordTape } from '../utils/event-tape.js';
 import { ENGINE_DERIVED_ORIGIN } from '../utils/document-sync-manager.js';
 import {
@@ -1848,7 +1850,7 @@ class Conversation {
     // they try to send — and leave their message in the box. Slash commands
     // were already handled above, so the Extensions settings stay reachable.
     if (!strategyRegistry.hasAnyStrategy()) {
-      this.showWarning("Can't start a conversation — the core Juggler extension is turned off. Re-enable it in Extensions settings to continue.", 8000);
+      this.showWarning(t("Can't start a conversation — the core Juggler extension is turned off. Re-enable it in Extensions settings to continue."), 8000);
       return 'no strategy enabled';
     }
 
@@ -1888,8 +1890,11 @@ class Conversation {
     // use, and the answers merely stop making sense.
     const strandedProvider = this._providerNeedingALocalWorkspace(messageThread);
     if (strandedProvider) {
+      // The provider's name comes from the server's provider registry: data.
+      const root = this.workspaceRoot || '';
       this.showWarning(
-        `Can't send: ${strandedProvider.displayName || strandedProvider.name} runs on this machine, and this conversation works in ${this.workspaceRoot || 'another workspace'}. Pick a model that runs over the network.`,
+        t("Can't send: {provider} runs on this machine, and this conversation works in {known, select, yes {{root}} other {another workspace}}. Pick a model that runs over the network.",
+          { provider: strandedProvider.displayName || strandedProvider.name, known: root ? 'yes' : 'no', root }),
         8000);
       return 'provider cannot reach this workspace';
     }
@@ -1903,9 +1908,7 @@ class Conversation {
     // transcript, which is what the sentence points at.
     const unusable = this._unusableWorkspace();
     if (unusable) {
-      this.showWarning(
-        `Can't send: ${unusable}. Use the banner above the transcript to say where this conversation should work.`,
-        8000);
+      this.showWarning(this._unusableWorkspaceNotice(unusable), 8000);
       return 'workspace cannot be worked in';
     }
 
@@ -1916,7 +1919,7 @@ class Conversation {
     // ahead of the processing branches so a link drop reports itself as one
     // rather than as a busy turn.
     if (!workerManager.isWorkerReady(this.id)) {
-      this.showWarning('Still connecting to the engine — try again in a moment.', 5000);
+      this.showWarning(t('Still connecting to the engine — try again in a moment.'), 5000);
       return 'worker not ready';
     }
 
@@ -2010,7 +2013,7 @@ class Conversation {
     // `preemptProcessing` cancel above, which the socket can die across. The
     // box has been cleared by this point, so hand the text back before
     // refusing — the user retries with their message still in front of them.
-    this.showWarning('Still connecting to the engine — try again in a moment.', 5000);
+    this.showWarning(t('Still connecting to the engine — try again in a moment.'), 5000);
     this.restorePendingMessage();
     return 'worker not ready';
   }
@@ -2472,7 +2475,7 @@ class Conversation {
     // Something is in flight and we're about to cancel it. Surface that so
     // the preemption is never silent — every caller (the new-thread button, the
     // slash menu) reaches the user through this one notice.
-    this.showWarning(TURN_CANCELLED_NOTICE, 5000);
+    this.showWarning(t(TURN_CANCELLED_NOTICE), 5000);
 
     this.stopProcessing(reason);
 
@@ -2687,23 +2690,49 @@ class Conversation {
    * A workspace still being BUILT is not this. It is not a binding that cannot
    * be honoured, it is one that does not exist yet, and the dialog that is
    * building it shows it being built.
-   * @returns {string} The reason, ready to read, or '' when there is nothing wrong.
+   * @returns {{reason: 'unrecorded'|'closed'|'moved', named: string, closedBy: string}|null}
+   *   Which of the three it is, with the workspace's label or root (`named`, ''
+   *   when it has neither) and, for a closed one, who finished with it as stored;
+   *   null when there is nothing wrong.
    * @private
    */
   _unusableWorkspace() {
     const id = this.workspaceId || '';
-    if (!id || this.workspaceRoot) return '';
+    if (!id || this.workspaceRoot) return null;
 
     const workspace = this.session?.getWorkspace?.(id) ?? null;
-    if (workspace?.state === 'provisioning') return '';
-    if (!workspace) return 'there is no record of the workspace this conversation works in';
+    if (workspace?.state === 'provisioning') return null;
+    if (!workspace) return { reason: 'unrecorded', named: '', closedBy: '' };
 
-    const named = workspace.label || workspace.root || 'it';
+    const named = workspace.label || workspace.root || '';
     if (workspace.state === 'closed') {
       const closedBy = typeof workspace.meta?.closedBy === 'string' ? workspace.meta.closedBy : '';
-      return `the workspace ${named} was finished with${closedBy ? ` by ${closedBy}` : ''}`;
+      return { reason: 'closed', named, closedBy };
     }
-    return `the workspace ${named} is not where it was`;
+    return { reason: 'moved', named, closedBy: '' };
+  }
+
+  /**
+   * The sentence refusing a send for {@link _unusableWorkspace}'s reason. It
+   * says what `strandedLead` in `conversation-area-rendering.js` says on
+   * the banner, and points at that banner for the way out. The label, root and
+   * finisher are data; a placeholder finisher name is drawn in the UI language.
+   * @param {{reason: 'unrecorded'|'closed'|'moved', named: string, closedBy: string}} unusable
+   * @returns {string} The whole sentence, in the UI language.
+   * @private
+   */
+  _unusableWorkspaceNotice({ reason, named, closedBy }) {
+    if (reason === 'unrecorded') {
+      return t("Can't send: there is no record of the workspace this conversation works in. Use the banner above the transcript to say where this conversation should work.");
+    }
+    const labelled = named ? 'yes' : 'no';
+    if (reason === 'closed') {
+      const by = closedBy ? displayConversationName(closedBy) : '';
+      return t("Can't send: the workspace {labelled, select, yes {{named}} other {it}} was finished with{finisher, select, yes { by {closedBy}} other {}}. Use the banner above the transcript to say where this conversation should work.",
+        { labelled, named, finisher: by ? 'yes' : 'no', closedBy: by });
+    }
+    return t("Can't send: the workspace {labelled, select, yes {{named}} other {it}} is not where it was. Use the banner above the transcript to say where this conversation should work.",
+      { labelled, named });
   }
 
   /**
@@ -2715,12 +2744,13 @@ class Conversation {
    * @private
    */
   async _showProviderUnavailable(provider) {
+    // The provider's name and its auth hint come from the server: data.
     const label = provider.displayName || provider.name;
     const hint = (provider.authHint || '').trim();
     const message = hint
-      ? `Can't send: ${label} is not available — ${hint}. Re-enable it in Provider Settings or pick another model.`
-      : `Can't send: ${label} is not available. Re-enable it in Provider Settings or pick another model.`;
-    await this._offerProviderSettings(message, 'Model unavailable');
+      ? t("Can't send: {label} is not available — {hint}. Re-enable it in Provider Settings or pick another model.", { label, hint })
+      : t("Can't send: {label} is not available. Re-enable it in Provider Settings or pick another model.", { label });
+    await this._offerProviderSettings(message, t('Model unavailable'));
   }
 
   /**
@@ -2732,8 +2762,8 @@ class Conversation {
    */
   async _showNoProviderConfigured() {
     const message =
-      'No AI provider is configured yet — add an API key (or enable Claude Code) in Provider Settings to start chatting.';
-    await this._offerProviderSettings(message, 'No provider configured');
+      t('No AI provider is configured yet — add an API key (or enable Claude Code) in Provider Settings to start chatting.');
+    await this._offerProviderSettings(message, t('No provider configured'));
   }
 
   /**
@@ -2754,8 +2784,8 @@ class Conversation {
       return;
     }
     const goToSettings = await showConfirm(message, title, {
-      confirmText: 'Go to provider settings',
-      cancelText: 'Cancel',
+      confirmText: t('Go to provider settings'),
+      cancelText: t('Cancel'),
     });
     if (goToSettings && typeof (/** @type {any} */ (window).openSettings) === 'function') {
       /** @type {any} */ (window).openSettings('providers');

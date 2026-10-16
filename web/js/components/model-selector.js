@@ -32,6 +32,7 @@ import CycleBuffer from '../services/cycle-buffer.js';
 import { showConfirm } from './modal-dialog.js';
 import { openSettings } from '../services/settings-launcher.js';
 import { tierIds } from './model-picker/model-tuning.js';
+import { t, markForTranslation } from '../../sdk/lib/i18n.js';
 import './model-picker/model-chip.js';
 import './model-picker/model-picker.js';
 
@@ -49,15 +50,16 @@ import './model-picker/model-picker.js';
  * say so, and the safe reading of an undefined control is "stop the turn first"
  * — which costs the work already done.
  */
-const RUNNING_TURN_NOTE = 'A turn is running. A change takes effect on its next request — no need to stop it.';
+const RUNNING_TURN_NOTE = markForTranslation('A turn is running. A change takes effect on its next request — no need to stop it.');
 
 /**
  * Why a CLI provider is not offered to a conversation working in a workspace
  * with no directory on this machine. Juggler spawns such a provider as a
  * subprocess here, in a directory that would not be the one the turn's file
- * operations use — which goes wrong quietly, so it is refused loudly.
+ * operations use — which goes wrong quietly, so it is refused loudly. English
+ * here; translated where it is handed to the picker.
  */
-export const WORKSPACE_ELSEWHERE_HINT = 'Runs on this machine; this conversation works elsewhere';
+export const WORKSPACE_ELSEWHERE_HINT = markForTranslation('Runs on this machine; this conversation works elsewhere');
 
 class ModelSelector extends HTMLElement {
   constructor() {
@@ -340,7 +342,7 @@ class ModelSelector extends HTMLElement {
    * @private
    */
   _noneLabel() {
-    return this._messageThread?.threadItemId ? 'Inherit from parent' : 'No model';
+    return this._messageThread?.threadItemId ? t('Inherit from parent') : t('No model');
   }
 
   /**
@@ -375,7 +377,7 @@ class ModelSelector extends HTMLElement {
     if (!conversation || conversation.workspaceHostsLocalProviders !== false) return this.providers;
     return this.providers.map((provider) => (
       /** @type {any} */ (provider).spawnsLocalProcess
-        ? { ...provider, available: false, authHint: WORKSPACE_ELSEWHERE_HINT }
+        ? { ...provider, available: false, authHint: t(WORKSPACE_ELSEWHERE_HINT) }
         : provider
     ));
   }
@@ -392,7 +394,7 @@ class ModelSelector extends HTMLElement {
     const running = this._messageThread
       ? !!this._messageThread.isProcessing
       : !!this.conversation?.isTurnActive();
-    return running ? RUNNING_TURN_NOTE : '';
+    return running ? t(RUNNING_TURN_NOTE) : '';
   }
 
   /** @private */
@@ -410,8 +412,8 @@ class ModelSelector extends HTMLElement {
     picker.loading = this.loadingProviders;
     picker.note = this._turnNote();
     picker.footerActions = [
-      { id: 'providers', label: 'Manage LLM providers…', iconClass: 'menu-settings-icon' },
-      { id: 'defaults', label: 'Manage default models…', iconClass: 'menu-settings-icon' },
+      { id: 'providers', label: t('Manage LLM providers…'), iconClass: 'menu-settings-icon' },
+      { id: 'defaults', label: t('Manage default models…'), iconClass: 'menu-settings-icon' },
     ];
     picker.addEventListener('change', (/** @type {Event} */ e) => {
       this._onPickerChange(/** @type {CustomEvent} */ (e).detail);
@@ -633,8 +635,8 @@ class ModelSelector extends HTMLElement {
     const label = modelLabel(modelEntry?.displayName, modelName);
     const hint = (provider.authHint || '').trim();
     await this._offerProviderSettings(hint
-      ? `Can't select ${label} yet: ${hint}`
-      : `There was a problem selecting ${label}.`);
+      ? t("Can't select {model} yet: {hint}", { model: label, hint })
+      : t('There was a problem selecting {model}.', { model: label }));
   }
 
   /**
@@ -648,7 +650,8 @@ class ModelSelector extends HTMLElement {
    */
   async _showMissingProvider(providerName, modelName) {
     await this._offerProviderSettings(
-      `Can't select ${modelName}: the provider ${providerName} is not configured.`);
+      t("Can't select {model}: the provider {provider} is not configured.",
+        { model: modelName, provider: providerName }));
   }
 
   /**
@@ -658,9 +661,9 @@ class ModelSelector extends HTMLElement {
    * @private
    */
   async _offerProviderSettings(message) {
-    const goToSettings = await showConfirm(message, 'Problem selecting model', {
-      confirmText: 'Go to provider settings',
-      cancelText: 'Cancel',
+    const goToSettings = await showConfirm(message, t('Problem selecting model'), {
+      confirmText: t('Go to provider settings'),
+      cancelText: t('Cancel'),
     });
     if (goToSettings) {
       this.closeDropdown();
@@ -936,12 +939,14 @@ class ModelSelector extends HTMLElement {
     // Cite the switch-model shortcut (⌥⌘M / Ctrl+Alt+M) live from the central
     // table, so the tooltip stays correct if it's ever rebound or left unbound.
     const cycleModelKey = keyShortcutManager.formatBinding('cycle-model');
-    const modelTitle = cycleModelKey ? `LLM Model (${cycleModelKey}, hold for menu)` : 'LLM Model';
+    const modelTitle = cycleModelKey
+      ? t('LLM Model ({key}, hold for menu)', { key: cycleModelKey })
+      : t('LLM Model');
 
     this.innerHTML = '<model-chip></model-chip>';
     const chip = this._chip;
     if (!chip) return;
-    chip.update({ placeholder: 'Select Model', pulseWhenEmpty: true, buttonTitle: modelTitle });
+    chip.update({ placeholder: t('Select Model'), pulseWhenEmpty: true, buttonTitle: modelTitle });
     chip.addEventListener('chip-toggle', () => this.toggleDropdown());
     chip.addEventListener('mini-requested', () => {
       // The pill promises the mini popover, so the picker sitting over it goes

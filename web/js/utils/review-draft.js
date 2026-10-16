@@ -20,6 +20,8 @@
  * @module utils/review-draft
  */
 
+import { t, formatNumber } from '../../sdk/lib/i18n.js';
+
 /**
  * What a draft may hold before a save is refused, and what a quote is cut to.
  *
@@ -199,15 +201,23 @@ export function normalizeReviewDraft(raw) {
 export function reviewDraftBoundsError(draft) {
   const comments = draft?.comments;
   if (comments !== undefined && comments !== null && !Array.isArray(comments)) {
-    return 'A review draft\'s comments must be a list.';
+    return t('A review draft\'s comments must be a list.');
   }
+  // Ungrouped, as the English has always shown them.
+  const plain = { useGrouping: false };
   if (Array.isArray(comments) && comments.length > REVIEW_DRAFT_LIMITS.comments) {
-    return `A review holds at most ${REVIEW_DRAFT_LIMITS.comments} comments; this one has ${comments.length}.`;
+    return t('A review holds at most {max} comments; this one has {count}.', {
+      max: formatNumber(REVIEW_DRAFT_LIMITS.comments, plain),
+      count: formatNumber(comments.length, plain),
+    });
   }
   for (const comment of comments || []) {
     const body = comment && typeof comment.body === 'string' ? comment.body : '';
     if (body.length > REVIEW_DRAFT_LIMITS.body) {
-      return `A comment holds at most ${REVIEW_DRAFT_LIMITS.body} characters; this one has ${body.length}.`;
+      return t('A comment holds at most {max} characters; this one has {length}.', {
+        max: formatNumber(REVIEW_DRAFT_LIMITS.body, plain),
+        length: formatNumber(body.length, plain),
+      });
     }
   }
   return '';

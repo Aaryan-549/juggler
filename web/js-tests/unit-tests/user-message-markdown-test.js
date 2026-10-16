@@ -24,6 +24,8 @@
 
 import '../../js/components/user-message.js';
 import { assert } from '../utilities/test-helpers.js';
+import { underPseudoLocale } from '../utilities/pseudo-locale.js';
+import { isPseudoLocalized } from '../../sdk/lib/i18n.js';
 
 /**
  * @typedef {object} TestResult
@@ -137,6 +139,30 @@ export async function runTests(_ctx) {
     assert(el.content === src, `raw markdown source must round-trip for copy/rollback; got: ${JSON.stringify(el.content)}`);
     el.remove();
   });
+
+  // en-XA: an attachment with no filename gets a fallback alt text, which also
+  // names the lightbox it opens, so it is UI text.
+  try {
+    await underPseudoLocale('user-message-markdown-test', () => {
+      const el = document.createElement('user-message');
+      el.setAttribute('message-id', 'M_test_xa');
+      el.setAttribute('content', '1');
+      el.setAttribute('attachments', JSON.stringify([{ id: 'asset_1', mime: 'image/png', width: 1, height: 1 }]));
+      document.body.appendChild(el);
+      try {
+        const img = el.querySelector('.user-message-attachments img');
+        assert(!!img, 'the attachment grid should draw an image');
+        const alt = img?.getAttribute('alt') || '';
+        assert(isPseudoLocalized(alt), `the unnamed attachment's alt text is plain English: ${JSON.stringify(alt)}`);
+      } finally {
+        el.remove();
+      }
+    });
+    passed++;
+  } catch (e) {
+    failed++;
+    errors.push(`en-XA: ${e instanceof Error ? e.message : String(e)}`);
+  }
 
   return { passed, failed, errors };
 }

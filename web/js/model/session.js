@@ -21,6 +21,7 @@ import { normalizeAttachments } from '../utils/attachments.js';
 import workerManager from '../services/worker-manager.js';
 import ConversationLoadQueue from '../services/conversation-load-queue.js';
 import { extractErrorMessage } from '../../sdk/lib/error-utils.js';
+import { markForTranslation } from '../../sdk/lib/i18n.js';
 import { isEngine } from '../../sdk/lib/client-role.js';
 import { toSandboxRoot } from '../../sdk/lib/sandbox-runner.js';
 import { recordTape } from '../utils/event-tape.js';
@@ -184,14 +185,14 @@ export function normalizeHistoryEntry(entry) {
 }
 
 /**
- * User-facing message shown when a creation path is blocked by the cap.
- * Lives next to the constant so the number stays in sync; UI entry points
- * render it via window.showAlert (keeping modal UI out of the model layer).
+ * User-facing message shown when a creation path is blocked by the cap, in
+ * English with a `{max}` placeholder for {@link MAX_CONVERSATIONS}. Translated
+ * where it is drawn (`services/app-notices.js`), keeping modal UI out of the
+ * model layer.
  * @type {string}
  */
-export const CONVERSATION_LIMIT_MESSAGE =
-  `You can have at most ${MAX_CONVERSATIONS} conversations open at once. ` +
-  'Bin some tabs to make room for new ones.';
+export const CONVERSATION_LIMIT_MESSAGE = markForTranslation(
+  'You can have at most {max} conversations open at once. Bin some tabs to make room for new ones.');
 
 class Session {
   /**

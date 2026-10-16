@@ -26,7 +26,7 @@ import { openWorkspaceFinish } from '../../js/components/workspace-finish-dialog
 import '../../js/components/workspace-box-header.js';
 import { setupRows, adoptSetupRow, probeSetupAdoptions, __setSetupOffersForTests } from '../../js/services/workspace-places.js';
 import { buildPlaceRows, buildProviderFields, buildProvisionProgress } from '../../js/components/workspace-setup-form.js';
-import { provisionWorkspace, provisionLeftBehind } from '../../js/services/workspace-provisioning.js';
+import { provisionWorkspace, provisionLeftBehind, finishWorkspace } from '../../js/services/workspace-provisioning.js';
 import workspaceProviderRegistry from '../../js/registries/workspace-provider-registry.js';
 import WorkspaceProvider from '../../sdk/workspace-provider.js';
 import { isPseudoLocalized } from '../../sdk/lib/i18n.js';
@@ -141,6 +141,32 @@ class LeansOnBase extends WorkspaceProvider {
     void values;
     ctx.rollback.push(() => { throw new Error('7'); });
     throw new Error('6');
+  }
+}
+
+const ENDS_PROVIDER_ID = 'i18n-ends-provider';
+
+/**
+ * A provider with two endings that say nothing of their own: `bin` leaves the
+ * conversations to be binned, `return` hands them back. What is said is then
+ * the host's alone.
+ */
+class EndsBothWays extends WorkspaceProvider {
+  static MANIFEST = {
+    id: ENDS_PROVIDER_ID,
+    name: '4',
+    version: '1.0.0',
+    description: 'Ends without a word, so the host is the one speaking',
+  };
+
+  /**
+   * @param {any} workspace - Unused.
+   * @param {string} actionId - Which ending.
+   * @returns {Promise<any>} Done, handing the conversations back for `return`.
+   */
+  async finish(workspace, actionId) {
+    void workspace;
+    return actionId === 'return' ? { done: true, conversations: 'return' } : { done: true };
   }
 }
 
@@ -677,6 +703,160 @@ export async function runTests() {
     assert(byWhere.finish?.includes('4') && byWhere.finish.includes('5'), `the refusal names the provider and the ending, got ${JSON.stringify(byWhere.finish)}`);
     assert(byWhere.cleanupPartial?.includes('4'), `the verdict names the provider, got ${JSON.stringify(byWhere.cleanupPartial)}`);
     assert(byWhere.leftBehind?.includes('7'), `what could not be undone is carried, got ${JSON.stringify(byWhere.leftBehind)}`);
+    const raw = said.filter(({ text }) => !isPseudoLocalized(text));
+    assert(raw.length === 0, `plain English under en-XA: ${JSON.stringify(raw)}`);
+  });
+
+  await run('en-XA: what finishing with a workspace says, and why a provision cannot start, are translated', async () => {
+    // The host's half of a finish — where the conversations went, which could
+    // not go, who is mid-turn — reaches the panel's notice as said, and the
+    // provision throws reach the create dialog's error, so each is checked as
+    // said. Every conversation is a stand-in and every write is stubbed: the
+    // bin by the stand-in session, the move by a session whose roots make it a
+    // same-tree move, the tombstone by a fetch stub.
+    const registry = /** @type {any} */ (workspaceProviderRegistry);
+    const savedItems = new Map(registry.items);
+    const savedExtensions = new Map(registry.itemExtensions);
+    const savedPaths = new Map(registry.modulePaths);
+    registry.items.clear();
+    const added = registry.registerClass(EndsBothWays, { extensionId: 'test-i18n-ends', modulePath: '(test)' });
+    const originalFetch = window.fetch;
+    /** @type {typeof fetch} */
+    const stubbed = async (input, init) => {
+      if (String(input).includes('/session/workspaces/') && init?.method === 'PATCH') {
+        return json(200, { workspace: { id: 'ws_ends', state: 'closed' } });
+      }
+      return originalFetch(input, init);
+    };
+
+    /**
+     * Finish with a workspace holding the given conversations.
+     * @param {'bin'|'home'|'project'} ending - Binned, or returned to which place.
+     * @param {Array<{id: string, name: string, fate: 'ok'|'refused'|'throws'|'busy'}>} bound - The conversations.
+     * @returns {Promise<string>} What the finish said.
+     */
+    const finish = async (ending, bound) => {
+      const home = ending === 'home' ? 'ws_home' : '';
+      // Every root is one tree, so a move back is the same-tree kind that writes nothing.
+      const roots = (/** @type {string} */ id) => (id === 'ws_ends' || id === 'ws_home' || id === '' ? '/1' : '');
+      /** @type {any} */
+      const session = {
+        projectPath: '/1',
+        workspaces: [],
+        conversations: new Map(),
+        workspaceRoot: roots,
+        binConversation: async (/** @type {string} */ id) => {
+          const fate = bound.find((c) => c.id === id)?.fate;
+          if (fate === 'throws') throw new Error('8');
+          return fate === 'ok';
+        },
+      };
+      const broken = { workspaceRoot: () => { throw new Error('8'); } };
+      for (const { id, name, fate } of bound) {
+        session.conversations.set(id, {
+          id,
+          name,
+          workspaceId: 'ws_ends',
+          isProcessing: fate === 'busy',
+          // A conversation with no session is refused the move; one whose
+          // session throws makes the move throw.
+          session: fate === 'refused' ? undefined : fate === 'throws' ? broken : session,
+        });
+      }
+      const workspace = { id: 'ws_ends', root: '/1', label: '3', state: 'ready', providerId: ENDS_PROVIDER_ID, baseWorkspaceId: home, meta: {} };
+      const result = await finishWorkspace({ session, workspace, actionId: ending === 'bin' ? 'bin' : 'return' });
+      return String(result.message ?? '');
+    };
+
+    /** @type {Record<string, string>} */
+    const english = {};
+    /** @type {{where: string, text: string}[]} */
+    const said = [];
+    try {
+      assert(added.registered, `the stand-in provider registered, got ${JSON.stringify(added)}`);
+
+      // English first: every place crossed with one and many, byte for byte.
+      window.fetch = stubbed;
+      for (const ending of /** @type {const} */ (['bin', 'home', 'project'])) {
+        english[`${ending} 1`] = await finish(ending, [{ id: '91', name: '5', fate: 'ok' }]);
+        english[`${ending} 3`] = await finish(ending, [
+          { id: '91', name: '5', fate: 'ok' }, { id: '92', name: '6', fate: 'ok' }, { id: '93', name: '', fate: 'ok' },
+        ]);
+      }
+      window.fetch = originalFetch;
+
+      await underPseudoLocale('workspace-finish-messages-test', async () => {
+        window.fetch = stubbed;
+        // One moved, and one stuck each way: by refusal, by failure, by a throw.
+        said.push({ where: 'bin, one moved, two stuck', text: await finish('bin', [
+          { id: '91', name: '5', fate: 'ok' }, { id: '92', name: 'Untitled 3', fate: 'refused' }, { id: '9', name: '', fate: 'throws' },
+        ]) });
+        said.push({ where: 'home, one moved, two stuck', text: await finish('home', [
+          { id: '91', name: '5', fate: 'ok' }, { id: '92', name: '7', fate: 'refused' }, { id: '93', name: 'Untitled 3', fate: 'throws' },
+        ]) });
+        said.push({ where: 'project, one moved, one stuck', text: await finish('project', [
+          { id: '91', name: '5', fate: 'ok' }, { id: '9', name: '', fate: 'throws' },
+        ]) });
+        for (const ending of /** @type {const} */ (['bin', 'home', 'project'])) {
+          said.push({ where: `${ending}, three moved`, text: await finish(ending, [
+            { id: '91', name: '5', fate: 'ok' }, { id: '92', name: '6', fate: 'ok' }, { id: '93', name: '', fate: 'ok' },
+          ]) });
+          said.push({ where: `${ending}, one moved`, text: await finish(ending, [{ id: '91', name: '5', fate: 'ok' }]) });
+        }
+        // A turn in flight refuses the finish, naming who is mid-turn.
+        said.push({ where: 'busy, one', text: await finish('bin', [{ id: '92', name: 'Untitled 3', fate: 'busy' }]) });
+        said.push({ where: 'busy, three', text: await finish('bin', [
+          { id: '92', name: 'Untitled 3', fate: 'busy' }, { id: '93', name: '7', fate: 'busy' }, { id: '9', name: '', fate: 'busy' },
+        ]) });
+
+        // Both reasons a provision cannot start.
+        for (const [where, request] of /** @type {Array<[string, any]>} */ ([
+          ['provision, no provider', { session: { workspaceRoot: () => '/1' }, providerId: '9' }],
+          ['provision, base unusable', { session: { workspaceRoot: () => '' }, providerId: ENDS_PROVIDER_ID, baseWorkspaceId: '5' }],
+        ])) {
+          /** @type {any} */
+          let thrown = null;
+          try {
+            await provisionWorkspace(request);
+          } catch (error) {
+            thrown = error;
+          }
+          assert(thrown instanceof Error, `${where}: the provision threw`);
+          said.push({ where, text: String(thrown?.message) });
+        }
+      });
+    } finally {
+      window.fetch = originalFetch;
+      registry.items.clear();
+      for (const [k, v] of savedItems) registry.items.set(k, v);
+      registry.itemExtensions.clear();
+      for (const [k, v] of savedExtensions) registry.itemExtensions.set(k, v);
+      registry.modulePaths.clear();
+      for (const [k, v] of savedPaths) registry.modulePaths.set(k, v);
+    }
+
+    /** @type {Record<string, string>} */
+    const expected = {
+      'bin 1': 'Its conversation is in the bin.',
+      'bin 3': 'Its 3 conversations are in the bin.',
+      'home 1': 'Its conversation is back in the workspace it came from.',
+      'home 3': 'Its 3 conversations are back in the workspace it came from.',
+      'project 1': 'Its conversation is back in the project.',
+      'project 3': 'Its 3 conversations are back in the project.',
+    };
+    const drift = Object.keys(expected).filter((k) => english[k] !== expected[k]);
+    assert(drift.length === 0, `the English changed: ${JSON.stringify(drift.map((k) => [english[k], expected[k]]))}`);
+
+    const byWhere = Object.fromEntries(said.map(({ where, text }) => [where, text]));
+    // The data rides inside the wrapper: names, ids and reasons.
+    assert(byWhere['bin, one moved, two stuck']?.includes('3') && byWhere['bin, one moved, two stuck'].includes('9')
+      && byWhere['bin, one moved, two stuck'].includes('8'), `the bin's stuck names and reason are carried, got ${JSON.stringify(byWhere['bin, one moved, two stuck'])}`);
+    assert(byWhere['home, one moved, two stuck']?.includes('7') && byWhere['home, one moved, two stuck'].includes('8'),
+      `the move's stuck names and reason are carried, got ${JSON.stringify(byWhere['home, one moved, two stuck'])}`);
+    assert(byWhere['busy, three']?.includes('7') && byWhere['busy, three'].includes('9'),
+      `the mid-turn refusal names them, got ${JSON.stringify(byWhere['busy, three'])}`);
+    assert(byWhere['provision, no provider']?.includes('9'), `the throw names the provider, got ${JSON.stringify(byWhere['provision, no provider'])}`);
+    assert(said.length === 13 && said.every(({ text }) => text), `every state said something, got ${JSON.stringify(said)}`);
     const raw = said.filter(({ text }) => !isPseudoLocalized(text));
     assert(raw.length === 0, `plain English under en-XA: ${JSON.stringify(raw)}`);
   });

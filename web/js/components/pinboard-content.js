@@ -46,6 +46,7 @@ import { satelliteLink } from '../services/pinboard-link.js';
 import { isPinboardView } from '../utils/view-mode.js';
 import { capabilityLabel } from '../utils/capability-label.js';
 import { t } from '../../sdk/lib/i18n.js';
+import { displayConversationName } from '../model/conversation-naming.js';
 
 /** @typedef {import('../services/pinboard-store.js').Pin} Pin */
 /** @typedef {import('juggler/pinboard-item-type').PinActiveContext} PinActiveContext */
@@ -177,7 +178,8 @@ export async function composeForThread(thread, text) {
     text, thread.threadItemId ?? null, thread,
     { consumeComposer: false, interpretCommands: false }
   );
-  if (reason) throw new Error(`Couldn't send the review: ${reason}`);
+  // Read by the review panel, which shows it; no tool reaches this path.
+  if (reason) throw new Error(t("Couldn't send the review: {reason}", { reason }));
 }
 
 /**
@@ -803,6 +805,7 @@ class PinboardContent extends JugglerElement {
       if (icon) {
         // The label is what the control is called, whether it is drawn as words
         // or as a picture — so it stays, as the tooltip and to a screen reader.
+        // It is the pin's own, already in the active locale.
         button.classList.add('pinboard-item-toolbar__action--icon');
         button.innerHTML = icon;
         button.title = action.label;
@@ -820,7 +823,7 @@ class PinboardContent extends JugglerElement {
     more.type = 'button';
     more.className = 'btn-ghost pinboard-item-toolbar__more';
     more.textContent = '⋯';
-    more.setAttribute('aria-label', 'More actions');
+    more.setAttribute('aria-label', t('More actions'));
     more.setAttribute('aria-haspopup', 'menu');
     more.setAttribute('aria-expanded', 'false');
     more.addEventListener('click', () => {
@@ -856,7 +859,7 @@ class PinboardContent extends JugglerElement {
       }
       list.appendChild(row);
     }
-    applyMenuRoles(list, 'More actions');
+    applyMenuRoles(list, t('More actions'));
     surface.appendChild(list);
 
     /** @type {(() => void)|null} */
@@ -1475,7 +1478,7 @@ class PinboardContent extends JugglerElement {
    * @private
    */
   _threadLabel(conversation, threadItemId) {
-    if (!threadItemId) return conversation?.name || '';
+    if (!threadItemId) return conversation?.name ? displayConversationName(conversation.name) : '';
     try {
       const ymap = conversation.findItemById?.(threadItemId);
       return ymap ? (itemGoal(ymap) || '') : '';
@@ -1636,7 +1639,7 @@ class PinboardContent extends JugglerElement {
    */
   async _saveReviewDraft(draft) {
     const thread = this._reviewThread();
-    if (!thread) throw new Error('There is no conversation open to keep review comments in.');
+    if (!thread) throw new Error(t('There is no conversation open to keep review comments in.'));
     const problem = reviewDraftBoundsError(draft);
     if (problem) throw new Error(problem);
     thread.gitReviewDraft = draft;
@@ -1665,9 +1668,9 @@ class PinboardContent extends JugglerElement {
    */
   async _composeReview() {
     const thread = this._reviewThread();
-    if (!thread) throw new Error('There is no conversation open to put a review in.');
+    if (!thread) throw new Error(t('There is no conversation open to put a review in.'));
     const draft = thread.gitReviewDraft;
-    if (!draft.comments.length) throw new Error('There are no review comments to hand over.');
+    if (!draft.comments.length) throw new Error(t('There are no review comments to hand over.'));
     const text = formatReviewMessage(draft);
 
     if (pasteIntoComposer(composerForThread(thread), text)) return;
@@ -2000,11 +2003,11 @@ class PinboardContent extends JugglerElement {
     empty.className = 'pinboard-empty';
     const line = document.createElement('p');
     line.className = 'pinboard-empty__line';
-    line.textContent = 'Nothing pinned.';
+    line.textContent = t('Nothing pinned.');
     const add = document.createElement('button');
     add.type = 'button';
     add.className = 'pinboard-empty__add';
-    add.textContent = 'Add…';
+    add.textContent = t('Add…');
     add.addEventListener('click', () => {
       this.dispatchEvent(new CustomEvent('pinboard-add', { bubbles: true }));
     });
@@ -2047,10 +2050,10 @@ class PinboardContent extends JugglerElement {
     missing.className = 'pinboard-placeholder';
     const line = document.createElement('p');
     line.className = 'pinboard-placeholder__line';
-    line.textContent = `Nothing provides "${pin.type}".`;
+    line.textContent = t('Nothing provides "{type}".', { type: pin.type });
     const note = document.createElement('p');
     note.className = 'pinboard-placeholder__note';
-    note.textContent = 'The pin keeps its settings until you remove it.';
+    note.textContent = t('The pin keeps its settings until you remove it.');
     missing.append(line, note);
     this._showPlaceholder(missing);
   }
@@ -2087,7 +2090,7 @@ class PinboardContent extends JugglerElement {
     shell.className = 'pinboard-placeholder';
     const line = document.createElement('p');
     line.className = 'pinboard-placeholder__line';
-    line.textContent = "Couldn't show this pin.";
+    line.textContent = t("Couldn't show this pin.");
     const detail = document.createElement('pre');
     detail.className = 'pinboard-placeholder__error';
     detail.textContent = extractErrorMessage(err);

@@ -22,6 +22,7 @@
  */
 
 import LoadingOverlay from './loading-overlay.js';
+import { t } from '../../sdk/lib/i18n.js';
 
 /**
  * How long after a successful open the page waits for the `project-changed`
@@ -77,7 +78,7 @@ export async function openProjectInWindow(label, request, currentPath = '') {
   if (overlay) return null;
 
   overlay = new LoadingOverlay({ variant: 'opening-project' });
-  overlay.setLine(`Opening ${folderName(label)}…`);
+  overlay.setLine(t('Opening {name}…', { name: folderName(label) }));
   overlay.show();
 
   let resp;

@@ -202,6 +202,8 @@ class PinboardShell extends JugglerElement {
     const toggle = document.getElementById('pinboard-header-button');
     if (toggle) {
       this._toggleButton = toggle;
+      toggle.title = t('Toggle Pinboard');
+      toggle.setAttribute('aria-label', t('Toggle Pinboard'));
       this.on(toggle, 'click', () => this._toggle());
     }
   }

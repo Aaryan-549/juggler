@@ -32,6 +32,8 @@
 import { assert } from '../utilities/test-helpers.js';
 import '../../js/components/conversation-bar.js';
 import '../../js/components/conversation-tab.js';
+import { underPseudoLocale, shownStrings } from '../utilities/pseudo-locale.js';
+import { isPseudoLocalized } from '../../sdk/lib/i18n.js';
 
 /**
  * Minimal stand-in for a Conversation as `_createConversationTab` and
@@ -179,6 +181,49 @@ export async function runTests() {
     errors.push(`restore-select-panel: ${/** @type {any} */ (e)?.message || e}`);
   } finally {
     container.remove();
+  }
+
+  // --- en-XA: every loading-overlay state is translated --------------------
+  // The overlay is drawn on a detached tab (no connectedCallback, no columns),
+  // then moved under the document so its spinner connects and labels itself.
+  // Retry still reaches the session's (stubbed) retry under en-XA.
+  try {
+    const session = createStubSession();
+    /** @type {string[]} */
+    const raw = [];
+    /** @type {Record<string, number>} */
+    const counts = {};
+    await underPseudoLocale('restore-select-panel-test', () => {
+      for (const state of /** @type {const} */ (['error', 'loading', 'unloaded'])) {
+        const tab = /** @type {any} */ (document.createElement('conversation-tab'));
+        tab._conversation = createStubConversation(session, `conv_${state}`, 'Overlay', state);
+        tab._renderLoadingOverlay(state);
+        const overlay = /** @type {HTMLElement|null} */ (tab.querySelector('.conversation-tab-loading-overlay'));
+        assert(!!overlay, `no overlay drawn for loadState '${state}'`);
+        const holder = document.createElement('div');
+        document.body.appendChild(holder);
+        try {
+          holder.appendChild(/** @type {HTMLElement} */ (overlay));
+          const shown = shownStrings(holder);
+          counts[state] = shown.length;
+          for (const s of shown) if (!isPseudoLocalized(s)) raw.push(`${state}: ${s}`);
+          if (state === 'error') {
+            /** @type {HTMLButtonElement|null} */ (holder.querySelector('.conversation-tab-loading-retry'))?.click();
+          }
+        } finally {
+          holder.remove();
+        }
+      }
+    });
+    assert(counts.error >= 2 && counts.loading >= 1 && counts.unloaded >= 1,
+      `expected shown text in every state, saw ${JSON.stringify(counts)}`);
+    assert(raw.length === 0, `plain English under en-XA: ${JSON.stringify(raw)}`);
+    assert(session.retried.length === 1 && session.retried[0] === 'conv_error',
+      `Retry did not ask the session to reload under en-XA: ${JSON.stringify(session.retried)}`);
+    passed++;
+  } catch (e) {
+    failed++;
+    errors.push(`restore-select-panel en-XA overlay: ${/** @type {any} */ (e)?.message || e}`);
   }
 
   return { passed, failed, errors };

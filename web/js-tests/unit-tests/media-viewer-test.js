@@ -22,6 +22,8 @@ import MediaFileViewer from '../../extensions/juggler-core/viewers/media-file-vi
 import ImageFileViewer from '../../extensions/juggler-core/viewers/image-file-viewer.js';
 import TextFileViewer from '../../extensions/juggler-core/viewers/text-file-viewer.js';
 import BinaryFileViewer from '../../extensions/juggler-core/viewers/binary-file-viewer.js';
+import { underPseudoLocale } from '../utilities/pseudo-locale.js';
+import { isPseudoLocalized } from '../../sdk/lib/i18n.js';
 
 /** A same-origin URL the server answers with 200: this module's own. */
 const SERVED_URL = new URL(import.meta.url).pathname;
@@ -185,6 +187,88 @@ export async function runTests() {
   }));
   tally(check(!extracted.text && !!extracted.warning?.includes('video'),
     `extract() should say it is a video and carry no text, got ${JSON.stringify(extracted)}`, errors));
+
+  /** @type {Record<string, string>} */
+  const englishWarnings = {};
+  for (const mime of ['video/mp4', 'image/bmp']) {
+    const source = createFileSource({ path: 'clip.bin', mime, size: 1000, isBinary: true });
+    englishWarnings[mime] = (await new MediaFileViewer().extract(source)).warning || '';
+  }
+
+  // en-XA: an image with no path gets a fallback alt text, which also names the
+  // lightbox it opens, so it is UI text — in both viewers that draw images.
+  try {
+    await underPseudoLocale('media-viewer-test', async () => {
+      for (const Viewer of [ImageFileViewer, MediaFileViewer]) {
+        const host = document.createElement('div');
+        document.body.appendChild(host);
+        try {
+          await new Viewer().render(createFileSource({
+            path: '', mime: 'image/png', size: 2000, isBinary: true,
+            url: () => SERVED_URL, bytes: async () => new Uint8Array(0),
+          }), host, { signal: new AbortController().signal });
+          const alt = host.querySelector('img')?.getAttribute('alt') ?? null;
+          tally(check(alt !== null && isPseudoLocalized(alt),
+            `${Viewer.MANIFEST.id}: the unnamed image's alt text is not translated: ${JSON.stringify(alt)}`, errors));
+        } finally {
+          host.remove();
+        }
+      }
+
+      // A file whose bytes cannot be fetched says why; the error is data.
+      const failed = await render(createFileSource({
+        path: '', mime: 'video/mp4', size: 4, isBinary: true,
+        url: () => '', bytes: async () => { throw new Error('404'); },
+      }));
+      try {
+        const text = failed.host.querySelector('.media-view-note')?.textContent ?? null;
+        tally(check(text !== null && isPseudoLocalized(text) && text.includes('404'),
+          `the failed-load note is not translated with its error: ${JSON.stringify(text)}`, errors));
+      } finally {
+        dispose(failed);
+      }
+
+      // Each kind's unsupported-format note, and a nameless player's aria-label.
+      /** @type {Array<[string, string]>} */
+      const kinds = [['image', 'image/png'], ['video', 'video/mp4'], ['audio', 'audio/mpeg']];
+      for (const [kind, mime] of kinds) {
+        const shown = await render(createFileSource({
+          path: '', mime, size: 4, isBinary: true, url: () => SERVED_URL,
+        }));
+        try {
+          const el = shown.host.querySelector(kind === 'image' ? 'img' : kind);
+          tally(check(!!el, `${kind}: no element rendered`, errors));
+          if (kind !== 'image') {
+            const label = el?.getAttribute('aria-label') ?? null;
+            tally(check(label !== null && isPseudoLocalized(label),
+              `${kind}: the nameless player's aria-label is not translated: ${JSON.stringify(label)}`, errors));
+          }
+          el?.dispatchEvent(new Event('error'));
+          const text = shown.host.querySelector('.media-view-note')?.textContent ?? null;
+          tally(check(text !== null && isPseudoLocalized(text),
+            `${kind}: the unsupported-format note is not translated: ${JSON.stringify(text)}`, errors));
+        } finally {
+          dispose(shown);
+        }
+      }
+
+      // extract() is model-facing: its warnings stay English.
+      for (const mime of ['video/mp4', 'image/bmp']) {
+        const source = createFileSource({ path: 'clip.bin', mime, size: 1000, isBinary: true });
+        const got = (await new MediaFileViewer().extract(source)).warning || '';
+        tally(check(got === englishWarnings[mime],
+          `${mime}: extract()'s warning must stay English under en-XA, got ${JSON.stringify(got)}`, errors));
+      }
+    }, { '@juggler/core': [
+      'image',
+      'Couldn’t load this file: {error}',
+      '{kind, select, audio {audio} other {video}}',
+      'This image format can’t be displayed here.',
+      '{kind, select, audio {This audio format can’t be played here.} other {This video format can’t be played here.}}',
+    ] });
+  } catch (/** @type {any} */ e) {
+    tally(check(false, `en-XA: ${e?.message}`, errors));
+  }
 
   return { passed, failed, errors };
 }

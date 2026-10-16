@@ -18,6 +18,7 @@
  *   4. The button that opens this conversation's log rides with the time — the
  *      same reading, so the same visibility — and must name the conversation it
  *      belongs to when it deep-links into the Logs tab.
+ *   5–6. Under en-XA, the meter and then the footer around it show no English.
  * @module unit-tests/footer-meta-test
  */
 
@@ -254,6 +255,71 @@ export async function runTests() {
     errors.push(`en-XA: ${msg(e)}`);
   } finally {
     host.remove();
+  }
+
+  // --- 6: every state of the footer itself, under en-XA --------------------
+  // The template is drawn when the footer connects, so it connects under the
+  // locale. Hidden parts are walked too: every state's controls are in the tree.
+  /** @type {any} */
+  let xaFooter = null;
+  try {
+    /** @type {string[]} */
+    const raw = [];
+    // Times are Intl data, and the only data the walk shows; each is mapped to
+    // a digit before judging the words.
+    const DATA = /^[\d\s]*$/;
+    const at = Date.now() - 60_000;
+    /**
+     * Record every plain-English string the footer shows.
+     * @param {string} where - The state, for the failure.
+     */
+    const collect = (where) => {
+      const { short, full } = formatRelativeDateTime(at);
+      const shown = shownStrings(xaFooter);
+      assert(shown.length >= 10, `expected the footer's labels (${where}), found ${shown.length}`);
+      for (const s of shown) {
+        const v = s.split(full).join('0').split(short).join('0');
+        if (!DATA.test(v) && !isPseudoLocalized(v)) raw.push(`${where}: ${s}`);
+      }
+    };
+
+    await underPseudoLocale('footer-meta-test', () => {
+      xaFooter = document.createElement('conversation-footer');
+      document.body.appendChild(xaFooter);
+      // The Undo offer needs a conversation to watch; nothing else here does.
+      xaFooter._messageThread = {
+        conversation: { observeMetadata() {}, unobserveMetadata() {} },
+      };
+
+      xaFooter.update({ isProcessing: false, canContinue: true, showDuplicateTab: true, lastActivityAt: at });
+      assert(!!xaFooter.querySelector('.footer-last-activity')?.textContent, 'an idle footer dates the thread');
+      collect('idle');
+
+      xaFooter.update({ isProcessing: false, canContinue: true, politePaused: true, lastActivityAt: at });
+      collect('paused');
+
+      xaFooter.update({ isProcessing: true, statusMessage: '', runningTools: 1 });
+      collect('running');
+
+      xaFooter.update({ isProcessing: true, statusMessage: '', politePending: true });
+      assert(xaFooter.querySelector('.footer-pause-label')?.textContent !== 'Pause', 'a pending pause relabels the button');
+      collect('pausing');
+
+      xaFooter.update({ isProcessing: false, canContinue: false, lastActivityAt: 0 });
+      xaFooter._showUndoOffer(1);
+      collect('undo one');
+      xaFooter._showUndoOffer(3);
+      assert(!xaFooter.querySelector('.footer-undo-offer')?.classList.contains('hidden'), 'the Undo offer shows');
+      collect('undo several');
+      xaFooter._hideUndoOffer();
+    });
+    assert(raw.length === 0, `plain English under en-XA: ${JSON.stringify(raw)}`);
+    passed++;
+  } catch (e) {
+    failed++;
+    errors.push(`footer en-XA: ${msg(e)}`);
+  } finally {
+    xaFooter?.remove();
   }
 
   return { passed, failed, errors };

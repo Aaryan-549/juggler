@@ -6,6 +6,9 @@
 import FileViewer from 'juggler/file-viewer';
 import { uploadAssetBase64 } from 'juggler/ops';
 import { createImageThumb } from 'juggler/ui';
+import { translator } from 'juggler/i18n';
+
+const t = translator('@juggler/core');
 
 /**
  * Convert bytes to base64 without blowing the argument limit on a large image
@@ -59,7 +62,7 @@ class ImageFileViewer extends FileViewer {
   async render(source, host) {
     const img = createImageThumb({
       src: source.url(),
-      alt: source.path || 'image',
+      alt: source.path || t('image'),
       className: 'file-view-image',
     });
     // The streaming URL serves only files inside the project root, so an image

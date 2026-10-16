@@ -43,10 +43,12 @@ import { installLinkGuard } from './services/link-guard.js';
 import { installSelectionContainment } from './services/selection-containment.js';
 import { isPinboardView } from './utils/view-mode.js';
 import './services/tooltip-manager.js'; // styled hover/focus tooltips (self-installs on import)
-import { MAX_CONVERSATIONS, CONVERSATION_LIMIT_MESSAGE } from './model/session.js';
+import { MAX_CONVERSATIONS } from './model/session.js';
 import { normalizeAttachments } from './utils/attachments.js';
 import { itemField } from '../sdk/lib/message.js';
-import { showAlert, showNotice } from './components/modal-dialog.js';
+import { showNotice } from './components/modal-dialog.js';
+import { failedModulesMessage, showConversationLimitAlert } from './services/app-notices.js';
+import { markUntranslated } from '../sdk/lib/i18n.js';
 import { openCommandManager } from './components/command-editor-dialog.js';
 import { exportConversation } from './components/conversation-export-dialog.js';
 import { setFaultSink, reportFault } from './utils/fault-report.js';
@@ -106,13 +108,7 @@ function reportNewlyFailedModules() {
   lastFailedModules = current;
   if (fresh.length === 0) return;
 
-  const detail = fresh
-    .map(({ path, error }) => `${path.split('/').pop() || path} — ${error}`)
-    .join('\n');
-  const message = fresh.length === 1
-    ? `Couldn't load ${detail}`
-    : `Couldn't load ${fresh.length} capability modules\n${detail}`;
-  showNotice(message, { duration: RELOAD_FAILURE_NOTICE_MS });
+  showNotice(failedModulesMessage(fresh), { duration: RELOAD_FAILURE_NOTICE_MS });
 }
 
 /**
@@ -747,7 +743,9 @@ class JugglerApp {
       } else if (data.message) {
         errorMsg = data.message;
       } else {
-        errorMsg = 'Connection error - request failed';
+        // Diagnostic only: handleError logs it and matches it for "cancel"; the
+        // error item the user sees is written by the Go worker.
+        errorMsg = markUntranslated('Connection error - request failed');
       }
       conversation.handleError(errorMsg);
     } else if ('blocks' in data || 'inputTokens' in data) {
@@ -763,7 +761,7 @@ class JugglerApp {
     } else {
       // Unknown message format - log and notify user
       console.error('[Juggler] Unexpected message format from server:', data);
-      conversation.handleError('Received unexpected message format from server');
+      conversation.handleError(markUntranslated('Received unexpected message format from server'));
     }
   }
 
@@ -927,7 +925,7 @@ class JugglerApp {
    */
   async _duplicateConversationGuarded(session, conversationId) {
     if (session.conversations.size >= MAX_CONVERSATIONS) {
-      await showAlert(CONVERSATION_LIMIT_MESSAGE, 'Too many conversations');
+      await showConversationLimitAlert();
       return null;
     }
     return await session.duplicateConversation(conversationId);

@@ -7,7 +7,7 @@
  *
  * Two checks.
  *
- * **Raw strings** (`rawStrings`, on by default). A string or template literal
+ * **Raw strings.** A string or template literal
  * containing letters that flows into a place the user reads it:
  *   - assignment to `textContent`, `innerText`, `title`, `placeholder`,
  *     `ariaLabel`, `label` or `alt`;
@@ -30,9 +30,6 @@
  * English; or `// i18n-ignore: <reason>` on the line or the line
  * above. It is a heuristic by design — a miss shows up as plain English under
  * the en-XA pseudo-locale, and a false positive costs one annotation.
- *
- * Files listed in tooling/i18n-pending.txt (not yet migrated) are configured
- * with `rawStrings: false`, so only the second check runs there.
  *
  * **Module scope** (always on). A `t()` — imported from an i18n module under
  * whatever local name, or created by its `translator()` — evaluated at module
@@ -90,11 +87,7 @@ export default {
   meta: {
     type: 'problem',
     docs: { description: 'User-visible text goes through t() from juggler/i18n' },
-    schema: [{
-      type: 'object',
-      properties: { rawStrings: { type: 'boolean' } },
-      additionalProperties: false,
-    }],
+    schema: [],
     messages: {
       raw: "User-visible text '{{text}}' is not translatable: wrap it in t() from juggler/i18n "
         + "(markUntranslated() if it must stay English, or '// i18n-ignore: <reason>').",
@@ -103,7 +96,6 @@ export default {
     },
   },
   create(context) {
-    const rawStrings = context.options[0]?.rawStrings !== false;
     const sourceCode = context.sourceCode;
 
     /** Local names of t() imported from i18n or created by its translator(). */
@@ -278,7 +270,7 @@ export default {
         if (node.callee.type === 'Identifier' && tNames.has(node.callee.name) && atModuleScope(node)) {
           context.report({ node, messageId: 'moduleScope' });
         }
-        if (!rawStrings || isHandledCall(node)) return;
+        if (isHandledCall(node)) return;
         const name = calleeName(node);
         const args = node.arguments;
         if (name === 'setAttribute' && args.length >= 2) {
@@ -299,7 +291,6 @@ export default {
       },
 
       AssignmentExpression(node) {
-        if (!rawStrings) return;
         if (node.operator !== '=' && node.operator !== '+=') return;
         const prop = propName(node.left);
         if (TEXT_PROPERTIES.has(prop)) checkValue(node.right);
@@ -307,7 +298,6 @@ export default {
       },
 
       TaggedTemplateExpression(node) {
-        if (!rawStrings) return;
         if (node.tag.type === 'Identifier' && node.tag.name === 'html') {
           const joined = node.quasi.quasis.map((q) => q.value.cooked ?? q.value.raw).join(HOLE);
           if (hasWords(visibleHtmlText(joined))) report(node, joined);
@@ -315,13 +305,13 @@ export default {
       },
 
       Property(node) {
-        if (!rawStrings || node.parent?.type !== 'ObjectExpression' || node.computed || node.kind !== 'init') return;
+        if (node.parent?.type !== 'ObjectExpression' || node.computed || node.kind !== 'init') return;
         const name = node.key.type === 'Identifier' ? node.key.name : node.key.value;
         if (OBJECT_TEXT_KEYS.has(name)) checkValue(node.value);
       },
 
       ReturnStatement(node) {
-        if (!rawStrings || node.argument?.type !== 'ObjectExpression') return;
+        if (node.argument?.type !== 'ObjectExpression') return;
         // The nearest enclosing function must be a getStatusUI method.
         let fn = node.parent;
         while (fn && !['FunctionDeclaration', 'FunctionExpression', 'ArrowFunctionExpression'].includes(fn.type)) {

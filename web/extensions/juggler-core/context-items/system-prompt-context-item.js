@@ -9,6 +9,32 @@ import { createTextBlock } from 'juggler/item-utils';
 import { systemPromptRegistry, getDefaultIdentityText } from '../../../sdk/lib/system-prompt-registry.js';
 import { showPresetBrowser } from './system-prompt/preset-browser.js';
 import { formatTokens } from '../../../js/utils/format.js';
+import { translator, markUntranslated, markForTranslation } from 'juggler/i18n';
+
+const t = translator('@juggler/core');
+
+/**
+ * How an MCP server's reported status is named in the tool list. A value
+ * missing here is shown as it came.
+ * @type {Record<string, string>}
+ */
+const MCP_STATUS_LABELS = {
+  running: markForTranslation('running'),
+  starting: markForTranslation('starting'),
+  stopped: markForTranslation('stopped'),
+  failed: markForTranslation('failed'),
+  disabled: markForTranslation('disabled'),
+};
+
+/**
+ * An MCP server's status as the tool list shows it.
+ * @param {string} status - The reported status
+ * @returns {string} Its translated name, or the value itself when unknown
+ */
+function mcpStatusLabel(status) {
+  const label = Object.prototype.hasOwnProperty.call(MCP_STATUS_LABELS, status) ? MCP_STATUS_LABELS[status] : '';
+  return label ? t(label) : status;
+}
 
 // ============================================================================
 // Styles
@@ -329,14 +355,15 @@ injectStylesOnce('system-prompt-styles', SYSTEM_PROMPT_STYLES);
  * @returns {string} Environment XML block
  */
 function buildEnvBlock(workingDir, projectPath, platform, today) {
+  // The model's text: English whatever the UI language.
   const project = projectPath && projectPath !== workingDir
-    ? `\nProject directory: ${projectPath}`
+    ? markUntranslated(`\nProject directory: ${projectPath}`)
     : '';
-  return `<env>
+  return markUntranslated(`<env>
 Working directory: ${workingDir || 'unknown'}${project}
 Platform: ${platform || 'unknown'}
 Today's date: ${today}
-</env>`;
+</env>`);
 }
 
 // ============================================================================
@@ -376,7 +403,7 @@ class SystemPromptContextItem extends ContextItem {
 
   /** @returns {import('juggler/context-item').ResultStatusMessage} Status UI config */
   getStatusUI() {
-    return { typeName: 'System Prompt', summary: this.getTitle() };
+    return { typeName: t('System Prompt'), summary: this.getTitle() };
   }
 
   /**
@@ -450,13 +477,14 @@ class SystemPromptContextItem extends ContextItem {
     if (this.data.selectedPresetId && !this.data.isModified) {
       const preset = systemPromptRegistry.getPreset(this.data.selectedPresetId);
       if (preset && preset.id !== 'default') {
-        return `System Prompt (${preset.name})`;
+        // A preset's name is data, shown as it is stored.
+        return t('System Prompt ({name})', { name: preset.name });
       }
     }
     if (this.data.isModified) {
-      return 'System Prompt (Custom)';
+      return t('System Prompt (Custom)');
     }
-    return 'System Prompt';
+    return t('System Prompt');
   }
 
   /**
@@ -523,12 +551,12 @@ class SystemPromptContextItem extends ContextItem {
     const envBlock = buildEnvBlock(
       this._workingDir(), this.session?.projectPath || '', this.session?.platform || '', today);
     const envDisplay = envBlock.replace(/^<env>\n?/, '').replace(/\n?<\/env>$/, '');
-    this._addPreviewSection(wrapper, 'environment', 'Environment info', envDisplay);
+    this._addPreviewSection(wrapper, 'environment', t('Environment info'), envDisplay);
 
     // Section 3: Rules (from other system-position context items)
     const rulesContent = this._gatherRulesContent();
     if (rulesContent) {
-      this._addPreviewSection(wrapper, 'rules', 'Rules', rulesContent);
+      this._addPreviewSection(wrapper, 'rules', t('Rules'), rulesContent);
     }
 
     // Section 4: Extension guidance — the enabled extensions' aggregated
@@ -536,14 +564,14 @@ class SystemPromptContextItem extends ContextItem {
     // Aggregation is async; fill the section once it resolves, or drop it.
     // Strategies contribute no system-prompt text (they inject messages), so
     // there is no strategy section here.
-    const extSection = this._addPreviewSection(wrapper, 'extensions', 'Extension guidance', 'Loading…');
+    const extSection = this._addPreviewSection(wrapper, 'extensions', t('Extension guidance'), t('Loading…'));
     this._fillExtensionGuidance(extSection);
 
     // Section 5: Tools. The prompt is only half of what the model is handed —
     // the other half is the tool list, and it is the half with no other home in
     // the document. A tool that is missing here was never offered, whatever the
     // model later claims about it.
-    const toolsSection = this._addPreviewSection(wrapper, 'tools', 'Tools', 'Loading…');
+    const toolsSection = this._addPreviewSection(wrapper, 'tools', t('Tools'), t('Loading…'));
     this._fillToolInventory(toolsSection);
 
     return wrapper;
@@ -560,7 +588,7 @@ class SystemPromptContextItem extends ContextItem {
     section.dataset.sectionId = 'identity';
 
     const header = createElement('div', 'system-prompt-section-header');
-    header.textContent = 'Identity';
+    header.textContent = t('Identity');
     section.appendChild(header);
 
     const body = createElement('div', 'system-prompt-section-body');
@@ -568,7 +596,7 @@ class SystemPromptContextItem extends ContextItem {
     // Editable textarea
     const textArea = document.createElement('textarea');
     textArea.className = 'system-prompt-textarea';
-    textArea.placeholder = 'Enter system prompt identity text...';
+    textArea.placeholder = t('Enter system prompt identity text...');
     textArea.rows = 6;
     textArea.value = this._getEffectiveText();
     textArea.setAttribute('autocorrect', 'off');
@@ -590,7 +618,7 @@ class SystemPromptContextItem extends ContextItem {
 
     // Preset selector button
     const presetBtn = document.createElement('button');
-    presetBtn.textContent = 'Select a preset';
+    presetBtn.textContent = t('Select a preset');
     presetBtn.className = 'system-prompt-preset-btn';
     presetBtn.setAttribute('aria-haspopup', 'menu');
     presetBtn.setAttribute('aria-expanded', 'false');
@@ -708,7 +736,7 @@ class SystemPromptContextItem extends ContextItem {
       // Never leave "Loading…" sitting there: a panel that can't answer should
       // say so, since silence here reads as "no tools".
       body.replaceChildren(createTextBlock(
-        `Couldn't read the tool list.\n\n${err instanceof Error ? err.message : String(err)}`
+        t("Couldn't read the tool list.\n\n{error}", { error: err instanceof Error ? err.message : String(err) })
       ));
     }
   }
@@ -779,7 +807,7 @@ class SystemPromptContextItem extends ContextItem {
    * @param {Map<string, {status?: string, error?: string, toolCount?: number}>} servers - MCP status by server name
    * @param {(name: string) => {server: string, tool: string}|null} parseMcp - MCP name splitter
    * @param {{changes: string, detail: string}|null} drift - Difference from the last turn's recorded tool list
-   * @param {string} [mcpNotice] - Line to show above the MCP servers (the extension being off), or '' when there is nothing to say
+   * @param {string} [mcpNotice] - English line to show, translated, above the MCP servers (the extension being off — core's `MCP_DISABLED_NOTICE`), or '' when there is nothing to say
    * @returns {HTMLElement} The section body content
    */
   _buildToolInventoryView(inventory, groups, servers, parseMcp, drift, mcpNotice = '') {
@@ -792,15 +820,16 @@ class SystemPromptContextItem extends ContextItem {
     // is already where tools are switched off.
     const tokens = groups.reduce((sum, group) => sum + group.tokens, 0);
     const count = createElement('div', 'system-prompt-tools-count');
-    count.textContent = inventory.offered.length === 1
-      ? `1 tool available to the model · ~${formatTokens(tokens)} tokens`
-      : `${inventory.offered.length} tools available to the model · ~${formatTokens(tokens)} tokens`;
-    count.title = 'Estimated tokens (~4 characters per token), sent on every turn.';
+    count.textContent = t(
+      '{count, plural, one {{count} tool available to the model · ~{tokens} tokens} other {{count} tools available to the model · ~{tokens} tokens}}',
+      { count: inventory.offered.length, tokens: formatTokens(tokens) }
+    );
+    count.title = t('Estimated tokens (~4 characters per token), sent on every turn.');
     wrap.appendChild(count);
 
     if (drift?.changes) {
       const line = createElement('div', 'system-prompt-tools-drift');
-      line.textContent = `${drift.changes} since the last turn — the model has not been offered this list yet.`;
+      line.textContent = t('{changes} since the last turn — the model has not been offered this list yet.', { changes: drift.changes });
       line.title = drift.detail;
       wrap.appendChild(line);
     }
@@ -808,17 +837,16 @@ class SystemPromptContextItem extends ContextItem {
     // Servers below will read "running" whatever this says, so it goes first.
     if (mcpNotice && servers.size) {
       const line = createElement('div', 'system-prompt-tools-notice');
-      line.textContent = mcpNotice;
+      line.textContent = t(mcpNotice);
       wrap.appendChild(line);
     }
 
     for (const group of groups) {
       const heading = createElement('div', 'system-prompt-tools-group');
-      heading.textContent = `${group.title} · ~${formatTokens(group.tokens)}`;
-      if (group.server) {
-        const status = servers.get(group.server)?.status;
-        if (status && status !== 'running') heading.textContent += ` — ${status}`;
-      }
+      const status = group.server ? servers.get(group.server)?.status : '';
+      heading.textContent = status && status !== 'running'
+        ? t('{title} · ~{tokens} — {status}', { title: group.title, tokens: formatTokens(group.tokens), status: mcpStatusLabel(status) })
+        : t('{title} · ~{tokens}', { title: group.title, tokens: formatTokens(group.tokens) });
       wrap.appendChild(heading);
 
       for (const tool of group.tools) {
@@ -841,9 +869,17 @@ class SystemPromptContextItem extends ContextItem {
       if (groups.some((g) => g.server === name)) continue;
       const row = createElement('div', 'system-prompt-tools-silent');
       const detail = status?.error ? String(status.error).split('\n')[0] : '';
-      const state = status?.status || 'not running';
-      const unreached = state === 'running' ? ', tools not offered' : '';
-      row.textContent = `MCP · ${name} — ${state}${unreached}${detail ? `: ${detail}` : ''}`;
+      const state = status?.status || '';
+      row.textContent = t(
+        '{state, select, running {MCP · {server} — running, tools not offered} none {MCP · {server} — not running} other {MCP · {server} — {status}}}{hasDetail, select, yes {: {detail}} other {}}',
+        {
+          state: state === 'running' ? 'running' : (state ? 'other' : 'none'),
+          server: name,
+          status: mcpStatusLabel(state),
+          hasDetail: detail ? 'yes' : 'no',
+          detail
+        }
+      );
       wrap.appendChild(row);
     }
 
@@ -853,10 +889,12 @@ class SystemPromptContextItem extends ContextItem {
     // or narrow panel that leaves the heading off-screen reads as a list of
     // tools the model has — which is exactly the wrong conclusion.
     if (inventory.withheld.length) {
-      const by = inventory.strategyName ? ` by ${inventory.strategyName}` : '';
+      // The strategy's manifest name, drawn as given: an extension has no
+      // route to the strategy registry's scoped label.
+      const by = { by: inventory.strategyName ? 'yes' : 'no', strategy: inventory.strategyName };
       const block = createElement('div', 'system-prompt-tools-withheld');
       const heading = createElement('div', 'system-prompt-tools-group');
-      heading.textContent = `Withheld${by} — not offered to the model`;
+      heading.textContent = t('{by, select, yes {Withheld by {strategy} — not offered to the model} other {Withheld — not offered to the model}}', by);
       block.appendChild(heading);
       for (const tool of inventory.withheld) {
         const name = String(tool?.name || '');
@@ -865,7 +903,7 @@ class SystemPromptContextItem extends ContextItem {
           name,
           String(tool?.description || ''),
           parseMcp(name)?.server ?? null,
-          `Withheld${by} — the model cannot call this.`
+          t('{by, select, yes {Withheld by {strategy} — the model cannot call this.} other {Withheld — the model cannot call this.}}', by)
         );
         row.classList.add('system-prompt-tool-withheld');
         block.appendChild(row);
@@ -893,7 +931,7 @@ class SystemPromptContextItem extends ContextItem {
     const row = createElement('button', 'system-prompt-tool');
     /** @type {HTMLButtonElement} */ (row).type = 'button';
     row.textContent = label;
-    const where = server ? `Configure "${server}"` : 'Show where this tool is defined';
+    const where = server ? t('Configure "{server}"', { server }) : t('Show where this tool is defined');
     row.title = [note, description, where].filter(Boolean).join('\n\n');
     row.addEventListener('click', () => { void this._openToolDefinition(toolName, server); });
     return row;

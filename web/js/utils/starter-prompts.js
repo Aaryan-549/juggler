@@ -20,11 +20,15 @@
  * @module utils/starter-prompts
  */
 
+import { markForTranslation } from '../../sdk/lib/i18n.js';
+
 /**
+ * In English; translated where the row is filled, so a chip drafts the prompt
+ * in the user's language.
  * @type {readonly string[]}
  */
 export const STARTER_PROMPTS = Object.freeze([
-  'What can you do?',
-  'Give me a tour of this project',
-  'What should I work on first?',
+  markForTranslation('What can you do?'),
+  markForTranslation('Give me a tour of this project'),
+  markForTranslation('What should I work on first?'),
 ]);

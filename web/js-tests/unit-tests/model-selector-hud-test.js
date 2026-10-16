@@ -20,6 +20,9 @@ import recentModels from '../../js/services/recent-models.js';
 import keyShortcutManager from '../../js/services/key-shortcut-manager.js';
 import { registerConversationShortcuts } from '../../js/services/shortcut-bindings.js';
 import { ModelCycler } from '../../js/services/model-cycler.js';
+import providersCache from '../../js/services/providers-cache.js';
+import { isPseudoLocalized } from '../../sdk/lib/i18n.js';
+import { underPseudoLocale } from '../utilities/pseudo-locale.js';
 import '../../js/components/model-selector.js';
 import '../../js/components/model-picker/model-picker.js';
 
@@ -337,6 +340,125 @@ export async function runTests(_ctx) {
       cycler.destroy();
       el.close();
       box.remove();
+      document.querySelectorAll('.model-picker').forEach(node => node.remove());
+    }
+  });
+
+  // Every word the selector itself hands to the chip, the picker and the
+  // selection dialogs, under en-XA. The chip and picker draw host text as given,
+  // so the host must pass it translated. Model, provider and hint values are
+  // data (digits here); the cycle key is stubbed to a digit — a real key cap
+  // carries ASCII letters. The picker's own chrome belongs to its own slice, so
+  // its inputs are read from the properties the selector set.
+  await run('en-XA: every string the selector hands on is translated', async () => {
+    /**
+     * Put a stubbed method back exactly as it was: an own property restored, an
+     * inherited one uncovered.
+     * @param {any} obj - The singleton.
+     * @param {string} key - The method's name.
+     * @returns {() => void} The restorer.
+     */
+    const saveMethod = (obj, key) => {
+      const own = Object.prototype.hasOwnProperty.call(obj, key);
+      const original = obj[key];
+      return () => {
+        if (own) obj[key] = original;
+        else delete obj[key];
+      };
+    };
+    const restorers = [
+      saveMethod(keyShortcutManager, 'formatBinding'),
+      saveMethod(providersCache, 'refresh'),
+      saveMethod(recentModels, 'refresh'),
+    ];
+    const originalShowModal = /** @type {any} */ (window).showModal;
+    /** @type {any} */
+    let el = null;
+    try {
+      // Opening the picker asks the server to re-check providers and reloads
+      // recents; neither belongs in this case.
+      /** @type {any} */ (providersCache).refresh = async () => {};
+      /** @type {any} */ (recentModels).refresh = async () => {};
+      await underPseudoLocale('model-selector-hud-test', async () => {
+        /** @type {string[]} */
+        const shown = [];
+        /**
+         * @param {string} where - The state being drawn.
+         * @param {string|null|undefined} s - What it showed.
+         */
+        const see = (where, s) => {
+          assert(!!s, `${where}: nothing drawn`);
+          shown.push(/** @type {string} */ (s));
+        };
+        /** @type {any[]} */
+        const asked = [];
+        /** @type {any} */ (window).showModal = async (/** @type {any} */ opts) => {
+          asked.push(opts);
+          return false;
+        };
+
+        /** @type {any} */
+        const entry = { id: '7', displayName: '7', contextWindow: 1000 };
+        el = makeSelector();
+        el.providers = [{ name: '4', displayName: '4', available: true, spawnsLocalProcess: true,
+          modelsWithContext: [entry] }];
+
+        // Nothing selected: the placeholder, and the button title with and
+        // without a cycle key.
+        keyShortcutManager.formatBinding = () => '9';
+        el.render();
+        see('placeholder', el._chip?.querySelector('.model-name')?.textContent);
+        const keyed = el._chip?.button?.getAttribute('title');
+        see('button title, key', keyed);
+        assert(String(keyed).includes('9'), `the key cap must be in the title — got "${keyed}"`);
+        keyShortcutManager.formatBinding = () => '';
+        el.render();
+        see('button title, no key', el._chip?.button?.getAttribute('title'));
+
+        // The picker at the root, mid-turn, in a workspace that cannot host a
+        // local provider: none row, note, footer actions, the refusal hint.
+        el.conversation = { workspaceHostsLocalProviders: false, isTurnActive: () => true };
+        el.toggleDropdown();
+        const picker = el._picker;
+        assert(!!picker, 'the picker opens');
+        see('none row, root', picker.noneLabel);
+        see('turn note', picker.note);
+        const footerRows = [...picker.querySelectorAll('.model-picker-footer .menu-item')];
+        assert(footerRows.length === 2, `two footer actions expected — got ${footerRows.length}`);
+        for (const row of footerRows) see(`footer ${row.dataset.action}`, row.textContent?.trim());
+        see('workspace-elsewhere hint', picker.providers[0]?.authHint);
+        el.closeDropdown();
+
+        // A sub-thread's none row.
+        el._messageThread = { threadItemId: '1', isProcessing: true };
+        see('none row, sub-thread', el._noneLabel());
+        el._messageThread = null;
+
+        // The three selection problems and their dialog.
+        await el._showSelectionProblem({ ...el.providers[0], authHint: '3' }, '7');
+        await el._showSelectionProblem({ ...el.providers[0], authHint: '' }, '7');
+        await el.selectProviderAndModel('5', '7');
+        assert(asked.length === 3, `three dialogs expected — got ${asked.length}`);
+        for (const [i, opts] of asked.entries()) {
+          see(`dialog ${i} message`, opts.message);
+          see(`dialog ${i} title`, opts.title);
+          see(`dialog ${i} confirm`, opts.confirmText);
+          see(`dialog ${i} cancel`, opts.cancelText);
+        }
+        assert(String(asked[0].message).includes('3'), `the hint is kept — got "${asked[0].message}"`);
+        assert(String(asked[2].message).includes('5'), `the provider is named — got "${asked[2].message}"`);
+
+        const raw = shown.filter((s) => !isPseudoLocalized(s));
+        assert(raw.length === 0, `plain English under en-XA: ${JSON.stringify(raw)}`);
+      });
+    } finally {
+      for (const restore of restorers) restore();
+      /** @type {any} */ (window).showModal = originalShowModal;
+      if (el) {
+        el.conversation = null;
+        el._messageThread = null;
+        el.remove();
+      }
       document.querySelectorAll('.model-picker').forEach(node => node.remove());
     }
   });

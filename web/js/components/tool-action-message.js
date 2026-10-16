@@ -280,7 +280,7 @@ class ToolActionMessage extends HTMLElement {
     const text = document.createElement('span');
     text.className = 'approval-review-status-label';
     // textContent, never innerHTML: the note is model-authored text.
-    text.textContent = label || 'Reviewing…';
+    text.textContent = label || t('Reviewing…');
     row.appendChild(text);
     return row;
   }
@@ -360,9 +360,11 @@ class ToolActionMessage extends HTMLElement {
     // sticks on "Running …" forever. Regression: cancel in the approved→running window.
     const result = item.get('result');
     if (result !== null && result !== undefined) return null;
-    const toolName = item.get('toolName') || 'tool';
+    const named = item.get('toolName');
+    const toolName = named || 'tool'; // i18n-ignore: registry lookup key, drawn below as a message
     const label = this._runningLabel(item, toolName);
-    return { message: label || t('Running {tool}...', { tool: toolName }), spinner: true };
+    if (label) return { message: label, spinner: true };
+    return { message: named ? t('Running {tool}...', { tool: named }) : t('Running tool...'), spinner: true };
   }
 
   /**
@@ -544,7 +546,7 @@ class ToolActionMessage extends HTMLElement {
 
     const label = document.createElement('div');
     label.className = 'running-label';
-    label.textContent = `${actionId}: Running...`;
+    label.textContent = t('{action}: Running...', { action: actionId });
     container.appendChild(label);
 
     article.appendChild(this._wrapWithIcon(container));
@@ -557,7 +559,8 @@ class ToolActionMessage extends HTMLElement {
    * @private
    */
   _renderCancelled(item) {
-    const toolName = item.get('toolName') || 'Action';
+    const named = item.get('toolName');
+    const toolName = named || 'Action'; // i18n-ignore: registry lookup key, drawn below as a message
     const result = yGet(item, 'result');
     const conversation = this._getConversation();
 
@@ -597,7 +600,7 @@ class ToolActionMessage extends HTMLElement {
     // Fallback
     if (!statusElement) {
       statusElement = renderResultStatusMessage({
-        summary: `${toolName}: Cancelled`,
+        summary: named ? t('{tool}: Cancelled', { tool: named }) : t('Action: Cancelled'),
         status: 'cancelled'
       });
     }
@@ -654,7 +657,8 @@ class ToolActionMessage extends HTMLElement {
 
     if (!actionId) {
       const resultContent = resultMap?.get ? resultMap.get('content') : resultMap?.content;
-      const errorMessage = resultContent || result?.error || `Unknown tool: ${itemToolName}`;
+      // The model's own text (content, error) is shown as it was; the fallback is ours.
+      const errorMessage = resultContent || result?.error || t('Unknown tool: {name}', { name: String(itemToolName) });
       this.appendChild(createErrorArticle(errorMessage));
       return;
     }
@@ -757,14 +761,14 @@ class ToolActionMessage extends HTMLElement {
       });
       article.appendChild(this._wrapWithIcon(errorElement, 'red'));
     } else if (result?.cancelled) {
-      const content = result.formatted?.summary || 'Action cancelled';
+      const content = result.formatted?.summary || t('Action cancelled');
       const statusElement = renderResultStatusMessage({
         summary: content,
         status: 'cancelled'
       });
       article.appendChild(this._wrapWithIcon(statusElement));
     } else if (result?.blocked) {
-      const content = result.formatted?.summary || 'Action blocked (plan mode active)';
+      const content = result.formatted?.summary || t('Action blocked (plan mode active)');
       const statusElement = renderResultStatusMessage({
         summary: content,
         status: 'cancelled'

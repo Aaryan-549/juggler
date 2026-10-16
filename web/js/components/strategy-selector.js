@@ -13,6 +13,9 @@ import { generateToolDefinitions } from '../services/tool-generator.js';
 import { buildPrefixFingerprint, classifyContextCacheImpact, CONTEXT_CACHE_IMPACT_CHANGED } from '../services/context-cache-impact.js';
 import { contextPositionOf } from '../services/system-prompt-builder.js';
 import { openSettings } from '../services/settings-launcher.js';
+import { capabilityLabel } from '../utils/capability-label.js';
+import { t } from '../../sdk/lib/i18n.js';
+import { escapeHtml } from '../../sdk/lib/html.js';
 
 /**
  * Strategy Selector - Dropdown component for selecting conversation strategy
@@ -685,7 +688,9 @@ class StrategySelector extends HTMLElement {
    */
   getCurrentStrategyName() {
     const strategy = this._strategies.find(s => s.id === this._buttonStrategyId());
-    return strategy ? strategy.manifest.name : 'Select Strategy';
+    return strategy
+      ? capabilityLabel(strategy.manifest.name, strategy.id, strategyRegistry)
+      : t('Select Strategy');
   }
 
   /**
@@ -698,7 +703,7 @@ class StrategySelector extends HTMLElement {
       return `
                 <li class="strategy-item unavailable" role="none">
                     <div class="strategy-item-body" role="menuitem" aria-disabled="true">
-                        <p class="strategy-item-description">No strategies.</p>
+                        <p class="strategy-item-description">${escapeHtml(t('No strategies.'))}</p>
                     </div>
                 </li>
             `;
@@ -711,6 +716,8 @@ class StrategySelector extends HTMLElement {
       const iconHtml = manifest.icon
         ? `<span class="strategy-item-icon ${manifest.icon}" aria-hidden="true"></span>`
         : '';
+      const name = capabilityLabel(manifest.name, id, strategyRegistry);
+      const description = capabilityLabel(manifest.description, id, strategyRegistry);
 
       // The row is two items side by side — choosing the strategy, and opening
       // its details — since a menu item may not contain another control. The
@@ -721,12 +728,12 @@ class StrategySelector extends HTMLElement {
                         <header class="strategy-item-header">
                             <span class="strategy-item-label">
                                 ${iconHtml}
-                                <span class="strategy-item-name">${manifest.name}</span>
+                                <span class="strategy-item-name">${escapeHtml(name)}</span>
                             </span>
                         </header>
-                        <p class="strategy-item-description">${manifest.description}</p>
+                        <p class="strategy-item-description">${escapeHtml(description)}</p>
                     </div>
-                    <button type="button" class="strategy-info-button btn-ghost" role="menuitem" data-strategy-info-id="${id}" title="View strategy details" aria-label="View ${manifest.name} strategy details">${INFO_SVG}</button>
+                    <button type="button" class="strategy-info-button btn-ghost" role="menuitem" data-strategy-info-id="${id}" title="${escapeHtml(t('View strategy details'))}" aria-label="${escapeHtml(t('View {name} strategy details', { name }))}">${INFO_SVG}</button>
                 </li>
             `;
     }).join('');
@@ -882,7 +889,7 @@ class StrategySelector extends HTMLElement {
     }
 
     const dropdownHtml = (this._dropdownOpen && !liveDropdown)
-      ? `<nav class="dropdown-menu strategy-dropdown show" id="strategy-dropdown"><menu role="menu" aria-label="Strategy">${dropdownContent}</menu></nav>`
+      ? `<nav class="dropdown-menu strategy-dropdown show" id="strategy-dropdown"><menu role="menu" aria-label="${escapeHtml(t('Strategy'))}">${dropdownContent}</menu></nav>`
       : '';
 
     const buttonIconHtml = strategyIcon
@@ -890,9 +897,9 @@ class StrategySelector extends HTMLElement {
       : '';
 
     this.innerHTML = `
-            <button class="strategy-selector-button input-ctrl-btn ${this._dropdownOpen ? 'open' : ''}" id="strategy-button" tabindex="-1" title="Select Strategy" aria-haspopup="menu" aria-expanded="${this._dropdownOpen}" ${colorStyle} ${hasColorAttr}>
+            <button class="strategy-selector-button input-ctrl-btn ${this._dropdownOpen ? 'open' : ''}" id="strategy-button" tabindex="-1" title="${escapeHtml(t('Select Strategy'))}" aria-haspopup="menu" aria-expanded="${this._dropdownOpen}" ${colorStyle} ${hasColorAttr}>
                 ${buttonIconHtml}
-                <span class="strategy-name">${strategyName}</span>
+                <span class="strategy-name">${escapeHtml(strategyName)}</span>
             </button>
             ${dropdownHtml}
         `;

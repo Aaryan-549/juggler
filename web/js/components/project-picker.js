@@ -22,6 +22,7 @@ import { projectsOpenInNewWindow } from '../utils/project-open-mode.js';
 import { showAlert, showConfirm } from './modal-dialog.js';
 import { isOpeningProject, openProjectInWindow } from './project-opening.js';
 import { t } from '../../sdk/lib/i18n.js';
+import { displayConversationName } from '../model/conversation-naming.js';
 import { escapeHtml } from '../../sdk/lib/html.js';
 
 /**
@@ -455,7 +456,7 @@ export async function openProjectPicker(currentPath, session) {
   // any in-flight turn. Warn before discarding busy conversations.
   const busy = session ? await session.busyConversationNames() : [];
   if (busy.length > 0) {
-    const list = busy.map((n) => `• ${n}`).join('\n');
+    const list = busy.map((n) => `• ${displayConversationName(n)}`).join('\n');
     const ok = await showConfirm(
       t('{count, plural, one {{count} conversation is} other {{count} conversations are}} still working:\n\n{list}\n\nSwitching projects will stop and discard this work. Continue?', { count: busy.length, list }),
       t('Switch project?'),

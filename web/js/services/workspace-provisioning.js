@@ -26,6 +26,7 @@ import workspaceProviderRegistry from '../registries/workspace-provider-registry
 import { capabilityLabel } from '../utils/capability-label.js';
 import { registerWorkspace, patchWorkspace, unregisterWorkspace, isWorkspaceUsable } from './workspaces.js';
 import { rebindConversation } from './workspace-rebinding.js';
+import { displayConversationName } from '../model/conversation-naming.js';
 
 /**
  * @typedef {object} ProvisionRequest
@@ -503,7 +504,7 @@ function busyConversations(session, workspaceId) {
   const busy = [];
   for (const conversation of session?.conversations?.values?.() ?? []) {
     if (conversation.workspaceId !== workspaceId) continue;
-    if (conversation.isProcessing === true) busy.push(conversation.name || conversation.id);
+    if (conversation.isProcessing === true) busy.push(conversation.name ? displayConversationName(conversation.name) : conversation.id);
   }
   return busy;
 }
@@ -675,28 +676,29 @@ export async function finishWorkspace(request) {
   const home = workspace.baseWorkspaceId ?? '';
   for (const bound of [...(session?.conversations?.values?.() ?? [])]) {
     if ((bound.workspaceId || '') !== workspace.id) continue;
-    const name = bound.name || bound.id;
+    const name = bound.name ? displayConversationName(bound.name) : bound.id;
     try {
       if (returning) {
         const rebound = await rebindConversation(bound, home);
         if (rebound.done) moved++;
-        else stuck.push(rebound.message ? `${name}: ${rebound.message}` : `${name} couldn't be moved.`);
+        else stuck.push(rebound.message ? t('{name}: {reason}', { name, reason: rebound.message }) : t("{name} couldn't be moved.", { name }));
       } else if (await session.binConversation(bound.id)) {
         moved++;
       } else {
-        stuck.push(`${name} couldn't be binned.`);
+        stuck.push(t("{name} couldn't be binned.", { name }));
       }
     } catch (error) {
-      stuck.push(`${name}: ${extractErrorMessage(error)}`);
+      stuck.push(t('{name}: {reason}', { name, reason: extractErrorMessage(error) }));
     }
   }
   // Said by the host because it is the host that does it, and because how many
   // there were is not something a provider is in a position to know. The
   // provider's own message says what became of the tree, which is its half.
-  const where = returning ? (home ? 'back in the workspace it came from' : 'back in the project') : 'in the bin';
+  const where = returning ? (home ? 'workspace' : 'project') : 'bin';
   const wentWithIt = moved === 0
     ? ''
-    : `${moved === 1 ? 'Its conversation is' : `Its ${moved} conversations are`} ${where}.`;
+    : t('{moved, plural, one {Its conversation is} other {Its {count} conversations are}} {where, select, workspace {back in the workspace it came from} project {back in the project} other {in the bin}}.',
+      { moved, count: moved, where });
 
   const closed = await patchWorkspace(workspace.id, {
     state: 'closed',
@@ -831,7 +833,7 @@ export async function provisionWorkspace(request) {
 
   const provider = workspaceProviderRegistry.createProvider(providerId, session);
   if (!provider) {
-    throw new Error(`Couldn't provision a workspace: no provider "${providerId}" is loaded.`);
+    throw new Error(t(`Couldn't provision a workspace: no provider "{provider}" is loaded.`, { provider: providerId }));
   }
 
   const effectiveSignal = signal ?? new AbortController().signal;
@@ -843,7 +845,7 @@ export async function provisionWorkspace(request) {
   // this server can open it, is the server's to record.
   const baseRoot = session.workspaceRoot(baseWorkspaceId);
   if (!baseRoot) {
-    throw new Error(`Couldn't provision a workspace: its base workspace is not usable.`);
+    throw new Error(t(`Couldn't provision a workspace: its base workspace is not usable.`));
   }
 
   const row = await registerWorkspace({

@@ -21,6 +21,9 @@ import { provisionWorkspace, workspaceStatus, finishWorkspace } from '../../../j
 import { setupRows, probeSetupAdoptions } from '../../../js/services/workspace-places.js';
 import workspaceProviderRegistry from '../../../js/registries/workspace-provider-registry.js';
 import GitWorktreeWorkspaceProvider, { defaultLocation } from '../workspaces/git-worktree-workspace-provider.js';
+import api from '../../../js/services/api.js';
+import { underPseudoLocale } from '../../../js-tests/utilities/pseudo-locale.js';
+import { isPseudoLocalized } from '../../../sdk/lib/i18n.js';
 import {
   runWorktreeSuite,
   PROVIDER_ID,
@@ -46,6 +49,68 @@ import {
  * @type {boolean}
  */
 export const needsExclusiveRun = true;
+
+/** juggler-core's English for what the worktree says once it exists, standing in for its catalogue. */
+const CORE_TEXT = [
+  "Couldn't make a worktree: {repoRoot} is not a git repository.",
+  "Couldn't make a worktree at {location}: there is already something there.",
+  'Creating the worktree',
+  'Setting the worktree up',
+  'The worktree directory is missing.',
+  'No git repository there.',
+  'repo {name}',
+  'branch {branch}',
+  'clean',
+  '{count} changed',
+  '{count} ahead',
+  'Detached head',
+  'Untracked',
+  'Commit the changes',
+  '{target, select, named {Commits everything here onto {branch}. You carry on working in this workspace.} other {Commits everything here onto its branch. You carry on working in this workspace.}}',
+  'Message',
+  'What this work does',
+  'Commit',
+  'What changed and why, in the words you would use to someone who has not read it.',
+  'Let this conversation write it',
+  'It has read the work; the commit happens on its next turn.',
+  'Fast-forward {repoTarget, select, named {{repo}} other {the repository}} to {branchTarget, select, named {{branch}} other {this branch}}',
+  'Runs git merge --ff-only {branchTarget, select, named {{branch}} other {this branch}} in {repoTarget, select, named {{repo}} other {the repository}}, moving the branch it has checked out to this one. Git refuses it if that branch has diverged. The worktree is untouched.',
+  'Close the workspace, keep the worktree',
+  '{target, select, named {The worktree and {branch} stay on disk, ready to be adopted again. Conversations here go to the bin, which they can be restored from.} other {The worktree and its branch stay on disk, ready to be adopted again. Conversations here go to the bin, which they can be restored from.}}',
+  'Close the workspace and delete the worktree',
+  'Deletes the worktree and the branch {branch}, with every commit on it. Conversations here go to the bin, which they can be restored from.',
+  'Deletes the worktree and everything in it, committed or not. The branch was not ours to make, so it stays. Conversations here go to the bin, which they can be restored from.',
+  'Stopped using {dirTarget, select, named {{dir}} other {the worktree}}. It and {branchTarget, select, named {{branch}} other {its branch}} are still there.',
+  '{name} has no action "{actionId}".',
+  'There is no message to commit under, and nobody here to write one.',
+  'Asked this conversation to write the commit.',
+  'Couldn’t stage the changes.',
+  'Couldn’t stage the changes.\n\n{detail}',
+  'Nothing had changed here, so nothing was committed.',
+  'Couldn’t make the commit.',
+  'Couldn’t make the commit.\n\n{detail}',
+  '{target, select, named {Committed on {branch}.} other {Committed on its branch.}}',
+  '{repoTarget, select, named {{repo}} other {The repository}} cannot be reached from {baseTarget, select, named {{base}} other {the base workspace}}, so there is nowhere to merge it into.',
+  '{repoTarget, select, named {{repo}} other {The repository}} cannot be reached from {baseTarget, select, named {{base}} other {the base workspace}}, so the worktree is not ours to remove from here.',
+  'There is no record of which branch this worktree is on, so there is nothing to merge.',
+  '{count, plural, one {This worktree has an uncommitted change. Commit them first — a fast-forward moves commits, and these would be left behind.} other {This worktree has {count} uncommitted changes. Commit them first — a fast-forward moves commits, and these would be left behind.}}',
+  'Couldn’t ask the repository which branch it has out.',
+  'Couldn’t ask the repository which branch it has out.\n\n{detail}',
+  '{repo} has a detached HEAD, so there is no branch to fast-forward to {branch}.',
+  '{into} has moved on since this worktree was made, so it cannot be fast-forwarded to {branch}. A merge or a rebase is a job for you and git.',
+  '{into} has moved on since this worktree was made, so it cannot be fast-forwarded to {branch}. A merge or a rebase is a job for you and git.\n\n{detail}',
+  '{into} is already up to date with {branch}.',
+  'Fast-forwarded {into} to {branch}.',
+  'There is no record of where this worktree came from, so it is not ours to remove.',
+  '{target, select, branch {Removed {dir} and {branch}.} other {Removed {dir}.}}',
+  '{dir} is still there.',
+  '{dir} is not a worktree of {repo} any more.',
+  '{target, select, named {{dir} is on {branch} now, not {expected}.} other {{dir} is on no branch now, not {expected}.}}',
+  '{dir} — a worktree of {repo} with no workspace',
+  'Nothing was checkpointed, so there is nothing to undo.',
+  '{dir} is still there and could not be removed.',
+  'Removed {dir}.'
+];
 
 /**
  * @typedef {object} TestResult
@@ -736,6 +801,231 @@ export async function runTests() {
         if (outcome) await outcome.undo().catch(() => {});
         await ops.shell({ command: `rm -rf ${tree} ${repo}` }).catch(() => {});
       }
+    });
+
+    await run('everything the worktree says once it is being made, used and finished is translated under en-XA', async () => {
+      /** @type {Record<string, string>} */
+      const shown = {};
+      /** @type {string[]} What the conversation was sent, which the model reads. */
+      const sent = [];
+      const provider = new GitWorktreeWorkspaceProvider({});
+      /** @type {any} The private hooks, which a test may reach. */
+      const hooks = provider;
+      // The manifest's name is English by decision; it is data here.
+      const manifestName = String(provider.getManifest().name);
+      /**
+       * A shown line with its data mapped to digits.
+       * @param {any} text - What was shown.
+       * @returns {string} The line, ready for the check.
+       */
+      const scrub = (text) => String(text).split(manifestName).join('9');
+
+      // The status endpoint is the server's; this case owns its answer.
+      const realStatus = Object.prototype.hasOwnProperty.call(api, 'getGitStatus')
+        ? /** @type {any} */ (api).getGitStatus : null;
+      /** @type {any} */
+      let gitStatus = { repos: [] };
+      /** @type {any} */ (api).getGitStatus = async () => gitStatus;
+      try {
+        await underPseudoLocale('git-worktree-lifecycle-test', async () => {
+          // Every shell command stubbed: nothing on disk is made, changed or looked at.
+          /** @type {(command: string) => any} */
+          let respond = () => ({ success: false, stdout: '', stderr: '', exitCode: 1 });
+          const shell = async (/** @type {any} */ { command }) => respond(String(command));
+          const ops = {
+            shell,
+            shellStreaming: async (/** @type {any} */ { command }) => respond(String(command))
+          };
+          /** @type {string[]} */
+          const steps = [];
+          let root = '/1';
+          const ctx = {
+            session: { projectPath: '/1', workspaceRoot: () => root },
+            baseWorkspaceId: '',
+            ops,
+            baseOps: ops,
+            signal: new AbortController().signal,
+            rollback: { push: () => {} },
+            checkpoint: async () => {},
+            progress: (/** @type {string} */ step) => { if (!steps.includes(step)) steps.push(step); }
+          };
+          /**
+           * What a call threw.
+           * @param {() => any} fn - The call.
+           * @returns {Promise<string>} Its message.
+           */
+          const thrown = async (fn) => {
+            try {
+              await fn();
+              return '(nothing thrown)';
+            } catch (e) {
+              return e instanceof Error ? e.message : String(e);
+            }
+          };
+          const values = { branch: '4', location: '/1/5' };
+
+          // Provision: both refusals, then all the way through with a hook.
+          shown['not a repository'] = await thrown(() => provider.provision(values, ctx));
+          respond = () => ({ success: true, stdout: '' });
+          shown['occupied'] = await thrown(() => provider.provision(values, ctx));
+          respond = (command) => ({
+            success: !command.startsWith('test -e') && !command.includes('rev-parse --verify'),
+            stdout: ''
+          });
+          await provider.provision(values, ctx);
+          assert(steps.length === 2, `two progress steps, got ${JSON.stringify(steps)}`);
+          steps.forEach((step, i) => { shown[`progress ${i}`] = step; });
+
+          // Status: missing, not a repository, a dirty named tree, a clean detached one.
+          shown['status missing'] = (await provider.status({ id: '1', available: false, meta: {} }, ctx)).detail;
+          gitStatus = { repos: [] };
+          shown['status no repository'] = (await provider.status({ id: '1', meta: {} }, ctx)).detail;
+          gitStatus = {
+            repos: [{
+              path: '', branch: '4', upstream: '6', ahead: 1, behind: 0,
+              changed: 1, staged: 0, total: 1, files: [{ path: '6', worktree: '?', index: '?' }]
+            }]
+          };
+          const dirty = await provider.status({ id: '1', meta: { repoDir: '/1/3' } }, ctx);
+          const dirtyPieces = String(dirty.detail).split(' · ');
+          assert(dirtyPieces.length === 4, `repository, branch, counts and divergence, got ${JSON.stringify(dirty.detail)}`);
+          dirtyPieces.forEach((piece, i) => { shown[`dirty status ${i}`] = piece; });
+          shown['file state'] = dirty.files?.[0]?.state;
+          gitStatus = { repos: [{ path: '', detached: true, changed: 0, staged: 0, total: 0, files: [] }] };
+          const clean = await provider.status({ id: '1', meta: {} }, ctx);
+          const cleanPieces = String(clean.detail).split(' · ');
+          assert(cleanPieces.length === 2, `head and clean, got ${JSON.stringify(clean.detail)}`);
+          cleanPieces.forEach((piece, i) => { shown[`clean status ${i}`] = piece; });
+
+          // Finish options, with every fallback and without.
+          const named = { meta: { branch: '4', repoDir: '/1/3', dir: '/1/5', treeRel: '5', branchCreatedByUs: true } };
+          const unnamed = { meta: {} };
+          /**
+           * Every string an option shows, wherever in it.
+           * @param {string} prefix - Which workspace.
+           * @param {any} value - An option, or part of one.
+           * @param {string} path - Where in it.
+           */
+          const collect = (prefix, value, path) => {
+            if (typeof value === 'string') {
+              if (/(label|description|placeholder|confirmLabel|hint)$/.test(path)) shown[`${prefix} ${path}`] = value;
+            } else if (value && typeof value === 'object') {
+              for (const [key, inner] of Object.entries(value)) collect(prefix, inner, `${path}.${key}`);
+            }
+          };
+          provider.finishOptions(named).forEach((option) => collect('named', option, option.id));
+          provider.finishOptions(unnamed).forEach((option) => collect('unnamed', option, option.id));
+
+          // Finish: unbind both ways, and an action there is not.
+          shown['unbind named'] = (await provider.finish(named, 'unbind', ctx)).message;
+          shown['unbind unnamed'] = (await provider.finish(unnamed, 'unbind', ctx)).message;
+          shown['no action'] = (await provider.finish(named, '8', ctx)).message;
+
+          // Commit: nobody to write it, the conversation asked, and every git outcome.
+          shown['commit nobody'] = (await provider.finish(named, 'commit', { ...ctx, input: {}, conversation: null })).message;
+          const conversation = {
+            rootMessageThread: null,
+            sendMessage: async (/** @type {string} */ text) => { sent.push(text); }
+          };
+          shown['commit asked'] = (await provider.finish(named, 'commit', { ...ctx, input: {}, conversation })).message;
+          await provider.finish(unnamed, 'commit', { ...ctx, input: {}, conversation });
+          const commitCtx = { ...ctx, input: { message: '7' } };
+          for (const detail of ['1', '']) {
+            respond = (command) => ({ success: command !== 'git add -A', stdout: detail });
+            shown[`stage failed (${detail || 'silent'})`] = (await provider.finish(named, 'commit', commitCtx)).message;
+            respond = (command) => ({ success: !command.startsWith('git commit'), stdout: detail });
+            shown[`commit failed (${detail || 'silent'})`] = (await provider.finish(named, 'commit', commitCtx)).message;
+          }
+          respond = (command) => ({ success: !command.startsWith('git commit'), stdout: 'nothing to commit' });
+          shown['commit nothing'] = (await provider.finish(named, 'commit', commitCtx)).message;
+          respond = () => ({ success: true, stdout: '' });
+          shown['committed named'] = (await provider.finish(named, 'commit', commitCtx)).message;
+          shown['committed unnamed'] = (await provider.finish({ meta: {} }, 'commit', commitCtx)).message;
+
+          // Land: no branch, the repository out of reach both ways, uncommitted
+          // work, git refusing each step with and without saying why, and success.
+          shown['land no branch'] = (await provider.finish(unnamed, 'land', ctx)).message;
+          shown['land no repository'] = (await provider.finish({ meta: { branch: '4' } }, 'land', ctx)).message;
+          root = '';
+          shown['land no base'] = (await provider.finish(named, 'land', ctx)).message;
+          shown['discard no base'] = (await provider.finish(named, 'discard', ctx)).message;
+          root = '/1';
+          for (const porcelain of [' M 6\n', ' M 6\n M 7\n']) {
+            respond = () => ({ success: true, stdout: porcelain });
+            shown[`land uncommitted ${porcelain.length}`] = (await provider.finish(named, 'land', ctx)).message;
+          }
+          /**
+           * Answer each command the land runs.
+           * @param {any} head - What `rev-parse --abbrev-ref` says.
+           * @param {any} merge - What `merge --ff-only` says.
+           * @returns {(command: string) => any} The responder.
+           */
+          const landing = (head, merge) => (command) => {
+            if (command.includes('rev-parse --abbrev-ref')) return head;
+            if (command.includes('merge --ff-only')) return merge;
+            return { success: true, stdout: '' };
+          };
+          const out = { success: true, stdout: '2' };
+          for (const detail of ['1', '']) {
+            respond = landing({ success: false, stdout: detail }, out);
+            shown[`land head failed (${detail || 'silent'})`] = (await provider.finish(named, 'land', ctx)).message;
+            respond = landing(out, { success: false, stdout: detail });
+            shown[`land refused (${detail || 'silent'})`] = (await provider.finish(named, 'land', ctx)).message;
+          }
+          respond = landing({ success: true, stdout: 'HEAD' }, out);
+          shown['land detached'] = (await provider.finish(named, 'land', ctx)).message;
+          respond = landing(out, { success: true, stdout: 'Already up to date.' });
+          shown['land up to date'] = (await provider.finish(named, 'land', ctx)).message;
+          respond = landing(out, { success: true, stdout: '' });
+          shown['landed'] = (await provider.finish(named, 'land', ctx)).message;
+
+          // Discard: no record, removed with and without the branch, still there.
+          shown['discard no record'] = (await provider.finish(unnamed, 'discard', ctx)).message;
+          respond = () => ({ success: true, stdout: 'REMOVED' });
+          shown['discarded with branch'] = (await provider.finish(named, 'discard', ctx)).message;
+          shown['discarded'] = (await provider.finish({ meta: { ...named.meta, branchCreatedByUs: false } }, 'discard', ctx)).message;
+          respond = () => ({ success: true, stdout: '', stderr: '' });
+          shown['discard left'] = (await provider.finish(named, 'discard', ctx)).message;
+
+          // Reconcile: a tree gone, a tree on another branch, one on none, and one with no row.
+          respond = (command) => (command === 'git worktree list --porcelain'
+            ? {
+              success: true,
+              stdout: 'worktree /1\nbranch refs/heads/1\n\nworktree /1/2\nbranch refs/heads/2\n\nworktree /1/3\ndetached\n\nworktree /1/6\nbranch refs/heads/6\n'
+            }
+            : { success: false, stdout: '' });
+          /**
+           * A row of this provider's.
+           * @param {string} tree - Its tree, relative to the repository.
+           * @returns {any} The row.
+           */
+          const row = (tree) => ({ id: tree, root: `/1/${tree}`, meta: { repoDir: '/1', treeRel: tree, dir: `/1/${tree}`, branch: '4' } });
+          const report = await provider.reconcile([row('7'), row('2'), row('3')], ctx);
+          assert(report.orphanedWorkspaces.length === 3 && report.orphanedArtifacts.length === 1,
+            `three orphans and one unclaimed tree, got ${JSON.stringify(report)}`);
+          report.orphanedWorkspaces.forEach((/** @type {any} */ orphan) => { shown[`reconcile ${orphan.id}`] = orphan.reason; });
+          shown['unclaimed'] = report.orphanedArtifacts[0].detail;
+
+          // Cleanup: nothing checkpointed, a tree that would not go, one that did.
+          shown['cleanup nothing'] = (await hooks.cleanupPartial(unnamed, ctx)).message;
+          respond = () => ({ success: true, stdout: '' });
+          shown['cleanup left'] = (await hooks.cleanupPartial(named, ctx)).message;
+          respond = () => ({ success: false, stdout: '' });
+          shown['cleanup removed'] = (await hooks.cleanupPartial(named, ctx)).message;
+        }, { '@juggler/core': CORE_TEXT });
+      } finally {
+        if (realStatus) /** @type {any} */ (api).getGitStatus = realStatus;
+        else delete (/** @type {any} */ (api)).getGitStatus;
+      }
+
+      // The model reads what the conversation is sent, so it stays English.
+      assert(JSON.stringify(sent) === JSON.stringify([
+        'Commit the work in this worktree (branch 4), with a message describing it.',
+        'Commit the work in this worktree, with a message describing it.'
+      ]), `the conversation is asked in English, got ${JSON.stringify(sent)}`);
+
+      const english = Object.entries(shown).filter(([, text]) => !isPseudoLocalized(scrub(text)));
+      assert(english.length === 0, `still English under en-XA: ${JSON.stringify(english)}`);
     });
 
   });

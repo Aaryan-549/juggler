@@ -10,6 +10,7 @@ import { presentPopup } from '../utils/popup-surface.js';
 import { applyMenuRoles, attachMenuKeyboard } from '../utils/menu-roles.js';
 import { showAlert, showConfirm } from './modal-dialog.js';
 import JugglerElement from './juggler-element.js';
+import { displayConversationName } from '../model/conversation-naming.js';
 import { t } from '../../sdk/lib/i18n.js';
 import { escapeHtml } from '../../sdk/lib/html.js';
 
@@ -211,7 +212,7 @@ class BinModal extends JugglerElement {
       `;
       const nameEl = li.querySelector('.bin-row-name');
       const dateEl = /** @type {HTMLElement|null} */ (li.querySelector('.bin-row-date'));
-      if (nameEl) nameEl.textContent = row.name || t('Untitled');
+      if (nameEl) nameEl.textContent = displayConversationName(row.name);
       if (dateEl) {
         dateEl.textContent = dateShort;
         dateEl.title = dateFull;
@@ -249,7 +250,7 @@ class BinModal extends JugglerElement {
   async _onDelete(row) {
     if (!this._session) return;
     const confirmed = await showConfirm(
-      t('Permanently delete "{name}"?\n\nThis cannot be undone.', { name: row.name || t('Untitled') }),
+      t('Permanently delete "{name}"?\n\nThis cannot be undone.', { name: displayConversationName(row.name) }),
       t('Delete Conversation'),
       { confirmText: t('Delete'), cancelText: t('Cancel'), danger: true }
     );

@@ -49,6 +49,7 @@ import pinboardStore from './pinboard-store.js';
 import { ownerViewerId, VIEW_PINBOARD } from '../utils/view-mode.js';
 import { hasNativeHost } from '../../sdk/lib/window-control.js';
 import { extractErrorMessage } from '../../sdk/lib/error-utils.js';
+import { t } from '../../sdk/lib/i18n.js';
 
 /** The relay envelope's tag, so nothing else's payload is ever mistaken for ours. */
 const CHANNEL = 'pinboard';
@@ -292,17 +293,17 @@ export const ownerLink = {
    * @returns {Promise<string>} A complaint for the status line, or '' when it opened.
    */
   async detach(pinId, conversationId, pins, frame = null) {
-    if (!canLinkBoards()) return "Couldn't detach the board. This viewer has no address for one to answer.";
+    if (!canLinkBoards()) return t("Couldn't detach the board. This viewer has no address for one to answer.");
     // A board is a view of one conversation, fixed for its life. Without one
     // there is nothing for the window to be a view of, and it would open only to
     // say so.
-    if (!conversationId) return "Couldn't detach the board. There's no conversation for it to be a view of.";
+    if (!conversationId) return t("Couldn't detach the board. There's no conversation for it to be a view of.");
 
     const board = pinboardStore.newBoardId();
     try {
       await pinboardStore.createBoard(board, conversationId, pins);
     } catch (err) {
-      return `Couldn't detach the board. ${extractErrorMessage(err)}`;
+      return t("Couldn't detach the board. {error}", { error: extractErrorMessage(err) });
     }
     return this.openBoardWindow(board, pinId, conversationId, frame);
   },
@@ -335,7 +336,7 @@ export const ownerLink = {
         await api.openPinboardWindow(wsService.viewerId, boardId, pinId, conversationId, frame);
       } catch (err) {
         // Already worded for the status line by the request's error prefix.
-        return extractErrorMessage(err) || "Couldn't open that board.";
+        return extractErrorMessage(err) || t("Couldn't open that board.");
       }
       return '';
     }
@@ -343,7 +344,7 @@ export const ownerLink = {
     // app's to use: sizing a tab is not a thing a page may do, and a popup that
     // could be sized is the window the user did not ask for.
     const opened = window.open(detachedBoardURL(boardId, pinId, conversationId), '_blank');
-    if (!opened) return "Couldn't open that board. The browser blocked the tab.";
+    if (!opened) return t("Couldn't open that board. The browser blocked the tab.");
     return '';
   },
 

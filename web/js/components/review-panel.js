@@ -21,6 +21,7 @@
  */
 
 import { createDiffViewer } from './diff-viewer.js';
+import { t } from '../../sdk/lib/i18n.js';
 
 /**
  * Scroll one box just far enough to show something inside it, and scroll
@@ -107,15 +108,6 @@ const TONES = new Set(['added', 'removed', 'modified', 'renamed', 'conflicted'])
  */
 function fileKey(repo, path) {
   return `${repo}\u0000${path}`;
-}
-
-/**
- * @param {number} count - How many.
- * @param {string} one - The singular noun.
- * @returns {string} e.g. '1 file', '7 files'.
- */
-function plural(count, one) {
-  return `${count} ${one}${count === 1 ? '' : 's'}`;
 }
 
 /**
@@ -213,7 +205,7 @@ class ReviewPanel {
     /** @type {HTMLElement} @private */
     this._railEl = el('div', 'review-panel__rail');
     this._railEl.setAttribute('role', 'group');
-    this._railEl.setAttribute('aria-label', 'Changed files');
+    this._railEl.setAttribute('aria-label', t('Changed files'));
     /** @type {HTMLElement} @private */
     this._diffEl = el('div', 'review-panel__diff');
     /** @type {HTMLElement} @private */
@@ -367,7 +359,8 @@ class ReviewPanel {
     if (this._manifest) {
       // "so far" is the whole difference between a count and a claim. A review
       // that could not reach everything knows a floor, not a total.
-      parts.push(plural(files.length, 'file') + (this._manifest.complete ? '' : ' so far'));
+      parts.push(t('{count, plural, one {{count} file} other {{count} files}}{partial, select, yes { so far} other {}}',
+        { count: files.length, partial: this._manifest.complete ? 'no' : 'yes' }));
       if (added > 0 || removed > 0) parts.push(`+${added} −${removed}`);
     }
     this._scopeTextEl.textContent = parts.filter(Boolean).join(' · ');
@@ -380,7 +373,7 @@ class ReviewPanel {
     this._show(this._warningsEl, warnings.length > 0,
       this._errorEl.parentNode === this.element ? this._errorEl : this._mainEl);
     if (warnings.length === 0) return;
-    this._warningsEl.append(el('div', 'review-panel__warnings-lead', 'Not everything could be reviewed:'));
+    this._warningsEl.append(el('div', 'review-panel__warnings-lead', t('Not everything could be reviewed:')));
     const list = el('ul', 'review-panel__warning-list');
     for (const warning of warnings) list.append(el('li', '', warning));
     this._warningsEl.append(list);
@@ -459,12 +452,18 @@ class ReviewPanel {
    */
   _labelRow(button, file) {
     const count = this._commentsFor(file).length;
-    /** @type {string[]} */
-    const parts = [file.status || 'Changed', file.path];
-    if (file.oldPath) parts.push(`from ${file.oldPath}`);
-    if (file.repo) parts.push(`in ${file.repo}`);
-    if (count > 0) parts.push(plural(count, 'comment'));
-    button.setAttribute('aria-label', parts.join(', '));
+    button.setAttribute('aria-label', t('{named, select, yes {{status}} other {Changed}}, {path}'
+      + '{moved, select, yes {, from {oldPath}} other {}}{grouped, select, yes {, in {repo}} other {}}'
+      + '{count, plural, =0 {} one {, {count} comment} other {, {count} comments}}', {
+      named: file.status ? 'yes' : 'no',
+      status: file.status || '',
+      path: file.path,
+      moved: file.oldPath ? 'yes' : 'no',
+      oldPath: file.oldPath || '',
+      grouped: file.repo ? 'yes' : 'no',
+      repo: file.repo || '',
+      count,
+    }));
     const badge = button.querySelector('.review-panel__count');
     if (badge) badge.textContent = count > 0 ? String(count) : '';
   }
@@ -535,7 +534,7 @@ class ReviewPanel {
     const file = this._fileFor(this._activeKey);
     if (!file) {
       this._diffEl.replaceChildren(el('div', 'review-panel__placeholder',
-        this._manifest ? 'Nothing changed.' : ''));
+        this._manifest ? t('Nothing changed.') : ''));
       return;
     }
 
@@ -590,7 +589,7 @@ class ReviewPanel {
     const actions = file.actions?.();
     if (actions) head.append(actions);
     if (this._canComment()) {
-      const whole = el('button', 'review-panel__file-comment', 'Comment on this file');
+      const whole = el('button', 'review-panel__file-comment', t('Comment on this file'));
       /** @type {HTMLButtonElement} */ (whole).type = 'button';
       whole.addEventListener('click', () => this._openEditor({
         repo: file.repo,
@@ -771,7 +770,7 @@ class ReviewPanel {
     try {
       await this._review.save({ comments: rest });
     } catch (error) {
-      this._footerError = `Couldn't delete that comment. ${reason(error)}`;
+      this._footerError = t("Couldn't delete that comment. {error}", { error: reason(error) });
       this._renderFooter();
     }
   }
@@ -785,11 +784,11 @@ class ReviewPanel {
    */
   _editorLabel(anchor) {
     const path = anchor.path.length > LABEL_PATH_MAX ? `…${anchor.path.slice(-LABEL_PATH_MAX)}` : anchor.path;
-    if (anchor.side === 'file') return `Comment on ${path}`;
-    const span = anchor.endLine > anchor.startLine
-      ? `${anchor.side} lines ${anchor.startLine} to ${anchor.endLine}`
-      : `${anchor.side} line ${anchor.startLine}`;
-    return `Comment on ${span} in ${path}`;
+    if (anchor.side === 'file') return t('Comment on {path}', { path });
+    const params = { side: anchor.side, start: anchor.startLine, end: anchor.endLine, path };
+    return anchor.endLine > anchor.startLine
+      ? t('Comment on {side, select, old {old lines {start} to {end}} other {new lines {start} to {end}}} in {path}', params)
+      : t('Comment on {side, select, old {old line {start}} other {new line {start}}} in {path}', params);
   }
 
   /**
@@ -812,9 +811,9 @@ class ReviewPanel {
     const actions = el('div', 'review-panel__editor-actions');
     // An edit replaces the comment it was opened on, so only a new one is
     // joining anything. Neither is sent: both end at the batch in the footer.
-    const save = el('button', 'review-panel__save', anchor.id ? 'Save changes' : 'Add to feedback');
+    const save = el('button', 'review-panel__save', anchor.id ? t('Save changes') : t('Add to feedback'));
     /** @type {HTMLButtonElement} */ (save).type = 'button';
-    const cancel = el('button', 'review-panel__cancel', 'Cancel');
+    const cancel = el('button', 'review-panel__cancel', t('Cancel'));
     /** @type {HTMLButtonElement} */ (cancel).type = 'button';
     actions.append(save, cancel);
     box.append(label, textarea, error, actions);
@@ -890,7 +889,7 @@ class ReviewPanel {
     if (!editor) return;
     const body = editor.textarea.value.trim();
     if (!body) {
-      this._showEditorError('A comment with nothing in it says nothing.');
+      this._showEditorError(t('A comment with nothing in it says nothing.'));
       return;
     }
 
@@ -939,7 +938,7 @@ class ReviewPanel {
     } catch (error) {
       // The words are the user's own and are still in the box, which is the
       // whole reason the save refuses rather than trimming to fit.
-      this._showEditorError(`Couldn't save that comment. ${reason(error)}`);
+      this._showEditorError(t("Couldn't save that comment. {error}", { error: reason(error) }));
     }
   }
 
@@ -969,7 +968,7 @@ class ReviewPanel {
     if (!this._canComment()) {
       this._show(this._footerEl, true, null);
       this._footerEl.append(el('span', 'review-panel__footer-note',
-        'No conversation open, so there is nowhere to put a comment.'));
+        t('No conversation open, so there is nowhere to put a comment.')));
       return;
     }
 
@@ -985,11 +984,12 @@ class ReviewPanel {
     // written in another scope are named, since they are not on screen here.
     const elsewhere = comments.filter((comment) => !this._inScope(comment)).length;
     this._footerEl.append(el('span', 'review-panel__draft-count',
-      `${plural(comments.length, 'draft comment')}${elsewhere ? ` (${elsewhere} in another scope)` : ''}`));
-    const discard = el('button', 'review-panel__discard', 'Discard');
+      t('{count, plural, one {{count} draft comment} other {{count} draft comments}}'
+        + '{elsewhere, plural, =0 {} other { ({elsewhere} in another scope)}}', { count: comments.length, elsewhere })));
+    const discard = el('button', 'review-panel__discard', t('Discard'));
     /** @type {HTMLButtonElement} */ (discard).type = 'button';
     discard.addEventListener('click', () => { void this._discard(); });
-    const compose = el('button', 'review-panel__compose', 'Paste feedback into prompt');
+    const compose = el('button', 'review-panel__compose', t('Paste feedback into prompt'));
     /** @type {HTMLButtonElement} */ (compose).type = 'button';
     compose.addEventListener('click', () => { void this._compose(); });
     this._footerEl.append(discard, compose);
@@ -1007,7 +1007,7 @@ class ReviewPanel {
       this._footerError = '';
       await this._review.clear();
     } catch (error) {
-      this._footerError = `Couldn't discard. ${reason(error)}`;
+      this._footerError = t("Couldn't discard. {error}", { error: reason(error) });
       this._renderFooter();
     }
   }
@@ -1024,7 +1024,7 @@ class ReviewPanel {
     } catch (error) {
       // The comments are still here either way — handing them over does not
       // spend them — so this reports what went wrong and changes nothing else.
-      this._footerError = `Couldn't put the feedback in the prompt. ${reason(error)}`;
+      this._footerError = t("Couldn't put the feedback in the prompt. {error}", { error: reason(error) });
       this._renderFooter();
     }
   }

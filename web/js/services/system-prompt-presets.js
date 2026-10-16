@@ -14,6 +14,7 @@
  */
 
 import apiService from './api.js';
+import { t } from '../../sdk/lib/i18n.js';
 import { systemPromptRegistry, BUILTIN_DEFAULT_ID } from '../../sdk/lib/system-prompt-registry.js';
 
 /** @type {string} Last-known default preset id from the server ('' = unset). */
@@ -80,7 +81,7 @@ export function getDefaultPresetSeed() {
 export async function saveUserPreset(name, content) {
   const res = await apiService.saveSystemPromptPreset(name, content);
   if (!res || !res.success || !res.preset) {
-    throw new Error(res && res.error ? res.error : 'Failed to save preset');
+    throw new Error(res && res.error ? res.error : t('Failed to save preset'));
   }
   await refreshUserPresets();
   return res.preset;
@@ -94,7 +95,7 @@ export async function saveUserPreset(name, content) {
 export async function deleteUserPreset(id) {
   const res = await apiService.deleteSystemPromptPreset(id);
   if (!res || !res.success) {
-    throw new Error(res && res.error ? res.error : "Couldn't delete preset");
+    throw new Error(res && res.error ? res.error : t("Couldn't delete preset"));
   }
   await refreshUserPresets();
 }
@@ -109,7 +110,7 @@ export async function deleteUserPreset(id) {
 export async function updateUserPreset(id, name, content) {
   const res = await apiService.updateSystemPromptPreset(id, name, content);
   if (!res || !res.success || !res.preset) {
-    throw new Error(res && res.error ? res.error : 'Failed to update preset');
+    throw new Error(res && res.error ? res.error : t('Failed to update preset'));
   }
   await refreshUserPresets();
   return res.preset;
@@ -123,7 +124,7 @@ export async function updateUserPreset(id, name, content) {
 export async function setDefaultPreset(id) {
   const res = await apiService.setDefaultSystemPromptPreset(id);
   if (!res || !res.success) {
-    throw new Error(res && res.error ? res.error : "Couldn't set default preset");
+    throw new Error(res && res.error ? res.error : t("Couldn't set default preset"));
   }
   _defaultId = id || '';
 }

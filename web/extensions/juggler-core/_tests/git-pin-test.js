@@ -1700,8 +1700,8 @@ export async function runTests(_ctx) {
         { path: '83.js', index: '.', worktree: '.' },
       ]);
       const statuses = await mounted({ manifest: manifestOf(statusFiles) });
-      // The label's path and onward are the panel's; the status may hold a comma.
-      for (const row of statuses.rows()) shown.push((row.getAttribute('aria-label') || '').replace(/, \d+\.js(, .*)?$/, ''));
+      // The label is the panel's message around the status; its path is data.
+      for (const row of statuses.rows()) shown.push((row.getAttribute('aria-label') || '').replace(/, \d+\.js/, ''));
       statuses.teardown();
 
       // A conflicted file names itself so in its row's label. The rest of that

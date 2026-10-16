@@ -15,6 +15,7 @@
 
 import workerManager from '../services/worker-manager.js';
 import { TOOL_STATES } from '../../sdk/lib/message.js';
+import { t } from '../../sdk/lib/i18n.js';
 
 /**
  * Wait for user to approve/deny a tool use.
@@ -82,6 +83,6 @@ export async function continueThread(conversation, messageThread, beforeContinue
   // Turns are driven exclusively by the Go worker; there is no viewer-side loop.
   // If the worker isn't up yet (still starting, or spawn failed), refuse rather
   // than running anything on the main thread.
-  conversation.showWarning('Still connecting to the engine — try again in a moment.', 5000);
+  conversation.showWarning(t('Still connecting to the engine — try again in a moment.'), 5000);
   return false;
 }

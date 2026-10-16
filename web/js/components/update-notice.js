@@ -8,6 +8,7 @@ import { markPopupOpen } from '../utils/popup-manager.js';
 import { fadeOutScrims } from '../utils/modal-scrim.js';
 import { startInstall, requestRestart } from '../services/updater-control.js';
 import { showConfirm } from './modal-dialog.js';
+import { t, markForTranslation } from '../../sdk/lib/i18n.js';
 
 /**
  * @typedef {object} UpdateAction
@@ -52,7 +53,7 @@ const TEXT_NODE = 3;
 const ELEMENT_NODE = 1;
 
 /** Generic heading used when the manifest doesn't author its own title. */
-const DEFAULT_TITLE = 'New Juggler Version Available';
+const DEFAULT_TITLE = markForTranslation('New Juggler Version Available');
 
 /**
  * Plain-English lead for a failure, keyed by the stage that produced it. The
@@ -62,15 +63,15 @@ const DEFAULT_TITLE = 'New Juggler Version Available';
  * @type {Record<string, string>}
  */
 const ERROR_LEADS = {
-  check: 'Couldn’t check for updates.',
-  download: 'Couldn’t download the update.',
-  verify: 'Couldn’t verify the downloaded update.',
-  install: 'Couldn’t install the update.',
-  restart: 'Couldn’t restart to finish the update.',
+  check: markForTranslation('Couldn’t check for updates.'),
+  download: markForTranslation('Couldn’t download the update.'),
+  verify: markForTranslation('Couldn’t verify the downloaded update.'),
+  install: markForTranslation('Couldn’t install the update.'),
+  restart: markForTranslation('Couldn’t restart to finish the update.'),
 };
 
 /** Lead used when the failure arrived without a recognised stage. */
-const ERROR_LEAD_DEFAULT = 'Couldn’t complete the update.';
+const ERROR_LEAD_DEFAULT = markForTranslation('Couldn’t complete the update.');
 
 /**
  * Tags allowed in a server-authored notice body, each mapped to the attributes
@@ -337,10 +338,10 @@ class UpdateNotice extends HTMLElement {
    * @returns {string} The dialog heading text.
    */
   _title(vm) {
-    if (vm.upToDate) return "You're up to date";
+    if (vm.upToDate) return t("You're up to date");
     if (vm.notice && vm.notice.title) return vm.notice.title;
-    if (vm.targetVersion) return `Version ${vm.targetVersion} is available`;
-    return DEFAULT_TITLE;
+    if (vm.targetVersion) return t('Version {version} is available', { version: vm.targetVersion });
+    return t(DEFAULT_TITLE);
   }
 
   /**
@@ -355,8 +356,8 @@ class UpdateNotice extends HTMLElement {
     if (vm.upToDate) {
       const p = document.createElement('p');
       p.textContent = vm.currentVersion
-        ? `You're on the latest version (${vm.currentVersion}).`
-        : "You're on the latest version.";
+        ? t("You're on the latest version ({version}).", { version: vm.currentVersion })
+        : t("You're on the latest version.");
       body.appendChild(p);
       return body;
     }
@@ -366,8 +367,8 @@ class UpdateNotice extends HTMLElement {
     } else {
       const p = document.createElement('p');
       p.textContent = vm.targetVersion
-        ? `Version ${vm.targetVersion} is now available.`
-        : 'A newer version is now available.';
+        ? t('Version {version} is now available.', { version: vm.targetVersion })
+        : t('A newer version is now available.');
       body.appendChild(p);
     }
 
@@ -377,9 +378,8 @@ class UpdateNotice extends HTMLElement {
     if (this._hasServerSkew(vm)) {
       const warn = document.createElement('p');
       warn.className = 'update-notice__skew';
-      warn.textContent = `You're connected to a Juggler server started outside the app`
-        + ` (v${vm.currentVersion}). Updating the app won't update that server —`
-        + ` restart it to update.`;
+      warn.textContent = t("You're connected to a Juggler server started outside the app (v{version}). Updating the app won't update that server — restart it to update.",
+        { version: vm.currentVersion });
       body.appendChild(warn);
     }
     return body;
@@ -411,7 +411,7 @@ class UpdateNotice extends HTMLElement {
       region.className = 'update-notice__status update-notice__status--error';
       const text = document.createElement('p');
       text.className = 'update-notice__status-text';
-      text.textContent = ERROR_LEADS[vm.errorStage || ''] || ERROR_LEAD_DEFAULT;
+      text.textContent = t(ERROR_LEADS[vm.errorStage || ''] || ERROR_LEAD_DEFAULT);
       region.appendChild(text);
       if (vm.error) {
         const detail = document.createElement('p');
@@ -468,13 +468,13 @@ class UpdateNotice extends HTMLElement {
     if (fill) fill.style.width = indeterminate ? '' : `${Math.max(0, Math.min(100, vm.pct || 0))}%`;
     if (text) {
       if (vm.updaterState === 'ready') {
-        text.textContent = 'Update downloaded.';
+        text.textContent = t('Update downloaded.');
       } else if (vm.updaterState === 'downloading') {
         text.textContent = vm.pct === null
-          ? 'Downloading update…'
-          : `Downloading update… ${Math.round(vm.pct)}%`;
+          ? t('Downloading update…')
+          : t('Downloading update… {pct}%', { pct: Math.round(vm.pct) });
       } else {
-        text.textContent = 'Preparing update…';
+        text.textContent = t('Preparing update…');
       }
     }
   }
@@ -491,13 +491,13 @@ class UpdateNotice extends HTMLElement {
     footer.className = 'update-notice__footer';
 
     if (vm.upToDate) {
-      footer.appendChild(this._button('OK', 'btn-primary', () => this._dismiss()));
+      footer.appendChild(this._button(t('OK'), 'btn-primary', () => this._dismiss()));
       return footer;
     }
 
     // "Later" first (left), so the primary action stays rightmost.
     if (dismissible) {
-      footer.appendChild(this._button('Later', '', () => this._dismiss()));
+      footer.appendChild(this._button(t('Later'), '', () => this._dismiss()));
     }
 
     if (!vm.present) {
@@ -505,7 +505,7 @@ class UpdateNotice extends HTMLElement {
       /** @type {UpdateAction[]} */ (vm.notice && vm.notice.actions || []).forEach((action) => {
         if (!action || !action.url) return;
         footer.appendChild(
-          this._button(action.label || 'Open', action.primary ? 'btn-primary' : '', () => openExternalURL(action.url)),
+          this._button(action.label || t('Open'), action.primary ? 'btn-primary' : '', () => openExternalURL(action.url)),
         );
       });
       return footer;
@@ -513,13 +513,13 @@ class UpdateNotice extends HTMLElement {
 
     switch (vm.updaterState) {
       case 'ready':
-        footer.appendChild(this._button('Update & restart', 'btn-primary', () => this._doRestart()));
+        footer.appendChild(this._button(t('Update & restart'), 'btn-primary', () => this._doRestart()));
         break;
       case 'downloading':
       case 'verifying':
       case 'installing': {
         // In-flight — show a disabled primary so the shape is stable.
-        const b = this._button('Updating…', 'btn-primary', () => {});
+        const b = this._button(t('Updating…'), 'btn-primary', () => {});
         b.disabled = true;
         footer.appendChild(b);
         break;
@@ -528,13 +528,13 @@ class UpdateNotice extends HTMLElement {
         // Fall back to a manifest download link, if any, then offer Retry.
         /** @type {UpdateAction[]} */ (vm.notice && vm.notice.actions || []).forEach((action) => {
           if (!action || !action.url) return;
-          footer.appendChild(this._button(action.label || 'Open', '', () => openExternalURL(action.url)));
+          footer.appendChild(this._button(action.label || t('Open'), '', () => openExternalURL(action.url)));
         });
-        footer.appendChild(this._button('Retry', 'btn-primary', () => this._doInstall()));
+        footer.appendChild(this._button(t('Retry'), 'btn-primary', () => this._doInstall()));
         break;
       default:
         // available / idle / checking / up-to-date-with-server-notice.
-        footer.appendChild(this._button('Update now', 'btn-primary', () => this._doInstall()));
+        footer.appendChild(this._button(t('Update now'), 'btn-primary', () => this._doInstall()));
     }
     return footer;
   }
@@ -578,9 +578,9 @@ class UpdateNotice extends HTMLElement {
       let res = await requestRestart({ force: false });
       if (res.status === 'busy') {
         const proceed = await showConfirm(
-          res.message || 'A conversation is still working. Restarting will stop and discard it.',
-          'Restart to update?',
-          { confirmText: 'Restart anyway', cancelText: 'Keep working', danger: true },
+          res.message || t('A conversation is still working. Restarting will stop and discard it.'),
+          t('Restart to update?'),
+          { confirmText: t('Restart anyway'), cancelText: t('Keep working'), danger: true },
         );
         if (!proceed) return;
         res = await requestRestart({ force: true });

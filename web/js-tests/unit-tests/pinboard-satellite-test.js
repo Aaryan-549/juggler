@@ -43,7 +43,7 @@ import '../../js/components/conversation-bar.js';
 import '../../js/components/conversation-tab.js';
 import { budgetFor } from '../utilities/test-deadline.js';
 import { underPseudoLocale } from '../utilities/pseudo-locale.js';
-import { isPseudoLocalized } from '../../sdk/lib/i18n.js';
+import { t, isPseudoLocalized } from '../../sdk/lib/i18n.js';
 
 /**
  * @typedef {object} TestResult
@@ -1926,6 +1926,105 @@ export async function runTests() {
           check('unnamed conversation gone', [missing.shell.querySelector('.pinboard-placeholder')?.textContent || '']);
         } finally {
           missing.teardown();
+        }
+      });
+      assert(raw.length === 0, `plain English under en-XA: ${JSON.stringify(raw)}`);
+    });
+
+    await run('under en-XA a refused detach, a blocked tab, a failed board edit and an untitled conversation\u2019s name speak the user\u2019s language', async () => {
+      /** @type {string[]} */
+      const raw = [];
+      const check = (/** @type {string} */ where, /** @type {string} */ s, data = '') => {
+        if (data && !String(s).includes(data)) raw.push(`${where} keeps its data: ${s}`);
+        const bare = data ? String(s).replace(data, '') : String(s);
+        if (!s || !isPseudoLocalized(bare)) raw.push(`${where}: ${s}`);
+      };
+      /** @type {(() => void)[]} */
+      const restores = [];
+      const stub = (/** @type {any} */ obj, /** @type {string} */ key, /** @type {any} */ fn) => {
+        const had = Object.prototype.hasOwnProperty.call(obj, key);
+        const original = obj[key];
+        obj[key] = fn;
+        restores.push(() => { if (had) obj[key] = original; else delete obj[key]; });
+      };
+      // English first: an unnamed conversation is still '' to both readers.
+      const unnamed = await mountShell({ pins: PROBE_BOARD, search: '', session: makeSession({ conversation: { id: 'conv_main', name: '' } }) });
+      try {
+        const title = unnamed.panel._activeContext().conversation?.title;
+        assert(title === '', `an unnamed conversation hands pins no title, got ${JSON.stringify(title)}`);
+      } finally {
+        unnamed.teardown();
+      }
+      const label = /** @type {any} */ (document.createElement('pinboard-content'))._threadLabel({ name: '' }, null);
+      assert(label === '', `an unnamed root thread has no label, got ${JSON.stringify(label)}`);
+
+      const previousViewerId = wsService.viewerId;
+      await underPseudoLocale('pinboard-satellite-test', async () => {
+        // The name a pin is handed, and the root thread's label.
+        const docked = await mountShell({ pins: PROBE_BOARD, search: '', session: makeSession({ conversation: { id: 'conv_main', name: 'Untitled 3' } }) });
+        try {
+          check('pin context title', docked.panel._activeContext().conversation?.title || '', '3');
+        } finally {
+          docked.teardown();
+        }
+        check('root thread label',
+          /** @type {any} */ (document.createElement('pinboard-content'))._threadLabel({ name: 'Untitled 3' }, null), '3');
+
+        __setViewModeForTests();
+        try {
+          // A detach refused before, and after, the board was asked for.
+          wsService.viewerId = '';
+          check('no address', await ownerLink.detach('', 'conv_1', []));
+          wsService.viewerId = 'v_self';
+          check('no conversation', await ownerLink.detach('', '', []));
+          stub(pinboardStore, 'createBoard', async () => { throw new Error('42'); });
+          check('create failed', await ownerLink.detach('', 'conv_1', []), '42');
+          const opened = stubWindowOpen({ blocked: true });
+          try {
+            check('blocked tab', await ownerLink.openBoardWindow('b_1', '', 'conv_1'));
+          } finally {
+            opened.restore();
+          }
+          // The desktop branch cannot be reached here (no native host in a lane),
+          // so its prefix and fallback are checked in the catalogue.
+          check('native prefix', t("Couldn't open that board"));
+          check('native fallback', t("Couldn't open that board."));
+
+          // Every board edit that can fail, failing.
+          const fail = async () => { throw new Error('42'); };
+          stub(pinboardStore, 'getPin', () => null);
+          stub(pinboardStore, 'get', () => []);
+          stub(pinboardStore, 'add', fail);
+          stub(pinboardStore, 'remove', fail);
+          stub(pinboardStore, 'move', fail);
+          stub(pinboardStore, 'applyOperations', fail);
+          stub(pinboardStore, 'addAll', fail);
+          stub(pinboardStore, 'claimSeed', async () => true);
+          stub(pinboardItemRegistry, 'getType', () => null);
+          stub(pinboardItemRegistry, 'getEnabledTypes', () => [
+            { id: 'i18n-default', getManifest: () => ({ defaultPin: true, order: 0 }) },
+          ]);
+          /** @type {[string, () => Promise<any>][]} */
+          const edits = [
+            ['remove', () => pinboardView.remove('p_1')],
+            ['move', () => pinboardView.move('p_1', 0)],
+            ['add', () => pinboardView.add('i18n-type')],
+            ['show', () => pinboardView.show('p_1', 'i18n-type', {})],
+            ['furnish', () => pinboardView.furnish()],
+            ['prune', async () => {
+              pinboardStore.get = () => [{ id: 'p_2', type: 'changed-files', config: {} }];
+              try { await pinboardView.prune(); } finally { pinboardStore.get = () => []; }
+            }],
+          ];
+          for (const [where, edit] of edits) {
+            pinboardView.setStatus('');
+            await edit();
+            check(where, pinboardView.getStatus(), '42');
+          }
+        } finally {
+          for (const restore of restores.reverse()) restore();
+          wsService.viewerId = previousViewerId;
+          pinboardView.reset();
         }
       });
       assert(raw.length === 0, `plain English under en-XA: ${JSON.stringify(raw)}`);

@@ -24,7 +24,7 @@
  */
 
 import DroppedFileContextItem from '../context-items/dropped-file-context-item.js';
-import { normalizeDraft } from '../../../js/utils/attachments.js';
+import { normalizeDraft, normalizeTextFiles } from '../../../js/utils/attachments.js';
 import { initializeRegistries, assert } from '../../../js-tests/utilities/test-helpers.js';
 import '../../../js/components/composer.js';
 import { underPseudoLocale, shownStrings } from '../../../js-tests/utilities/pseudo-locale.js';
@@ -334,6 +334,10 @@ export async function runTests() {
       if (defaulted.data.filename !== 'dropped file') modelProblems.push(`stored filename ${JSON.stringify(defaulted.data.filename)}`);
       const text = await defaulted.createContextText();
       if (!text.includes('<file path="dropped file">')) modelProblems.push(`context text ${JSON.stringify(text)}`);
+      // A draft's text-file snapshot with no name is stored under the name
+      // the model reads in `<file path=…>`.
+      const stored = normalizeTextFiles([{ content: '6' }])[0]?.filename;
+      if (stored !== 'dropped file') modelProblems.push(`draft snapshot filename ${JSON.stringify(stored)}`);
       try {
         await defaulted.onToolCall('dropped-file', { filename: '5' });
         modelProblems.push('no throw for missing content');

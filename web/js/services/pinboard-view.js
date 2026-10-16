@@ -29,6 +29,7 @@ import pinboardItemRegistry from '../registries/pinboard-item-registry.js';
 import { initialPinId, isPinboardView } from '../utils/view-mode.js';
 import { cachedWindowPref, getWindowPref, setWindowPref } from './prefs.js';
 import { extractErrorMessage } from '../../sdk/lib/error-utils.js';
+import { t } from '../../sdk/lib/i18n.js';
 
 /** @typedef {import('./pinboard-store.js').Pin} Pin */
 
@@ -296,17 +297,18 @@ function defaultTypes() {
  * Run a board edit, reporting a failure as the panel's status line rather than
  * throwing at a click handler. A successful edit clears whatever the last one
  * left behind.
- * @param {string} lead - Plain-English lead, e.g. 'Couldn't remove that pin.'
+ * @param {(error: string) => string} failed - The whole status line for a
+ *   failure, given the error's own text.
  * @param {() => Promise<any>} edit - The store call.
  * @returns {Promise<any>} What the edit returned, or null if it failed.
  */
-async function attempt(lead, edit) {
+async function attempt(failed, edit) {
   try {
     const result = await edit();
     pinboardView.setStatus('');
     return result;
   } catch (err) {
-    pinboardView.setStatus(`${lead} ${extractErrorMessage(err)}`);
+    pinboardView.setStatus(failed(extractErrorMessage(err)));
     return null;
   }
 }
@@ -487,7 +489,7 @@ const pinboardView = {
         this.reveal(existing.id);
         return true;
       }
-      const pins = await attempt("Couldn't put that pin back.",
+      const pins = await attempt((error) => t("Couldn't put that pin back. {error}", { error }),
         () => pinboardStore.applyOperations([{ op: 'add', id: pinId, type: typeId, config }]));
       if (!pins?.some((/** @type {Pin} */ pin) => pin.id === pinId)) return false;
     }
@@ -533,7 +535,8 @@ const pinboardView = {
       this.reveal(existing.id);
       return existing;
     }
-    const pin = await attempt("Couldn't add that pin.", () => pinboardStore.add(typeId, normalized));
+    const pin = await attempt((error) => t("Couldn't add that pin. {error}", { error }),
+      () => pinboardStore.add(typeId, normalized));
     if (pin) this.reveal(pin.id);
     return pin;
   },
@@ -570,7 +573,7 @@ const pinboardView = {
     }
     if (!claimed) return;
     await attempt(
-      "Couldn't set the pinboard up.",
+      (error) => t("Couldn't set the pinboard up. {error}", { error }),
       () => pinboardStore.addAll(types.map(({ id }) => ({ type: id }))),
     );
   },
@@ -594,7 +597,7 @@ const pinboardView = {
     const retired = pinboardStore.get().filter((pin) => pin.type === RETIRED_PIN_TYPE);
     if (!retired.length) return;
     await attempt(
-      "Couldn't tidy the pinboard.",
+      (error) => t("Couldn't tidy the pinboard. {error}", { error }),
       () => pinboardStore.applyOperations(retired.map((pin) => ({ op: 'remove', id: pin.id }))),
     );
   },
@@ -635,7 +638,7 @@ const pinboardView = {
   async remove(pinId, active) {
     const pin = pinboardStore.getPin(pinId);
     if (pin) await releasePin(pin, active);
-    await attempt("Couldn't remove that pin.", () => pinboardStore.remove(pinId));
+    await attempt((error) => t("Couldn't remove that pin. {error}", { error }), () => pinboardStore.remove(pinId));
   },
 
   /**
@@ -645,7 +648,7 @@ const pinboardView = {
    * @returns {Promise<void>}
    */
   async move(pinId, index) {
-    await attempt("Couldn't move that pin.", () => pinboardStore.move(pinId, index));
+    await attempt((error) => t("Couldn't move that pin. {error}", { error }), () => pinboardStore.move(pinId, index));
   },
 
   /**

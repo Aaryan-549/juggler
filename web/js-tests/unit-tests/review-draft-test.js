@@ -34,7 +34,9 @@ import {
 } from '../utilities/test-helpers.js';
 import pinboardItemRegistry from '../../js/registries/pinboard-item-registry.js';
 import PinboardItemType from 'juggler/pinboard-item-type';
-import { normalizeReviewDraft, REVIEW_DRAFT_LIMITS } from '../../js/utils/review-draft.js';
+import { normalizeReviewDraft, REVIEW_DRAFT_LIMITS, reviewDraftBoundsError } from '../../js/utils/review-draft.js';
+import { underPseudoLocale } from '../utilities/pseudo-locale.js';
+import { isPseudoLocalized } from '../../sdk/lib/i18n.js';
 import '../../js/components/pinboard-content.js';
 
 /** The context the probe was mounted with. */
@@ -431,6 +433,33 @@ export async function runTests() {
       await detached.save({ comments: [comment('keep', 'The one already there'), comment('b1', 'From the board')] });
       assert(root.gitReviewDraft.comments.length === 2,
         'and what it writes goes to the conversation, not to the window');
+    });
+
+    await run('a refused draft reads the same in English and speaks the user\u2019s language under en-XA', async () => {
+      const refusals = () => [
+        reviewDraftBoundsError({ comments: 7 }),
+        reviewDraftBoundsError({
+          comments: Array.from({ length: REVIEW_DRAFT_LIMITS.comments + 1 }, () => ({ body: '' })),
+        }),
+        reviewDraftBoundsError({ comments: [{ body: 'z'.repeat(REVIEW_DRAFT_LIMITS.body + 1) }] }),
+      ];
+      const english = refusals();
+      const want = [
+        'A review draft\'s comments must be a list.',
+        'A review holds at most 500 comments; this one has 501.',
+        'A comment holds at most 8000 characters; this one has 8001.',
+      ];
+      assert(JSON.stringify(english) === JSON.stringify(want),
+        `the English is unchanged, got ${JSON.stringify(english)}`);
+      /** @type {string[]} */
+      let shown = [];
+      await underPseudoLocale('review-draft-test', () => { shown = refusals(); });
+      /** @type {string[]} */
+      const raw = [];
+      if (!shown[1]?.includes('500') || !shown[1]?.includes('501')) raw.push(`count keeps its numbers: ${shown[1]}`);
+      if (!shown[2]?.includes('8000') || !shown[2]?.includes('8001')) raw.push(`length keeps its numbers: ${shown[2]}`);
+      for (const s of shown) if (!s || !isPseudoLocalized(s)) raw.push(s);
+      assert(raw.length === 0, `plain English under en-XA: ${JSON.stringify(raw)}`);
     });
   } finally {
     board?.remove();

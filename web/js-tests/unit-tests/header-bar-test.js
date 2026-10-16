@@ -248,6 +248,7 @@ export async function runTests() {
       assert(button.title === 'Network settings — 3 other clients connected',
         `the title names the count, got "${button.title}"`);
       assert(button.getAttribute('aria-label') === button.title, 'the accessible name says the same');
+      assert(clients?.textContent === '3 connected', `the label reads "3 connected", got "${clients?.textContent}"`);
       assert(button.classList.contains('has-clients'), 'the button is marked as carrying a count');
       assert(button.getBoundingClientRect().width === aloneWidth,
         `the badge sits over the icon, never widening the button (${aloneWidth} → ${button.getBoundingClientRect().width})`);
@@ -504,13 +505,24 @@ export async function runTests() {
     const shown = [];
     try {
       await underPseudoLocale('test-header-bar', async () => {
-        const binding = bindNetworkClients(get('network-button'), { events, seed: async () => 1 });
+        // A seed that cannot be read leaves the starting name to the binding.
+        const binding = bindNetworkClients(get('network-button'), { events, seed: async () => null });
         try {
           await binding.ready;
           const button = get('network-button');
+          shown.push(button.title, String(button.getAttribute('aria-label')));
           for (const total of [1, 2, 4]) {
             clientsChanged(total);
             shown.push(button.title, String(button.getAttribute('aria-label')));
+          }
+          // The "N connected" label is one sentence, the count inside it.
+          for (const total of [2, 4]) {
+            clientsChanged(total);
+            const label = button.querySelector('.network-button__clients')?.textContent ?? '';
+            assert(label.includes(String(total - 1)), `the label keeps its count: ${JSON.stringify(label)}`);
+            assert(button.querySelector('.network-button__count')?.textContent === String(total - 1),
+              `the badge still holds the bare count: ${JSON.stringify(label)}`);
+            shown.push(label);
           }
         } finally {
           binding.dispose();

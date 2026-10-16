@@ -6,6 +6,8 @@
  * Application-wide constants
  */
 
+import { markForTranslation } from '../../sdk/lib/i18n.js';
+
 // ===== Timing Constants =====
 
 /** Debounce delay for session save operations (milliseconds) */
@@ -117,9 +119,9 @@ export const BIN_LARGE_BYTES = 1024 * 1024 * 1024;
 /**
  * Notice shown when a user action (new thread, /compact, …)
  * preempts a live LLM turn by cancelling it first. Surfacing this keeps the
- * cancellation from being silent.
+ * cancellation from being silent. Translated where it is shown.
  */
-export const TURN_CANCELLED_NOTICE = 'Cancelled the active turn';
+export const TURN_CANCELLED_NOTICE = markForTranslation('Cancelled the active turn');
 
 /**
  * Notice shown when a duplication opts out of forking a running source (via

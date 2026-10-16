@@ -59,6 +59,7 @@ import { STARTER_PROMPTS } from '../utils/starter-prompts.js';
 import { areReplySuggestionsEnabled, REPLY_SUGGESTIONS_SETTING_EVENT } from '../services/reply-suggestions-setting.js';
 import { TIPS_CHANGED_EVENT } from '../services/tips-manager.js';
 import { t } from '../../sdk/lib/i18n.js';
+import { escapeHtml } from '../../sdk/lib/html.js';
 
 /**
  * Duration of the insert/relayout FLIP glide — the eased motion that replaces
@@ -863,13 +864,13 @@ class ConversationArea extends HTMLElement {
         <section class="conversation-message-list u-scrollbar-thin" id="message-list">
           <div class="conversation-message-list-inner" id="message-list-inner">
             <thread-column-actions class="hidden">
-              <button class="properties-panel-btn thread-expand-btn" title="Expand this thread back into the parent">
+              <button class="properties-panel-btn thread-expand-btn" title="${escapeHtml(t('Expand this thread back into the parent'))}">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960"><path d="M120-120v-320h80v184l504-504H520v-80h320v320h-80v-184L256-200h184v80H120Z"/></svg>
-                Expand into parent
+                ${escapeHtml(t('Expand into parent'))}
               </button>
-              <button class="properties-panel-btn thread-copy-tab-btn" title="Copy this thread (with inherited context) to a new conversation">
+              <button class="properties-panel-btn thread-copy-tab-btn" title="${escapeHtml(t('Copy this thread (with inherited context) to a new conversation'))}">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960"><path d="M440-160v-326L336-382l-56-58 200-200 200 200-56 58-104-104v326h-80ZM160-600v-120q0-33 23.5-56.5T240-800h480q33 0 56.5 23.5T800-720v120h-80v-120H240v120h-80Z"/></svg>
-                Copy thread to new conversation
+                ${escapeHtml(t('Copy thread to new conversation'))}
               </button>
             </thread-column-actions>
             <conversation-footer></conversation-footer>
@@ -877,8 +878,8 @@ class ConversationArea extends HTMLElement {
         </section>
         ${emptyHintMarkup()}
         <div class="scroll-controls" id="scroll-controls">
-          <button type="button" class="scroll-control-btn hidden" data-scroll="top" title="Scroll to top" aria-label="Scroll to top">${SCROLL_TOP_SVG}</button>
-          <button type="button" class="scroll-control-btn hidden" data-scroll="bottom" title="Scroll to bottom" aria-label="Scroll to bottom">${SCROLL_BOTTOM_SVG}</button>
+          <button type="button" class="scroll-control-btn hidden" data-scroll="top" title="${escapeHtml(t('Scroll to top'))}" aria-label="${escapeHtml(t('Scroll to top'))}">${SCROLL_TOP_SVG}</button>
+          <button type="button" class="scroll-control-btn hidden" data-scroll="bottom" title="${escapeHtml(t('Scroll to bottom'))}" aria-label="${escapeHtml(t('Scroll to bottom'))}">${SCROLL_BOTTOM_SVG}</button>
         </div>
       </conversation-message-list-wrapper>
       <reply-suggestions></reply-suggestions>
@@ -2200,7 +2201,7 @@ class ConversationArea extends HTMLElement {
       ? (this._conversation?.llmState?.getThroughput?.(this._conversation.id, myThreadId) ?? 0)
       : 0;
     const statusMessage = hasPendingApprovals
-      ? StatusMessageBuilder.withBusyMarker('Waiting for user approval')
+      ? StatusMessageBuilder.withBusyMarker(t('Waiting for user approval'))
       : (busyState?.message || '');
     const showSpinner = hasPendingApprovals ? false : (busyState?.spinner ?? true);
 
@@ -2225,11 +2226,11 @@ class ConversationArea extends HTMLElement {
     const started = this._hasConversationalHistory();
     // One switch ("Suggest prompts") governs both: the controller obeys it for
     // the replies, and this for the starters.
-    const starters = areReplySuggestionsEnabled() ? [...STARTER_PROMPTS] : [];
+    const starters = areReplySuggestionsEnabled() ? STARTER_PROMPTS.map((prompt) => t(prompt)) : [];
     const offered = started ? this._replySuggestions : starters;
     this.suggestionsRow?.update(
       canSuggest ? offered : [],
-      started ? 'Suggested replies' : 'Things to ask',
+      started ? t('Suggested replies') : t('Things to ask'),
     );
 
     if (this._isGroupColumn) {

@@ -18,7 +18,10 @@ import { waitFor, assert } from '../../../js-tests/utilities/test-helpers.js';
 import { registerWorkspace, unregisterWorkspace, listWorkspaces } from '../../../js/services/workspaces.js';
 import { provisionWorkspace } from '../../../js/services/workspace-provisioning.js';
 import { rebindConversation } from '../../../js/services/workspace-rebinding.js';
-import { defaultLocation } from '../workspaces/git-worktree-workspace-provider.js';
+import GitWorktreeWorkspaceProvider, { defaultLocation } from '../workspaces/git-worktree-workspace-provider.js';
+import api from '../../../js/services/api.js';
+import { underPseudoLocale } from '../../../js-tests/utilities/pseudo-locale.js';
+import { isPseudoLocalized } from '../../../sdk/lib/i18n.js';
 import {
   runWorktreeSuite,
   PROVIDER_ID,
@@ -50,6 +53,27 @@ import {
  * @type {boolean}
  */
 export const needsExclusiveRun = true;
+
+/** juggler-core's English for what the worktree form says, standing in for its catalogue. */
+const CORE_TEXT = [
+  'Base',
+  'Branch',
+  'Location',
+  'beside the repository',
+  'Repository',
+  'Worktree',
+  '{target, select, named {{project}, with {repo} in it} other {the project, with {repo} in it}}',
+  '{repo} on its own',
+  'Only {repo}. Nothing of the project around it comes with it.',
+  '{repo} starts uninitialised; {hook} runs in the new tree.',
+  '{repo} starts uninitialised — there is no {hook} to fill it in.',
+  'git will not take that as a branch name.',
+  "{what, select, repo {Couldn't use that repository path: {value} contains a character that cannot appear in a command.} branch {Couldn't use that branch name: {value} contains a character that cannot appear in a command.} base {Couldn't use that base: {value} contains a character that cannot appear in a command.} other {Couldn't use that location: {value} contains a character that cannot appear in a command.}}",
+  "Couldn't make a worktree: the base workspace has no root.",
+  "Couldn't make a worktree: no branch was named.",
+  "Couldn't make a worktree at {location}: it is not on the same drive as {repoRoot}.",
+  '`{command}` failed with no output (exit {code}).'
+];
 
 /**
  * @typedef {object} TestResult
@@ -462,6 +486,132 @@ export async function runTests() {
         await ops.shell({ command: `git -C ${repo} worktree remove --force ../../${tree}` }).catch(() => {});
         await ops.shell({ command: `rm -rf ../${tree} ${repo}` }).catch(() => {});
       }
+    });
+
+    await run('everything the worktree form says to the user is translated under en-XA', async () => {
+      /** @type {Record<string, string>} */
+      const shown = {};
+      // Paths and the hook's name are data; each is mapped to a digit before the
+      // check, as the repository and branch names already are.
+      const hook = '.juggler/worktree-setup';
+      /**
+       * A shown line with its data mapped to digits.
+       * @param {any} text - What was shown.
+       * @returns {string} The line, ready for the check.
+       */
+      const scrub = (text) => String(text)
+        .split('C:\\1').join('6')
+        .split('D:\\2').join('7')
+        .split(hook).join('8');
+
+      // The repository list is the server's; every case owns it rather than
+      // inheriting whatever the lane's last suite left behind.
+      const realStatus = Object.prototype.hasOwnProperty.call(api, 'getGitStatus')
+        ? /** @type {any} */ (api).getGitStatus : null;
+      /** @type {any} */ (api).getGitStatus = async () => ({ repos: [{ path: '' }, { path: '3' }] });
+      try {
+        await underPseudoLocale('git-worktree-form-test', async () => {
+          // Every shell command stubbed: nothing on disk is made or looked at.
+          let hookThere = true;
+          const shell = async (/** @type {any} */ { command }) => {
+            if (command.endsWith('git rev-parse --abbrev-ref HEAD')) return { success: true, stdout: '2' };
+            if (command === 'git config -f .gitmodules --list') return { success: true, stdout: 'submodule.3.path=3\n' };
+            if (command.startsWith('test -f')) return { success: hookThere };
+            return { success: false, stdout: '', stderr: '', exitCode: 1 };
+          };
+          const ops = {
+            shell,
+            shellStreaming: async () => ({ success: false, stdout: '', exitCode: 1 })
+          };
+          const ctx = {
+            session: { projectPath: '/1', workspaceRoot: () => '/1' },
+            baseWorkspaceId: '',
+            ops,
+            signal: new AbortController().signal,
+            rollback: { push: () => {} },
+            checkpoint: async () => {},
+            progress: () => {}
+          };
+
+          const provider = new GitWorktreeWorkspaceProvider({});
+          /** @type {any} The private hooks, which a test may reach. */
+          const hooks = provider;
+          const container = document.createElement('div');
+          // Restored onto the submodule, so the scope question arises as soon as
+          // the repositories and submodules are known.
+          provider.renderSetup(container, { ...ctx, values: { repo: '3' } });
+          const form = hooks._form;
+          await waitFor(() => Boolean(form.scopeRow) && form.scopeRow.hidden === false,
+            { description: 'the form to offer the repositories and ask which end of the submodule' });
+
+          for (const row of container.querySelectorAll('.setup-field')) {
+            const name = row.querySelector('[data-field]')?.getAttribute('data-field');
+            shown[`${name} label`] = String(row.querySelector('label')?.textContent);
+          }
+          assert(Object.keys(shown).length === 5,
+            `five fields once a submodule is chosen, got ${JSON.stringify(Object.keys(shown))}`);
+          shown['location placeholder'] = form.location.placeholder;
+          assert(form.repo.value === '3' && form.base.value === '2',
+            `the restored repository is chosen and the base filled in, got ${JSON.stringify([form.repo.value, form.base.value])}`);
+
+          shown['whole-project scope'] = String(form.scope.options[0].textContent);
+          shown['submodule-alone scope'] = String(form.scope.options[1].textContent);
+          const scopeNote = () => String(form.scopeNote.textContent);
+          assert(form.scopeWanted === 'project', `a hook starts it on the project, got ${form.scopeWanted}`);
+          shown['hooked note'] = scopeNote();
+          form.hasSetupHook = false;
+          hooks._showScopeNote();
+          shown['unhooked note'] = scopeNote();
+          form.scopeWanted = 'repo';
+          hooks._showScopeNote();
+          shown['alone note'] = scopeNote();
+
+          // A base workspace with no name of its own to offer.
+          const realCtx = form.ctx;
+          form.ctx = { ...realCtx, session: { workspaceRoot: () => '' } };
+          hooks._offerScope();
+          shown['unnamed whole-project scope'] = String(form.scope.options[0].textContent);
+          form.ctx = realCtx;
+
+          clearTimeout(form.timer);
+          form.branch.value = '5';
+          await hooks._checkBranch();
+          assert(form.verdicts.get('5') === false, 'git turned the name down');
+          shown['branch verdict'] = String(form.branchNote.textContent);
+          clearTimeout(form.timer);
+
+          /**
+           * What a call threw.
+           * @param {() => any} fn - The call.
+           * @returns {Promise<string>} Its message.
+           */
+          const thrown = async (fn) => {
+            try {
+              await fn();
+              return '(nothing thrown)';
+            } catch (e) {
+              return e instanceof Error ? e.message : String(e);
+            }
+          };
+          shown['no-root refusal'] = await thrown(() => hooks._repoRoot({}, { session: { workspaceRoot: () => '' } }));
+          shown['repository refusal'] = await thrown(() => hooks._repoRoot({ repo: '4"' }, ctx));
+          shown['branch refusal'] = await thrown(() => hooks._places({ branch: '4"' }, ctx));
+          shown['no-branch refusal'] = await thrown(() => hooks._places({ branch: '' }, ctx));
+          shown['base refusal'] = await thrown(() => hooks._places({ branch: '4', base: '4"' }, ctx));
+          shown['location refusal'] = await thrown(() => hooks._places({ branch: '4', location: '/1/4"' }, ctx));
+          shown['other-drive refusal'] = await thrown(() => hooks._places({ branch: '4', location: 'D:\\2' },
+            { ...ctx, session: { workspaceRoot: () => 'C:\\1' } }));
+          shown['silent failure'] = await thrown(() => hooks._mustRun(ctx, '', '5'));
+          shown['silent stream failure'] = await thrown(() => hooks._mustStream(ctx, '', '5', () => {}));
+          hookThere = false;
+        }, { '@juggler/core': CORE_TEXT });
+      } finally {
+        if (realStatus) /** @type {any} */ (api).getGitStatus = realStatus;
+        else delete (/** @type {any} */ (api)).getGitStatus;
+      }
+
+      const english = Object.entries(shown).filter(([, text]) => !isPseudoLocalized(scrub(text)));
+      assert(english.length === 0, `still English under en-XA: ${JSON.stringify(english)}`);
     });
   });
 }

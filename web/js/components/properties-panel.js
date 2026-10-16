@@ -27,6 +27,7 @@ import { openSettings } from '../services/settings-launcher.js';
 import { setupColumnResize } from '../utils/column-resize.js';
 import { formatRelativeDateTime, formatTokens } from '../utils/format.js';
 import { t, formatNumber as formatLocaleNumber } from '../../sdk/lib/i18n.js';
+import { escapeHtml } from '../../sdk/lib/html.js';
 import { plain } from '../model/item-accessor.js';
 import { estimateTokens, llmTextForItem } from '../utils/token-estimate.js';
 import { FormattingHelpers } from '../../sdk/lib/formatting-helpers.js';
@@ -98,9 +99,9 @@ function paintTokenChip(chip, text) {
     return;
   }
   paintChip(chip, tokens, `~${formatTokens(tokens)}`,
-    `Estimated ${formatLocaleNumber(tokens)} tokens from ${formatLocaleNumber(text.length)} characters `
-    + '(~4 characters per token). Provider-reported counts cover a whole round-trip \u2014 open the '
-    + 'transaction to see those.');
+    `${t('Estimated {tokens} tokens from {characters} characters (~4 characters per token).', {
+      tokens: formatLocaleNumber(tokens), characters: formatLocaleNumber(text.length)
+    })} ${t('Provider-reported counts cover a whole round-trip \u2014 open the transaction to see those.')}`);
 }
 
 /**
@@ -111,8 +112,8 @@ function paintTokenChip(chip, text) {
  */
 function paintReportedChip(chip, tokens) {
   paintChip(chip, tokens, formatTokens(tokens),
-    `${formatLocaleNumber(tokens)} output tokens, reported by the provider. This round-trip `
-    + "produced nothing else, so the count is this item's alone.");
+    `${t('{tokens} output tokens, reported by the provider.', { tokens: formatLocaleNumber(tokens) })} `
+    + t("This round-trip produced nothing else, so the count is this item's alone."));
 }
 
 class PropertiesPanel extends HTMLElement {
@@ -398,7 +399,7 @@ class PropertiesPanel extends HTMLElement {
                     <span class="properties-panel-empty-icon">
                         ${INFO_SVG}
                     </span>
-                    <span class="properties-panel-empty-text">Select an item to view details</span>
+                    <span class="properties-panel-empty-text">${escapeHtml(t('Select an item to view details'))}</span>
                 </properties-panel-empty>
             </properties-panel-content>
             <col-resize-handle></col-resize-handle>
@@ -445,7 +446,7 @@ class PropertiesPanel extends HTMLElement {
     const section = document.createElement('properties-panel-section');
     contentArea.appendChild(section);
 
-    const header = this._createHeader('LLM Transaction', {
+    const header = this._createHeader(t('LLM Transaction'), {
       color: TRANSACTION_HEADER_COLOR,
       iconSvg: TRANSACTION_ICON_SVG
     });
@@ -458,7 +459,7 @@ class PropertiesPanel extends HTMLElement {
     // queued messages — were never part of a round-trip. That is a fact about
     // the item, not a missing blob, so say so and skip the fetch.
     if (!mode.transactionId) {
-      renderTransactionDetail(body, null, 'Not part of a round-trip.');
+      renderTransactionDetail(body, null, t('Not part of a round-trip.'));
       return;
     }
 
@@ -703,7 +704,7 @@ class PropertiesPanel extends HTMLElement {
     badgeGroup.classList.add('badge-catalog-link');
     badgeGroup.tabIndex = 0;
     badgeGroup.setAttribute('role', 'button');
-    const label = `Show "${title}" in the Extensions settings`;
+    const label = t('Show "{title}" in the Extensions settings', { title });
     badgeGroup.title = label;
     badgeGroup.setAttribute('aria-label', label);
 
@@ -879,8 +880,8 @@ class PropertiesPanel extends HTMLElement {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'properties-panel-header-icon-btn';
-    btn.title = 'View the LLM input/output for this round-trip';
-    btn.setAttribute('aria-label', 'View transaction');
+    btn.title = t('View the LLM input/output for this round-trip');
+    btn.setAttribute('aria-label', t('View transaction'));
     btn.innerHTML = TRANSACTION_ICON_SVG;
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -903,7 +904,7 @@ class PropertiesPanel extends HTMLElement {
                 <span class="properties-panel-empty-icon">
                     ${INFO_SVG}
                 </span>
-                <span class="properties-panel-empty-text">Select an item to view details</span>
+                <span class="properties-panel-empty-text">${escapeHtml(t('Select an item to view details'))}</span>
             </properties-panel-empty>
         `;
   }
@@ -926,7 +927,7 @@ class PropertiesPanel extends HTMLElement {
     if (messageItemId && this._messageThread && this._resolveItem(messageItemId).isPending) {
       const removeBtn = document.createElement('button');
       removeBtn.className = 'properties-panel-btn danger';
-      removeBtn.innerHTML = `<span class="icon-trashcan"></span> Remove from queue`;
+      removeBtn.innerHTML = `<span class="icon-trashcan"></span> ${escapeHtml(t('Remove from queue'))}`;
       removeBtn.addEventListener('click', () => this._removePendingItem(messageItemId));
       controls.appendChild(removeBtn);
       return controls;
@@ -942,7 +943,7 @@ class PropertiesPanel extends HTMLElement {
           rollbackBtn.className = 'properties-panel-btn';
           rollbackBtn.innerHTML = `
                         ${UNDO_SVG}
-                        Rewind to this message
+                        ${escapeHtml(t('Rewind to this message'))}
                     `;
           rollbackBtn.addEventListener('click', () => this._rollbackFromItem(messageItemId));
           controls.appendChild(rollbackBtn);
@@ -951,7 +952,7 @@ class PropertiesPanel extends HTMLElement {
           branchBtn.className = 'properties-panel-btn';
           branchBtn.innerHTML = `
                         ${FORK_SVG}
-                        Fork a new conversation from here
+                        ${escapeHtml(t('Fork a new conversation from here'))}
                     `;
           branchBtn.addEventListener('click', () => this._branchFromItem(messageItemId));
           controls.appendChild(branchBtn);
@@ -985,7 +986,7 @@ class PropertiesPanel extends HTMLElement {
       refreshBtn.className = 'properties-panel-btn';
       refreshBtn.innerHTML = `
                 ${RETRY_SVG}
-                Refresh
+                ${escapeHtml(t('Refresh'))}
             `;
       refreshBtn.addEventListener('click', () => this._refreshContextItem(contextItem));
       controls.appendChild(refreshBtn);
@@ -1000,7 +1001,7 @@ class PropertiesPanel extends HTMLElement {
       } else {
         const removeBtn = document.createElement('button');
         removeBtn.className = 'properties-panel-btn danger';
-        removeBtn.innerHTML = `<span class="icon-trashcan"></span> Remove`;
+        removeBtn.innerHTML = `<span class="icon-trashcan"></span> ${escapeHtml(t('Remove'))}`;
         removeBtn.addEventListener('click', () => this._removeContextItem(contextItem));
         controls.appendChild(removeBtn);
       }
@@ -1035,7 +1036,7 @@ class PropertiesPanel extends HTMLElement {
       retryBtn.className = 'properties-panel-btn';
       retryBtn.innerHTML = `
                 ${UNDO_SVG}
-                Re-run command
+                ${escapeHtml(t('Re-run command'))}
             `;
       retryBtn.addEventListener('click', () => this._retryToolAction(toolAction));
       controls.appendChild(retryBtn);
@@ -1053,7 +1054,7 @@ class PropertiesPanel extends HTMLElement {
       if (itemIndex >= 0) {
         appendDeleteControls(controls, this._messageThread, taItemId,
           () => this._deleteItem(taItemId),
-          busy ? 'Stop the tool before deleting it' : undefined);
+          busy ? t('Stop the tool before deleting it') : undefined);
       }
     }
 
