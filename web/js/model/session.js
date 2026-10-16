@@ -38,6 +38,14 @@ import ConversationRegistry from './conversation-registry.js';
 import { seedCreationDefaults, seedConversationAutoItems as seedAutoItems } from './conversation-seeder.js';
 
 /**
+ * How long a duplicate waits for the source worker's flush ack before copying
+ * without it. The ack is normally one round-trip; this bounds a duplicate the
+ * user is waiting on when the worker is slow to answer.
+ * @type {number}
+ */
+const DUPLICATE_FLUSH_ACK_TIMEOUT_MS = 5000;
+
+/**
  * The rename route's documented refusals (PATCH
  * /api/session/conversations/{id}/name), keyed by HTTP status, as the `.code`
  * renameConversation tags its error with. Any other status carries no code.
@@ -2094,6 +2102,22 @@ class Session {
     }
 
     const requestedName = this._generateUniqueSuffixedName(source.name, nameSuffix);
+
+    // The server copies the source from its worker, and an edit made here is
+    // only in the worker once its yjs-sync frame has been dispatched there. An
+    // acked flush-persistence is the barrier: the worker takes inbound messages
+    // in order, so every frame sent before it has been applied by the time it
+    // answers — without this, a duplicate taken just after an edit (the
+    // initialised flag a fresh conversation writes last) copies the document
+    // from before it. Skipped mid-turn, where the server snapshots the live
+    // document instead and the worker's loop may not answer promptly.
+    if (!source.isTurnActive() && workerManager.isWorkerReady(conversationId)) {
+      try {
+        await workerManager.flushPersistence(conversationId, DUPLICATE_FLUSH_ACK_TIMEOUT_MS);
+      } catch (err) {
+        console.warn(`[Session] Duplicating ${conversationId} without a flush barrier:`, err);
+      }
+    }
 
     // Bracketed like createConversation's, and for as long: until the clone is
     // in the map where this flow puts it. An echo that lands after the POST
