@@ -419,7 +419,7 @@ func (r *run) reconcileProcessingStateOnLoad() {
 		return
 	}
 	if threadID, ok := r.findThreadWithIncompleteTool(); ok {
-		r.requestLLM(threadID)
+		r.requestLLMAfterTools(threadID)
 	}
 }
 
@@ -563,6 +563,24 @@ func (w *ConversationWorker) requestLLM(threadItemID string) bool {
 	return w.patchRunIf(threadItemID,
 		func(entry map[string]any) bool { return entryActivity(entry) != ActivityCallingLLM },
 		func(entry, _ map[string]any) { entry["activity"] = ActivityAwaitingLLM },
+	)
+}
+
+// requestLLMAfterTools is requestLLM for a thread whose dispatch waits on a tool
+// it already holds — the load-time re-drive and a tool retry. Those re-arm the
+// thread from no entry at all, and requestLLM writes no status: the client
+// treats an entry without one as live but gives it no status line, so the footer
+// would fall back to the tool card's own label until the next turn claims the
+// thread. A status the entry already carries is kept, as claimLLM keeps it.
+func (w *ConversationWorker) requestLLMAfterTools(threadItemID string) bool {
+	return w.patchRunIf(threadItemID,
+		func(entry map[string]any) bool { return entryActivity(entry) != ActivityCallingLLM },
+		func(entry, _ map[string]any) {
+			entry["activity"] = ActivityAwaitingLLM
+			if _, hasStatus := entry["status"]; !hasStatus {
+				entry["status"] = "processing_tools"
+			}
+		},
 	)
 }
 

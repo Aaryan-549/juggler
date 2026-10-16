@@ -52,8 +52,9 @@ var machineContinuationOps = map[string]string{
 }
 
 // workStartVerbs are the calls that begin an LLM turn: queueing a thread for
-// dispatch, re-arming the doc-driven run trigger, and driving the pickup.
-var workStartVerbs = []string{"requestLLM", "setThreadNeedsStrategyRun", "checkForNewThreads"}
+// dispatch (either form), re-arming the doc-driven run trigger, and driving the
+// pickup.
+var workStartVerbs = []string{"requestLLM", "requestLLMAfterTools", "setThreadNeedsStrategyRun", "checkForNewThreads"}
 
 // politeStopLifters are the calls that lift a mark. handleUnpause's own drop is
 // among them, which is why unpause needs no entry in the table above.

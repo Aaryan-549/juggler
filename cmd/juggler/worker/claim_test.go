@@ -302,6 +302,43 @@ func TestRetryToolMarksExplicitContinuation(t *testing.T) {
 	}
 }
 
+// requireToolWaitStatus fails unless the thread's run entry carries the
+// "processing_tools" status. An entry with an activity but no status is live to
+// the client yet has no status line, so the footer falls back to the running
+// tool card's own label — the command text — until the next LLM turn claims it.
+func requireToolWaitStatus(t *testing.T, w *ConversationWorker, threadItemID string) {
+	t.Helper()
+	entry := runEntryOf(w.readProcessingState(), threadItemID)
+	if got, _ := entry["status"].(string); got != "processing_tools" {
+		t.Fatalf("thread %q run entry status = %q, want %q (entry %#v)", threadItemID, got, "processing_tools", entry)
+	}
+}
+
+func TestRetryToolPublishesToolWaitStatus(t *testing.T) {
+	w := NewConversationWorker("test-retry-status", "user:test")
+	t.Cleanup(func() { w.doc.Destroy() })
+	w.doc.InsertMessage(0,
+		ConversationItem{Type: ItemTypeToolAction, ItemID: "tool", ToolUseID: "call-1", ToolName: "bash", State: StateCompleted, Result: json.RawMessage(`{"content":"first"}`)},
+	)
+
+	w.handleRetryToolAction(json.RawMessage(`{"toolUseId":"call-1"}`))
+
+	requireToolWaitStatus(t, w, "")
+}
+
+// TestReconcileOnLoadReDrivePublishesToolWaitStatus: a conversation loaded while
+// a tool waits on its approval is re-armed for the follow-up turn, and the
+// re-armed run reports what it is waiting on, as the uninterrupted turn did.
+func TestReconcileOnLoadReDrivePublishesToolWaitStatus(t *testing.T) {
+	w := NewConversationWorker("test-load-status", "user:test")
+	t.Cleanup(func() { w.doc.Destroy() })
+	w.doc.InsertMessage(0, ConversationItem{Type: ItemTypeToolAction, ItemID: "ta-1", State: StatePending})
+
+	w.currentRun().reconcileProcessingStateOnLoad()
+
+	requireToolWaitStatus(t, w, "")
+}
+
 func TestAmbientActorIdleCompletesTurnFence(t *testing.T) {
 	w := NewConversationWorker("test-ambient-idle-fence", "user:test")
 	t.Cleanup(func() { w.doc.Destroy() })

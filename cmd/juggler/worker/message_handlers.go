@@ -1306,7 +1306,7 @@ func (w *ConversationWorker) resetToolActionAndRedrive(toolUseID string, fields 
 	// that would read it rests at the reducer's gate.
 	w.dropPoliteStopsCovering(threadID)
 
-	if w.requestLLM(threadID) {
+	if w.requestLLMAfterTools(threadID) {
 		// A retry may target an older tool followed by assistant text. The ordinary
 		// reducer treats that shape as resting unless the continuation intent is
 		// explicit; retry is exactly such an intent and must survive until the
