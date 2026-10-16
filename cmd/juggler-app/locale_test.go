@@ -16,6 +16,8 @@ import (
 
 	"juggler/cmd/juggler/core"
 	"juggler/cmd/juggler/msg"
+
+	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
 // pseudoApp is an appState speaking the pseudo-locale, from the generated
@@ -217,5 +219,16 @@ func TestControlLocaleAdoptsTheServersCatalogue(t *testing.T) {
 	a.adoptLocale("", "")
 	if got := a.tr(keepWorkingLabel); got != "Keep working" {
 		t.Fatalf("the default language is not English: %q", got)
+	}
+}
+
+// TestAdoptLocaleBeforeLaunchLeavesTheMenus: the startup language is adopted
+// before the app has launched, when there is no main thread to relabel the
+// menus on, so it must not try.
+func TestAdoptLocaleBeforeLaunchLeavesTheMenus(t *testing.T) {
+	a := &appState{app: &application.App{}, menuBar: application.NewMenu()}
+	a.adoptLocale("", "")
+	if got := a.tr(keepWorkingLabel); got != "Keep working" {
+		t.Fatalf("the startup language was not adopted: %q", got)
 	}
 }

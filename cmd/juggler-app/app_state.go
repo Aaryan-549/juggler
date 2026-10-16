@@ -264,6 +264,9 @@ type appState struct {
 	// and read on the main thread afterwards.
 	menuBar    *application.Menu
 	menuLabels []menuLabel
+	// launched is set once the app has started, before which there is no main
+	// thread to relabel the menus on (relabelMenus).
+	launched atomic.Bool
 }
 
 func newAppState(devMode int) *appState {
@@ -478,6 +481,9 @@ func (a *appState) run(specs []windowSpec) error {
 	go a.watchWindowStartup(initial, windowUp)
 
 	a.app.Event.OnApplicationEvent(events.Common.ApplicationStarted, func(_ *application.ApplicationEvent) {
+		// A language adopted before launch has not reached the menus yet.
+		a.launched.Store(true)
+		a.relabelMenus()
 		// The initial window is materialised by Wails during startup in its own
 		// goroutine (go window.Run()). A hidden initial window can be revealed
 		// directly. On Windows the window is logically created visible, but the
