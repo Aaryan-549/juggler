@@ -24,6 +24,7 @@ import { REGISTRIES_RELOADED } from '../../js/registries/reload-registries.js';
 import { registerSettingsOpener } from '../../js/services/settings-launcher.js';
 import { underPseudoLocale, shownStrings } from '../utilities/pseudo-locale.js';
 import { isPseudoLocalized } from '../../sdk/lib/i18n.js';
+import StrategySwitcher from '../../js/services/strategy-switcher.js';
 import '../../js/components/strategy-selector.js';
 
 /**
@@ -225,6 +226,61 @@ export async function runTests(_ctx) {
     } finally {
       selector.closeDropdown();
       selector.remove();
+      window.requestAnimationFrame = realRaf;
+      window.cancelAnimationFrame = realCancelRaf;
+    }
+  });
+
+  await run('a Shift+Tab gesture leaves focus in the composer, during and after', async () => {
+    if (!strategyRegistry.isInitialized()) await strategyRegistry.init();
+    assert(strategyRegistry.getAllManifests().length > 1, 'registry has at least two strategies');
+
+    const realRaf = window.requestAnimationFrame;
+    const realCancelRaf = window.cancelAnimationFrame;
+    window.requestAnimationFrame = (/** @type {FrameRequestCallback} */ cb) =>
+      /** @type {any} */ (setTimeout(() => cb(performance.now()), 0));
+    window.cancelAnimationFrame = (/** @type {number} */ id) => clearTimeout(id);
+    const frame = () => new Promise((r) => setTimeout(r, 0));
+
+    const textarea = document.createElement('textarea');
+    const selector = /** @type {any} */ (document.createElement('strategy-selector'));
+    document.body.append(selector, textarea);
+    const switcher = new StrategySwitcher();
+    // Resolution is covered elsewhere; this is about where focus goes.
+    /** @type {any} */ (switcher)._resolveActiveSelector = () => selector;
+    switcher.init();
+    /**
+     * @param {string} type - 'keydown' or 'keyup'
+     * @param {KeyboardEventInit} init - The key
+     * @returns {boolean} False when the event was preventDefault-ed
+     */
+    const key = (type, init) => /** @type {HTMLElement} */ (document.activeElement || document.body)
+      .dispatchEvent(new KeyboardEvent(type, { bubbles: true, cancelable: true, ...init }));
+    try {
+      selector.setMessageThread(/** @type {any} */ ({
+        currentStrategyId: strategyRegistry.getAllManifests()[0].id,
+        setStrategy() {},
+      }));
+      textarea.focus();
+      assert(document.activeElement === textarea, 'sanity: the composer textarea has focus');
+
+      key('keydown', { key: 'Tab', shiftKey: true });
+      await frame();
+      await frame();
+      assert(!!selector._menu?.surface, 'the gesture did not open the strategy HUD');
+      assert(document.activeElement === textarea,
+        `the HUD took focus from the composer (on ${document.activeElement?.localName})`);
+
+      key('keydown', { key: 'Tab', shiftKey: true });
+      key('keyup', { key: 'Shift' });
+      assert(!selector._menu, 'releasing Shift did not close the HUD');
+      assert(document.activeElement === textarea,
+        `focus did not return to the composer (on ${document.activeElement?.localName})`);
+    } finally {
+      switcher.destroy();
+      selector.closeDropdown();
+      selector.remove();
+      textarea.remove();
       window.requestAnimationFrame = realRaf;
       window.cancelAnimationFrame = realCancelRaf;
     }

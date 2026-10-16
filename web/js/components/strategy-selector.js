@@ -613,10 +613,12 @@ class StrategySelector extends HTMLElement {
       anchorSelector: '.strategy-selector-button',
       onClose: () => this.closeDropdown(),
       // The <menu> outlives in-place refreshes (only its rows are replaced), so
-      // the keyboard is attached once, here.
+      // the keyboard is attached once, here. Opened by the hold-to-cycle gesture
+      // it is a HUD, not a focus target: the gesture owns the keys, and focus
+      // stays in the composer the user is typing in.
       onPresent: (surface) => {
         const menu = /** @type {HTMLElement|null} */ (surface.querySelector('[role="menu"]'));
-        if (menu) attachMenuKeyboard(menu, { close: () => this.closeDropdown() });
+        if (menu) attachMenuKeyboard(menu, { close: () => this.closeDropdown(), autoFocus: !this._cycle.buffering });
       },
     });
   }
