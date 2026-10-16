@@ -288,6 +288,50 @@ export async function runTests() {
     passed++;
   } catch (e) { failed++; errors.push(`unanswered read takes the retry: ${msg(e)}`); }
 
+  // --- 3e: a stop leaves an unread receipt recovering nothing ---
+  // A receipt that recovers an error (recoversError) is the one the parent's
+  // reducer takes up unasked: the parent read that the work failed, and the run
+  // the receipt names is that work done. An unread receipt follows the session
+  // forward, so when a stop moves it onto a cancelled run it must stop claiming
+  // that, or the parent wakes for work that never finished. Mirrors
+  // reportRunToParentLocked in worker/run_records.go.
+  try {
+    const doc = new Y.Doc();
+    const root = doc.getArray('items');
+    const t = new Y.Map();
+    doc.transact(() => {
+      root.insert(0, [t]);
+      t.set('type', 'thread');
+      t.set('itemId', 'T1');
+      t.set('goal', 'map auth');
+      t.set('runToolUseId', 'tu-1');
+      t.set('runResultFed', true); // the parent read the call's error…
+      const arr = new Y.Array();
+      t.set('items', arr);
+      arr.insert(0, [
+        item({
+          type: 'user', itemId: 'inv-1', content: 'where is auth?',
+          runToolUseId: 'tu-1', runToolName: 'Explore',
+          runStatus: 'error', runResult: 'invalid request: bad model'
+        }),
+        item({ type: 'user', itemId: 'retry-1', content: 'try again', runStatus: 'rest', runResult: 'Auth lives in auth.go.' }),
+        item({ type: 'user', itemId: 'human-2', content: 'and the tests?' })
+      ]);
+      root.push([
+        item({ type: 'assistant', itemId: 'pa-1', content: 'The subthread failed.' }), // …and answered it
+        item({ type: 'thread', itemId: 'R1', aliasOf: 'T1', runItemId: 'retry-1', recoversError: true })
+      ]);
+    });
+
+    doc.transact(() => { settleRunCancelled(t, () => 'msg-new-1'); });
+    const receipt = root.get(2);
+    assert(root.length === 3 && receipt.get('runItemId') === 'human-2',
+      `the unread receipt must follow the session forward; got ${root.length} items`);
+    assert(!receipt.get('recoversError'),
+      'a receipt moved onto a stopped run must not claim to recover the error');
+    passed++;
+  } catch (e) { failed++; errors.push(`stop clears a receipt's recovery: ${msg(e)}`); }
+
   // --- 4: the terminal Result block is a compaction fold's alone ---
   // A fold's transcript is folded away, so its summary stands nowhere else and
   // the block IS the column. Every other thread ends on the reply its last run

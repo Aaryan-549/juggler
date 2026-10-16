@@ -1087,6 +1087,14 @@ type ConversationItem struct {
 	// marker.
 	RunItemID string `json:"runItemId,omitempty"`
 
+	// RecoversError marks a receipt whose run came to rest after the parent last
+	// read this thread failing — a retry of the work the parent was told did not
+	// happen. It is the one receipt the reducer treats as a trigger: the parent
+	// was waiting on that work, so it takes the receipt up when signalled rather
+	// than resting on the error it already answered. Set and cleared at settle
+	// (reportRunToParentLocked); nothing else carries it.
+	RecoversError bool `json:"recoversError,omitempty"`
+
 	// RunResultFed marks a thread item whose REAL result — not the pending
 	// placeholder — has been emitted to the provider (buildMessagesFromItems
 	// stamps it, under the same stampPending gate as a tool-action's

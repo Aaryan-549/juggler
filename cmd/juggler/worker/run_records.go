@@ -922,6 +922,8 @@ func (w *ConversationWorker) reportRunToParentLocked(threadItemID string, thread
 	}
 	trailingID, _ := trailing.Get("itemId").(string)
 	fed, _ := trailing.Get("runResultFed").(bool)
+	nested, _ := threadYMap.Get("items").(*ycrdt.YArray)
+	recovers := status == runStatusRest && lastReadRunFailedLocked(parentArr, nested, threadItemID)
 	if !fed || w.fedResultUnansweredLocked(threadItemID, parentArr, trailingID) {
 		// Unread, or read by a turn that produced nothing, so this item absorbs the
 		// run — and now says which one it absorbed. Naming it is what makes the
@@ -932,6 +934,15 @@ func (w *ConversationWorker) reportRunToParentLocked(threadItemID string, thread
 		if runItemID != "" || starterCall != selector {
 			trailing.Set("runItemId", starterID)
 		}
+		// An unread receipt reports the run it now names, so whether it recovers
+		// an error is that run's question too.
+		if selector == "" {
+			if recovers {
+				trailing.Set("recoversError", true)
+			} else {
+				trailing.Delete("recoversError")
+			}
+		}
 		return
 	}
 	// A receipt earns its place by being news. A run that came out exactly as the
@@ -939,7 +950,6 @@ func (w *ConversationWorker) reportRunToParentLocked(threadItemID string, thread
 	// next to a tile saying the same words, and cost the parent a second message
 	// telling it what it has just been told. A child that stalls the same way
 	// three times running is worth one item, not three.
-	nested, _ := threadYMap.Get("items").(*ycrdt.YArray)
 	if shownStatus, shownResult, found := shownRunOutcomeLocked(nested, runItemID, selector); found &&
 		shownStatus == status && shownResult == result {
 		return
@@ -948,7 +958,43 @@ func (w *ConversationWorker) reportRunToParentLocked(threadItemID string, thread
 	goal, _ := threadYMap.Get("goal").(string)
 	sessionName, _ := threadYMap.Get("sessionName").(string)
 	receipt := receiptItem(threadItemID, goal, sessionName, starterID)
+	receipt.RecoversError = recovers
 	parentArr.Insert(ycrdt.Number(int(parentArr.GetLength())), ycrdt.ArrayAny{conversationItemToYMap(receipt)})
+}
+
+// lastReadRunFailedLocked reports whether the last thing the parent read about a
+// thread was a failure: the latest of its items for that thread whose result has
+// gone to the provider shows an error run. A run that comes to rest after that
+// is the work the parent was told had not been done, which is what makes its
+// receipt a trigger rather than news (ConversationItem.RecoversError).
+//
+// Caller MUST hold ycrdtMu.
+func lastReadRunFailedLocked(parentArr, nested *ycrdt.YArray, canonicalID string) bool {
+	if parentArr == nil {
+		return false
+	}
+	for i := int(parentArr.GetLength()) - 1; i >= 0; i-- {
+		m, ok := parentArr.Get(ycrdt.Number(i)).(*ycrdt.YMap)
+		if !ok {
+			continue
+		}
+		if t, _ := m.Get("type").(string); t != ItemTypeThread {
+			continue
+		}
+		id, _ := m.Get("itemId").(string)
+		aliasOf, _ := m.Get("aliasOf").(string)
+		if id != canonicalID && aliasOf != canonicalID {
+			continue
+		}
+		if fed, _ := m.Get("runResultFed").(bool); !fed {
+			continue
+		}
+		runItemID, _ := m.Get("runItemId").(string)
+		selector, _ := m.Get("runToolUseId").(string)
+		status, _, found := shownRunOutcomeLocked(nested, runItemID, selector)
+		return found && status == runStatusError
+	}
+	return false
 }
 
 // threadTokenFigures sizes what a sub-thread built against what it handed back:

@@ -306,6 +306,32 @@ func TestDecideNextAction_Receipt(t *testing.T) {
 	}
 }
 
+// TestDecideNextAction_ReceiptRecoveringAnError is the one receipt that is a
+// trigger: a retry that succeeded after the parent was told its call failed. The
+// parent was waiting on that work, so it takes it up without a Continue — but
+// only when signalled, never from rest.
+func TestDecideNextAction_ReceiptRecoveringAnError(t *testing.T) {
+	items := []ConversationItem{
+		userMsg("delegate this"),
+		threadMsg("thread-1", "first result"),
+		assistantMsg("the subthread failed"),
+		{
+			Type:          ItemTypeThread,
+			ItemID:        "receipt-1",
+			AliasOf:       "thread-1",
+			RunItemID:     "retry-1",
+			RecoversError: true,
+		},
+	}
+
+	if got := decideNextAction(items, ActivityAwaitingLLM, true, false); got != ActionCallLLM {
+		t.Errorf("recovering receipt/awaiting: expected CallLLM, got %s", got)
+	}
+	if got := decideNextAction(items, ActivityNone, true, false); got != ActionNone {
+		t.Errorf("recovering receipt/at rest: expected None, got %s", got)
+	}
+}
+
 // TestDecideNextAction_BatchAllCancelled_Root: user denied everything +
 // activity="awaiting_llm" → GoIdle (clear the awaiting marker).
 func TestDecideNextAction_BatchAllCancelled_Root(t *testing.T) {

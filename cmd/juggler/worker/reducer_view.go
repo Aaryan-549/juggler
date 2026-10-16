@@ -64,6 +64,7 @@ func yMapToReducerItemShallow(m *ycrdt.YMap) ConversationItem {
 		RunResult:         yMapString(m, "runResult"),
 		Continuation:      yMapBool(m, "continuation"),
 		RunItemID:         yMapString(m, "runItemId"),
+		RecoversError:     yMapBool(m, "recoversError"),
 		RunResultFed:      yMapBool(m, "runResultFed"),
 		TransactionID:     yMapString(m, "transactionId"),
 	}

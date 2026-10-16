@@ -775,7 +775,71 @@ func TestAnsweredCallGetsAReceiptNotARewrite(t *testing.T) {
 	if !itemRunSettled(items, receipt) {
 		t.Error("a receipt must read as settled, or the parent parks on work nobody asked it to wait for")
 	}
+	if receipt.RecoversError {
+		t.Error("a run after an answer the parent read as a success recovers nothing, and must not wake it")
+	}
+}
 
+// TestRetryAfterAnsweredErrorRecoversIt is the receipt that wakes its parent.
+// The parent read its child's error and answered it, so the retry cannot rewrite
+// the call and arrives as a receipt — but it is the work the parent was told had
+// failed, so the receipt says so (RecoversError) and the reducer takes it up.
+//
+// The second half is the retry that fails again before succeeding: the failing
+// receipt recovers nothing, and when the next run succeeds it follows that unread
+// receipt forward and recovers the error the parent did read.
+func TestRetryAfterAnsweredErrorRecoversIt(t *testing.T) {
+	w := NewConversationWorker("test-conv", "user:test")
+	defer w.doc.Destroy()
+	w.doc.ensureItems()
+	w.doc.SetMetadata("defaultModelConfig", map[string]any{"provider": "test", "model": "test"})
+	w.currentRun().storeState(StateProcessing)
+
+	threadID, err := w.currentRun().spawnThread(threadSpec{Goal: "map auth", Prompt: "find the auth flow"}, toolSpawn{
+		ToolUseID: "tu-1", ToolName: "Explore", ToolInput: json.RawMessage(`{"prompt":"find the auth flow"}`), Delegated: true,
+	})
+	if err != nil {
+		t.Fatalf("spawnThread: %v", err)
+	}
+	inChild := func(item ConversationItem) {
+		w.turn.thread.itemID = threadID
+		w.turn.thread.itemsArray = w.doc.GetThreadItemsArray(threadID)
+		w.currentRun().appendTargetMessage(item)
+		w.currentRun().resetThreadContext()
+	}
+	inParent := func(item ConversationItem) {
+		w.currentRun().resetThreadContext()
+		w.currentRun().appendTargetMessage(item)
+	}
+	receipt := func() ConversationItem {
+		items := w.doc.GetItems()
+		last := items[len(items)-1]
+		if !isReceiptItem(last) || last.AliasOf != threadID {
+			t.Fatalf("expected a receipt for the thread last, got %+v", last)
+		}
+		return last
+	}
+
+	inChild(ConversationItem{Type: ItemTypeError, ItemID: "e-1", Content: "invalid request: bad model"})
+	w.settleThreadRun(threadID, false)
+	w.currentRun().buildMessages(nil) // the parent reads the error
+	inParent(ConversationItem{Type: ItemTypeAssistant, ItemID: "pa-1", Content: "The subthread failed."})
+
+	// The retry fails again: news, but not the work the parent is missing.
+	inChild(ConversationItem{Type: ItemTypeUser, ItemID: "retry-1", Content: "try again"})
+	inChild(ConversationItem{Type: ItemTypeError, ItemID: "e-2", Content: "rate limited"})
+	w.settleThreadRun(threadID, false)
+	if r := receipt(); r.RunItemID != "retry-1" || r.RecoversError {
+		t.Fatalf("a retry that failed again must recover nothing, got %+v", r)
+	}
+
+	// The next one succeeds, and the unread receipt follows it.
+	inChild(ConversationItem{Type: ItemTypeUser, ItemID: "retry-2", Content: "once more"})
+	inChild(ConversationItem{Type: ItemTypeAssistant, ItemID: "a-1", Content: "Auth lives in auth.go."})
+	w.settleThreadRun(threadID, false)
+	if r := receipt(); r.RunItemID != "retry-2" || !r.RecoversError {
+		t.Fatalf("a retry that succeeded after the parent read an error must recover it, got %+v", r)
+	}
 }
 
 // TestReadButUnansweredCallTakesTheRetry is the limit on the receipt rule, and

@@ -30,6 +30,20 @@ import { plainToYMap } from './item-accessor.js';
 export const RUN_STATUS_CANCELLED = 'cancelled';
 
 /**
+ * Run status for a run that came to rest on a clean reply. Matches the Go
+ * spelling (worker/run_records.go).
+ * @type {string}
+ */
+const RUN_STATUS_REST = 'rest';
+
+/**
+ * Run status for a run that stopped on an error item. Matches the Go spelling
+ * (worker/run_records.go).
+ * @type {string}
+ */
+const RUN_STATUS_ERROR = 'error';
+
+/**
  * What a cancelled run reports to whoever called it.
  * @type {string}
  */
@@ -287,11 +301,18 @@ export function reportRunToParent(threadYMap, starterItemId, starterCall, mintIt
   if (!selector && !runItemId) return;
   if (runItemId === starterItemId) return;
 
+  const recovers = status === RUN_STATUS_REST && lastReadRunFailed(threadYMap, arr, canonicalId);
   if (!trailing.get('runResultFed') || fedResultUnanswered(arr, trailingIndex)) {
     // Unread, or read by a turn that produced nothing, so this item absorbs the
     // run — and now says which one, so the absorption survives being read (see
     // itemRunRecord). A call whose OWN run this is needs no such note.
     if (runItemId || starterCall !== selector) trailing.set('runItemId', starterItemId);
+    // An unread receipt reports the run it now names, so whether it recovers an
+    // error is that run's question too.
+    if (!selector) {
+      if (recovers) trailing.set('recoversError', true);
+      else trailing.delete('recoversError');
+    }
     return;
   }
 
@@ -307,6 +328,30 @@ export function reportRunToParent(threadYMap, starterItemId, starterCall, mintIt
     aliasOf: canonicalId,
     goal: threadYMap.get('goal') || '',
     sessionName: threadYMap.get('sessionName') || '',
-    runItemId: starterItemId
+    runItemId: starterItemId,
+    ...(recovers ? { recoversError: true } : {})
   })]);
+}
+
+/**
+ * Whether the last thing the parent read about a thread was a failure: the
+ * latest of its items for that thread whose result has gone to the model shows
+ * an error run. A run coming to rest after that is the work the parent was told
+ * had not been done, which makes its receipt one the parent takes up unasked
+ * (`recoversError`). Mirrors lastReadRunFailedLocked in worker/run_records.go.
+ * @param {any} threadYMap - The canonical thread Y.Map holding the transcript.
+ * @param {any[]} arr - The parent's items, in order.
+ * @param {string} canonicalId - The thread's itemId.
+ * @returns {boolean} True when the parent last read this thread failing.
+ */
+function lastReadRunFailed(threadYMap, arr, canonicalId) {
+  for (let i = arr.length - 1; i >= 0; i--) {
+    const item = arr[i];
+    if (typeof item?.get !== 'function' || item.get('type') !== 'thread') continue;
+    if (item.get('itemId') !== canonicalId && item.get('aliasOf') !== canonicalId) continue;
+    if (!item.get('runResultFed')) continue;
+    const shown = shownRunOutcome(threadYMap, item.get('runItemId') || '', item.get('runToolUseId') || '');
+    return shown?.status === RUN_STATUS_ERROR;
+  }
+  return false;
 }

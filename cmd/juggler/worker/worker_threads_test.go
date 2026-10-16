@@ -728,6 +728,98 @@ func TestThreadErrorReturnsToParent(t *testing.T) {
 	w.doc.Destroy()
 }
 
+// TestRetriedChildErrorWakesTheParent is the human half of
+// TestThreadErrorReturnsToParent. The parent has read its child's error and
+// answered it; the user then retries the child, and it succeeds. That run reaches
+// the parent as a receipt — the call's error is committed history — and the
+// parent must take it up on its own: it was told the work failed, and the work
+// it was waiting on is now done. A parent left resting here sits on the error
+// for good while the answer it needed stands below it unread.
+func TestRetriedChildErrorWakesTheParent(t *testing.T) {
+	w := NewConversationWorker("test-conv", "user:test")
+	defer w.doc.Destroy()
+	w.currentRun().storeState(StateProcessing)
+	w.doc.SetMetadata("defaultModelConfig", map[string]any{"provider": "test", "model": "test"})
+	w.doc.AppendMessage(ConversationItem{Type: ItemTypeUser, ItemID: "msg-1", Content: "Hello"})
+
+	ctxResponse, _ := json.Marshal(map[string]any{
+		"type":         "render-context-items-result",
+		"systemPrompt": "Test",
+		"contexts":     []any{},
+	})
+	toolsResponse, _ := json.Marshal(map[string]any{
+		"type":  "tools-result",
+		"tools": []ToolDefinition{{Name: "create_thread"}},
+	})
+	feed := func(turns int) {
+		go func() {
+			for i := 0; i < turns; i++ {
+				w.engine.contextReply.inject(w.done, ctxResponse)
+				w.engine.toolsReply.inject(w.done, toolsResponse)
+			}
+		}()
+	}
+
+	w.setMockResponses([]MockResponse{
+		{
+			Blocks: []LLMResponseBlock{
+				{Type: "tool_use", ID: "tu-1", Name: "create_thread", Input: json.RawMessage(`{"goal":"Find auth","prompt":"Find the auth flow"}`)},
+			},
+			StopReason: "tool_use",
+		},
+		{Error: "invalid request: bad model"},
+		{
+			Blocks:     []LLMResponseBlock{{Type: "text", Content: "The subthread failed."}},
+			StopReason: "end_turn",
+		},
+	})
+	feed(3)
+	w.driveStrategyLoop(t, "Start", false)
+
+	var threadID string
+	for _, item := range w.doc.GetItems() {
+		if item.Type == ItemTypeThread {
+			threadID = item.ItemID
+		}
+	}
+	if threadID == "" {
+		t.Fatal("no thread item found — create_thread did not insert a thread")
+	}
+
+	// The user retries the child, and this time it answers.
+	w.setMockResponses([]MockResponse{
+		{
+			Blocks:     []LLMResponseBlock{{Type: "text", Content: "Auth lives in auth.go."}},
+			StopReason: "end_turn",
+		},
+		{
+			Blocks:     []LLMResponseBlock{{Type: "text", Content: "Picked up the retried result."}},
+			StopReason: "end_turn",
+		},
+	})
+	feed(2)
+	w.currentRun().storeState(StateIdle)
+	sendMsg(t, w, SendMessageMessage{ThreadItemID: threadID, IsContinuation: true})
+	w.quiesce(t)
+
+	items := w.doc.GetItems()
+	var receipt ConversationItem
+	for _, item := range items {
+		if isReceiptItem(item) && item.AliasOf == threadID {
+			receipt = item
+		}
+	}
+	if !receipt.RecoversError {
+		t.Fatalf("the retried run must reach the parent as a receipt that recovers its error, got %+v", receipt)
+	}
+	if last := items[len(items)-1]; last.Type != ItemTypeAssistant || !strings.Contains(last.Content, "Picked up the retried result.") {
+		t.Errorf("the parent must take up the retried run on its own; it ends on %+v", last)
+	}
+	if left := w.mock.remaining(); left != 0 {
+		t.Errorf("%d scripted response(s) never used — the parent did not run its turn", left)
+	}
+}
+
 // =============================================================================
 // NEEDS-STRATEGY-RUN THREAD AUTO-DETECTION TESTS
 //

@@ -143,9 +143,14 @@ func decideNextAction(items []ConversationItem, activity string, isRoot bool, ex
 		// Waking an idle conversation to react to it would spend a turn the user
 		// never asked for, on work they did in another column. It is news, and it
 		// is read on this thread's next turn, in order, like any other item.
+		//
+		// The exception is a receipt that recovers an error (RecoversError): the
+		// parent read that this work failed, and the run it carries is the work
+		// done after all. That is the answer it was waiting on, so it is taken up
+		// when signalled, as a settled child's result is.
 		if isReceiptItem(last) {
 			if activity == ActivityAwaitingLLM {
-				if explicitContinuation {
+				if explicitContinuation || last.RecoversError {
 					return ActionCallLLM
 				}
 				return ActionGoIdle
