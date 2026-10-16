@@ -253,22 +253,23 @@ export async function runTests(_ctx) {
 
   await run('a broadcast does not take a half-typed URL out of the field', async () => {
     await withPanel({ mode: 'manual', url: 'http://127.0.0.1:7890' }, async (el) => {
-      // The panel is display:none until opened, and an unfocusable field cannot
-      // set this case up. open() is avoided: it loads the shared config this fake
-      // backend does not serve, and a failed load raises a modal.
-      el.classList.add('show', 'loaded');
-      el.switchTab('connectivity');
-      await settle();
       const urlInput = el.querySelector('#proxy-url');
-      urlInput.focus();
-      assert(document.activeElement === urlInput, 'the URL field took focus (the case needs it to)');
-      // Mid-edit: typed, not yet committed — the field commits on blur and Enter.
-      urlInput.value = 'http://half-typed';
+      // The test window is not the focused window and its lanes share one focus,
+      // so a real focus() call may not take. The box reads exactly one thing to
+      // tell it is mid-edit — document.activeElement — so stub that, and put it
+      // back afterwards.
+      Object.defineProperty(document, 'activeElement', { value: urlInput, configurable: true });
+      try {
+        // Mid-edit: typed, not yet committed — the field commits on blur and Enter.
+        urlInput.value = 'http://half-typed';
 
-      broadcastProxy({ mode: 'manual', url: 'http://someone-else.example:3128' });
+        broadcastProxy({ mode: 'manual', url: 'http://someone-else.example:3128' });
 
-      assert(urlInput.value === 'http://half-typed',
-        `what the user was typing survives; got ${urlInput.value}`);
+        assert(urlInput.value === 'http://half-typed',
+          `what the user was typing survives; got ${urlInput.value}`);
+      } finally {
+        delete (/** @type {any} */ (document).activeElement);
+      }
     });
   });
 
