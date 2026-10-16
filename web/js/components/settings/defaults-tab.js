@@ -376,10 +376,10 @@ export class DefaultsTab {
    * idle timeout (the window a streaming provider waits for the next event
    * before declaring the connection dead, "stream stalled: no data for 3m0s";
    * raising it helps gateways whose cold starts exceed the 180s default), and
-   * the conversation spend ceiling (how many NEW input tokens one conversation
-   * may spend across all its threads — cache reads excluded, since a re-sent
-   * prompt is not fresh spend — before delegated work is asked to land). All
-   * persist to credentials.json via PUT /api/config; the server reads them live.
+   * the two sub-agent limits: the per-run budget of a delegated child (weighted
+   * input tokens, worker/run_budget.go) and the conversation spend ceiling (NEW
+   * input tokens across all threads, worker/spend.go). All persist to
+   * credentials.json via PUT /api/config; the server reads them live.
    * @private
    */
   renderGlobalSettings() {
@@ -434,36 +434,94 @@ export class DefaultsTab {
       failureLog: 'stream idle timeout',
     });
 
-    // The conversation spend ceiling. Stored in tokens and shown in millions:
-    // the figure people reason about is "twenty million", and a field asking
-    // them to count zeroes invites the slip that switches the guard off.
-    this._appendNumberField(container, {
-      heading: t('Spend ceiling'),
-      name: t('Million tokens per conversation'),
+    // The two limits on delegated work: the per-run budget and the conversation
+    // spend ceiling. Both are stored in tokens and shown in millions — the figure
+    // people reason about is "twenty million", and a field asking them to count
+    // zeroes invites the slip that switches the guard off.
+    const limitsHeading = document.createElement('div');
+    limitsHeading.className = 'settings-section-heading';
+    limitsHeading.textContent = t('Sub-agent limits');
+    container.appendChild(limitsHeading);
+
+    this._appendMillionTokensField(container, {
+      name: t('Per run (million tokens)'),
       description: t(
-        'Counts the input a conversation has not already paid for, across all of ' +
-        'its threads: context re-read from cache does not add to it. Past the ' +
-        'ceiling, sub-threads an agent started are asked to finish up and report ' +
-        'what they have, and no new ones are started — in your own threads too, ' +
-        'though your turns are never stopped. Leave blank for the default (10). ' +
-        '0 removes the ceiling.'),
+        'How much input a sub-agent may use each time it is called before it has to ' +
+        'stop and report. Input read from cache counts at a tenth, and a run also ends ' +
+        'after 100 model calls per million. Only affects threads an agent started. ' +
+        'Blank for the default (1), 0 for no limit.'),
+      inputId: 'run-budget-input',
+      defaultMillions: 1,
+      configKey: 'runBudgetTokens',
+      requestKey: 'run_budget_tokens',
+      savedText: (value) => (value === '0'
+        ? t('Saved. No per-run limit.')
+        : t('Saved. Sub-agents report after {value}M per run.', { value })),
+      defaultText: () => t('Saved. Using the default (1M).'),
+      failureLog: 'run budget',
+    });
+
+    this._appendMillionTokensField(container, {
+      name: t('Per conversation (million tokens)'),
+      description: t(
+        'Total new input a conversation may use across all its threads; input read ' +
+        'from cache is not counted. Once it is reached, sub-agents are asked to report ' +
+        'and no new ones can start. Your own turns keep running. ' +
+        'Blank for the default (10), 0 for no limit.'),
       inputId: 'spend-limit-input',
-      placeholder: '10',
-      current: () => {
-        const tokens = parseInt(/** @type {any} */ (this.config).spendLimitTokens, 10);
-        return Number.isFinite(tokens) ? String(Math.round(tokens / 1_000_000)) : '';
-      },
-      save: async (value) => {
-        const tokens = value === '' ? '' : String(parseInt(value, 10) * 1_000_000);
-        await fetchJson(apiUrl('/config'), { method: 'PUT', body: { spend_limit_tokens: tokens } });
-        /** @type {any} */ (this.config).spendLimitTokens = tokens;
-        if (value === '') return t('Saved. Using the default (10M).');
-        return value === '0' ? t('Saved. No ceiling.') : t('Saved. Stopping delegated work past {value}M.', { value });
-      },
+      defaultMillions: 10,
+      configKey: 'spendLimitTokens',
+      requestKey: 'spend_limit_tokens',
+      savedText: (value) => (value === '0'
+        ? t('Saved. No conversation limit.')
+        : t('Saved. Sub-agents stop past {value}M per conversation.', { value })),
+      defaultText: () => t('Saved. Using the default (10M).'),
       failureLog: 'spend ceiling',
     });
 
     this._appendDiffSettings(container);
+  }
+
+  /**
+   * Append a token limit shown in millions (decimals allowed) and stored in
+   * tokens under a raw config key, where blank means the server's default and 0
+   * means no limit.
+   * @private
+   * @param {Element} container
+   * @param {object} opts
+   * @param {string} opts.name - Short label for the value.
+   * @param {string} opts.description - The explanatory line under the label.
+   * @param {string} opts.inputId - DOM id for the input.
+   * @param {number} opts.defaultMillions - The server default, shown as the placeholder.
+   * @param {string} opts.configKey - Where loadConfig() puts the stored token string.
+   * @param {string} opts.requestKey - The PUT /api/config key.
+   * @param {(value: string) => string} opts.savedText - Status line for a saved non-blank value ('0' = off).
+   * @param {() => string} opts.defaultText - Status line for a cleared field.
+   * @param {string} opts.failureLog - What to call this setting in the console on failure.
+   */
+  _appendMillionTokensField(container, opts) {
+    const config = /** @type {any} */ (this.config);
+    this._appendNumberField(container, {
+      name: opts.name,
+      description: opts.description,
+      inputId: opts.inputId,
+      placeholder: String(opts.defaultMillions),
+      decimal: true,
+      current: () => {
+        const tokens = parseInt(config[opts.configKey], 10);
+        return Number.isFinite(tokens) ? String(Number((tokens / 1_000_000).toFixed(3))) : '';
+      },
+      validate: (value) => (Number(value) > 0 && Math.round(Number(value) * 1_000_000) < 1000
+        ? t('Must be 0 or at least 0.001.') : ''),
+      save: async (value) => {
+        const tokens = value === '' ? '' : String(Math.round(Number(value) * 1_000_000));
+        await fetchJson(apiUrl('/config'), { method: 'PUT', body: { [opts.requestKey]: tokens } });
+        config[opts.configKey] = tokens;
+        if (value === '') return opts.defaultText();
+        return opts.savedText(tokens === '0' ? '0' : String(Number(value)));
+      },
+      failureLog: opts.failureLog,
+    });
   }
 
   /**
@@ -535,7 +593,7 @@ export class DefaultsTab {
   }
 
   /**
-   * Append one labelled whole-number setting: heading, name, description, and a
+   * Append one labelled number setting: heading, name, description, and a
    * text input that saves on blur and on Enter. Blank always means "use the
    * default", so every field built here can be cleared back to the shipped
    * behaviour without a separate control saying so.
@@ -546,21 +604,24 @@ export class DefaultsTab {
    * @private
    * @param {Element} container
    * @param {object} opts
-   * @param {string} opts.heading - Section heading above the field.
+   * @param {string} [opts.heading] - Section heading above the field; omitted when the field joins one already there.
    * @param {string} opts.name - Short label for the value itself.
    * @param {string} opts.description - The explanatory line under the label.
    * @param {string} opts.inputId - DOM id for the input.
    * @param {string} opts.placeholder - Shown when the field is blank (the default).
+   * @param {boolean} [opts.decimal] - Accept a decimal number rather than only a whole one.
    * @param {() => string} opts.current - The currently saved value, as displayed.
    * @param {(value: string) => string} [opts.validate] - Returns an error message for a non-blank value, or ''.
    * @param {(value: string) => Promise<string>} opts.save - Persists the value; resolves with the status line to show.
    * @param {string} opts.failureLog - What to call this setting in the console on failure.
    */
   _appendNumberField(container, opts) {
-    const heading = document.createElement('div');
-    heading.className = 'settings-section-heading';
-    heading.textContent = opts.heading;
-    container.appendChild(heading);
+    if (opts.heading) {
+      const heading = document.createElement('div');
+      heading.className = 'settings-section-heading';
+      heading.textContent = opts.heading;
+      container.appendChild(heading);
+    }
 
     const fieldGroup = document.createElement('div');
     fieldGroup.className = 'settings-group provider-field';
@@ -588,7 +649,7 @@ export class DefaultsTab {
     input.id = opts.inputId;
     // Non-secret persisted value: keep visible across close/reopen (see close()).
     input.className = 'settings-value-input';
-    input.inputMode = 'numeric';
+    input.inputMode = opts.decimal ? 'decimal' : 'numeric';
     input.placeholder = opts.placeholder;
     input.autocomplete = 'off';
     input.setAttribute('autocorrect', 'off');
@@ -605,8 +666,8 @@ export class DefaultsTab {
     const save = async () => {
       const value = input.value.trim();
       if (value === opts.current()) return;
-      if (value !== '' && !/^\d+$/.test(value)) {
-        status.textContent = t('Enter a whole number.');
+      if (value !== '' && !(opts.decimal ? /^\d+(\.\d+)?$/ : /^\d+$/).test(value)) {
+        status.textContent = opts.decimal ? t('Enter a number.') : t('Enter a whole number.');
         return;
       }
       const invalid = value === '' ? '' : (opts.validate?.(value) || '');

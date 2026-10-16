@@ -32,6 +32,11 @@ const (
 	// (worker.DefaultSpendCeilingTokens); "0" ⇒ no ceiling. Read live by the
 	// resolver in server/llm_caller.go, which this key mirrors.
 	spendLimitTokensKey = "spend_limit_tokens"
+	// runBudgetTokensKey stores the per-run budget of a delegated child in
+	// weighted input tokens (worker/run_budget.go), as a string, under the same
+	// rules: absent/unparseable ⇒ worker.DefaultRunBudgetTokens, "0" ⇒ no
+	// budget. Mirrored by the resolver in server/llm_caller.go.
+	runBudgetTokensKey = "run_budget_tokens"
 	// autoCompactDisabledKey stores the disabled state of automatic compaction,
 	// so an absent/empty value means enabled (the default). "1" means disabled.
 	// Mirrored by createAutoCompactGate in server/llm_caller.go.
@@ -173,6 +178,7 @@ func (c *ConfigAPI) HandleGetConfig(w http.ResponseWriter, r *http.Request) {
 		"claudecodeBinaryPath":     c.credStore.GetRawKey(claudecodeBinaryPathKey),
 		"streamIdleTimeout":        c.credStore.GetRawKey(streamIdleTimeoutKey),
 		"spendLimitTokens":         c.credStore.GetRawKey(spendLimitTokensKey),
+		"runBudgetTokens":          c.credStore.GetRawKey(runBudgetTokensKey),
 		"autoCompactDisabled":      c.credStore.GetRawKey(autoCompactDisabledKey) == "1",
 		"autoNameDisabled":         c.credStore.GetRawKey(autoNameDisabledKey) == "1",
 		"autoNameInstruction":      c.credStore.GetRawKey(autoNameInstructionKey),
@@ -301,6 +307,16 @@ func (c *ConfigAPI) HandleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 		if str, ok := v.(string); ok {
 			if err := c.credStore.SetRawKey(spendLimitTokensKey, strings.TrimSpace(str)); err != nil {
 				jlog.Error("Failed to save spend ceiling: %v", err)
+			}
+		}
+	}
+
+	// The per-run budget of a delegated child, same shape: read live at each
+	// turn boundary, blank restores the default, "0" removes the budget.
+	if v, ok := req[runBudgetTokensKey]; ok {
+		if str, ok := v.(string); ok {
+			if err := c.credStore.SetRawKey(runBudgetTokensKey, strings.TrimSpace(str)); err != nil {
+				jlog.Error("Failed to save run budget: %v", err)
 			}
 		}
 	}

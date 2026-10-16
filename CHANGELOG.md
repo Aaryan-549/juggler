@@ -5,6 +5,7 @@ of changes; this project follows semantic versioning.
 
 ## [Unreleased]
 
+- Sub-agent run budget is now settable in Settings → Defaults, and defaults to 1M tokens
 - New run_code tool: a mutating version of query_code, to give full "code mode" features
 - New --allow-host flag serves Juggler behind a reverse proxy such as tailscale serve
 - Git pin reviews any scope: staged, unstaged, branch, last commit, or a git diff range

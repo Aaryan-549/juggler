@@ -120,20 +120,35 @@ func (s *Server) createAutoCompactGate() worker.AutoCompactGateFunc {
 // able to report that it had gone.
 func (s *Server) createSpendLimitResolver() worker.SpendLimitFunc {
 	// Raw credential key mirrors handlers/config.go spendLimitTokensKey.
-	const spendLimitTokensKey = "spend_limit_tokens"
+	return tokenLimitResolver("spend_limit_tokens", "spend ceiling", worker.DefaultSpendCeilingTokens)
+}
+
+// createRunBudgetResolver returns the per-run budget resolver injected into
+// every worker (worker.RunBudgetFunc): how many weighted input tokens one run of
+// a delegated child may spend before it is asked to report. Same rules as the
+// spend ceiling's: read live, absent or unparseable means the default, 0 means
+// no budget.
+func (s *Server) createRunBudgetResolver() worker.RunBudgetFunc {
+	// Raw credential key mirrors handlers/config.go runBudgetTokensKey.
+	return tokenLimitResolver("run_budget_tokens", "run budget", worker.DefaultRunBudgetTokens)
+}
+
+// tokenLimitResolver reads a token limit from a raw credentials-store key on
+// every call: blank, unparseable or negative means def, and 0 means no limit.
+func tokenLimitResolver(key, what string, def int64) func() int64 {
 	store, err := core.NewCredentialsStore()
 	if err != nil {
-		jlog.Error("spend ceiling: credentials store unavailable, using the default: %v", err)
-		return func() int64 { return worker.DefaultSpendCeilingTokens }
+		jlog.Error("%s: credentials store unavailable, using the default: %v", what, err)
+		return func() int64 { return def }
 	}
 	return func() int64 {
-		raw := strings.TrimSpace(store.GetRawKey(spendLimitTokensKey))
+		raw := strings.TrimSpace(store.GetRawKey(key))
 		if raw == "" {
-			return worker.DefaultSpendCeilingTokens
+			return def
 		}
 		limit, parseErr := strconv.ParseInt(raw, 10, 64)
 		if parseErr != nil || limit < 0 {
-			return worker.DefaultSpendCeilingTokens
+			return def
 		}
 		return limit
 	}

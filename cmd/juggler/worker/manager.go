@@ -44,6 +44,7 @@ const (
 	mgrActiveIDs
 	mgrSetAutoNamer
 	mgrSetSpendLimit
+	mgrSetRunBudget
 	mgrConversationRestored
 	mgrRecordBackgroundTaskSnapshot
 )
@@ -101,6 +102,7 @@ type managerOp struct {
 	windowResolver  WindowResolverFunc
 	autoCompactGate AutoCompactGateFunc
 	spendLimit      SpendLimitFunc
+	runBudget       RunBudgetFunc
 	autoNameFunc    AutoNameFunc
 	engineCallback  func(convID string, msg []byte)
 	pathProvider    PathProviderFunc
@@ -163,6 +165,7 @@ func (m *Manager) run() {
 	var windowResolver WindowResolverFunc
 	var autoCompactGate AutoCompactGateFunc
 	var spendLimit SpendLimitFunc
+	var runBudget RunBudgetFunc
 	var autoNameFunc AutoNameFunc
 	var engineClientID string
 	var engineCallback func(convID string, msg []byte)
@@ -216,6 +219,9 @@ func (m *Manager) run() {
 		if spendLimit != nil {
 			w.SetSpendLimit(spendLimit)
 		}
+		if runBudget != nil {
+			w.SetRunBudget(runBudget)
+		}
 		if autoNameFunc != nil {
 			w.SetAutoNamer(autoNameFunc)
 		}
@@ -262,6 +268,12 @@ func (m *Manager) run() {
 			spendLimit = op.spendLimit
 			for _, w := range workers {
 				w.SetSpendLimit(spendLimit)
+			}
+
+		case mgrSetRunBudget:
+			runBudget = op.runBudget
+			for _, w := range workers {
+				w.SetRunBudget(runBudget)
 			}
 
 		case mgrSetAutoNamer:
@@ -532,6 +544,12 @@ func (m *Manager) SetAutoCompactGate(fn AutoCompactGateFunc) {
 // existing worker and any worker created later. See SpendLimitFunc.
 func (m *Manager) SetSpendLimit(fn SpendLimitFunc) {
 	m.ops <- managerOp{kind: mgrSetSpendLimit, spendLimit: fn}
+}
+
+// SetRunBudget sets the per-run budget resolver for delegated children, applied
+// to every existing worker and any worker created later. See RunBudgetFunc.
+func (m *Manager) SetRunBudget(fn RunBudgetFunc) {
+	m.ops <- managerOp{kind: mgrSetRunBudget, runBudget: fn}
 }
 
 // SetAutoNamer sets the out-of-band tab auto-naming callback applied to every

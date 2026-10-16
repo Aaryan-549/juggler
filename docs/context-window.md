@@ -172,11 +172,18 @@ because a refusal you cannot explain reads as a bug. A tool that can also run
 without a sub-thread, such as `WebFetch`, simply runs without one — you asked
 for it, and only the delegation is in question.
 
-**Settings → Defaults → Spend ceiling** sets it, in millions of new input
-tokens. Blank uses the default of 10 million, `0` removes the ceiling entirely.
-A long session of ordinary work lands well inside that; a fan-out reaches it
-quickly, because every fresh transcript is content the conversation is paying
-for the first time.
+**Settings → Defaults → Sub-agent limits → Per conversation** sets it, in
+millions of new input tokens. Blank uses the default of 10 million, `0` removes
+the ceiling entirely. A long session of ordinary work lands well inside that; a
+fan-out reaches it quickly, because every fresh transcript is content the
+conversation is paying for the first time.
+
+A single sub-agent run has a budget of its own, set beside it under **Per run**:
+by default 1 million input tokens, with input read from cache counted at a
+tenth, and at most 100 model calls per million. A run that reaches it lands the
+same way — told to report, tools refused — but only that run: calling the same
+sub-agent again starts a fresh budget. Like the ceiling, it never touches your
+own threads, and `0` removes it.
 
 ## Proactive compaction
 

@@ -38,7 +38,7 @@ func spendTurns(r *run, n int) {
 
 // spendBudget charges one round-trip that uncached, costs the whole token budget.
 func spendBudget(r *run) {
-	r.noteRunTurn(&LLMResponse{InputTokens: int(runCostBudget)})
+	r.noteRunTurn(&LLMResponse{InputTokens: int(r.runCostBudget())})
 }
 
 // TestRunBudgetGovernsOnlyLeafChildren pins WHO the budget applies to.
@@ -59,14 +59,14 @@ func TestRunBudgetGovernsOnlyLeafChildren(t *testing.T) {
 		wantSpent bool
 	}{
 		{"a leaf child at its token budget", leaf, spendBudget, true},
-		{"a leaf child at its turn backstop", leaf, func(r *run) { spendTurns(r, runTurnBackstop) }, true},
-		{"a leaf child one turn short of the backstop", leaf, func(r *run) { spendTurns(r, runTurnBackstop-1) }, false},
+		{"a leaf child at its turn backstop", leaf, func(r *run) { spendTurns(r, r.runTurnBackstop()) }, true},
+		{"a leaf child one turn short of the backstop", leaf, func(r *run) { spendTurns(r, r.runTurnBackstop()-1) }, false},
 		{"a thread a human is steering", func(w *ConversationWorker) string {
 			return insertThreadWithOpts(w, threadOpts{goal: "Mine", llmCreated: true, canSpawnThreads: true})
-		}, func(r *run) { spendBudget(r); spendTurns(r, runTurnBackstop) }, false},
+		}, func(r *run) { spendBudget(r); spendTurns(r, r.runTurnBackstop()) }, false},
 		{"a thread nobody's agent created", func(w *ConversationWorker) string {
 			return insertThreadWithOpts(w, threadOpts{goal: "Compaction"})
-		}, func(r *run) { spendBudget(r); spendTurns(r, runTurnBackstop) }, false},
+		}, func(r *run) { spendBudget(r); spendTurns(r, r.runTurnBackstop()) }, false},
 	}
 
 	for _, tc := range cases {
@@ -86,7 +86,7 @@ func TestRunBudgetGovernsOnlyLeafChildren(t *testing.T) {
 		defer w.doc.Destroy()
 		r := runOnThread(w, "")
 		spendBudget(r)
-		spendTurns(r, runTurnBackstop*3)
+		spendTurns(r, r.runTurnBackstop()*3)
 		if r.runBudgetSpent() {
 			t.Fatal("root is the user's own thread; a budget there would stop the work they are watching")
 		}
@@ -119,17 +119,20 @@ func TestRunBudgetChargesTokensNotTurns(t *testing.T) {
 		}
 		if r.runBudgetSpent() {
 			t.Fatalf("budget spent after the replayed run (cost %d of %d): a warm, mostly-cached run must have room to go on",
-				r.t.runBudget.cost, runCostBudget)
+				r.t.runBudget.cost, r.runCostBudget())
 		}
-		if r.t.runBudget.cost*2 > runCostBudget {
+		if r.t.runBudget.cost*2 > r.runCostBudget() {
 			t.Errorf("replayed run cost %d, over half the %d budget — it should sit well inside it",
-				r.t.runBudget.cost, runCostBudget)
+				r.t.runBudget.cost, r.runCostBudget())
 		}
 	})
 
+	// Against a 400k budget: the default leaves this whole run inside it, so the
+	// weighting is pinned at a figure where the run must be cut short.
 	t.Run("an incident-shaped child is stopped mid-run", func(t *testing.T) {
 		w, r := newLeaf(t)
 		defer w.doc.Destroy()
+		w.SetRunBudget(func() int64 { return 400_000 })
 		const total = 27
 		prompt := func(i int) int { return 12_000 + (300_000-12_000)*i/(total-1) }
 		stoppedAt := 0
@@ -160,6 +163,41 @@ func TestRunBudgetChargesTokensNotTurns(t *testing.T) {
 			t.Errorf("cost = %d, want 50000 — an unreported cache figure must not read as a free turn", got)
 		}
 	})
+}
+
+// TestRunBudgetDefaultAndOverride pins the shipped default, an explicit budget,
+// 0 for "no budget", and the turn backstop following whichever applies.
+func TestRunBudgetDefaultAndOverride(t *testing.T) {
+	w := NewConversationWorker("test-conv", "user:test")
+	defer w.doc.Destroy()
+	r := runOnThread(w, insertThreadWithOpts(w, threadOpts{goal: "Explore", llmCreated: true}))
+
+	if got := r.runCostBudget(); got != 1_000_000 {
+		t.Errorf("runCostBudget() with no resolver = %d, want the 1M default", got)
+	}
+	if got := r.runTurnBackstop(); got != 100 {
+		t.Errorf("runTurnBackstop() at the default = %d, want 100", got)
+	}
+
+	w.SetRunBudget(func() int64 { return 400_000 })
+	if got := r.runCostBudget(); got != 400_000 {
+		t.Errorf("runCostBudget() = %d, want the configured 400000", got)
+	}
+	if got := r.runTurnBackstop(); got != 40 {
+		t.Errorf("runTurnBackstop() at 400k = %d, want 40", got)
+	}
+
+	w.SetRunBudget(func() int64 { return 1 })
+	if got := r.runTurnBackstop(); got != minRunTurnBackstop {
+		t.Errorf("runTurnBackstop() at a tiny budget = %d, want the floor %d", got, minRunTurnBackstop)
+	}
+
+	w.SetRunBudget(func() int64 { return 0 })
+	r.noteRunTurn(&LLMResponse{InputTokens: 50_000_000})
+	spendTurns(r, 1000)
+	if r.runBudgetSpent() || r.runBudgetNearlySpent() {
+		t.Error("with the budget switched off, neither tokens nor turns may end or warn a run")
+	}
 }
 
 // TestRunBudgetIsPerRunNotPerThread pins the reset. A session is called again
@@ -231,7 +269,7 @@ func TestRunBudgetLandsOnceWithANotice(t *testing.T) {
 	r := runOnThread(w, threadID)
 
 	// Short of the budget there is nothing to say.
-	spendTurns(r, runTurnBackstop-1)
+	spendTurns(r, r.runTurnBackstop()-1)
 	r.announceRunBudgetSpent()
 	if got := countReminders(w, threadID, runBudgetNoticeMarker); got != 0 {
 		t.Fatalf("notices = %d below the budget, want 0", got)
@@ -274,12 +312,12 @@ func TestRunBudgetWarnsOnceBeforeItLands(t *testing.T) {
 		reach func(*run)
 	}{
 		{"by tokens", func(r *run) {
-			r.noteRunTurn(&LLMResponse{InputTokens: int(runCostBudget*3/4) - 1})
+			r.noteRunTurn(&LLMResponse{InputTokens: int(r.runCostBudget()*3/4) - 1})
 		}, func(r *run) {
 			r.noteRunTurn(&LLMResponse{InputTokens: 1})
 		}},
 		{"by turns", func(r *run) {
-			spendTurns(r, runTurnWarning-1)
+			spendTurns(r, r.runTurnWarning()-1)
 		}, func(r *run) {
 			spendTurns(r, 1)
 		}},

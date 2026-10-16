@@ -476,7 +476,7 @@ export async function runTests(_ctx) {
         stubFetch();
         const tab = /** @type {any} */ (new DefaultsTab(host));
         tab.onConfigLoaded({
-          config: { autoNameDefaultPrompt: '4', streamIdleTimeout: '9', spendLimitTokens: '5000000' },
+          config: { autoNameDefaultPrompt: '4', streamIdleTimeout: '9', spendLimitTokens: '5000000', runBudgetTokens: '500000' },
           providers: digitProviders(),
           defaultModel: { provider: 'p', model: 'm', explicit: false },
           cheapModel: { explicit: false },
@@ -490,6 +490,9 @@ export async function runTests(_ctx) {
         // instruction's is the server's built-in prompt: neither is a message.
         const skip = 'input, textarea';
         assertPseudoLocalized(host, { skip, atLeast: 25, where: 'first render' });
+        // A token limit is shown in millions, fractions included.
+        const runBudget = /** @type {HTMLInputElement} */ (host.querySelector('#run-budget-input'));
+        assert(runBudget.value === '0.5', `500000 tokens should show as 0.5, got ${JSON.stringify(runBudget.value)}`);
 
         // The cheap row's Off state, and a pinned default model.
         tab.cheapModel = { explicit: false, disabled: true };
@@ -548,6 +551,11 @@ export async function runTests(_ctx) {
         lines.push(await enter('#stream-idle-timeout-input', '0'));
         lines.push(await enter('#stream-idle-timeout-input', '30'));
         lines.push(await enter('#stream-idle-timeout-input', ''));
+        lines.push(await enter('#run-budget-input', 'x'));
+        lines.push(await enter('#run-budget-input', '0.0000001'));
+        lines.push(await enter('#run-budget-input', '0'));
+        lines.push(await enter('#run-budget-input', '2.5'));
+        lines.push(await enter('#run-budget-input', ''));
         lines.push(await enter('#spend-limit-input', '0'));
         lines.push(await enter('#spend-limit-input', '20'));
         lines.push(await enter('#spend-limit-input', ''));

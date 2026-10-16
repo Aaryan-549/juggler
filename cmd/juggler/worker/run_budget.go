@@ -41,28 +41,69 @@ import (
 // what makes a warm child cheaper than a fresh one — so each call gets a whole
 // budget.
 
-// runCostBudget is how many weighted input tokens (runTurnCost) one run of a
-// leaf child may spend before it is asked to report.
+// DefaultRunBudgetTokens is the shipped budget: how many weighted input tokens
+// (runTurnCost) one run of a leaf child may spend before it is asked to report.
 //
-// 400k because it lands where the twelve-turn budget it replaced was meant to:
-// an incident-shaped child, its prompt climbing from 12k to 300k over 27 turns,
-// is stopped around turn 19, about half of its prompt volume, while a warm
-// twelve-turn code-reading run costs ~116k and has room for more than twice as
-// much again. A child that opens by reading one very large file pays for it
-// here, which is the point — that is the run that is expensive.
-const runCostBudget int64 = 400_000
+// One million leaves real investigative work room to finish. A warm twelve-turn
+// code-reading run costs ~116k, and an incident-shaped child — its prompt
+// climbing from 12k to 300k over 27 turns — costs ~720k, so it runs to the end;
+// what the default stops is the run that keeps going past that. A child that
+// opens by reading one very large file pays for it here, which is the point —
+// that is the run that is expensive.
+const DefaultRunBudgetTokens int64 = 1_000_000
+
+// RunBudgetFunc reports the configured run budget in weighted input tokens, 0
+// meaning no budget. Injected so this package stays free of the credentials
+// store; a nil func means the default applies. Read live at each turn boundary,
+// so a settings change takes effect on the next turn without a restart.
+type RunBudgetFunc func() int64
+
+// SetRunBudget installs the run budget resolver. See RunBudgetFunc.
+func (w *ConversationWorker) SetRunBudget(fn RunBudgetFunc) {
+	w.runBudgetFn = fn
+}
+
+// runCostBudget is the run budget in force: the configured figure, the default
+// when nothing is configured, 0 when it is switched off.
+func (w *ConversationWorker) runCostBudget() int64 {
+	if w.runBudgetFn == nil {
+		return DefaultRunBudgetTokens
+	}
+	if budget := w.runBudgetFn(); budget > 0 {
+		return budget
+	}
+	return 0
+}
 
 // cacheReadDivisor is how much cheaper a cache-read token is than a new one:
 // providers bill cache reads at around a tenth of the input rate.
 const cacheReadDivisor = 10
 
+// runTurnBackstopTokens is how much budget buys one round-trip of the turn
+// backstop: 100 turns at the default, 40 at 400k.
+const runTurnBackstopTokens = 10_000
+
+// minRunTurnBackstop is the fewest turns any non-zero budget allows, so a small
+// budget still bounds a run by its tokens rather than by its turn count.
+const minRunTurnBackstop = 10
+
 // runTurnBackstop is how many completed round-trips one run may take whatever
-// they cost. Far above any honest sub-agent run; it exists for a loop of tiny
-// round-trips that the token budget would take hundreds of turns to notice.
-const runTurnBackstop = 40
+// they cost, or 0 when the budget is off. Far above any honest sub-agent run at
+// the same budget; it exists for a loop of tiny round-trips that the token
+// budget would take hundreds of turns to notice. It scales with the budget so
+// that raising the one setting raises both.
+func (w *ConversationWorker) runTurnBackstop() int {
+	budget := w.runCostBudget()
+	if budget <= 0 {
+		return 0
+	}
+	return int(max(budget/runTurnBackstopTokens, minRunTurnBackstop))
+}
 
 // runTurnWarning is the turn at which a run nearing the backstop is warned.
-const runTurnWarning = runTurnBackstop - 5
+func (w *ConversationWorker) runTurnWarning() int {
+	return w.runTurnBackstop() - 5
+}
 
 // runBudgetNoticeMarker is the phrase the budget notice is recognised by — in
 // the child's transcript, by a reader, and in tests. Its own constant because
@@ -219,8 +260,9 @@ func (r *run) runBudgetGoverned() bool {
 // runBudgetSpent reports whether this run has used its budget: its tokens, or
 // failing that its turn backstop.
 func (r *run) runBudgetSpent() bool {
+	budget := r.runCostBudget()
 	b := r.t.runBudget
-	if b.cost < runCostBudget && b.turns < runTurnBackstop {
+	if budget <= 0 || (b.cost < budget && b.turns < r.runTurnBackstop()) {
 		return false
 	}
 	return r.runBudgetGoverned()
@@ -230,8 +272,9 @@ func (r *run) runBudgetSpent() bool {
 // to be warned: three quarters of its tokens, or a few turns short of the
 // backstop.
 func (r *run) runBudgetNearlySpent() bool {
+	budget := r.runCostBudget()
 	b := r.t.runBudget
-	if b.cost < runCostBudget*3/4 && b.turns < runTurnWarning {
+	if budget <= 0 || (b.cost < budget*3/4 && b.turns < r.runTurnWarning()) {
 		return false
 	}
 	return r.runBudgetGoverned()
@@ -257,7 +300,7 @@ func (r *run) announceRunBudgetSpent() {
 		b.told, b.warned = true, true
 		r.appendRunBudgetReminder(runBudgetNotice())
 		r.log.Info("[worker] thread %s spent its run budget (%d of %d weighted tokens, %d of %d turns) — asked to report",
-			r.t.thread.itemID, b.cost, runCostBudget, b.turns, runTurnBackstop)
+			r.t.thread.itemID, b.cost, r.runCostBudget(), b.turns, r.runTurnBackstop())
 		return
 	}
 	if b.warned || !r.runBudgetNearlySpent() {
@@ -266,7 +309,7 @@ func (r *run) announceRunBudgetSpent() {
 	b.warned = true
 	r.appendRunBudgetReminder(runBudgetWarning())
 	r.log.Info("[worker] thread %s nearing its run budget (%d of %d weighted tokens, %d of %d turns) — warned",
-		r.t.thread.itemID, b.cost, runCostBudget, b.turns, runTurnBackstop)
+		r.t.thread.itemID, b.cost, r.runCostBudget(), b.turns, r.runTurnBackstop())
 }
 
 func (r *run) appendRunBudgetReminder(content string) {

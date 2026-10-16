@@ -251,6 +251,8 @@ type ConversationWorker struct {
 	spendInput  atomic.Int64
 	spendOutput atomic.Int64
 	spendLimit  SpendLimitFunc
+	// runBudgetFn resolves the per-run budget for delegated children (run_budget.go).
+	runBudgetFn RunBudgetFunc
 
 	// sched is which turns run and when the reducer is next asked: the reconcile
 	// bit, the run loop's dispatch and retirement hand-offs, the live-run
