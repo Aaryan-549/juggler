@@ -101,7 +101,9 @@
     margin: 0;
 }
 
-/* Hover-reveal copy-to-clipboard button in the upper-right of a code block. */
+/* Hover-reveal copy-to-clipboard button in the upper-right of a code block,
+   and of a quote: decorateCodeBlocks() puts a quote's button inside the
+   blockquote and gives it `quote-copy-button` as well as this class. */
 .code-copy-button {
     position: absolute;
     top: 0.375rem;
@@ -131,7 +133,8 @@
 /* Hovering the block reveals the button only translucently, so it stays
    reachable without obscuring the code under the pointer; it comes to full
    opacity only when the pointer is on the button itself or after a copy. */
-.code-block-wrap:hover .code-copy-button {
+.code-block-wrap:hover .code-copy-button,
+.markdown blockquote:hover > .quote-copy-button {
     opacity: 0.4;
 }
 
@@ -311,6 +314,14 @@
     padding: 0.5rem 1rem;
     background: rgb(0 0 0 / 15%);
     color: var(--text-secondary);
+}
+
+/* Positioning context for the quote's copy button. Quoted prose wraps, so —
+   unlike a <pre> — it can give the button a strip of its own on the right
+   instead of running underneath it. */
+:where(.markdown) blockquote:has(> :where(.quote-copy-button)) {
+    position: relative;
+    padding-right: 2.25rem;
 }
 
 :where(.markdown) hr {

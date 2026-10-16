@@ -637,6 +637,87 @@ function decorateTaskLists(html) {
 }
 
 /**
+ * Attribute carrying a quote's markdown source, for its copy button. It is not
+ * in {@link ALLOWED_ATTRS}, so the sanitiser strips it from anything a message
+ * authored: only {@link attachQuoteSources} can set it, and a quote cannot be
+ * made to copy something other than what the message's markdown said.
+ */
+const QUOTE_SOURCE_ATTR = 'data-markdown-source';
+
+/**
+ * The render in progress, while `marked.parse` runs inside renderMarkdown:
+ * the quote sources it has seen, and the per-render class that tags their
+ * `<blockquote>`s for {@link attachQuoteSources}. Null at any other time, which
+ * leaves marked's own blockquote rendering in charge.
+ * @type {{ tag: string, sources: string[] } | null}
+ */
+let quoteRender = null;
+
+/** The marked instances {@link installQuoteRenderer} has already extended. */
+const quoteRendererInstalled = new WeakSet();
+
+/**
+ * Teach marked to record each quote's source as it renders it. The `<blockquote>`
+ * is tagged with a class unique to this render rather than given the source
+ * directly: the class survives the sanitiser, and a message cannot guess it, so
+ * the pass after the sanitiser knows every tagged quote came from markdown.
+ * @param {any} marked - The global marked instance.
+ */
+function installQuoteRenderer(marked) {
+  if (quoteRendererInstalled.has(marked)) return;
+  quoteRendererInstalled.add(marked);
+  marked.use({
+    renderer: {
+      /**
+       * @this {any}
+       * @param {{ text: string, tokens: object[] }} token - marked's blockquote token;
+       *   `text` is its source with one level of `>` markers removed.
+       * @returns {string|false} The quote's HTML, or false for marked's default.
+       */
+      blockquote(token) {
+        if (!quoteRender) return false;
+        const index = quoteRender.sources.push(token.text.replace(/\s+$/, '')) - 1;
+        return `<blockquote class="${quoteRender.tag}-${index}">\n${this.parser.parse(token.tokens)}</blockquote>\n`;
+      },
+    },
+  });
+}
+
+/**
+ * Swap the per-render tags {@link installQuoteRenderer} put on quotes for their
+ * markdown source. Runs on sanitised HTML and reads only sources marked handed
+ * over, so it is as safe on this side of the boundary as decorateTaskLists.
+ * @param {string} html - Sanitised HTML.
+ * @param {{ tag: string, sources: string[] }} render - The render's quote record.
+ * @returns {string} HTML whose markdown quotes carry {@link QUOTE_SOURCE_ATTR}.
+ */
+function attachQuoteSources(html, render) {
+  if (!render.sources.length || typeof document === 'undefined') return html;
+  const tpl = document.createElement('template');
+  tpl.innerHTML = html;
+  const prefix = `${render.tag}-`;
+  for (const quote of Array.from(tpl.content.querySelectorAll('blockquote'))) {
+    const tagClass = Array.from(quote.classList).find((name) => name.startsWith(prefix));
+    if (!tagClass) continue;
+    quote.classList.remove(tagClass);
+    if (!quote.classList.length) quote.removeAttribute('class');
+    const source = render.sources[Number(tagClass.slice(prefix.length))];
+    if (source !== undefined) quote.setAttribute(QUOTE_SOURCE_ATTR, source);
+  }
+  return tpl.innerHTML;
+}
+
+/**
+ * A class name no message can have written in advance.
+ * @returns {string} `mdq-` and 16 random hex digits.
+ */
+function quoteRenderTag() {
+  const bytes = new Uint8Array(8);
+  globalThis.crypto.getRandomValues(bytes);
+  return `mdq-${Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')}`;
+}
+
+/**
  * Render markdown with syntax highlighting and safe XML handling
  * @param {string} content - Markdown content to render
  * @param {object} [options] - Rendering options
@@ -670,7 +751,15 @@ export function renderMarkdown(content, options = {}) {
     // marked.js does not filter javascript: / vbscript: / data: hrefs by
     // default, so a link like [click](javascript:alert(1)) would render
     // as a live XSS sink. Belt-and-braces neutralisation post-parse:
-    const raw = marked.parse(processedContent);
+    installQuoteRenderer(marked);
+    const render = { tag: quoteRenderTag(), sources: /** @type {string[]} */ ([]) };
+    quoteRender = render;
+    let raw;
+    try {
+      raw = marked.parse(processedContent);
+    } finally {
+      quoteRender = null;
+    }
     // Sanitise LAST among the passes that handle marked's output:
     // neutraliseDangerousUrls/externalizeLinks are string passes that scrub
     // URLs; sanitizeRenderedHtml is the authoritative tag/attribute boundary
@@ -681,7 +770,9 @@ export function renderMarkdown(content, options = {}) {
     // the boundary on purpose — see decorateTaskLists: it consumes no untrusted
     // input, so it can add the `role`/`aria-label` the allowlist withholds
     // without granting them to every other element in the document.
-    return decorateTaskLists(safe);
+    // And give each markdown quote its source, for its copy button — on this
+    // side of the boundary for the same reason (see QUOTE_SOURCE_ATTR).
+    return attachQuoteSources(decorateTaskLists(safe), render);
   } catch (e) {
     console.error('[Markdown] Parsing error:', e);
     // Fall back to escaped content
@@ -772,9 +863,10 @@ function highlightFencedBlock(pre) {
 
 /**
  * Post-process a freshly-rendered markdown element: syntax-highlight every
- * fenced code block, add our standard copy-to-clipboard button to every `<pre>`,
- * and wrap every `<table>` in a horizontal-scroll container so a table wider
- * than the panel can be scrolled instead of silently spilling off the edge.
+ * fenced code block, add our standard copy-to-clipboard button to every `<pre>`
+ * and to every outermost `<blockquote>`, and wrap every `<table>` in a
+ * horizontal-scroll container so a table wider than the panel can be scrolled
+ * instead of silently spilling off the edge.
  *
  * `renderMarkdown` returns an HTML string, so it cannot wire up live buttons or
  * wrappers; callers that insert that HTML into the DOM call this on the
@@ -782,8 +874,10 @@ function highlightFencedBlock(pre) {
  * context (`.code-block-wrap`) so the button stays pinned to the visible corner
  * even when the code scrolls horizontally. Each `<table>` is wrapped in a
  * `.table-scroll-wrap` (a `<table>` ignores `overflow`, so it needs a block
- * ancestor to scroll). Idempotent: an element already inside its wrapper — or
- * already highlighted — is skipped, so re-running on the same subtree is a no-op.
+ * ancestor to scroll). A `<blockquote>` does not scroll, so its button goes
+ * straight inside it. Idempotent: an element already inside its wrapper, already
+ * highlighted or already holding its button is skipped, so re-running on the
+ * same subtree is a no-op.
  * @param {HTMLElement|null|undefined} root - Container holding rendered markdown.
  * @param {object} [options] - Decoration options.
  * @param {boolean} [options.highlight=true] - Syntax-highlight fenced blocks.
@@ -810,6 +904,23 @@ export function decorateCodeBlocks(root, options = {}) {
     wrap.appendChild(createCopyButton(
       () => (codeEl || pre).textContent || '',
       'code-copy-button'
+    ));
+  });
+
+  root.querySelectorAll('blockquote').forEach((quote) => {
+    // One button per quote: a nested quote is copied with the one around it,
+    // and a quote that already has its button is left alone.
+    if (quote.parentElement?.closest('blockquote')) return;
+    if (quote.querySelector(':scope > .quote-copy-button')) return;
+
+    // A markdown quote copies its source, minus the `>` markers. One a message
+    // wrote as raw HTML has no source, so it copies its text: `innerText` keeps
+    // the paragraph breaks `textContent` would run together, and the button
+    // holds only an icon, so it adds nothing to it.
+    quote.appendChild(createCopyButton(
+      () => quote.getAttribute(QUOTE_SOURCE_ATTR)
+        ?? (/** @type {HTMLElement} */ (quote).innerText || quote.textContent || '').trim(),
+      'code-copy-button quote-copy-button'
     ));
   });
 

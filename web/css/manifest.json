@@ -152,7 +152,8 @@
 				"code-block-wrap",
 				"code-copy-button",
 				"markdown",
-				"markdown-html-scope"
+				"markdown-html-scope",
+				"quote-copy-button"
 			]
 		},
 		{
