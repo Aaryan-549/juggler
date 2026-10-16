@@ -129,7 +129,7 @@ var hostGatedPaths = map[string]bool{
 func (s *Server) pageHostMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if hostGatedPaths[r.URL.Path] && !s.hostAllowed(r) {
-			http.Error(w, "Forbidden: host not allowed", http.StatusForbidden)
+			http.Error(w, hostcheck.Refusal(r.Host), http.StatusForbidden)
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -196,7 +196,7 @@ func (s *Server) apiAuthMiddleware(next http.Handler) http.Handler {
 			return
 		}
 		if !s.hostAllowed(r) {
-			http.Error(w, "Forbidden: host not allowed", http.StatusForbidden)
+			http.Error(w, hostcheck.Refusal(r.Host), http.StatusForbidden)
 			return
 		}
 		token := r.Header.Get("X-Juggler-Token")

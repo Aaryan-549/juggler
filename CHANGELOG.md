@@ -13,6 +13,7 @@ of changes; this project follows semantic versioning.
 - Export a conversation as a self-contained HTML page to share, from its tab menu or /export
 - batch_read's properties panel lists files with open, copy, reveal and pin buttons
 - LAN servers answer to local names like `juggler` or `mymac.local`, not just IPs
+- A refused hostname's error names it and gives the `--allow-host` flag that admits it
 - Turns cut off by a provider's server mid-stream are now retried automatically
 - Fixed a turn started while a conversation loaded getting the wrong strategy's tools
 - Fixed tools briefly "unavailable" after toggling a plugin or reloading an extension

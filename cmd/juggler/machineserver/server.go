@@ -170,7 +170,7 @@ func (s *Server) lanGate(next http.Handler) http.Handler {
 func (s *Server) hostGuard(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !hostcheck.NamesThisMachine(r.Host) && !s.allowedHosts.Has(r.Host) {
-			http.Error(w, "Forbidden: host not allowed", http.StatusForbidden)
+			http.Error(w, hostcheck.Refusal(r.Host), http.StatusForbidden)
 			return
 		}
 		next.ServeHTTP(w, r)

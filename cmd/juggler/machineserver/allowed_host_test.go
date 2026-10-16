@@ -95,4 +95,10 @@ func TestAllowedHostReachesTheChildAsAProxiedRemoteCaller(t *testing.T) {
 	if code, _ := fetch("127.0.0.1:5000", "box.tailnet.ts.net", "/api/server/status"); code != http.StatusOK {
 		t.Errorf("control API through the proxy, LAN off: status %d, want 200", code)
 	}
+
+	// A refused name is told which name it was and how to allow it, since the
+	// browser shows this body as the page.
+	if _, body := fetch("127.0.0.1:5000", "other.tailnet.ts.net", page); !strings.Contains(body, "--allow-host other.tailnet.ts.net") {
+		t.Errorf("refusal body does not say how to allow the host: %q", body)
+	}
 }

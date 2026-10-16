@@ -257,6 +257,10 @@ func TestAPIAuthRejectsRebindingHost(t *testing.T) {
 	if *reached {
 		t.Fatal("handler must not run for a disallowed Host")
 	}
+	// The UI shows this body in its load error, so it says how to allow the name.
+	if body := rec.Body.String(); !strings.Contains(body, "--allow-host attacker.com") {
+		t.Errorf("refusal body does not say how to allow the host: %q", body)
+	}
 }
 
 // TestAPIAuthAllowsDotLocalhostHost covers per-instance hostnames: running
