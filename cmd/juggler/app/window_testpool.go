@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"path/filepath"
 	"runtime"
 	"time"
 
@@ -30,6 +31,7 @@ import (
 	"juggler/cmd/juggler/osactivity"
 	"juggler/cmd/juggler/server"
 	"juggler/internal/jlog"
+	"juggler/internal/userpaths"
 	"juggler/internal/windowgeom"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -320,10 +322,29 @@ func runTestPoolWindowApp(srv *server.Server, devMode bool, headless bool, testI
 		appIcon = nil
 	}
 
+	// WebView2 creates a user data folder even in the InPrivate mode
+	// EphemeralWebviewStorage selects. Under the cache dir it follows
+	// JUGGLER_CONFIG_DIR, which the integration harness points at a throwaway
+	// directory it removes, rather than defaulting to the roaming
+	// %APPDATA%\<exe>. Wails exits if the folder is not usable, so make it first.
+	var webview2DataPath string
+	if runtime.GOOS == "windows" {
+		webview2DataPath = filepath.Join(userpaths.CacheDir(), "webview2")
+		if err := os.MkdirAll(webview2DataPath, 0o755); err != nil {
+			jlog.Error("[testpool] create WebView2 data dir: %v", err)
+			webview2DataPath = ""
+		}
+	}
+
 	app := application.New(application.Options{
 		Name:        "Juggler",
 		Description: "AI Code Agent",
 		Icon:        appIcon,
+		// Every slot serves on an OS-assigned port, so each run is a new origin.
+		// With WebKit's persistent store that leaves a cache entry per origin in
+		// the real home directory — gigabytes across many runs — none of which
+		// any later run can use. Test pages get nothing from persisting.
+		EphemeralWebviewStorage: true,
 		Mac: application.MacOptions{
 			// We drive shutdown explicitly via app.Quit() in the main window's
 			// WindowClosing handler. Auto-terminate would also fire when the
@@ -344,6 +365,7 @@ func runTestPoolWindowApp(srv *server.Server, devMode bool, headless bool, testI
 			// Chromium's LOG() stderr output globally (the WebView2 environment
 			// is shared by every window). No-op off Windows.
 			AdditionalBrowserArgs: []string{"--disable-logging"},
+			WebviewUserDataPath:   webview2DataPath,
 		},
 	})
 	wa.app = app
