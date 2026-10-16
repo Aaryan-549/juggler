@@ -40,7 +40,7 @@
  * in core's catalogue first, so an extension's catalogue can never re-word the
  * core UI. `registerCatalog(namespace, locale, messages)` is for translations
  * assembled at runtime. The formatters follow the user's language for numbers,
- * dates and relative times.
+ * dates, relative times and lists (`formatList`).
  *
  * Message syntax, plural rules and the fallback chain are described in
  * `web/sdk/lib/i18n.js`. Everything here is DOM-free, so `juggler/i18n`
@@ -50,6 +50,7 @@
 export {
   t,
   translator,
+  serverText,
   markForTranslation,
   markUntranslated,
   htmlSlots,
@@ -60,4 +61,5 @@ export {
   formatNumber,
   formatDate,
   formatRelativeTime,
+  formatList,
 } from './lib/i18n.js';

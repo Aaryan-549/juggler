@@ -13,6 +13,7 @@ import JugglerElement from './juggler-element.js';
 import { displayConversationName } from '../model/conversation-naming.js';
 import { t } from '../../sdk/lib/i18n.js';
 import { escapeHtml } from '../../sdk/lib/html.js';
+import { errorText } from '../../sdk/lib/error-utils.js';
 
 /**
  * @typedef {object} BinnedConvRow
@@ -236,7 +237,7 @@ class BinModal extends JugglerElement {
     } catch (e) {
       console.error('[BinModal] restore failed:', e);
       await showAlert(
-        t('Couldn’t restore: {error}', { error: String(/** @type {any} */ (e)?.message || e) }),
+        t('Couldn’t restore: {error}', { error: errorText(e) }),
         t('Restore failed')
       );
     }
@@ -260,7 +261,7 @@ class BinModal extends JugglerElement {
     } catch (e) {
       console.error('[BinModal] delete failed:', e);
       await showAlert(
-        t('Couldn’t delete: {error}', { error: String(/** @type {any} */ (e)?.message || e) }),
+        t('Couldn’t delete: {error}', { error: errorText(e) }),
         t('Delete failed')
       );
     }
@@ -425,7 +426,7 @@ class BinModal extends JugglerElement {
     } catch (e) {
       console.error('[BinModal] empty bin failed:', e);
       await showAlert(
-        t('Couldn’t empty the bin: {error}', { error: String(/** @type {any} */ (e)?.message || e) }),
+        t('Couldn’t empty the bin: {error}', { error: errorText(e) }),
         t('Empty Bin failed')
       );
     }

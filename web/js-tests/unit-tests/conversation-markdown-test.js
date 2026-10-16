@@ -29,7 +29,9 @@ import '../../js/components/conversation-bar.js';
 import Session from '../../js/model/session.js';
 import ConversationRegistry from '../../js/model/conversation-registry.js';
 import { resolveMenu } from '../../js/services/context-menu-service.js';
-import { conversationToMarkdown } from '../../js/utils/conversation-markdown.js';
+import { conversationToMarkdown, itemsToMarkdown } from '../../js/utils/conversation-markdown.js';
+import { underPseudoLocale } from '../utilities/pseudo-locale.js';
+import { isPseudoLocalized } from '../../sdk/lib/i18n.js';
 
 /**
  * Run the conversation-markdown test suite.
@@ -104,6 +106,33 @@ export async function runTests() {
     assert(!md.includes('PRIVATE-REASONING'), 'thinking is not copied');
     passed++;
   } catch (e) { failed++; errors.push(`exclusions: ${msg(e)}`); }
+
+  // --- 2b: an error copies in the reader's language ---------------------------
+  // The worker stores an error's English and the message it was rendered from;
+  // the copy is for the user, so it reads the message in the UI language, and an
+  // error saved before there was one copies the English it was stored with.
+  try {
+    const text = 'Thread item 7 not found';
+    const message = { key: 'Thread item {id} not found', params: { id: '7' } };
+    await underPseudoLocale('conversation-markdown-test', () => {
+      const translated = itemsToMarkdown([{ type: 'error', itemId: 'e1', content: text, summary: text, data: { message } }]);
+      const line = translated.trim().replace(/^> \*\*Error\*\*: /, '');
+      assert(isPseudoLocalized(line) && line.includes('7'), `error with a message copied as ${JSON.stringify(translated)}`);
+      const stored = itemsToMarkdown([{ type: 'error', itemId: 'e2', content: text, summary: text }]);
+      assert(stored.includes(text), `error without a message copied as ${JSON.stringify(stored)}`);
+    });
+    passed++;
+  } catch (e) { failed++; errors.push(`error text: ${msg(e)}`); }
+
+  // --- 2c: a placeholder name heads the copy in the reader's language ---------
+  try {
+    const untitled = { name: 'Untitled 3', rootMessageThread: conversation.rootMessageThread };
+    await underPseudoLocale('conversation-markdown-test', () => {
+      const heading = conversationToMarkdown(untitled).split('\n')[0].replace(/^# /, '');
+      assert(isPseudoLocalized(heading) && heading.includes('3'), `"Untitled 3" headed the copy as ${JSON.stringify(heading)}`);
+    });
+    passed++;
+  } catch (e) { failed++; errors.push(`placeholder title: ${msg(e)}`); }
 
   // --- 3: the footer button --------------------------------------------------
   const footer = /** @type {any} */ (document.createElement('conversation-footer'));

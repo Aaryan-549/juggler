@@ -7,11 +7,11 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
+	"juggler/cmd/juggler/msg"
 	"juggler/internal/apipaths"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -135,8 +135,7 @@ func (a *appState) confirmThenQuit() {
 		total += serverBusy(u)
 	}
 	if total > 0 {
-		msg := busyMessage(total, "Quitting")
-		if !a.confirmDiscard(nil, "Quit Juggler?", msg, "Quit anyway") {
+		if !a.confirmDiscard(nil, quitDialogTitle, quitBusyMessage(total), quitDialogConfirm) {
 			return // user chose to keep working
 		}
 	}
@@ -158,13 +157,32 @@ func (a *appState) ownedServerURLs() []string {
 	return urls
 }
 
-// busyMessage builds the confirmation body for n in-flight conversations and the
-// action about to discard them (e.g. "Quitting", "Closing this window").
-func busyMessage(n int, action string) string {
-	if n == 1 {
-		return fmt.Sprintf("A conversation is still working. %s will stop and discard it.", action)
-	}
-	return fmt.Sprintf("%d conversations are still working. %s will stop and discard them.", n, action)
+// The busy prompts' wording. Each action that discards running work has its own
+// whole sentences, so a translation never has to fit an action word into a
+// sentence built around it.
+var (
+	quitDialogTitle    = msg.New("Quit Juggler?")
+	quitDialogConfirm  = msg.New("Quit anyway")
+	closeDialogTitle   = msg.New("Close window?")
+	closeDialogConfirm = msg.New("Close anyway")
+	keepWorkingLabel   = msg.New("Keep working")
+)
+
+// quitBusyMessage is the quit prompt's body for n in-flight conversations.
+func quitBusyMessage(n int) msg.Message {
+	return msg.New("{n, plural, one {A conversation is still working. Quitting will stop and discard it.} other {# conversations are still working. Quitting will stop and discard them.}}", "n", n)
+}
+
+// closeBusyMessage is the window-close prompt's body for n in-flight
+// conversations.
+func closeBusyMessage(n int) msg.Message {
+	return msg.New("{n, plural, one {A conversation is still working. Closing this window will stop and discard it.} other {# conversations are still working. Closing this window will stop and discard them.}}", "n", n)
+}
+
+// restartBusyMessage is the update-restart prompt's body for n in-flight
+// conversations; the page shows it (handleUpdaterRestart).
+func restartBusyMessage(n int) msg.Message {
+	return msg.New("{n, plural, one {A conversation is still working. Restarting to update will stop and discard it.} other {# conversations are still working. Restarting to update will stop and discard them.}}", "n", n)
 }
 
 // confirmDiscard shows a modal question dialog and blocks (on its own goroutine)
@@ -172,14 +190,14 @@ func busyMessage(n int, action string) string {
 // and the cancel action, so an accidental Return or Escape never discards work.
 // parent attaches the dialog as a sheet on that window; nil makes it app-modal
 // (used for the app-wide quit prompt).
-func (a *appState) confirmDiscard(parent application.Window, title, message, confirmLabel string) bool {
+func (a *appState) confirmDiscard(parent application.Window, title, message, confirmLabel msg.Message) bool {
 	result := make(chan bool, 1)
-	dialog := a.app.Dialog.Question().SetTitle(title).SetMessage(message)
+	dialog := a.app.Dialog.Question().SetTitle(a.tr(title)).SetMessage(a.tr(message))
 	if parent != nil {
 		dialog.AttachToWindow(parent)
 	}
-	dialog.AddButton(confirmLabel).OnClick(func() { result <- true })
-	stay := dialog.AddButton("Keep working")
+	dialog.AddButton(a.tr(confirmLabel)).OnClick(func() { result <- true })
+	stay := dialog.AddButton(a.tr(keepWorkingLabel))
 	stay.OnClick(func() { result <- false })
 	dialog.SetDefaultButton(stay)
 	dialog.SetCancelButton(stay)

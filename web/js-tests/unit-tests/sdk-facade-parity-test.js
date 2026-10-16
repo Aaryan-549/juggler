@@ -152,5 +152,16 @@ export async function runTests(_ctx) {
     }
   }
 
+  // Display formatters an extension reaches only through a specifier: present
+  // on both sides, so a viewer and an engine plugin can both import them.
+  for (const [specifier, name] of [['juggler/i18n', 'formatList'], ['juggler/item-utils', 'formatFileSizeForDisplay']]) {
+    run(`${specifier}: exports ${name} on both sides`, () => {
+      const pair = /** @type {typeof FACADE_PAIRS[number]} */ (FACADE_PAIRS.find((p) => p.specifier === specifier));
+      for (const mod of [pair.browser, pair.worker]) {
+        assert(typeof /** @type {any} */ (mod)[name] === 'function', `${specifier} lacks ${name} on one side`);
+      }
+    });
+  }
+
   return { passed, failed, errors };
 }

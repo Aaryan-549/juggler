@@ -230,6 +230,22 @@ Key invariants:
   standing context items (system prompt, agents files, memory) before the first
   message. Count real history with `isConversationalItemType()`
   (`web/sdk/lib/message.js`), never `items.length === 0`.
+- **Text a user reads is translatable; text the model reads is not.** The
+  English source is the catalogue key.
+  - **UI JavaScript:** `t()` from `web/sdk/lib/i18n.js` (extensions:
+    `juggler/i18n`), called where the text is drawn and never at module scope.
+    Module tables hold `markForTranslation()`.
+  - **Messages:** whole ones, never fragments. Use ICU `plural`/`select` for
+    counts and phrase choices, `formatNumber`/`formatList` for numbers and lists,
+    `htmlSlots`/`withHtml` for markup.
+  - **Go text a user sees:** `msg.New`/`msg.NewError`
+    (`cmd/juggler/msg`), sent beside the English and drawn with `serverText()`.
+    Errors use `handlers.WriteMessageError`/`WriteErr`.
+  - **Model-facing text** (tool descriptions, prompts, tool results) stays
+    English and is marked with `markUntranslated()`.
+  - **After changing any message:** run `node scripts/i18n extract`. Prove a
+    change with an `en-XA` case (`web/js-tests/utilities/pseudo-locale.js`).
+  - **Adding a language:** `docs/translating.md`.
 - Transcript render cost is linear in conversation length. A `content-visibility`
   row skip was measured and removed (a constant factor, no change in scaling);
   if long-thread jank returns, the fix that changes the curve is windowing.

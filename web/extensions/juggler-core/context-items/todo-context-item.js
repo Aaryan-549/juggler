@@ -100,7 +100,7 @@ class TodoContextItem extends ContextItem {
       {
         name: 'todo',
         category: 'meta',  // meta = internal state only, doesn't modify files. Ensures MCP ReadOnlyHint=true
-        description: 'Track multi-step work with a lightweight todo checklist shown to the user. Each call replaces the entire list — include every item, with updated statuses, and exactly one in_progress. For organizing your own execution; proposing an approach for user review is the plan tool\'s job.',
+        description: markUntranslated('Track multi-step work with a lightweight todo checklist shown to the user. Each call replaces the entire list — include every item, with updated statuses, and exactly one in_progress. For organizing your own execution; proposing an approach for user review is the plan tool\'s job.'),
         input_schema: {
           type: 'object',
           properties: {
@@ -111,17 +111,17 @@ class TodoContextItem extends ContextItem {
                 properties: {
                   content: {
                     type: 'string',
-                    description: 'What this item covers. Supports markdown (use `backticks` for file paths and code).'
+                    description: markUntranslated('What this item covers. Supports markdown (use `backticks` for file paths and code).')
                   },
                   status: {
                     type: 'string',
                     enum: ['pending', 'in_progress', 'completed'],
-                    description: 'Item status (defaults to pending).'
+                    description: markUntranslated('Item status (defaults to pending).')
                   }
                 },
                 required: ['content']
               },
-              description: 'The complete todo list — replaces the previous one in full.'
+              description: markUntranslated('The complete todo list — replaces the previous one in full.')
             }
           },
           required: ['todos']

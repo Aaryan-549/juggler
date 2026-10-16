@@ -208,7 +208,6 @@ import { t } from './lib/i18n.js';
 /**
  * @typedef {object} CleanupResult
  * @property {boolean} removed - Whether there is nothing of this provision left
- * @property {string} [message] - What was removed, or why it could not be
  */
 
 /**
@@ -595,10 +594,7 @@ class WorkspaceProvider {
   async cleanupPartial(workspace, ctx) {
     void workspace;
     void ctx;
-    return {
-      removed: false,
-      message: t('{name} cannot clean up an interrupted provision.', { name: this.getManifest().name })
-    };
+    return { removed: false };
   }
 
   /**

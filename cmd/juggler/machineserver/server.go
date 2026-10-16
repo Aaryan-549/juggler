@@ -15,6 +15,7 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -26,6 +27,7 @@ import (
 	"github.com/gorilla/mux"
 
 	"juggler/cmd/juggler/core"
+	"juggler/cmd/juggler/msg"
 	"juggler/internal/hostcheck"
 	"juggler/internal/ingress"
 	"juggler/internal/jlog"
@@ -230,12 +232,12 @@ func (s *Server) handleOpenSession(w http.ResponseWriter, r *http.Request) {
 	}
 	body := http.MaxBytesReader(w, r.Body, 1<<20)
 	if err := json.NewDecoder(body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body: "+err.Error(), http.StatusBadRequest)
+		writeMessageError(w, http.StatusBadRequest, msg.New("invalid request body: {error}", "error", err.Error()))
 		return
 	}
 	project, err := resolveProject(req.Project)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, err)
 		return
 	}
 
@@ -259,7 +261,7 @@ func (s *Server) handleOpenSession(w http.ResponseWriter, r *http.Request) {
 		// The reservation vanished while we were spawning — don't leak an
 		// unsupervised child.
 		c.stop()
-		http.Error(w, "session was removed during spawn", http.StatusConflict)
+		writeMessageError(w, http.StatusConflict, msg.New("session was removed during spawn"))
 		return
 	}
 	s.startSupervising(sess.ID, c)
@@ -313,13 +315,13 @@ func (s *Server) handleStopSession(w http.ResponseWriter, r *http.Request) {
 	}
 	sess, ok := s.reg.get(id)
 	if !ok {
-		http.Error(w, "unknown session", http.StatusNotFound)
+		writeMessageError(w, http.StatusNotFound, msg.New("unknown session"))
 		return
 	}
 	if sess.State == SessionStarting {
 		// Its spawner still holds the reservation; removing it now would leak
 		// the child the spawner is about to register.
-		http.Error(w, "session is still starting", http.StatusConflict)
+		writeMessageError(w, http.StatusConflict, msg.New("session is still starting"))
 		return
 	}
 	// No live child (an errored entry) — just drop the record.
@@ -367,19 +369,19 @@ func (s *Server) stopAllChildren() {
 // a CLI caller sends an absolute path instead.
 func resolveProject(p string) (string, error) {
 	if p == "" {
-		return "", fmt.Errorf("project path is required")
+		return "", msg.NewError("project path is required")
 	}
 	expanded := userpaths.ExpandHome(p)
 	if !filepath.IsAbs(expanded) {
-		return "", fmt.Errorf("project %s: give an absolute path, or one starting with ~/", p)
+		return "", msg.NewError("project {path}: give an absolute path, or one starting with ~/", "path", p)
 	}
 	abs := filepath.Clean(expanded)
 	info, err := os.Stat(abs)
 	if err != nil {
-		return "", fmt.Errorf("project %s: %w", abs, err)
+		return "", msg.NewError("project {path}: {error}", "path", abs, "error", err.Error()).Wrap(err)
 	}
 	if !info.IsDir() {
-		return "", fmt.Errorf("project %s: not a directory", abs)
+		return "", msg.NewError("project {path}: not a directory", "path", abs)
 	}
 	return abs, nil
 }
@@ -396,6 +398,32 @@ func childBinPath() (string, error) {
 		return "", fmt.Errorf("cannot locate own executable to spawn session children: %w", err)
 	}
 	return exe, nil
+}
+
+// errorBody is the control API's error envelope, the one a session child's
+// /api routes send: {"error": English, "message": {...}}. Error is for the CLI
+// and logs; Message, when present, is the same text for the sessions page to
+// show translated with serverText.
+type errorBody struct {
+	Error   string       `json:"error"`
+	Message *msg.Message `json:"message,omitempty"`
+}
+
+// writeMessageError sends the error envelope for m.
+func writeMessageError(w http.ResponseWriter, status int, m msg.Message) {
+	writeJSON(w, status, errorBody{Error: m.English(), Message: &m})
+}
+
+// writeError sends err as the error envelope, with the message of the
+// *msg.Error it is or wraps when that message is the whole of its text.
+func writeError(w http.ResponseWriter, status int, err error) {
+	body := errorBody{Error: err.Error()}
+	var me *msg.Error
+	if errors.As(err, &me) && me.Error() == err.Error() {
+		m := me.Message
+		body.Message = &m
+	}
+	writeJSON(w, status, body)
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

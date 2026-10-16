@@ -4,7 +4,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import ContextItem from 'juggler/context-item';
-import { formatFileSize } from 'juggler/item-utils';
+import { formatFileSize, formatFileSizeForDisplay } from 'juggler/item-utils';
 import { smartTruncate, createElement, renderMarkdown, decorateCodeBlocks } from 'juggler/ui';
 import { translator, markUntranslated } from 'juggler/i18n';
 import { getAvailableSkills, fetchSkillBody } from '../../../js/services/skills.js';
@@ -86,16 +86,16 @@ class SkillContextItem extends ContextItem {
         name: 'skill',
         category: 'meta', // injects instruction text only — no project-source mutation
         description:
-          'Load an Agent Skill: a specialized instruction set for a kind of task, listed under ' +
+          markUntranslated('Load an Agent Skill: a specialized instruction set for a kind of task, listed under ' +
           '"## Skills" in the system prompt. Call it BEFORE attempting a task a skill covers, so ' +
           'its instructions are in context first. Loading only adds text; any scripts or files it ' +
-          'mentions are read/run with the normal tools under the usual approval rules.',
+          'mentions are read/run with the normal tools under the usual approval rules.'),
         input_schema: {
           type: 'object',
           properties: {
             name: {
               type: 'string',
-              description: 'The exact name of the skill to load (from the Skills list in the system prompt).'
+              description: markUntranslated('The exact name of the skill to load (from the Skills list in the system prompt).')
             }
           },
           required: ['name']
@@ -693,7 +693,7 @@ class SkillContextItem extends ContextItem {
       for (const f of resources) {
         const fileEl = createElement('div', 'skills-file');
         fileEl.appendChild(createElement('span', 'skills-file-path', f.path));
-        fileEl.appendChild(createElement('span', 'skills-file-size', formatFileSize(f.size)));
+        fileEl.appendChild(createElement('span', 'skills-file-size', formatFileSizeForDisplay(f.size)));
         list.appendChild(fileEl);
       }
       host.appendChild(list);

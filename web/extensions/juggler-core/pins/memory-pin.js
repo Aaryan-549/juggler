@@ -6,7 +6,7 @@
 import PinboardItemType from 'juggler/pinboard-item-type';
 import { readFile, writeFile } from 'juggler/ops';
 import { translator } from 'juggler/i18n';
-import { createElement, extractErrorMessage, injectStylesOnce } from 'juggler/ui';
+import { createElement, errorText, injectStylesOnce } from 'juggler/ui';
 import { parseMemory, removeEntry } from '../lib/memory-format.js';
 import { pinEmpty } from '../lib/pin-empty.js';
 import { pathPinController } from '../lib/path-pin.js';
@@ -209,7 +209,7 @@ class MemoryPin extends PinboardItemType {
             if (context.signal.aborted) return;
             del.disabled = false;
             body.querySelector('.memory-pin__error')?.remove();
-            body.prepend(createElement('div', 'memory-pin__error', t("Couldn't delete it. {error}", { error: extractErrorMessage(error) })));
+            body.prepend(createElement('div', 'memory-pin__error', t("Couldn't delete it. {error}", { error: errorText(error) })));
           }
         });
         li.appendChild(del);

@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"time"
 
+	"juggler/cmd/juggler/msg"
 	"juggler/cmd/juggler/worker"
 	"juggler/internal/jlog"
 )
@@ -278,10 +279,7 @@ func (s *Server) runRealtimeClientLoop(ctx context.Context, client RealtimeClien
 					// answer, so say so — a client that sent an init is waiting
 					// on a "ready" that is never coming, and silence leaves it
 					// on a spinner until its own timeout expires.
-					if payload, err := json.Marshal(map[string]any{
-						"type":    "error",
-						"message": "Couldn't open this conversation: the server no longer has it.",
-					}); err == nil {
+					if payload, err := json.Marshal(conversationGoneFrame()); err == nil {
 						sendCallback(payload)
 					}
 				}
@@ -337,4 +335,11 @@ func labelled(label, value string) string {
 		return ""
 	}
 	return label + value
+}
+
+// conversationGoneFrame is the error a client is sent for a conversation the
+// server declined to open: binned, or its folder gone.
+func conversationGoneFrame() map[string]any {
+	m := msg.New("Couldn't open this conversation: the server no longer has it.")
+	return map[string]any{"type": "error", "message": m.English(), "text": m}
 }

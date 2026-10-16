@@ -5,6 +5,7 @@
 package opencodezen
 
 import (
+	"juggler/cmd/juggler/msg"
 	"juggler/cmd/juggler/providers/openaibase"
 )
 
@@ -17,7 +18,7 @@ func Register() {
 	openaibase.Register(openaibase.Descriptor{
 		Name:              "opencodezen",
 		DisplayName:       "OpenCode Zen",
-		Description:       "Multi-model gateway with models from Anthropic, OpenAI, DeepSeek, Google, and others.",
+		Description:       msg.New("Multi-model gateway with models from Anthropic, OpenAI, DeepSeek, Google, and others."),
 		ConfigKeyName:     "opencode_api_key",
 		EnvVarName:        "OPENCODE_API_KEY",
 		APIKeyURL:         "https://opencode.ai",

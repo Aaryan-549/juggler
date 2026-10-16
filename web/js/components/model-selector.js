@@ -33,6 +33,7 @@ import { showConfirm } from './modal-dialog.js';
 import { openSettings } from '../services/settings-launcher.js';
 import { tierIds } from './model-picker/model-tuning.js';
 import { t, markForTranslation } from '../../sdk/lib/i18n.js';
+import { providerAuthHint } from '../utils/provider-text.js';
 import './model-picker/model-chip.js';
 import './model-picker/model-picker.js';
 
@@ -377,7 +378,7 @@ class ModelSelector extends HTMLElement {
     if (!conversation || conversation.workspaceHostsLocalProviders !== false) return this.providers;
     return this.providers.map((provider) => (
       /** @type {any} */ (provider).spawnsLocalProcess
-        ? { ...provider, available: false, authHint: t(WORKSPACE_ELSEWHERE_HINT) }
+        ? { ...provider, available: false, authHint: t(WORKSPACE_ELSEWHERE_HINT), authHintMessage: null }
         : provider
     ));
   }
@@ -633,7 +634,7 @@ class ModelSelector extends HTMLElement {
   async _showSelectionProblem(provider, modelName) {
     const modelEntry = provider.modelsWithContext?.find(m => m.id === modelName);
     const label = modelLabel(modelEntry?.displayName, modelName);
-    const hint = (provider.authHint || '').trim();
+    const hint = providerAuthHint(provider).trim();
     await this._offerProviderSettings(hint
       ? t("Can't select {model} yet: {hint}", { model: label, hint })
       : t('There was a problem selecting {model}.', { model: label }));

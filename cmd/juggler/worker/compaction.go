@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"juggler/cmd/juggler/msg"
 	"juggler/cmd/juggler/providers/provider"
 
 	ycrdt "github.com/skyterra/y-crdt"
@@ -23,8 +24,8 @@ const defaultSummarizationPromptMarker = "You are creating a handoff summary of 
 // it raises the spinner, labels it, and anchors the elapsed digit. Flushed
 // immediately so the label lands before the first hidden call rather than at the
 // batcher's next tick.
-func (r *run) beginCompactionStatus(message string) {
-	r.sendStatus("compacting", message)
+func (r *run) beginCompactionStatus(status msg.Message) {
+	r.sendStatusText("compacting", status)
 	r.batcher.Flush()
 }
 
@@ -75,7 +76,7 @@ func (r *run) tryBoundedCompaction(limitErr *provider.ContextLimitExceededError,
 		calls: 1,
 	}
 
-	r.beginCompactionStatus("Summarizing conversation")
+	r.beginCompactionStatus(msg.New("Summarizing conversation"))
 	r.recordCompactionStart(compactionKindFolded, limitErr.ContextWindowTokens, limitErr.OutputReserveTokens, limitErr.Breakdown.ProviderOverheadTokens)
 	result, err := r.runReducer(compactionKindFolded, pinnedModel, budget, records)
 	if err != nil {
@@ -141,7 +142,7 @@ func (r *run) runFoldedThreadCompaction(modelConfig *ModelConfig, ctxResult *Con
 		return true, &BoundedCompactionError{Reason: BoundedCompactionEmptySource, Message: "bounded compaction source is empty"}
 	}
 
-	r.beginCompactionStatus("Summarizing conversation")
+	r.beginCompactionStatus(msg.New("Summarizing conversation"))
 	r.recordCompactionStart(compactionKindFolded, 0, 0, 0)
 	probe := r.newBoundedReducer(compactionKindFolded, pinnedModel, boundedCompactionBudget{})
 	parentThreadID := r.doc.ParentThreadID(threadID)

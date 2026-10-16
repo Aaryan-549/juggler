@@ -10,6 +10,8 @@ import (
 	"encoding/json"
 	"sync/atomic"
 	"time"
+
+	"juggler/cmd/juggler/msg"
 )
 
 // authProbeVerdict is what `claude auth status` told us. The third case is the
@@ -49,7 +51,7 @@ var claudeCLIInstalled = detectClaudeCLI
 // card, directly above its CLI-path field. It names both ways out, since a CLI
 // Juggler can't find is fixed by pointing at it, and one that isn't there by
 // installing it — and names no place, because it is read in two.
-const claudeNotInstalledHint = "Claude Code CLI not found — install it, or enter the path to claude."
+var claudeNotInstalledHint = msg.New("Claude Code CLI not found — install it, or enter the path to claude.")
 
 // runClaudeAuthStatus asks the CLI whether it is signed in.
 //
@@ -142,12 +144,12 @@ func authProbeDue() bool {
 // only a successful turn could clear the expiry, a provider we had disabled
 // could never be re-enabled by one. Letting the turn through means the worst
 // case is the same error again, reported properly, instead of a dead end.
-func claudeReadiness() (bool, string) {
+func claudeReadiness() (bool, msg.Message) {
 	if !claudeCLIInstalled() {
 		return false, claudeNotInstalledHint
 	}
 	if currentClaudeLoginState() != loginExpired {
-		return true, ""
+		return true, msg.Message{}
 	}
 	if !authProbeDue() {
 		return false, claudeSignInHint
@@ -156,5 +158,5 @@ func claudeReadiness() (bool, string) {
 		return false, claudeSignInHint
 	}
 	clearClaudeLoginExpired()
-	return true, ""
+	return true, msg.Message{}
 }

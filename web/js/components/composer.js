@@ -105,14 +105,6 @@ class Composer extends HTMLElement {
     /** @type {boolean} @private */
     this.disabled = false;
 
-    // Whether the send is held while the box itself stays live, and what it is
-    // waiting for.
-    /** @type {boolean} @private */
-    this.sendBlocked = false;
-
-    /** @type {string} @private */
-    this._sendBlockedReason = '';
-
     // True from the moment a send is accepted until its `send-message` event
     // has been dispatched. sendMessage() reads the box, then awaits the skill
     // snapshot and the @-mention/dropped-file reads before dispatching, and the
@@ -828,11 +820,8 @@ class Composer extends HTMLElement {
     const empty = this.isEmpty();
     const sendBtn = this.querySelector('#send-button');
     if (sendBtn) {
-      // A held send wears the same look as an empty box, which is already the
-      // "there is nothing to press this for" state — and says what it is
-      // waiting for, since unlike an empty box the reason is not self-evident.
-      sendBtn.classList.toggle('is-empty', empty || this.sendBlocked);
-      const title = this.sendBlocked && this._sendBlockedReason ? this._sendBlockedReason : t('Send message');
+      sendBtn.classList.toggle('is-empty', empty);
+      const title = t('Send message');
       sendBtn.setAttribute('title', title);
       sendBtn.setAttribute('aria-label', title);
     }
@@ -851,7 +840,12 @@ class Composer extends HTMLElement {
         ? t('Wait for the current turn to finish before creating a new thread')
         : t('Create a new sub-thread');
     }
-    this.querySelectorAll('[data-command="thread"], [data-action="new-thread"]').forEach((row) => {
+    // The actions sheet is presented on <body>, outside this box.
+    const rows = [
+      ...Array.from(this.querySelectorAll('[data-command="thread"], [data-action="new-thread"]')),
+      ...Array.from(this._actionsSheet?.querySelectorAll('[data-action="new-thread"]') ?? []),
+    ];
+    rows.forEach((row) => {
       row.classList.toggle('disabled', busy);
       row.setAttribute('aria-disabled', String(busy));
     });
@@ -898,13 +892,12 @@ class Composer extends HTMLElement {
 
   /**
    * Re-derive the placeholder, picking a fresh line only when the state has
-   * actually moved. A blocked composer is left alone: `setBlocked` writes the
-   * reason it is blocked, which is a more useful thing to say than any of this.
+   * actually moved.
    * @private
    */
   _updatePlaceholder() {
     const textarea = this.querySelector('textarea');
-    if (!textarea || textarea.hasAttribute('data-blocked')) return;
+    if (!textarea) return;
     const state = this._derivePlaceholderState();
     if (state === this._placeholderState && textarea.placeholder) return;
     this._placeholderState = state;
@@ -1117,6 +1110,15 @@ class Composer extends HTMLElement {
     }
     this._persistDraft();
     return pendingSave !== null ? (this._messageThread?.conversationId ?? null) : null;
+  }
+
+  /**
+   * Whether keystrokes are still waiting out the draft-save debounce — the user
+   * typed within the last moment and the text is not yet in the draft.
+   * @returns {boolean} True while a draft save is pending.
+   */
+  hasUnsavedDraft() {
+    return this._draftSaveTimeoutId !== null;
   }
 
   /**
@@ -1400,14 +1402,6 @@ class Composer extends HTMLElement {
       return 'empty or disabled';
     }
 
-    // Nowhere to send it yet. The box is deliberately still live — the message
-    // is worth writing while the place it will run in is being built — so this
-    // is the one state where there is text, the box is enabled, and the send
-    // still does not go.
-    if (this.sendBlocked) {
-      return 'the workspace is still being built';
-    }
-
     // Refuse a second send while the first is still resolving its mentions.
     // Until it dispatches, the box still holds the text and the button is still
     // live, so a repeat press arrives here with identical input; letting it
@@ -1619,47 +1613,6 @@ class Composer extends HTMLElement {
     const textarea = this.querySelector('textarea');
 
     if (textarea) textarea.disabled = disabled;
-  }
-
-  /**
-   * Hold the send without taking the box away.
-   *
-   * For the one state where there is nothing wrong with the message and nowhere
-   * to send it: the place this conversation will work in is still being built.
-   * Writing and editing go on — that wait is exactly when the first message gets
-   * composed — and only the send itself waits.
-   * @param {boolean} blocked - Whether the send is held.
-   * @param {string} [reason] - What it is waiting for, said on the button.
-   */
-  setSendBlocked(blocked, reason = '') {
-    this.sendBlocked = blocked;
-    this._sendBlockedReason = reason;
-    this._updateSendButtonState();
-  }
-
-  /**
-   * Set blocked state (e.g., during action approval)
-   * Disables input and shows a status message
-   * @param {boolean} blocked - Whether input is blocked
-   * @param {string} [reason] - Reason for blocking (e.g., "Waiting for approval...")
-   */
-  setBlocked(blocked, reason = '') {
-    const textarea = this.querySelector('textarea');
-
-    if (textarea) {
-      if (blocked) {
-        textarea.disabled = true;
-        textarea.placeholder = reason || t('Input blocked');
-        textarea.setAttribute('data-blocked', 'true');
-      } else {
-        textarea.disabled = false;
-        textarea.removeAttribute('data-blocked');
-        // The reason is gone, so fall back to whatever the conversation's own
-        // state has to say.
-        this._placeholderState = '';
-        this._updatePlaceholder();
-      }
-    }
   }
 
   /**
@@ -2589,10 +2542,10 @@ class Composer extends HTMLElement {
     // acting on this composer, so it sits apart at the bottom below the command
     // and skill sections.
     addRow(t('New Thread'), THREAD_ARROW_SVG, () => this._createThread(), 'new-thread');
-    this._updateNewThreadControls();
 
     applyMenuRoles(menu, t('More actions'));
     this._actionsSheet = menu;
+    this._updateNewThreadControls();
     this._actionsSheetOpen = true;
     this._actionsSheetCleanup = presentPopup({
       surface: menu,

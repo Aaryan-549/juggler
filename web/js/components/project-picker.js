@@ -21,12 +21,12 @@ import { focusWhenShown } from '../utils/focus.js';
 import { projectsOpenInNewWindow } from '../utils/project-open-mode.js';
 import { showAlert, showConfirm } from './modal-dialog.js';
 import { isOpeningProject, openProjectInWindow } from './project-opening.js';
-import { t } from '../../sdk/lib/i18n.js';
+import { t, serverText } from '../../sdk/lib/i18n.js';
 import { displayConversationName } from '../model/conversation-naming.js';
 import { escapeHtml } from '../../sdk/lib/html.js';
 
 /**
- * @typedef {(path: string) => Promise<{valid: boolean, path?: string, error?: string, current?: boolean}>} ValidateFn
+ * @typedef {(path: string) => Promise<{valid: boolean, path?: string, error?: string, errorMessage?: {key: string}, current?: boolean}>} ValidateFn
  * @typedef {{
  *   recents?: string[] | Promise<string[]>,
  *   currentPath?: string,
@@ -88,7 +88,7 @@ export function buildPickerPanel({
     </div>
     <div class="pp-body">
       <div class="pp-input-row">
-        <path-input ${dirsOnly ? 'dirs-only ' : ''}placeholder="${escapeHtml(placeholder)}"${currentPath ? ` value="${currentPath.replace(/"/g, '&quot;')}"` : ''} class="pp-path-input"></path-input>
+        <path-input ${dirsOnly ? 'dirs-only ' : ''}placeholder="${escapeHtml(placeholder)}"${currentPath ? ` value="${escapeHtml(currentPath)}"` : ''} class="pp-path-input"></path-input>
         ${hasNativeHost() ? `<button class="pp-btn pp-btn-browse" type="button">${escapeHtml(t('Browse…'))}</button>` : ''}
       </div>
       <div class="pp-status" aria-live="polite"${validate ? '' : ' hidden'}></div>
@@ -161,10 +161,10 @@ export function buildPickerPanel({
           const result = await validate(path);
           if (gen !== validationGen) return;
           if (result.valid) {
-            setStatus('valid', result.current ? t('This is the current project') : (result.path || path));
+            setStatus('valid', result.current ? t('This is the current project') : (result.path || path), result.path || path);
             confirmAction();
           } else {
-            setStatus('invalid', result.error || t('Invalid path'));
+            setStatus('invalid', serverText(result.errorMessage, result.error) || t('Invalid path'));
           }
         } catch (_err) {
           if (gen !== validationGen) return;
@@ -189,13 +189,14 @@ export function buildPickerPanel({
   /**
    * @param {'idle'|'checking'|'valid'|'invalid'} state
    * @param {string} [message]
+   * @param {string} [validPath] - The checked path, when state is 'valid'
    * @returns {void}
    */
-  function setStatus(state, message = '') {
+  function setStatus(state, message = '', validPath = '') {
     statusEl.className = 'pp-status pp-status--' + state;
     statusEl.textContent = message;
     openBtn.disabled = state !== 'valid';
-    if (state === 'valid') lastValidPath = message;
+    if (state === 'valid') lastValidPath = validPath;
     syncNewWindowBtn();
   }
 
@@ -231,9 +232,9 @@ export function buildPickerPanel({
       const result = await validate(val);
       if (gen !== validationGen) return;
       if (result.valid) {
-        setStatus('valid', result.current ? t('This is the current project') : (result.path || val));
+        setStatus('valid', result.current ? t('This is the current project') : (result.path || val), result.path || val);
       } else {
-        setStatus('invalid', result.error || t('Invalid path'));
+        setStatus('invalid', serverText(result.errorMessage, result.error) || t('Invalid path'));
       }
     } catch (_err) {
       if (gen !== validationGen) return;
@@ -547,7 +548,7 @@ export function openNewProjectPanel(recents = []) {
     </div>
     <div class="pp-body">
       <div class="pp-input-row">
-        <path-input dirs-only placeholder="${escapeHtml(t('Where to create it…'))}" value="${parentValue.replace(/"/g, '&quot;')}" class="pp-path-input"></path-input>
+        <path-input dirs-only placeholder="${escapeHtml(t('Where to create it…'))}" value="${escapeHtml(parentValue)}" class="pp-path-input"></path-input>
         ${hasNativeHost() ? `<button class="pp-btn pp-btn-browse" type="button">${escapeHtml(t('Browse…'))}</button>` : ''}
       </div>
       <input type="text" class="pp-name-input field-input" placeholder="${escapeHtml(t('Folder name'))}" spellcheck="false" autocomplete="off">

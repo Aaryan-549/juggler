@@ -1265,8 +1265,8 @@ class ConversationArea extends HTMLElement {
       // composing the next turn, not inspecting a pinned item. Use delegated
       // focusin so we survive any re-creation of the textarea inside composer-box.
       composer.addEventListener('focusin', (e) => {
-        const t = /** @type {HTMLElement} */ (e.target);
-        if (t && t.tagName === 'TEXTAREA') {
+        const focused = /** @type {HTMLElement} */ (e.target);
+        if (focused && focused.tagName === 'TEXTAREA') {
           this._selectionOrigin = null;
           selection.teardownSelectionVisibilityWatcher(this);
         }

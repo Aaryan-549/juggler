@@ -47,11 +47,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"strings"
 	"time"
 
 	"juggler/cmd/juggler/core"
+	"juggler/cmd/juggler/msg"
 	"juggler/cmd/juggler/providers/provider"
 )
 
@@ -90,8 +90,9 @@ type retryableError interface {
 	error
 	// retryWait is how long the loop should park before the next attempt.
 	retryWait() time.Duration
-	// retryStatus is the user-facing "retrying" status for this attempt.
-	retryStatus(attempt, max int) string
+	// retryStatus is the user-facing "retrying" status for this attempt, saying
+	// how long has gone on retries once that is a minute or more.
+	retryStatus(attempt, max int, spent time.Duration) msg.Message
 }
 
 // RateLimitError is returned by callLLM when the provider responds with a
@@ -111,8 +112,8 @@ type RateLimitError struct {
 func (e *RateLimitError) Error() string            { return e.Message }
 func (e *RateLimitError) Unwrap() error            { return e.Cause }
 func (e *RateLimitError) retryWait() time.Duration { return e.Wait }
-func (e *RateLimitError) retryStatus(a, max int) string {
-	return fmt.Sprintf("Rate limited, retrying (%d/%d)", a, max)
+func (e *RateLimitError) retryStatus(a, max int, spent time.Duration) msg.Message {
+	return msg.New("Rate limited, retrying ({attempt}/{max}){hasSpent, select, yes { — {spent} so far} other {}}", retryParams(a, max, spent)...)
 }
 
 // TransientError is returned by callLLM when the provider failed for a
@@ -129,8 +130,8 @@ type TransientError struct {
 func (e *TransientError) Error() string            { return e.Message }
 func (e *TransientError) Unwrap() error            { return e.Cause }
 func (e *TransientError) retryWait() time.Duration { return e.Wait }
-func (e *TransientError) retryStatus(a, max int) string {
-	return fmt.Sprintf("Connection dropped, retrying (%d/%d)", a, max)
+func (e *TransientError) retryStatus(a, max int, spent time.Duration) msg.Message {
+	return msg.New("Connection dropped, retrying ({attempt}/{max}){hasSpent, select, yes { — {spent} so far} other {}}", retryParams(a, max, spent)...)
 }
 
 // UnusableOutputError is returned by callLLM when the provider abandoned a turn
@@ -146,8 +147,8 @@ type UnusableOutputError struct {
 func (e *UnusableOutputError) Error() string            { return e.Message }
 func (e *UnusableOutputError) Unwrap() error            { return e.Cause }
 func (e *UnusableOutputError) retryWait() time.Duration { return e.Wait }
-func (e *UnusableOutputError) retryStatus(a, max int) string {
-	return fmt.Sprintf("Unusable response, retrying (%d/%d)", a, max)
+func (e *UnusableOutputError) retryStatus(a, max int, spent time.Duration) msg.Message {
+	return msg.New("Unusable response, retrying ({attempt}/{max}){hasSpent, select, yes { — {spent} so far} other {}}", retryParams(a, max, spent)...)
 }
 
 // LLMCallFunc is the signature for direct LLM calls from the worker.

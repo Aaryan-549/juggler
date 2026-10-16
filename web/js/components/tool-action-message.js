@@ -361,10 +361,10 @@ class ToolActionMessage extends HTMLElement {
     const result = item.get('result');
     if (result !== null && result !== undefined) return null;
     const named = item.get('toolName');
-    const toolName = named || 'tool'; // i18n-ignore: registry lookup key, drawn below as a message
-    const label = this._runningLabel(item, toolName);
+    // An unnamed item has no capability to ask for its card's words.
+    const label = named ? this._runningLabel(item, named) : '';
     if (label) return { message: label, spinner: true };
-    return { message: named ? t('Running {tool}...', { tool: named }) : t('Running tool...'), spinner: true };
+    return { message: named ? t('Running {tool}…', { tool: named }) : t('Running tool…'), spinner: true };
   }
 
   /**
@@ -546,7 +546,7 @@ class ToolActionMessage extends HTMLElement {
 
     const label = document.createElement('div');
     label.className = 'running-label';
-    label.textContent = t('{action}: Running...', { action: actionId });
+    label.textContent = t('{action}: Running…', { action: actionId });
     container.appendChild(label);
 
     article.appendChild(this._wrapWithIcon(container));
@@ -559,8 +559,7 @@ class ToolActionMessage extends HTMLElement {
    * @private
    */
   _renderCancelled(item) {
-    const named = item.get('toolName');
-    const toolName = named || 'Action'; // i18n-ignore: registry lookup key, drawn below as a message
+    const toolName = item.get('toolName');
     const result = yGet(item, 'result');
     const conversation = this._getConversation();
 
@@ -568,11 +567,12 @@ class ToolActionMessage extends HTMLElement {
     const article = document.createElement('article');
     article.className = 'action';
 
-    // Try to use action's getStatusUI for custom rendering
+    // Try to use action's getStatusUI for custom rendering. An unnamed item has
+    // no capability to ask, so it takes the generic card below.
     let statusElement;
     /** @type {ActionTypeClass|undefined} */
-    const ActionClass = contextItemRegistry.getByToolName(toolName);
-    if (ActionClass && typeof ActionClass.prototype.getStatusUI === 'function') {
+    const ActionClass = toolName ? contextItemRegistry.getByToolName(toolName) : undefined;
+    if (toolName && ActionClass && typeof ActionClass.prototype.getStatusUI === 'function') {
       try {
         const actionInstance = this._createActionForUI(ActionClass, toolName, conversation);
         if (!actionInstance) throw new Error('missing context');
@@ -600,7 +600,7 @@ class ToolActionMessage extends HTMLElement {
     // Fallback
     if (!statusElement) {
       statusElement = renderResultStatusMessage({
-        summary: named ? t('{tool}: Cancelled', { tool: named }) : t('Action: Cancelled'),
+        summary: toolName ? t('{tool}: Cancelled', { tool: toolName }) : t('Action: Cancelled'),
         status: 'cancelled'
       });
     }
@@ -658,7 +658,7 @@ class ToolActionMessage extends HTMLElement {
     if (!actionId) {
       const resultContent = resultMap?.get ? resultMap.get('content') : resultMap?.content;
       // The model's own text (content, error) is shown as it was; the fallback is ours.
-      const errorMessage = resultContent || result?.error || t('Unknown tool: {name}', { name: String(itemToolName) });
+      const errorMessage = resultContent || result?.error || (itemToolName ? t('Unknown tool: {name}', { name: String(itemToolName) }) : t('Unknown tool'));
       this.appendChild(createErrorArticle(errorMessage));
       return;
     }

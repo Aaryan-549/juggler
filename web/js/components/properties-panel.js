@@ -99,8 +99,8 @@ function paintTokenChip(chip, text) {
     return;
   }
   paintChip(chip, tokens, `~${formatTokens(tokens)}`,
-    `${t('Estimated {tokens} tokens from {characters} characters (~4 characters per token).', {
-      tokens: formatLocaleNumber(tokens), characters: formatLocaleNumber(text.length)
+    `${t('Estimated {count, plural, one {{tokens} token} other {{tokens} tokens}} from {length, plural, one {{characters} character} other {{characters} characters}} (~4 characters per token).', {
+      count: tokens, tokens: formatLocaleNumber(tokens), length: text.length, characters: formatLocaleNumber(text.length)
     })} ${t('Provider-reported counts cover a whole round-trip \u2014 open the transaction to see those.')}`);
 }
 
@@ -112,7 +112,7 @@ function paintTokenChip(chip, text) {
  */
 function paintReportedChip(chip, tokens) {
   paintChip(chip, tokens, formatTokens(tokens),
-    `${t('{tokens} output tokens, reported by the provider.', { tokens: formatLocaleNumber(tokens) })} `
+    `${t('{count, plural, one {{tokens} output token, reported by the provider.} other {{tokens} output tokens, reported by the provider.}}', { count: tokens, tokens: formatLocaleNumber(tokens) })} `
     + t("This round-trip produced nothing else, so the count is this item's alone."));
 }
 

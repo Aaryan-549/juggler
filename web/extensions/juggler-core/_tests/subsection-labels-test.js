@@ -36,8 +36,8 @@ const CORE_TEXT = [
   '…{count} more not shown', 'Task', 'Thoroughness', 'Name', 'Untitled conversation', 'Autostart',
   'On — the new conversation started working on the prompt immediately.',
   'Off — the prompt is parked in the new conversation, waiting for the user to press Send.',
-  '{count, plural, =1 {Searche} other {Searches ({count})}}', '{count, plural, =1 {File} other {Files ({count})}}',
-  'Content', 'Results', 'Matches', 'Output', 'Result', 'unknown', '{count} lines', 'No file',
+  '{count, plural, =1 {Search} other {Searches ({count})}}', '{count, plural, =1 {File} other {Files ({count})}}',
+  'Content', 'Results', 'Matches', 'Output', 'Result', 'unknown', '{count, plural, one {{count} line} other {{count} lines}}', 'No file',
   'Fetching {url}...', '{count, plural, one {{count} file matching {pattern}} other {{count} files matching {pattern}}}',
   'cancelled: {file}', '{prefix}: {error}', 'Searching for "{query}"...',
 ];

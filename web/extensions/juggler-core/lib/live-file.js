@@ -18,7 +18,7 @@
  */
 
 import { readFile, getTree, stat } from 'juggler/ops';
-import { formatFileSize, injectFileContentStyles } from 'juggler/item-utils';
+import { formatFileSizeForDisplay, injectFileContentStyles } from 'juggler/item-utils';
 import { fileSourceFromReadResult } from 'juggler/file-source';
 import { createElement } from 'juggler/ui';
 import { translator } from 'juggler/i18n';
@@ -196,11 +196,11 @@ export function liveFileSource(result, absolutePath, options = {}) {
 export function liveFileInfo(result) {
   if (!result.exists) return '';
   if (result.isDirectory) {
-    return result.totalLines ? t('{count, plural, other {{count} items}}', { count: result.totalLines }) : '';
+    return result.totalLines ? t('{count, plural, one {{count} item} other {{count} items}}', { count: result.totalLines }) : '';
   }
   if (!result.size) return '';
-  return t('{size} | {count, plural, other {{count} lines}}',
-    { size: formatFileSize(result.size), count: result.totalLines || 0 });
+  return t('{size} | {count, plural, one {{count} line} other {{count} lines}}',
+    { size: formatFileSizeForDisplay(result.size), count: result.totalLines || 0 });
 }
 
 /**

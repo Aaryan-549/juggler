@@ -91,7 +91,7 @@ export async function runTests(_ctx) {
 
   test('a retry attempt is bound to its count', () => {
     const message = StatusMessageBuilder.buildRetryStatus({ attempt: 3, maxRetries: 5 });
-    assert(message.includes(`attempt${NBSP}3/5`), `status message = "${message}"`);
+    assert(message.includes(`attempt${NBSP}3 of${NBSP}5`), `status message = "${message}"`);
   });
 
   test('the clause separator never opens a line', () => {

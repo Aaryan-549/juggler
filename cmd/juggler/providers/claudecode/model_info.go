@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"juggler/cmd/juggler/msg"
 	"juggler/cmd/juggler/providers/provider"
 	"juggler/cmd/juggler/providers/utils"
 	"juggler/internal/userpaths"
@@ -35,7 +36,7 @@ func Info() provider.ProviderInfo {
 	return provider.ProviderInfo{
 		Name:          "claudecode",
 		DisplayName:   "Anthropic (Claude Code CLI)",
-		Description:   "Processes requests by invoking the claude CLI tool (so you can use a Max/Pro plan). The CLI must be signed in — run claude in a terminal and use /login. For better results use the Anthropic API via a key.",
+		Description:   msg.New("Processes requests by invoking the claude CLI tool (so you can use a Max/Pro plan). The CLI must be signed in — run claude in a terminal and use /login. For better results use the Anthropic API via a key."),
 		ConfigKeyName: "", // No API key needed - uses CLI's OAuth
 		AutoDetect:    detectClaudeCLI,
 		// AutoDetect only answers "is the binary there". A CLI that is installed

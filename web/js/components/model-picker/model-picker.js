@@ -48,6 +48,7 @@ import { formatTokens } from '../../utils/format.js';
 import { renderUsageRow } from '../../utils/usage-renderer.js';
 import { escapeHtml } from '../../../sdk/lib/html.js';
 import { htmlSlots, t, withHtml } from '../../../sdk/lib/i18n.js';
+import { providerAuthHint } from '../../utils/provider-text.js';
 import { CHECK_SVG } from '../../utils/icons.js';
 import JugglerElement from '../juggler-element.js';
 import { cachedMachinePref, setMachinePref } from '../../services/prefs.js';
@@ -82,6 +83,7 @@ const RECENT_LIMIT = 6;
  * @property {boolean} available - Whether provider credentials are configured.
  * @property {string} [authType] - Provider credential type.
  * @property {string} [authHint] - Provider auth/status hint.
+ * @property {object|null} [authHintMessage] - The message `authHint` was rendered from.
  * @property {PickerModel[]} [modelsWithContext] - Models with context window info.
  * @typedef {{id: string, label: string, iconClass?: string}} PickerAction
  * @typedef {import('../../model/model-config.js').ModelConfigShape} ModelConfigShape
@@ -526,9 +528,9 @@ class ModelPicker extends JugglerElement {
    */
   _unavailableHint(provider) {
     if (provider.authType === 'oauth_bearer') {
-      return provider.authHint || t('Login required');
+      return providerAuthHint(provider) || t('Login required');
     }
-    return provider.authHint || t('Provider not configured');
+    return providerAuthHint(provider) || t('Provider not configured');
   }
 
   /**

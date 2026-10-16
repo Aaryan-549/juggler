@@ -5,6 +5,7 @@
 package mistral
 
 import (
+	"juggler/cmd/juggler/msg"
 	"juggler/cmd/juggler/providers/openaibase"
 )
 
@@ -18,7 +19,7 @@ func Register() {
 	openaibase.Register(openaibase.Descriptor{
 		Name:            "mistral",
 		DisplayName:     "Mistral AI",
-		Description:     "Mistral AI models via the official OpenAI-compatible API. Models are discovered from Mistral's /v1/models endpoint.",
+		Description:     msg.New("Mistral AI models via the official OpenAI-compatible API. Models are discovered from Mistral's /v1/models endpoint."),
 		ConfigKeyName:   "mistral_api_key",
 		EnvVarName:      "MISTRAL_API_KEY",
 		APIKeyURL:       "https://console.mistral.ai/settings/keys",

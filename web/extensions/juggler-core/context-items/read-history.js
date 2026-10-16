@@ -39,6 +39,7 @@
 
 import { toolInputPath, absolutePathKey } from './path-approval.js';
 import { itemField } from '../../../sdk/lib/message.js';
+import { markUntranslated } from '../../../sdk/lib/i18n.js';
 
 /**
  * Canonical comparison key for the freshness guard. macOS (default APFS/HFS+)
@@ -534,7 +535,7 @@ export function checkFileFreshness(conversation, session, path, currentHash, too
   if (!state.seen && !(written && written.size > 0)) {
     return {
       ok: false,
-      error: `Refusing to edit '${path}': it has not been read this session. Read the file first, then retry using its exact current text.`
+      error: markUntranslated(`Refusing to edit '${path}': it has not been read this session. Read the file first, then retry using its exact current text.`)
     };
   }
   if (state.pinned || state.unverified || !currentHash) return { ok: true };
@@ -546,6 +547,6 @@ export function checkFileFreshness(conversation, session, path, currentHash, too
   if (written && written.has(currentHash)) return { ok: true };
   return {
     ok: false,
-    error: `Refusing to edit '${path}': the file has changed on disk since it was last read. Re-read the file, then retry against its current content.`
+    error: markUntranslated(`Refusing to edit '${path}': the file has changed on disk since it was last read. Re-read the file, then retry against its current content.`)
   };
 }

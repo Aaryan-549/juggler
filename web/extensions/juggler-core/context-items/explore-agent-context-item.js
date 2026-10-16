@@ -5,7 +5,7 @@
 
 import SubagentContextItem from './subagents/subagent-item.js';
 import ExploreSubagentStrategyType from './subagents/explore-strategy.js';
-import { markForTranslation } from 'juggler/i18n';
+import { markForTranslation, markUntranslated } from 'juggler/i18n';
 
 /**
  * ExploreAgentContextItem - the `Explore` sub-agent.
@@ -49,22 +49,22 @@ class ExploreAgentContextItem extends SubagentContextItem {
     strategy: ExploreSubagentStrategyType,
     badge: { color: 'thread', icon: 'icon-grep' },
     description:
-      'Investigate this codebase with a read-only sub-agent and get back only what it found; ' +
+      markUntranslated('Investigate this codebase with a read-only sub-agent and get back only what it found; ' +
       'the files it opens never enter this conversation, so an open-ended question costs one result instead of thirty tool calls.\n' +
       'For questions that need reading and judgment — "how does auth work here", "what calls this and why". ' +
-      'Use `query_code` instead when the answer is computable exactly in a script; use `Research` when it is on the web (Explore has no network access).',
+      'Use `query_code` instead when the answer is computable exactly in a script; use `Research` when it is on the web (Explore has no network access).'),
     goalExample: 'Trace auth flow',
     task:
-      'What to find out, stated in full: name the files, symbols, or behaviour you mean ' +
-      'rather than referring to what was said here.',
+      markUntranslated('What to find out, stated in full: name the files, symbols, or behaviour you mean ' +
+      'rather than referring to what was said here.'),
     continues: 'investigation',
-    lead: 'Investigate this codebase and answer the following.',
+    lead: markUntranslated('Investigate this codebase and answer the following.'),
     resultSpec:
-      'the answer to the task; the evidence as a list of `file:line — what is there`; ' +
-      'and the paths worth reading next. Say what you looked for and did not find rather than guessing.',
+      markUntranslated('the answer to the task; the evidence as a list of `file:line — what is there`; ' +
+      'and the paths worth reading next. Say what you looked for and did not find rather than guessing.'),
     label: markForTranslation('Explore'),
     verbs: { pending: markForTranslation('Exploring…'), done: markForTranslation('Explored') },
-    fallback: 'Search the code directly with grep, glob and read.'
+    fallback: markUntranslated('Search the code directly with grep, glob and read.')
   };
 }
 

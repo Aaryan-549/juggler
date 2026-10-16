@@ -40,6 +40,8 @@ func runExtCommand(args []string) int {
 		return extAdd(rest)
 	case "validate":
 		return extValidate(rest)
+	case "i18n":
+		return extI18n(rest)
 	case "-h", "--help", "help":
 		printExtUsage()
 		return 0
@@ -61,6 +63,10 @@ Commands:
   validate [path]    Check the manifest at [path] (default .) the same way the
                      server does: required fields, engineApi compat, and that
                      every provides glob resolves to real files.
+  i18n <extract|pseudo|check> [path]
+                     Maintain the translation catalogue named by provides.i18n:
+                     extract writes en.json and en-XA.json from the source,
+                     check exits 1 if they are out of date.
   link <path>        Symlink an extension dir into ~/.juggler/extensions for
                      dev-mode loading with hot reload.
   add [-y] <repo>    git clone a repo into ~/.juggler/extensions. Prints the
@@ -69,6 +75,7 @@ Commands:
 Examples:
   juggler ext init code-review
   juggler ext validate ./code-review
+  juggler ext i18n extract ./code-review
   juggler ext link ./code-review
   juggler ext add github.com/owner/repo
 

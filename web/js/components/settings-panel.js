@@ -28,7 +28,7 @@ import { SkillsTab } from './settings/skills-tab.js';
 import { UpdatesTab } from './settings/updates-tab.js';
 import { apiUrl } from '../utils/api-url.js';
 import { escapeHtml } from '../../sdk/lib/html.js';
-import { t, htmlSlots, withHtml } from '../../sdk/lib/i18n.js';
+import { t, markUntranslated, htmlSlots, withHtml } from '../../sdk/lib/i18n.js';
 
 /**
  * Longest the first load will wait for the server's provider list to settle
@@ -623,8 +623,9 @@ class SettingsPanel extends HTMLElement {
       // the other three fall back to the tab's current value, so a blip leaves
       // the already-rendered picker alone rather than blanking it.
       const [config, providersData, defaultModel, cheapModel, connectivity] = await Promise.all([
-        fetchJson(apiUrl('/config'), { errorPrefix: "Couldn't load config" }),
-        fetchJson(apiUrl('/providers'), { errorPrefix: 'Failed to load providers' }),
+        // Both prefixes reach only the console: the catch below shows its own message.
+        fetchJson(apiUrl('/config'), { errorPrefix: markUntranslated("Couldn't load config") }),
+        fetchJson(apiUrl('/providers'), { errorPrefix: markUntranslated('Failed to load providers') }),
         fetchJson(apiUrl('/default-model'), { fallback: /** @type {any} */ (this._tabs.defaults).defaultModel }),
         fetchJson(apiUrl('/cheap-model'), { fallback: /** @type {any} */ (this._tabs.defaults).cheapModel }),
         fetchJson(apiUrl('/connectivity'), { fallback: /** @type {any} */ (this._tabs.connectivity).connectivity }),

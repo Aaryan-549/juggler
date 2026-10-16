@@ -33,7 +33,7 @@ import { isPseudoLocalized } from '../../../sdk/lib/i18n.js';
 /** juggler-core's English for this pin, standing in for its catalogue. */
 const CORE_TEXT = [
   'No project', 'File', 'Add a file to view', 'File or folder path…', 'Add', 'Loading…', 'Refresh',
-  '{shown, plural, other {First {shown} lines of {total}.}}',
+  '{shown, plural, one {First line of {total}.} other {First {shown} lines of {total}.}}',
 ];
 
 /**

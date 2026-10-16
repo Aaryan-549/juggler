@@ -9,14 +9,13 @@
  * The missing and unreadable states, an empty directory listing and the
  * size/lines/items annotation beside a path are UI text, so each is translated.
  * Paths and the read op's own error words are data, so they are digits here;
- * `formatFileSize` output is data too and is mapped to a digit before the check.
+ * the size's unit is a message, so it is translated too.
  * Every read is stubbed through `ops`, so nothing touches the disk.
  * @module unit-tests/live-file-test
  */
 
 import { underPseudoLocale } from '../../../js-tests/utilities/pseudo-locale.js';
 import { isPseudoLocalized } from '../../../sdk/lib/i18n.js';
-import { formatFileSize } from 'juggler/item-utils';
 import { fetchLiveFile, renderLiveFileBody, liveFileInfo } from '../lib/live-file.js';
 
 /** juggler-core's English for this module, standing in for its catalogue. */
@@ -25,8 +24,8 @@ const CORE_TEXT = [
   'File not found: {path}',
   '(empty)',
   'unknown error',
-  '{count, plural, other {{count} items}}',
-  '{size} | {count, plural, other {{count} lines}}',
+  '{count, plural, one {{count} item} other {{count} items}}',
+  '{size} | {count, plural, one {{count} line} other {{count} lines}}',
 ];
 
 /**
@@ -69,9 +68,8 @@ export async function runTests() {
       shown.emptyDirectory = drawn({ path: '/7/', isDirectory: true, exists: true, content: '' });
 
       shown.items = liveFileInfo({ path: '/7/', isDirectory: true, exists: true, content: '', totalLines: 7 });
-      const size = formatFileSize(7777);
-      shown.lines = liveFileInfo({ path: '/7', isDirectory: false, exists: true, content: '', size: 7777, totalLines: 7 })
-        .replace(size, '7');
+      // The size is a message of its own, nested in the annotation's.
+      shown.lines = liveFileInfo({ path: '/7', isDirectory: false, exists: true, content: '', size: 7777, totalLines: 7 });
 
       const raw = Object.entries(shown).filter(([, s]) => !s || !isPseudoLocalized(s));
       if (raw.length) throw new Error(`plain English under en-XA: ${JSON.stringify(Object.fromEntries(raw))}`);

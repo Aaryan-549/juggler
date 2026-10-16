@@ -310,25 +310,25 @@ class ExecuteContextItem extends ContextItem {
       properties: {
         command: {
           type: 'string',
-          description: 'The command to execute'
+          description: markUntranslated('The command to execute')
         },
         description: {
           type: 'string',
-          description: 'Clear, concise description of what this command does in 5-10 words'
+          description: markUntranslated('Clear, concise description of what this command does in 5-10 words')
         },
         timeout: {
           type: 'number',
-          description: `Optional timeout in milliseconds (max ${MAX_EXEC_TIMEOUT_MS}). Default: ${DEFAULT_EXEC_TIMEOUT_MS} (${prettyTimeout(DEFAULT_EXEC_TIMEOUT_MS)}).`
+          description: markUntranslated(`Optional timeout in milliseconds (max ${MAX_EXEC_TIMEOUT_MS}). Default: ${DEFAULT_EXEC_TIMEOUT_MS} (${prettyTimeout(DEFAULT_EXEC_TIMEOUT_MS)}).`)
         },
         run_in_background: {
           type: 'boolean',
-          description: 'Run detached and return a task id immediately instead of blocking. Use for a durable process you manage yourself: a dev server kept running while you work, or a long build/test read once at the end. Read new output with TaskOutput; stop with TaskStop. For "wait until X is ready then tell me", prefer a foreground `until … done` command or the Monitor tool — do not spin-poll TaskOutput in a loop.'
+          description: markUntranslated('Run detached and return a task id immediately instead of blocking. Use for a durable process you manage yourself: a dev server kept running while you work, or a long build/test read once at the end. Read new output with TaskOutput; stop with TaskStop. For "wait until X is ready then tell me", prefer a foreground `until … done` command or the Monitor tool — do not spin-poll TaskOutput in a loop.')
         }
       },
       required: ['command']
     };
 
-    const description = 'Runs a bash command in a fresh shell rooted at the project directory (no `cd` needed). Nothing persists between calls.';
+    const description = markUntranslated('Runs a bash command in a fresh shell rooted at the project directory (no `cd` needed). Nothing persists between calls.');
 
     return [
       {

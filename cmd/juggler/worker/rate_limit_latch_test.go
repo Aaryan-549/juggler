@@ -260,7 +260,7 @@ func TestRateLimitReport_Wording(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := rateLimitReport("openaicodex", tt.until, now, "429 Too Many Requests")
+			got := rateLimitReport("openaicodex", tt.until, now, "429 Too Many Requests").English()
 			if !strings.Contains(got, tt.want) {
 				t.Fatalf("report = %q, want it to contain %q", got, tt.want)
 			}

@@ -7,10 +7,10 @@ package worker
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"strings"
 	"time"
 
+	"juggler/cmd/juggler/msg"
 	"juggler/cmd/juggler/providers/provider"
 )
 
@@ -31,7 +31,7 @@ func (r *run) runFoldedCompactionTurn() (verdict turnVerdict, handled bool) {
 	ctxResult, tools, prepErr := r.requestContextAndToolsForItemIDs(itemIDs)
 	if prepErr != nil {
 		if !errors.Is(prepErr, ErrCancelled) {
-			r.sendError(fmt.Sprintf("Failed to get context/tools for compaction: %v", prepErr), "")
+			r.sendError(msg.New("Failed to get context/tools for compaction: {detail}", "detail", prepErr.Error()))
 		}
 		return turnDone, true
 	}
@@ -45,7 +45,7 @@ func (r *run) runFoldedCompactionTurn() (verdict turnVerdict, handled bool) {
 		for k, v := range compactionErrorData(compactErr) {
 			errorData[k] = v
 		}
-		r.sendErrorWithData(compactErr.Error(), "", errorData)
+		r.sendErrorWithData(compactErr.Error(), errorText(compactErr), "", errorData)
 	}
 	// The fold committed before this run started, so ending without a
 	// summary leaves the parent holding a fold tile and nothing else.
@@ -105,7 +105,7 @@ func (r *run) handleTurnFailure(st *strategyRunState, err error, llmRequest json
 	if errors.As(err, &authErr) {
 		r.reportUserFixableFailure(userFixableFailure{
 			provider: authErr.Provider, hint: authErr.Hint, message: authErr.Message,
-			defaultLead: "The provider isn't signed in.", kind: "auth", code: "auth-required", logLabel: "authentication",
+			defaultLead: msg.New("The provider isn't signed in."), defaultReport: notSignedInReport, kind: "auth", code: "auth-required", logLabel: "authentication",
 		}, err, duration)
 		return turnDone
 	}
@@ -116,7 +116,7 @@ func (r *run) handleTurnFailure(st *strategyRunState, err error, llmRequest json
 	if errors.As(err, &setupErr) {
 		r.reportUserFixableFailure(userFixableFailure{
 			provider: setupErr.Provider, hint: setupErr.Hint, message: setupErr.Message,
-			defaultLead: "The provider isn't set up on this machine.", kind: "setup", code: "provider-setup", logLabel: "setup",
+			defaultLead: msg.New("The provider isn't set up on this machine."), defaultReport: notSetUpReport, kind: "setup", code: "provider-setup", logLabel: "setup",
 		}, err, duration)
 		return turnDone
 	}
@@ -142,7 +142,7 @@ func (r *run) handleTurnFailure(st *strategyRunState, err error, llmRequest json
 		return turnDone
 	}
 
-	r.sendErrorWithData(err.Error(), "", errorData)
+	r.sendErrorWithData(err.Error(), errorText(err), "", errorData)
 	return turnDone
 }
 
@@ -163,19 +163,14 @@ func (r *run) turnErrorData(duration time.Duration) map[string]any {
 // validation-error code "provider-unavailable" — prompt to pick another model,
 // never auto-retry.
 func (r *run) reportProviderUnavailable(err error, duration time.Duration) {
-	msg := "The selected model's provider can't be used. Pick another model, or configure it in settings."
 	errorData := r.turnErrorData(duration)
-	if mc := r.resolveModelConfig(); mc != nil {
-		msg = fmt.Sprintf("The provider for %s (%s) can't be used. Pick another model, or configure %s in settings.", mc.Model, mc.Provider, mc.Provider)
-	}
 	// Carry the resolver's own account of what is wrong ("codex access
 	// token is expired; sign in with the Codex app or run `codex
 	// login`"). The lead says what to do, the detail says why, and a
 	// credential failure is barely actionable without it — an expired
 	// sign-in reads as a lie when reported as "isn't configured".
-	if detail := providerUnavailableDetail(err); detail != "" {
-		msg += "\n\n" + detail
-	}
+	warning := providerUnavailableWarning(r.resolveModelConfig(), providerUnavailableDetail(err))
+	text := warning.English()
 	// This ends the turn, so it needs a durable record like any other
 	// terminal failure. The validation-error status alone is a
 	// client-side transient notice: it is a timed toast when the
@@ -183,21 +178,22 @@ func (r *run) reportProviderUnavailable(err error, duration time.Duration) {
 	// credential that lapses mid-loop leaves a turn that simply stops.
 	// Insert the item first, while turn.txnID still stamps it with
 	// the transaction saved before the failure was handled.
-	r.sendErrorWithData(msg, "", errorData)
-	r.sendStatusWithCode("validation-error", msg, "provider-unavailable")
+	r.sendErrorWithData(text, &warning, "", errorData)
+	r.sendStatusWithCode("validation-error", text, &warning, "provider-unavailable")
 }
 
 // userFixableFailure describes a terminal failure the user fixes outside the
 // turn — a provider.AuthError or provider.SetupError — in the terms
 // reportUserFixableFailure reports it in.
 type userFixableFailure struct {
-	provider    string // registry name of the provider at fault, or ""
-	hint        string // the provider's remediation, written for the reader
-	message     string // the provider's own account, kept beneath the hint
-	defaultLead string // the lead when the provider gave no hint
-	kind        string // the error item's errorKind, which the row keys its actions off
-	code        string // the validation-error status code
-	logLabel    string // names the class in the server log
+	provider      string                          // registry name of the provider at fault, or ""
+	hint          string                          // the provider's remediation, written for the reader
+	message       string                          // the provider's own account, kept beneath the hint
+	defaultLead   msg.Message                     // the lead when the provider gave no hint
+	defaultReport func(detail string) msg.Message // that lead with the provider's account beneath it, for the error item
+	kind          string                          // the error item's errorKind, which the row keys its actions off
+	code          string                          // the validation-error status code
+	logLabel      string                          // names the class in the server log
 }
 
 // reportUserFixableFailure handles a provider that refused the call on
@@ -209,12 +205,18 @@ func (r *run) reportUserFixableFailure(f userFixableFailure, err error, duration
 	// is addressed to someone standing at its command line. That text
 	// still follows, since it is the only diagnosable part.
 	lead := f.hint
+	detail := strings.TrimSpace(f.message)
+	// A provider's hint is its own English; only Juggler's lead is a message,
+	// and then the item's whole text is one, the provider's account a param.
+	var leadText, report *msg.Message
 	if lead == "" {
-		lead = f.defaultLead
+		lead, leadText = f.defaultLead.English(), &f.defaultLead
+		m := f.defaultReport(detail)
+		report = &m
 	}
-	msg := lead
-	if detail := strings.TrimSpace(f.message); detail != "" {
-		msg += "\n\n" + detail
+	text := lead
+	if detail != "" {
+		text += "\n\n" + detail
 	}
 	errorData := r.turnErrorData(duration)
 	if f.provider != "" {
@@ -227,10 +229,10 @@ func (r *run) reportUserFixableFailure(f userFixableFailure, err error, duration
 	// Durable item first, for the same reason as Guard B: the status is
 	// a transient client-side notice and would leave nothing behind for
 	// a sign-in that lapsed while nobody was watching.
-	r.sendErrorWithData(msg, "", errorData)
+	r.sendErrorWithData(text, report, "", errorData)
 	// Only the lead goes to the composer warning. The detail belongs in
 	// the transcript, where there is room to read it.
-	r.sendStatusWithCode("validation-error", lead, f.code)
+	r.sendStatusWithCode("validation-error", lead, leadText, f.code)
 }
 
 // resolveContextOverflow gives a context-limit failure to the overflow handler.
@@ -289,7 +291,8 @@ func (r *run) restOnRateLimit(rateLimit *RateLimitError, err error, errorData ma
 		r.log.Info("Usage limit on %s already reported for this conversation — resting this thread instead of reporting it again", providerName)
 	} else {
 		r.log.Info("Usage limit on %s stands until %s — latched, so no thread here calls it again until the user sends", providerName, rateLimit.ResetAt.Format(time.RFC3339))
-		r.sendErrorWithData(rateLimitReport(providerName, rateLimit.ResetAt, time.Now(), err.Error()), "", errorData)
+		report := rateLimitReport(providerName, rateLimit.ResetAt, time.Now(), err.Error())
+		r.sendErrorWithData(report.English(), &report, "", errorData)
 	}
 	r.promotePendingItems(r.t.thread.itemID)
 	r.t.politelyStopped = true

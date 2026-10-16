@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"juggler/cmd/juggler/core"
+	"juggler/cmd/juggler/msg"
 	"juggler/cmd/juggler/providers/provider"
 	"juggler/cmd/juggler/providers/utils"
 	"juggler/cmd/juggler/server/handlers"
@@ -80,18 +81,24 @@ type ModelWithContext struct {
 
 // ProviderStatus is one provider's published state.
 type ProviderStatus struct {
-	Name          string            `json:"name"`
-	DisplayName   string            `json:"displayName"`
-	Description   string            `json:"description"`
-	AuthType      provider.AuthType `json:"authType"`
-	AuthSource    string            `json:"authSource,omitempty"`
-	SignInMethod  string            `json:"signInMethod,omitempty"`
-	AuthHint      string            `json:"authHint,omitempty"`
-	ConfigKeyName string            `json:"configKeyName"`
-	EnvVarName    string            `json:"envVarName"`
-	APIKeyURL     string            `json:"apiKeyURL"`
-	KeySource     core.KeySource    `json:"keySource"`
-	Available     bool              `json:"available"`
+	Name        string `json:"name"`
+	DisplayName string `json:"displayName"`
+	Description string `json:"description"`
+	// DescriptionMessage is the message Description was rendered from, for the
+	// UI to show translated with serverText; nil when there is no description.
+	DescriptionMessage *msg.Message      `json:"descriptionMessage,omitempty"`
+	AuthType           provider.AuthType `json:"authType"`
+	AuthSource         string            `json:"authSource,omitempty"`
+	SignInMethod       string            `json:"signInMethod,omitempty"`
+	AuthHint           string            `json:"authHint,omitempty"`
+	// AuthHintMessage is the message AuthHint was rendered from; nil when the
+	// hint is data (an error's text) or there is none.
+	AuthHintMessage *msg.Message   `json:"authHintMessage,omitempty"`
+	ConfigKeyName   string         `json:"configKeyName"`
+	EnvVarName      string         `json:"envVarName"`
+	APIKeyURL       string         `json:"apiKeyURL"`
+	KeySource       core.KeySource `json:"keySource"`
+	Available       bool           `json:"available"`
 	// Credentialed reports that the provider has what the user was asked to give
 	// it — a key saved, or a keyless provider switched on. Available is narrower:
 	// it also requires the provider to be able to serve a turn right now.
@@ -166,20 +173,29 @@ func modelContextFallbacks(pInfo provider.ProviderInfo, settings core.GlobalSett
 // humanizeModelListError maps a raw model-list failure to a short, human hint
 // safe to render in a model-menu row. The raw error is logged separately for
 // diagnosis; it must never reach the UI (it leaks wrapped transport internals).
-func humanizeModelListError(providerDisplayName string, err error) string {
-	msg := strings.ToLower(err.Error())
+func humanizeModelListError(providerDisplayName string, err error) msg.Message {
+	text := strings.ToLower(err.Error())
 	switch {
-	case strings.Contains(msg, "401") || strings.Contains(msg, "403") ||
-		strings.Contains(msg, "unauthorized") || strings.Contains(msg, "forbidden") ||
-		strings.Contains(msg, "invalid api key") || strings.Contains(msg, "authentication"):
-		return "Key rejected — check it in Provider Settings"
-	case strings.Contains(msg, "timeout") || strings.Contains(msg, "deadline exceeded") ||
-		strings.Contains(msg, "no such host") || strings.Contains(msg, "connection refused") ||
-		strings.Contains(msg, "dial tcp") || strings.Contains(msg, "network is unreachable"):
-		return "Couldn't reach " + providerDisplayName + " — check your connection"
+	case strings.Contains(text, "401") || strings.Contains(text, "403") ||
+		strings.Contains(text, "unauthorized") || strings.Contains(text, "forbidden") ||
+		strings.Contains(text, "invalid api key") || strings.Contains(text, "authentication"):
+		return msg.New("Key rejected — check it in Provider Settings")
+	case strings.Contains(text, "timeout") || strings.Contains(text, "deadline exceeded") ||
+		strings.Contains(text, "no such host") || strings.Contains(text, "connection refused") ||
+		strings.Contains(text, "dial tcp") || strings.Contains(text, "network is unreachable"):
+		return msg.New("Couldn't reach {provider} — check your connection", "provider", providerDisplayName)
 	default:
-		return "Couldn't load models — see Provider Settings"
+		return msg.New("Couldn't load models — see Provider Settings")
 	}
+}
+
+// messageOrNil returns m for a JSON field that is omitted when there is no
+// message.
+func messageOrNil(m msg.Message) *msg.Message {
+	if m.IsZero() {
+		return nil
+	}
+	return &m
 }
 
 // computeProviders fans out one model-list call per available provider and
@@ -224,7 +240,10 @@ func (s *Server) computeProviders(ctx context.Context) []ProviderStatus {
 			cred, err := credStore.GetProviderCredential(pInfo.Name)
 			credentialed := err == nil
 			available := credentialed
-			authHint := cred.AuthHint
+			authHint, authHintMessage := cred.AuthHint, cred.AuthHintMessage
+			setAuthHint := func(m msg.Message) {
+				authHint, authHintMessage = m.English(), &m
+			}
 
 			// Non-interactive readiness probe: a provider can be credentialed yet
 			// unable to serve a turn right now (e.g. a CLI whose OAuth login is
@@ -237,8 +256,8 @@ func (s *Server) computeProviders(ctx context.Context) []ProviderStatus {
 				if ready, hint := pInfo.ReadinessCheck(); !ready {
 					available = false
 					readyGated = true
-					if hint != "" {
-						authHint = hint
+					if !hint.IsZero() {
+						setAuthHint(hint)
 					}
 				}
 			}
@@ -271,7 +290,7 @@ func (s *Server) computeProviders(ctx context.Context) []ProviderStatus {
 					// already gated unready — it's more actionable than a generic
 					// model-list error, and readiness is the real reason it's down.
 					if !readyGated {
-						authHint = humanizeModelListError(pInfo.DisplayName, err)
+						setAuthHint(humanizeModelListError(pInfo.DisplayName, err))
 					}
 					modelsWithContext = modelContextFallbacks(pInfo, settings)
 				}
@@ -283,7 +302,7 @@ func (s *Server) computeProviders(ctx context.Context) []ProviderStatus {
 				modelsWithContext = modelContextFallbacks(pInfo, settings)
 			}
 			if disabled {
-				authHint = ""
+				authHint, authHintMessage = "", nil
 			}
 
 			var switchTo *ProviderSwitch
@@ -294,11 +313,13 @@ func (s *Server) computeProviders(ctx context.Context) []ProviderStatus {
 			providers[idx] = ProviderStatus{
 				Name:               pInfo.Name,
 				DisplayName:        pInfo.DisplayName,
-				Description:        pInfo.Description,
+				Description:        pInfo.Description.English(),
+				DescriptionMessage: messageOrNil(pInfo.Description),
 				AuthType:           authType,
 				AuthSource:         pInfo.AuthSource,
 				SignInMethod:       pInfo.SignInMethod,
 				AuthHint:           authHint,
+				AuthHintMessage:    authHintMessage,
 				ConfigKeyName:      pInfo.ConfigKeyName,
 				EnvVarName:         pInfo.EnvVarName,
 				APIKeyURL:          pInfo.APIKeyURL,

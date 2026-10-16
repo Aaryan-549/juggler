@@ -85,15 +85,14 @@ export function failToolAction(messageThread, toolCall, { content, resultType, f
  * @param {ResponseHandler} rh - Response handler instance
  * @param {ToolCall} toolCall - Tool call to execute
  * @param {MessageThread} messageThread - Message thread
- * @param {{onApproved?: () => void}} [outerOptions] - Callbacks
  * @returns {Promise<ToolExecutionResult>} Standardized result for orchestrator
  */
-export async function executeAction(rh, toolCall, messageThread, outerOptions = {}) {
+export async function executeAction(rh, toolCall, messageThread) {
   const toolInput = /** @type {Record<string, unknown>} */ (toolCall.input || {});
 
   // Wrap entire function in try-catch to ensure loop continues on any error
   try {
-    return await executeActionCore(rh, toolCall, toolInput, messageThread, { onApproved: outerOptions.onApproved });
+    return await executeActionCore(rh, toolCall, toolInput, messageThread);
   } catch (error) {
     // Catch any uncaught errors and return a result that continues the loop
     const { message, stack } = extractErrorInfo(error);
@@ -155,11 +154,11 @@ export function buildApprovalOptions(action, prepared) {
  * @param {ToolCall} toolCall - Tool call to execute
  * @param {Record<string, unknown>} toolInput - Tool input parameters
  * @param {MessageThread} messageThread - Message thread
- * @param {{existingApprovalOptions?: ActionConfirmationOptions, onApproved?: () => void}} [options] - Options for retry flow
+ * @param {{existingApprovalOptions?: ActionConfirmationOptions}} [options] - Options for retry flow
  * @returns {Promise<ToolExecutionResult>} Standardized result for orchestrator
  */
 async function executeActionCore(rh, toolCall, toolInput, messageThread, options = {}) {
-  const { existingApprovalOptions, onApproved } = options;
+  const { existingApprovalOptions } = options;
 
   const prep = await prepareAction(rh, toolCall, toolInput, messageThread);
   if (prep.result) return prep.result;
@@ -175,10 +174,6 @@ async function executeActionCore(rh, toolCall, toolInput, messageThread, options
     );
     if (approvalOutcome) return approvalOutcome;
   }
-
-  // Signal that the tool is now running (approval complete or not needed).
-  // Allows the server to start its execution timeout from this point.
-  onApproved?.();
 
   return runActionAndComplete(rh, toolCall, actionId, toolInput, messageThread);
 }

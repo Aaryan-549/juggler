@@ -48,10 +48,9 @@ const CORE_TEXT = [
   'Folder', 'There is no such folder.', 'That is a file, not a folder.',
   'Commands run here. The rest of the project stays readable.',
   "Couldn't use that folder: the session has no project.", "Couldn't use that folder: none was named.",
-  'That is not on the same drive as the project.',
   'That is the project itself, which the panel offers above.', 'That is outside the project.',
   "Couldn't use {dir}: there is no such folder.", "Couldn't use {dir}: that is a file, not a folder.",
-  'The folder is missing.', 'Nothing was built for a folder, so nothing is left of it.'
+  'The folder is missing.'
 ];
 
 /**
@@ -555,7 +554,6 @@ export async function runTests() {
         shown['provision file'] = await thrown(() => provider.provision({ folder: '2' }, ctx));
 
         shown['missing status'] = String((await provider.status({ available: false }, {}))?.detail);
-        shown['cleanup message'] = String((await provider.cleanupPartial({}, {}))?.message);
       }, { '@juggler/core': CORE_TEXT });
 
       const english = Object.entries(shown).filter(([, text]) => !isPseudoLocalized(text));

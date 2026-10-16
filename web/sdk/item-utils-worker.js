@@ -7,6 +7,7 @@
 
 export {
   formatFileSize,
+  formatFileSizeForDisplay,
   formatDisplayPath,
   formatPathForStatus,
   basename,

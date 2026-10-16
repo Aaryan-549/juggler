@@ -32,6 +32,7 @@
   "running": "running",
   "starting": "starting",
   "stopped": "stopped",
+  "thousands, in a compact count\u0004{n}k": "{n}k",
   "tool": "tool",
   "{description}\n\nArguments:\n\n{arguments}": "{description}\n\nArguments:\n\n{arguments}",
   "{label} failed": "{label} failed",

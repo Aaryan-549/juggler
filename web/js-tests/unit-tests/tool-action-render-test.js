@@ -98,10 +98,33 @@ export async function runTests() {
       throw new Error(`expected the card's label, got ${JSON.stringify(busy)}`);
     busyEl._getItem = () => fakeItem({ state: TOOL_STATES.RUNNING, toolName: 'mystery', toolInput: {} });
     const bare = busyEl.getBusyState();
-    if (bare?.message !== 'Running mystery...')
+    if (bare?.message !== 'Running mystery…')
       throw new Error(`expected the wire-name fallback, got ${JSON.stringify(bare)}`);
     passed++;
   } catch (e) { failed++; errors.push(`getBusyState card label: ${e.message}`); }
+  finally { contextItemRegistry.getByToolName = realGetByToolName; }
+
+  // A3 — an item with no tool name looks nothing up in the registry: a
+  // capability whose tool happens to be called 'tool' or 'Action' must not
+  // draw an unnamed row's busy label or cancelled card.
+  try {
+    /** @type {string[]} */
+    const looked = [];
+    class Squatter {
+      getStatusUI() { return { typeName: 'Squatter', summary: 'not this one', status: 'running' }; }
+    }
+    contextItemRegistry.getByToolName = (name) => { looked.push(String(name)); return Squatter; };
+    const unnamed = /** @type {any} */ (document.createElement('tool-action-message'));
+    unnamed._getConversation = () => ({ session: {} });
+    unnamed._getMessageThread = () => ({});
+    unnamed._getItem = () => fakeItem({ state: TOOL_STATES.RUNNING, toolInput: {} });
+    const busy = unnamed.getBusyState();
+    if (busy?.message !== 'Running tool…') throw new Error(`expected the generic busy label, got ${JSON.stringify(busy)}`);
+    unnamed._renderCancelled(fakeItem({ state: TOOL_STATES.CANCELLED, toolInput: {}, result: { cancelled: true } }));
+    if (unnamed.textContent.includes('Squatter')) throw new Error(`the cancelled card was drawn by a registry squatter: ${unnamed.textContent}`);
+    if (looked.length) throw new Error(`expected no registry lookup, got ${JSON.stringify(looked)}`);
+    passed++;
+  } catch (e) { failed++; errors.push(`unnamed item registry lookup: ${e.message}`); }
   finally { contextItemRegistry.getByToolName = realGetByToolName; }
 
   // B — transcript body must render the cancelled row, not the running row.

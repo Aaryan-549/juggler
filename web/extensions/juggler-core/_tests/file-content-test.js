@@ -27,8 +27,8 @@ const CORE_TEXT = [
   'Add File Content', 'File path…', 'Add',
   'Added at the start of this conversation. It is frozen as it stands when the first message is sent.',
   'Mentioned in a message. It is frozen as it stands when that message is sent.',
-  'Added at the start of this conversation and frozen when it began, so that editing this file does not make the conversation re-read itself. Below is the frozen copy the conversation reads.',
-  'Mentioned in a message and frozen when it was sent, so that editing this file does not make the conversation re-read itself. Below is the frozen copy the conversation reads.',
+  "Added at the start of this conversation and frozen when it began, so editing the file doesn't make the conversation read it again. Below is the frozen copy the conversation reads.",
+  "Mentioned in a message and frozen when it was sent, so editing the file doesn't make the conversation read it again. Below is the frozen copy the conversation reads.",
   'The file has changed since. Updating re-reads the conversation once.',
   'Update', 'Update the frozen copy of this file',
   // lib/live-file.js draws the body of a missing file.
@@ -173,6 +173,20 @@ export async function runTests() {
     errors.push(`en-XA: ${e?.message ?? String(e)}`);
   } finally {
     for (const el of mounted) el.remove();
+  }
+
+  try {
+    // An item with no file names no file: the header carries no path for the
+    // context menu to offer Open or Copy on.
+    const empty = makeItem({});
+    const panel = empty.createPropertiesPanelElement();
+    const named = panel.querySelector('[data-file-path]');
+    if (named) throw new Error(`an empty item names a file: ${JSON.stringify(named.getAttribute('data-file-path'))}`);
+    if (!text(panel.querySelector('.properties-panel-filepath'))) throw new Error('the empty item shows no placeholder');
+    passed++;
+  } catch (/** @type {any} */ e) {
+    failed++;
+    errors.push(`no file: ${e?.message ?? String(e)}`);
   }
 
   return { passed, failed, errors };

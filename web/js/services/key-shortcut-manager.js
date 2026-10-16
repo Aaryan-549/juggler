@@ -1005,3 +1005,24 @@ class KeyShortcutManager {
 /** The shared singleton. */
 const keyShortcutManager = new KeyShortcutManager();
 export default keyShortcutManager;
+
+/**
+ * The live key map as plain data for one platform: each category in declaration
+ * order, each command with every key it answers to there, already formatted for
+ * that platform. Only commands bound on that platform are listed (see
+ * {@link KeyShortcutManager#byCategoryForPlatform}). This is the read-only view
+ * the extension SDK exposes as `juggler/ui`'s `shortcutTableForPlatform`.
+ * @param {boolean} mac - True for macOS glyphs, false for Ctrl+ style
+ * @returns {Array<{category: string, shortcuts: Array<{id: string, label: string, description: string, keys: string[]}>}>} The table
+ */
+export function shortcutTableForPlatform(mac) {
+  return keyShortcutManager.byCategoryForPlatform(mac).map((group) => ({
+    category: group.category,
+    shortcuts: group.shortcuts.map((def) => ({
+      id: def.id,
+      label: def.label,
+      description: def.description,
+      keys: keyShortcutManager.getBindings(def.id, mac).map((binding) => formatBindingForPlatform(binding, mac)),
+    })),
+  }));
+}

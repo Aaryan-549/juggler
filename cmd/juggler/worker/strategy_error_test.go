@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"juggler/cmd/juggler/msg"
 	"juggler/cmd/juggler/providers/provider"
 	providerutils "juggler/cmd/juggler/providers/utils"
 )
@@ -222,7 +223,7 @@ func TestRetryingStatusClearedOnlyByContent(t *testing.T) {
 	w := NewConversationWorker("test-conv", "user:test")
 	defer w.doc.Destroy()
 
-	w.currentRun().sendRetryingStatus("Rate limited, retrying (1/3)")
+	w.currentRun().sendRetryingStatus(msg.New("Rate limited, retrying (1/3)"))
 	if !w.turn.retryStatusActive {
 		t.Fatal("sendRetryingStatus must latch the retrying label")
 	}

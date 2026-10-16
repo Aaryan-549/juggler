@@ -20,8 +20,8 @@
  */
 
 import { createBoundOps } from '../../sdk/ops.js';
-import { extractErrorMessage } from '../../sdk/lib/error-utils.js';
-import { t, markForTranslation } from '../../sdk/lib/i18n.js';
+import { extractErrorMessage, errorText } from '../../sdk/lib/error-utils.js';
+import { t, markForTranslation, formatList } from '../../sdk/lib/i18n.js';
 import workspaceProviderRegistry from '../registries/workspace-provider-registry.js';
 import { capabilityLabel } from '../utils/capability-label.js';
 import { registerWorkspace, patchWorkspace, unregisterWorkspace, isWorkspaceUsable } from './workspaces.js';
@@ -99,7 +99,7 @@ export async function workspaceStatus(session, workspace, signal) {
     // different answers, and a surface that printed the second where it prints
     // the first would be describing our failure to somebody choosing where to
     // work.
-    return { ...fallback, problem: extractErrorMessage(error), statusFailed: true };
+    return { ...fallback, problem: errorText(error), statusFailed: true };
   }
 }
 
@@ -524,7 +524,7 @@ export function workspaceFinishWarning(session, workspace, options = {}) {
 
   return {
     refusal: busy.length
-      ? t('{names} {count, plural, one {is} other {are}} in the middle of a turn.', { names: busy.join(', '), count: busy.length })
+      ? t('{names} {count, plural, one {is} other {are}} in the middle of a turn.', { names: formatList(busy), count: busy.length })
       : '',
     warning: action?.danger && status?.dirty
       ? t('This workspace holds uncommitted work, which goes with it.')
@@ -597,7 +597,7 @@ async function runFinish(provider, workspace, actionId, ctx) {
   try {
     return await provider.finish(workspace, actionId, ctx);
   } catch (error) {
-    return { done: false, message: extractErrorMessage(error) };
+    return { done: false, message: errorText(error) };
   }
 }
 

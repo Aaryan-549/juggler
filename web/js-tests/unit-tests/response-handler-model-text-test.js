@@ -102,5 +102,28 @@ export async function runTests() {
     });
   });
 
+  // A capability whose tool is handled by onToolCall alone (no execute()) runs
+  // through executeContextItem; the tool-action the worker minted for the call
+  // must still be completed, or it stays running and the model is told the
+  // call was interrupted.
+  await run('a context-item tool completes its tool-action', async () => {
+    const rh = new ResponseHandler({ conversation: /** @type {any} */ ({}) });
+    const details = { itemType: 'stub-capability', class: null };
+
+    const okThread = stubThread({ getContextItem: () => ({ getBriefSummary: () => 'Stub updated', getToolResult: () => ({ n: 1 }) }) });
+    const ok = await rh.executeContextItem({ id: 'g', name: 'stub_tool' }, details, okThread);
+    assert(ok.success === true, `the call should succeed: ${JSON.stringify(ok)}`);
+    assert(okThread.completed.length === 1, `expected the tool-action completed once, got ${okThread.completed.length}`);
+    const done = okThread.completed[0];
+    assert(done.content === 'Stub updated' && done.isError === false && done.resultType === 'context-item',
+      `unexpected completion: ${JSON.stringify(done)}`);
+    assert(done.fullResult?.n === 1, `the item's tool result should be the fullResult: ${JSON.stringify(done.fullResult)}`);
+
+    const failThread = stubThread({ executeContextItem: async () => ({ created: false }) });
+    await rh.executeContextItem({ id: 'h', name: 'stub_tool' }, details, failThread);
+    assert(failThread.completed.length === 1 && failThread.completed[0].isError === true,
+      `a failed call must complete as an error: ${JSON.stringify(failThread.completed)}`);
+  });
+
   return { passed, failed, errors };
 }

@@ -55,7 +55,7 @@ import { openWorkspaceCreate } from './workspace-create-dialog.js';
 import JugglerElement from './juggler-element.js';
 import { showAlert, showConfirm, showNotice } from './modal-dialog.js';
 import { whyNotRebind, moveNeedsConfirmation, rebindConversation } from '../services/workspace-rebinding.js';
-import { extractErrorMessage } from '../../sdk/lib/error-utils.js';
+import { extractErrorMessage, errorText } from '../../sdk/lib/error-utils.js';
 import { copyToClipboard } from '../../sdk/lib/clipboard.js';
 import { conversationToMarkdown } from '../utils/conversation-markdown.js';
 import { exportConversation } from './conversation-export-dialog.js';
@@ -2078,7 +2078,7 @@ class ConversationBar extends JugglerElement {
     } catch (e) {
       console.error('[ConversationBar] restore from bin failed:', e);
       await showAlert(
-        t('Couldn’t restore it from the bin: {error}', { error: String(/** @type {any} */ (e)?.message || e) }),
+        t('Couldn’t restore it from the bin: {error}', { error: errorText(e) }),
         t('Restore failed')
       );
     }
@@ -2375,7 +2375,7 @@ class ConversationBar extends JugglerElement {
           }
           if (code !== 'INVALID') {
             await showAlert(
-              t("Couldn't rename the conversation: {error}", { error: String(/** @type {any} */ (e)?.message || e) }),
+              t("Couldn't rename the conversation: {error}", { error: errorText(e) }),
               t('Rename failed')
             );
           }
@@ -2483,7 +2483,7 @@ class ConversationBar extends JugglerElement {
           // the editor was open, a label longer than it stores — the name is
           // still in the field to be fixed or abandoned, so the editor stays
           // open and says what happened.
-          return t("Couldn't rename it: {error}", { error: String(/** @type {any} */ (e)?.message || e) });
+          return t("Couldn't rename it: {error}", { error: errorText(e) });
         }
       },
     });
@@ -2545,7 +2545,7 @@ class ConversationBar extends JugglerElement {
       if (result?.message) showNotice(result.message);
       this.render();
     } catch (error) {
-      showNotice(extractErrorMessage(error));
+      showNotice(errorText(error));
     }
   }
 

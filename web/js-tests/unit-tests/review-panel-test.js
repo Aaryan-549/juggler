@@ -12,7 +12,7 @@
 
 import { assert } from '../utilities/test-helpers.js';
 import { underPseudoLocale } from '../utilities/pseudo-locale.js';
-import { isPseudoLocalized } from '../../sdk/lib/i18n.js';
+import { isPseudoLocalized, setLocale } from '../../sdk/lib/i18n.js';
 import { createReviewPanel } from '../../js/components/review-panel.js';
 
 /**
@@ -152,7 +152,11 @@ export async function runTests() {
         container.appendChild(panel.element);
         panel.setManifest({
           complete: false,
-          warnings: ['8'],
+          warnings: ['Couldn\'t compare the project repository: 8'],
+          warningMessages: [{
+            key: 'Couldn\'t compare {where, select, root {the project repository} other {{repo}}}: {detail}',
+            params: { where: 'root', repo: '', detail: '8' },
+          }],
           scope: '1',
           commentScope: 'Staged against HEAD',
           scopeKey: '9',
@@ -170,6 +174,7 @@ export async function runTests() {
         await flush();
         shown.push(...scopeParts(panel));
         shown.push(textOf(panel, '.review-panel__warnings-lead'));
+        shown.push(textOf(panel, '.review-panel__warning-list li'));
         for (const row of panel.element.querySelectorAll('.review-panel__file')) {
           shown.push(row.getAttribute('aria-label') || '');
         }
@@ -236,11 +241,44 @@ export async function runTests() {
         panel.element.remove();
       });
 
-      assert(shown.length === 30, `expected every state drawn, got ${shown.length}: ${JSON.stringify(shown)}`);
+      assert(shown.length === 31, `expected every state drawn, got ${shown.length}: ${JSON.stringify(shown)}`);
       const raw = shown.filter((s) => !isPseudoLocalized(s));
       assert(raw.length === 0, `plain English under en-XA: ${JSON.stringify(raw)}`);
       assert(commentScope === 'Staged against HEAD',
         `a comment's scope is read by the model, so it stays English: ${JSON.stringify(commentScope)}`);
+    });
+
+    await test('line totals and comment counts are in the UI language\'s digits', async () => {
+      /**
+       * @param {string} locale - The UI locale to draw under.
+       * @returns {Promise<{scope: string, stat: string, badge: string}>} What the panel shows.
+       */
+      const drawn = async (locale) => {
+        const previous = setLocale(locale);
+        const review = fakeReview({ comments: [
+          { id: 'c1', repo: '', path: '7', side: 'file', body: '8', scope: '9', createdAt: 1, updatedAt: 1 },
+        ] });
+        const panel = createReviewPanel({ scopeLabel: '1', loadPatch: async () => ({ hunks: [] }), review });
+        container.appendChild(panel.element);
+        try {
+          panel.setManifest({ complete: true, warnings: [], scope: '1', scopeKey: '9', groups: [
+            { key: '', files: [{ repo: '', path: '7', status: '', added: 1234, removed: 2 }] },
+          ] });
+          await flush();
+          const text = (/** @type {string} */ sel) => panel.element.querySelector(sel)?.textContent || '';
+          return { scope: text('.review-panel__scope-text'), stat: text('.review-panel__stat'), badge: text('.review-panel__count') };
+        } finally {
+          setLocale(previous);
+          panel.destroy();
+          panel.element.remove();
+        }
+      };
+      const en = await drawn('en');
+      assert(en.stat === '+1,234 −2' && en.scope.endsWith(' · +1,234 −2') && en.badge === '1',
+        `English figures: ${JSON.stringify(en)}`);
+      const ar = await drawn('ar-EG');
+      assert(ar.stat === '+١٬٢٣٤ −٢' && ar.scope.endsWith(' · +١٬٢٣٤ −٢') && ar.badge === '١',
+        `Arabic figures: ${JSON.stringify(ar)}`);
     });
   } finally {
     container.remove();

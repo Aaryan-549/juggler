@@ -430,23 +430,6 @@ class APIService {
   }
 
   /**
-   * Save conversation as binary Yjs data
-   * @param {string} conversationId
-   * @param {Uint8Array} yjsData - Binary Yjs state
-   * @returns {Promise<void>}
-   */
-  async saveConversationBinary(conversationId, yjsData) {
-    const url = apiUrl(`/session/conversations/${conversationId}`);
-    await fetchJson(url, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/octet-stream' },
-      body: yjsData,
-      // i18n-ignore: no caller shows this error
-      errorPrefix: 'Failed to save conversation binary'
-    });
-  }
-
-  /**
    * Reorder conversations within a session
    * @param {string[]} conversationOrder - Array of conversation IDs in desired order
    * @param {string} [moved] - The one conversation a drag moved, where the

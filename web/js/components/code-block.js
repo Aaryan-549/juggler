@@ -69,10 +69,10 @@ class CodeBlock extends HTMLElement {
 
     this.innerHTML = `
             <header class="code-header">
-                <span class="language">${this.language}</span>
+                <span class="language">${escapeHtml(this.language)}</span>
                 <button class="copy-btn" type="button">${escapeHtml(t('Copy'))}</button>
             </header>
-            <pre><code class="syntax-highlight language-${this.language}">${highlightedCode}</code></pre>
+            <pre><code class="syntax-highlight language-${escapeHtml(this.language)}">${highlightedCode}</code></pre>
         `;
     const copyBtn = this.querySelector('.copy-btn');
     if (copyBtn) {

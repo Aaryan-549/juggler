@@ -6,10 +6,10 @@ package handlers
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 
 	"juggler/cmd/juggler/core"
+	"juggler/cmd/juggler/msg"
 )
 
 // ModelPreferencesAPI serves the user's model choices that outlive a
@@ -86,7 +86,7 @@ func (api *ModelPreferencesAPI) HandleSetDefaultModel(w http.ResponseWriter, r *
 		return
 	}
 	if err := api.defaultModels.Save(req); err != nil {
-		WriteError(w, r, http.StatusInternalServerError, fmt.Sprintf("Couldn't save default model: %v", err))
+		WriteMessageError(w, r, http.StatusInternalServerError, msg.New("Couldn't save default model: {detail}", "detail", err.Error()))
 		return
 	}
 	WriteSuccess(w, r, nil)
@@ -101,7 +101,7 @@ func (api *ModelPreferencesAPI) HandleSetDefaultModel(w http.ResponseWriter, r *
 // answer and is stored as one.
 func (api *ModelPreferencesAPI) HandleSetCheapModel(w http.ResponseWriter, r *http.Request) {
 	if api.cheapModels == nil {
-		WriteError(w, r, http.StatusServiceUnavailable, "Cheap model is not available")
+		WriteMessageError(w, r, http.StatusServiceUnavailable, msg.New("Cheap model is not available"))
 		return
 	}
 	req, ok := DecodeJSON[core.CheapModelSetting](w, r)
@@ -109,7 +109,7 @@ func (api *ModelPreferencesAPI) HandleSetCheapModel(w http.ResponseWriter, r *ht
 		return
 	}
 	if err := api.cheapModels.Save(req); err != nil {
-		WriteError(w, r, http.StatusInternalServerError, fmt.Sprintf("Couldn't save cheap model: %v", err))
+		WriteMessageError(w, r, http.StatusInternalServerError, msg.New("Couldn't save cheap model: {detail}", "detail", err.Error()))
 		return
 	}
 	WriteSuccess(w, r, nil)
@@ -143,7 +143,7 @@ func (api *ModelPreferencesAPI) getRecentModels(w http.ResponseWriter, r *http.R
 
 	models, err := api.recentModels.Load()
 	if err != nil {
-		WriteError(w, r, http.StatusInternalServerError, fmt.Sprintf("Couldn't load recent models: %v", err))
+		WriteMessageError(w, r, http.StatusInternalServerError, msg.New("Couldn't load recent models: {detail}", "detail", err.Error()))
 		return
 	}
 	if models == nil {
@@ -154,7 +154,7 @@ func (api *ModelPreferencesAPI) getRecentModels(w http.ResponseWriter, r *http.R
 
 func (api *ModelPreferencesAPI) postRecentModel(w http.ResponseWriter, r *http.Request) {
 	if api.recentModels == nil {
-		WriteError(w, r, http.StatusServiceUnavailable, "Recent models are not available")
+		WriteMessageError(w, r, http.StatusServiceUnavailable, msg.New("Recent models are not available"))
 		return
 	}
 
@@ -165,7 +165,7 @@ func (api *ModelPreferencesAPI) postRecentModel(w http.ResponseWriter, r *http.R
 		return
 	}
 	if err := api.recentModels.Add(req); err != nil {
-		WriteError(w, r, http.StatusInternalServerError, fmt.Sprintf("Couldn't record recent model: %v", err))
+		WriteMessageError(w, r, http.StatusInternalServerError, msg.New("Couldn't record recent model: {detail}", "detail", err.Error()))
 		return
 	}
 	WriteSuccess(w, r, nil)

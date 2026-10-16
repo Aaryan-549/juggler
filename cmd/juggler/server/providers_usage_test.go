@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"juggler/cmd/juggler/msg"
 	"juggler/cmd/juggler/providers/provider"
 	"juggler/internal/userpaths"
 	"juggler/internal/userpaths/userpathstest"
@@ -144,7 +145,7 @@ func TestComputeProvidersReadinessGate(t *testing.T) {
 		Name:           name,
 		AuthType:       provider.AuthTypeToggle,
 		AutoDetect:     func() bool { return true },
-		ReadinessCheck: func() (bool, string) { return false, "please sign in" },
+		ReadinessCheck: func() (bool, msg.Message) { return false, msg.New("please sign in") },
 	}, func(provider.Config) (provider.Provider, error) {
 		return fakeModelProvider{name: name}, nil
 	})
@@ -169,6 +170,54 @@ func TestComputeProvidersReadinessGate(t *testing.T) {
 	}
 	if len(got.ModelsWithContext) == 0 {
 		t.Fatalf("expected models listed (disabled) even when gated unready")
+	}
+}
+
+// TestComputeProvidersPublishesMessages pins what /api/providers carries for a
+// provider's description and its readiness hint: the English in description
+// and authHint, as an older client reads them, and beside each the message it
+// was rendered from, for the settings page to show translated.
+func TestComputeProvidersPublishesMessages(t *testing.T) {
+	const name = "messagegate"
+	provider.RegisterProvider(provider.ProviderInfo{
+		Name:           name,
+		Description:    msg.New("Stands in for a provider with a blurb."),
+		AuthType:       provider.AuthTypeToggle,
+		AutoDetect:     func() bool { return true },
+		ReadinessCheck: func() (bool, msg.Message) { return false, msg.New("Sign in to the stand-in.") },
+	}, func(provider.Config) (provider.Provider, error) {
+		return fakeModelProvider{name: name}, nil
+	})
+
+	writeEnabledProviders(t, name)
+
+	var published map[string]any
+	for _, p := range (&Server{}).computeProviders(context.Background()) {
+		if p.Name != name {
+			continue
+		}
+		raw, err := json.Marshal(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal(raw, &published); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if published == nil {
+		t.Fatalf("provider %s missing from computeProviders result", name)
+	}
+	for field, want := range map[string]string{
+		"description": "Stands in for a provider with a blurb.",
+		"authHint":    "Sign in to the stand-in.",
+	} {
+		if published[field] != want {
+			t.Errorf("%s = %#v, want %q", field, published[field], want)
+		}
+		message, _ := published[field+"Message"].(map[string]any)
+		if message == nil || message["key"] != want {
+			t.Errorf("%sMessage = %#v, want a message keyed %q", field, published[field+"Message"], want)
+		}
 	}
 }
 

@@ -6,9 +6,10 @@ package server
 
 import (
 	"context"
-	"fmt"
+	"strconv"
 	"sync/atomic"
 
+	"juggler/cmd/juggler/msg"
 	"juggler/internal/jlog"
 )
 
@@ -107,17 +108,17 @@ func (s *Server) StartTunnelMode(mode TunnelMode) (string, error) {
 func (s *Server) newTunnelProvider(mode TunnelMode) (TunnelProvider, error) {
 	spec, ok := findTunnelMode(mode)
 	if !ok {
-		return nil, fmt.Errorf("unknown tunnel mode %q", mode)
+		return nil, msg.NewError("unknown tunnel mode {mode}", "mode", strconv.Quote(string(mode)))
 	}
 	if !spec.IsAvailable() {
-		return nil, fmt.Errorf("tunnel mode %q is not available: %s", mode, spec.UnavailableHint)
+		return nil, msg.NewError("tunnel mode {mode} is not available: {hint}", "mode", strconv.Quote(string(mode)), "hint", spec.UnavailableHint.English())
 	}
 	return spec.New(tunnelHost{s}), nil
 }
 
 func waitForTunnelReady(at *activeTunnel) (string, error) {
 	if at == nil {
-		return "", fmt.Errorf("tunnel is not active")
+		return "", msg.NewError("tunnel is not active")
 	}
 	<-at.ready
 	if info := at.info.Load(); info != nil {
@@ -126,7 +127,7 @@ func waitForTunnelReady(at *activeTunnel) (string, error) {
 	if at.err != nil {
 		return "", at.err
 	}
-	return "", fmt.Errorf("tunnel failed to start")
+	return "", msg.NewError("tunnel failed to start")
 }
 
 // StopTunnel tears down the active or starting tunnel, if any. Cancelling the

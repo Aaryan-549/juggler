@@ -295,7 +295,10 @@ import { validateManifest } from './lib/manifest.js';
  *   `a..b`, `a...b`, `a b`)
  * @property {'worktree'|'index'|'unstaged'|'commits'} kind - Which two states it
  *   compares: the working tree, the index or a commit, against a commit or the index
- * @property {string} label - The comparison in words
+ * @property {string} label - The comparison in words, in English
+ * @property {{key: string, params?: Record<string, unknown>, context?: string}} [labelMessage] -
+ *   The label as a server message, for `serverText()`; absent for a commit range,
+ *   whose label is git's notation rather than words
  */
 
 /**
@@ -314,6 +317,8 @@ import { validateManifest } from './lib/manifest.js';
  * @property {boolean} complete - Whether every repository and file was reached
  * @property {string[]} warnings - What could not be reviewed, one sentence each.
  *   Always an array; empty when nothing was missed.
+ * @property {{key: string, params?: Record<string, unknown>, context?: string}[]} [warningMessages] -
+ *   The same warnings, in the same order, as server messages for `serverText()`
  * @property {PinGitScope} [scope] - What was compared
  * @property {PinGitReviewRepo[]} repos - Every repository found, root repo first
  */

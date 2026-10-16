@@ -35,6 +35,7 @@ export {
   extractErrorMessage,
   extractUserMessage,
   extractErrorInfo,
+  errorText,
 } from './lib/error-utils.js';
 
 // Dropdown positioning
@@ -107,3 +108,9 @@ export { copyToClipboard } from './lib/clipboard.js';
 
 // What "reveal" is called on this platform (Finder, Explorer, file manager)
 export { revealLabel } from '../js/components/reveal-button.js';
+
+// The app's key map as plain data, and the platform it formats for by default
+export { shortcutTableForPlatform, isMac } from '../js/services/key-shortcut-manager.js';
+
+// A served asset path as a fetchable URL (cache-busting prefix, base path)
+export { resolveAssetUrl } from '../js/utils/asset-url.js';

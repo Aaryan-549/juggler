@@ -25,7 +25,7 @@ import { closePopupById } from '../utils/popup-manager.js';
 import { focusWhenShown } from '../utils/focus.js';
 import { showConfirm } from './modal-dialog.js';
 import { capabilityLabel } from '../utils/capability-label.js';
-import { t, markForTranslation, htmlSlots, withHtml } from '../../sdk/lib/i18n.js';
+import { t, markForTranslation, htmlSlots, withHtml, serverText } from '../../sdk/lib/i18n.js';
 import { escapeHtml } from '../../sdk/lib/html.js';
 import './model-picker/model-chip.js';
 import './model-picker/model-picker.js';
@@ -342,7 +342,7 @@ export function openCommandEditor(options = {}) {
       if (res.status === 400 && res.data?.errors) {
         showFieldErrors(overlay, res.data.errors);
       } else {
-        showFieldErrors(overlay, { template: res.data?.error || t('Could not save command.') });
+        showFieldErrors(overlay, { template: serverText(res.data?.message, res.data?.error) || t('Could not save command.') });
       }
     });
 

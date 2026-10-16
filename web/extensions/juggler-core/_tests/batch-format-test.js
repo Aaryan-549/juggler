@@ -21,6 +21,8 @@
 import { assert } from '../../../js-tests/utilities/test-helpers.js';
 import BatchContextItem from '../context-items/batch-context-item.js';
 import { formatGrepResults } from '../context-items/search/grep-format.js';
+import { underPseudoLocale } from '../../../js-tests/utilities/pseudo-locale.js';
+import { isPseudoLocalized } from '../../../sdk/lib/i18n.js';
 
 /**
  * @typedef {object} TestResult
@@ -142,6 +144,29 @@ export async function runTests(_ctx) {
     assert(out.includes('=== grep: first ===') && out.includes('=== grep: second ==='),
       `expected both searches headed, got:\n${out}`);
     assert(out.includes('Error: bad regex'), `expected the failure reason kept, got:\n${out}`);
+  });
+
+  // ---- the batch_grep detail lines (UI) -------------------------------------
+
+  const GREP_LINES = [
+    ['both', { pattern: '1', path: '2', glob: '3' }, '`1` — in `2`, matching `3`'],
+    ['path', { pattern: '1', path: '2' }, '`1` — in `2`'],
+    ['glob', { pattern: '1', glob: '3' }, '`1` — matching `3`'],
+    ['bare', { pattern: '1' }, '`1`'],
+  ];
+  await run('batch_grep detail lines read as they always have in English', () => {
+    for (const [what, search, want] of GREP_LINES) {
+      const got = BatchContextItem._grepLine(/** @type {any} */ (search));
+      assert(got === want, `${what}: expected ${JSON.stringify(want)}, got ${JSON.stringify(got)}`);
+    }
+  });
+  await run('batch_grep detail lines are whole messages under en-XA', async () => {
+    await underPseudoLocale('batch-format-test', () => {
+      for (const [what, search] of GREP_LINES.slice(0, 3)) {
+        const got = BatchContextItem._grepLine(/** @type {any} */ (search));
+        assert(isPseudoLocalized(got), `${what}: ${JSON.stringify(got)}`);
+      }
+    }, { '@juggler/core': ['{pattern} — in {path}, matching {glob}', '{pattern} — in {path}', '{pattern} — matching {glob}'] });
   });
 
   return { passed, failed, errors };

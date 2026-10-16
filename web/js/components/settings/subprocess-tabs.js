@@ -35,7 +35,7 @@ import {
 import { ConfigTabController, makeNameValidator } from '../config-tab.js';
 import { isMcpExtensionDisabled, MCP_DISABLED_NOTICE } from '../../services/mcp-availability.js';
 import { apiUrl } from '../../utils/api-url.js';
-import { t, markForTranslation } from '../../../sdk/lib/i18n.js';
+import { t, markForTranslation, formatList } from '../../../sdk/lib/i18n.js';
 
 /** Polling interval (ms) for refreshing the MCP servers tab while it's open. */
 const MCP_POLL_MS = 2000;
@@ -205,7 +205,7 @@ export function renderMcpFormExtra(f, wrap, ctrl) {
       const configured = [...(f.toolAllow || []), ...(f.toolDeny || [])];
       const unknown = configured.filter((n) => !names.includes(n));
       if (unknown.length) {
-        toolsField.appendChild(mcpHint(t('Config references tools not offered by this server: {names}. They will be dropped on save.', { names: unknown.join(', ') })));
+        toolsField.appendChild(mcpHint(t('Config references tools not offered by this server: {names}. They will be dropped on save.', { names: formatList(unknown) })));
       }
     }
   } else {

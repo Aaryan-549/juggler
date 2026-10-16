@@ -50,11 +50,6 @@ import './tool-invoker.js';
  */
 
 /**
- * @typedef {object} ExecuteOptions
- * @property {() => void} [onApproved] - Called when user approves and tool begins executing
- */
-
-/**
  * @typedef {object} ContextItemDetails
  * @property {string} itemType - Context item type ID
  * @property {unknown} class - Context item class
@@ -90,10 +85,9 @@ class ToolExecutor {
    * @param {ToolCall} toolCall - Tool call to execute
    * @param {import('./response-handler.js').default} responseHandler - ResponseHandler instance for execution
    * @param {import('../model/message-thread.js').default} messageThread - Message thread for this execution
-   * @param {ExecuteOptions} [options] - Execution options
    * @returns {Promise<ToolOutcome>} Tool outcome
    */
-  async executeToolCall(toolCall, responseHandler, messageThread, options = {}) {
+  async executeToolCall(toolCall, responseHandler, messageThread) {
     const resolvedName = resolveToolName(toolCall.name);
     // conversationId tags every broadcast so multi-tab (and the multi-
     // iframe test pool) listeners can filter out events for OTHER
@@ -110,7 +104,7 @@ class ToolExecutor {
 
     // Route to appropriate handler
     try {
-      const outcome = await this._executeSingleTool(toolCall, resolvedName, responseHandler, messageThread, options);
+      const outcome = await this._executeSingleTool(toolCall, resolvedName, responseHandler, messageThread);
       __broadcastToolExec({
         toolUseId: toolCall.id,
         toolName: resolvedName,
@@ -138,11 +132,10 @@ class ToolExecutor {
    * @param {string} resolvedName - Resolved tool name (aliases resolved)
    * @param {import('./response-handler.js').default} responseHandler - ResponseHandler instance
    * @param {import('../model/message-thread.js').MessageThread} messageThread - Message thread
-   * @param {{onApproved?: () => void}} [options] - Callbacks
    * @returns {Promise<ToolOutcome>} Tool outcome
    * @private
    */
-  async _executeSingleTool(toolCall, resolvedName, responseHandler, messageThread, options = {}) {
+  async _executeSingleTool(toolCall, resolvedName, responseHandler, messageThread) {
     // Look up the plugin class that provides this tool
     const MatchedClass = contextItemRegistry.getByToolName(resolvedName);
     if (MatchedClass) {
@@ -151,7 +144,7 @@ class ToolExecutor {
 
       if (isAction) {
         // Action tool (read_file, write_file, grep, etc.) - route to execute() path
-        const result = await responseHandler.executeAction(toolCall, messageThread, options);
+        const result = await responseHandler.executeAction(toolCall, messageThread);
         return this._toToolOutcome(toolCall, result);
       }
 

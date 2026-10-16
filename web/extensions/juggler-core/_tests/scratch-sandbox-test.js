@@ -48,7 +48,7 @@ import {
 } from '../../../js/services/workspace-places.js';
 import { rebindConversation } from '../../../js/services/workspace-rebinding.js';
 import workspaceProviderRegistry from '../../../js/registries/workspace-provider-registry.js';
-import ScratchCopyWorkspaceProvider, { sandboxPlaces } from '../workspaces/scratch-copy-workspace-provider.js';
+import ScratchCopyWorkspaceProvider, { sandboxPlaces, slug } from '../workspaces/scratch-copy-workspace-provider.js';
 import { underPseudoLocale } from '../../../js-tests/utilities/pseudo-locale.js';
 import { isPseudoLocalized } from '../../../sdk/lib/i18n.js';
 
@@ -312,6 +312,27 @@ export async function runTests() {
   const created = [];
   /** @param {any} conversation - The conversation to release at the end. */
   const release = (conversation) => { if (conversation) created.push(conversation.id); };
+
+  await run('a name in any script survives as a directory name, and nothing unsafe does', () => {
+    /** @type {Array<[string, string]>} */
+    const cases = [
+      ['日本語 メモ', '日本語-メモ'],
+      ['हिन्दी', 'हिन्दी'],
+      ['Ελληνικά 2', 'Ελληνικά-2'],
+      ['cafe\u0301', 'café'],
+      ['risky-idea', 'risky-idea'],
+      ['a/b\\c:d*e?f', 'a-b-c-d-e-f'],
+      ['..', ''],
+      ['.hidden.', 'hidden'],
+      ['a..b', 'a.b'],
+      ['x.lock', 'x'],
+      ['  ', ''],
+    ];
+    const wrong = cases
+      .map(([name, want]) => ({ name, want, got: slug(name) }))
+      .filter(({ want, got }) => want !== got);
+    assert(wrong.length === 0, `slug() got these wrong: ${JSON.stringify(wrong)}`);
+  });
 
   try {
     session = await createTestSession();
@@ -1318,11 +1339,11 @@ export async function runTests() {
         shown['missing reason'] = String(report.orphanedWorkspaces[0].reason);
         shown['unclaimed detail'] = String(report.orphanedArtifacts[0].detail);
 
-        shown['unrecorded cleanup'] = String((await provider.cleanupPartial({}, ctx))?.message);
+        assert((await provider.cleanupPartial({}, ctx))?.removed === false, 'an unrecorded provision is not removed');
         found = { exists: true };
-        shown['cleanup stuck'] = String((await provider.cleanupPartial(row, ctx))?.message);
+        assert((await provider.cleanupPartial(row, ctx))?.removed === false, 'a copy that would not go is not removed');
         found = { exists: false };
-        shown['cleaned up'] = String((await provider.cleanupPartial(row, ctx))?.message);
+        assert((await provider.cleanupPartial(row, ctx))?.removed === true, 'a copy that went is removed');
       }, { '@juggler/core': CORE_TEXT });
 
       const english = Object.entries(shown).filter(([, text]) => !isPseudoLocalized(scrub(text)));

@@ -4,7 +4,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import ContextItem from 'juggler/context-item';
-import { translator } from 'juggler/i18n';
+import { translator, markUntranslated } from 'juggler/i18n';
 import { createUserMessage } from '../../../sdk/lib/message.js';
 import { decodeHtmlEntities } from '../../../sdk/lib/html.js';
 
@@ -83,21 +83,21 @@ class NewConversationContextItem extends ContextItem {
       {
         name: 'new_conversation',
         category: 'write',
-        description: 'Open a new, independent conversation ("new tab" / "new chat") seeded with an initial message. Unlike create_thread it is a peer, not a sub-task: it works on its own in its own tab and never reports back — you receive only a creation confirmation. It cannot see this conversation, so the message must carry every fact it needs. The user is taken to the new tab unless they have started typing or moved on; either way it opens and waits.',
+        description: markUntranslated('Open a new, independent conversation ("new tab" / "new chat") seeded with an initial message. Unlike create_thread it is a peer, not a sub-task: it works on its own in its own tab and never reports back — you receive only a creation confirmation. It cannot see this conversation, so the message must carry every fact it needs. The user is taken to the new tab unless they have started typing or moved on; either way it opens and waits.'),
         input_schema: {
           type: 'object',
           properties: {
             message: {
               type: 'string',
-              description: 'The new conversation\'s first user message. Must be self-contained — it cannot see this conversation.'
+              description: markUntranslated('The new conversation\'s first user message. Must be self-contained — it cannot see this conversation.')
             },
             name: {
               type: 'string',
-              description: 'Optional title. When omitted, it is left untitled for the user to name.'
+              description: markUntranslated('Optional title. When omitted, it is left untitled for the user to name.')
             },
             autostart: {
               type: 'boolean',
-              description: 'Start work on the message immediately (default true). When false, the message is left ready to send so the user can review or edit it first.'
+              description: markUntranslated('Start work on the message immediately (default true). When false, the message is left ready to send so the user can review or edit it first.')
             }
           },
           required: ['message']

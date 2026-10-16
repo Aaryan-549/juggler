@@ -11,6 +11,7 @@ import (
 	"sort"
 	"sync/atomic"
 
+	"juggler/cmd/juggler/msg"
 	"juggler/cmd/juggler/providers/openaibase"
 	"juggler/cmd/juggler/providers/provider"
 	"juggler/cmd/juggler/providers/utils"
@@ -39,7 +40,7 @@ func Register() {
 	openaibase.Register(openaibase.Descriptor{
 		Name:            "openaicodex",
 		DisplayName:     "OpenAI Codex (ChatGPT plan)",
-		Description:     "Uses your local ChatGPT app or Codex CLI login, so any ChatGPT plan including Free can run Codex here without an OpenAI Platform API key.",
+		Description:     msg.New("Uses your local ChatGPT app or Codex CLI login, so any ChatGPT plan including Free can run Codex here without an OpenAI Platform API key."),
 		AuthType:        provider.AuthTypeOAuthBearer,
 		AuthSource:      "codex_cli",
 		BaseURL:         baseURL,

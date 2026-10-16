@@ -321,9 +321,12 @@ win-installer: build-windows win-installer-pack
 ## $(WIN_BUILD_DIR), WITHOUT rebuilding them. win-installer = build-windows +
 ## this; kept separate so a caller that has placed its own juggler.exe /
 ## juggler-app.exe there can package them without a redundant build-windows.
+## The installer's languages and messages are generated from the UI catalogues
+## into $(WIN_BUILD_DIR)/languages.iss, which juggler.iss includes.
 win-installer-pack:
 	@command -v iscc >/dev/null 2>&1 || { echo "iscc (Inno Setup) not found"; exit 1; }
 	@[ -f "$(WIN_BUILD_DIR)/$(BINARY_NAME).exe" ] || { echo "no $(WIN_BUILD_DIR)/$(BINARY_NAME).exe to package — build the Windows binaries first"; exit 1; }
+	@node scripts/i18n-bundle inno $(WIN_BUILD_DIR)/languages.iss
 	@MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' iscc /DMyAppVersion=$(VERSION) packaging/windows/juggler.iss
 	@echo "→ $(WIN_BUILD_DIR)/Juggler-$(VERSION)-setup.exe"
 
@@ -466,6 +469,9 @@ win-icon:
 ## standard sizes to iconutil. If anything in that pipeline fails we fall
 ## back to assets/icons/juggler-logo.png; if that's missing too we leave the bundle
 ## iconless rather than failing the build.
+## Its translatable text (NSMicrophoneUsageDescription), CFBundleLocalizations
+## and the .lproj localizations are added by scripts/i18n-bundle, from
+## packaging/messages.json and the UI catalogues in web/i18n.
 mac-app-meta:
 ifeq ($(UNAME_S),Darwin)
 	@printf '%s\n' \
@@ -494,11 +500,11 @@ ifeq ($(UNAME_S),Darwin)
 		'    <key>LSHandlerRank</key><string>Alternate</string>' \
 		'    <key>LSItemContentTypes</key><array><string>public.folder</string></array>' \
 		'  </dict></array>' \
-		'  <!-- TCC attributes a tool subprocess request to its responsible app. -->' \
-		'  <key>NSMicrophoneUsageDescription</key>' \
-		'  <string>A program you ran from Juggler asked to use the microphone.</string>' \
 		'</dict></plist>' \
 		> $(MAC_APP_PLIST)
+	@# NSMicrophoneUsageDescription is there because TCC attributes a tool
+	@# subprocess's request to its responsible app.
+	@node scripts/i18n-bundle mac $(MAC_APP_DIR)/Contents
 	@tmp=$$(mktemp -d); \
 	base=$$(basename "$(MAC_ICON_SRC)" .icon); \
 	if [ -d "$(MAC_ICON_SRC)" ] && xcrun actool "$(MAC_ICON_SRC)" \

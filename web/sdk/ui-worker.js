@@ -20,6 +20,7 @@ export {
   extractErrorMessage,
   extractUserMessage,
   extractErrorInfo,
+  errorText,
 } from './lib/error-utils.js';
 export { FormattingHelpers } from './lib/formatting-helpers.js';
 // Date formatting is pure `Date`/`Intl` work, so the worker gets the real one:
@@ -47,6 +48,13 @@ export { taskMarker, taskStatusWord } from './lib/task-markers.js';
 // must not mean two escapers. `lib/html.js` touches `document` only inside its
 // DOM helpers, so importing it here costs the worker nothing.
 export { escapeHtml, escapeAttr, escapeJsonContent } from './lib/html.js';
+
+// Real, not stubs: the engine worker is where a tool composes its result, and
+// one naming keys or fetching a served asset does it there. Neither touches the
+// DOM at call time (the key map is plain data; the asset prefix is read off
+// globalThis).
+export { shortcutTableForPlatform, isMac } from '../js/services/key-shortcut-manager.js';
+export { resolveAssetUrl } from '../js/utils/asset-url.js';
 
 /** @param {string} name */
 function domUnavailable(name) {

@@ -20,7 +20,7 @@ import { buildApprovalOptions } from '../../js/services/response-handler-actions
 import { handleApprovalRequest } from '../../js/model/session-worker-callbacks.js';
 import contextItemRegistry from '../../js/registries/context-item-registry.js';
 import ContextItem from '../../sdk/context-item.js';
-import { isPseudoLocalized } from '../../sdk/lib/i18n.js';
+import { isPseudoLocalized, setLocale } from '../../sdk/lib/i18n.js';
 import '../../js/components/action-confirmation.js';
 
 /**
@@ -116,6 +116,21 @@ export async function runTests() {
       made.push(folder);
       assertPseudoLocalized(folder, { atLeast: 3, where: 'folder grant' });
     });
+  });
+
+  await run('alternatives are listed the way the UI language lists them', async () => {
+    const locale = 'de';
+    const expected = new Intl.ListFormat(locale, { type: 'disjunction' }).format(['1', '2', '3']);
+    assert(expected !== '1, 2, or 3', `${locale} lists alternatives as English does here, so this case proves nothing`);
+    const previous = setLocale(locale);
+    try {
+      const three = render([{ itemType: 'execute', rules, patterns: ['1', '2', '3'] }]);
+      made.push(three);
+      const text = (three.textContent || '').replace(/\s+/g, ' ');
+      assert(text.includes(expected), `expected ${JSON.stringify(expected)} in ${JSON.stringify(text)}`);
+    } finally {
+      setLocale(previous);
+    }
   });
 
   // The approval's title and message are built in the engine, which follows the

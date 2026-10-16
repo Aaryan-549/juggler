@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"juggler/cmd/juggler/core"
+	"juggler/cmd/juggler/msg"
 	"juggler/cmd/juggler/providers/provider"
 	"juggler/internal/jlog"
 )
@@ -142,7 +143,7 @@ func (c *ConfigAPI) HandleGetConfig(w http.ResponseWriter, r *http.Request) {
 	// Load current config
 	cfg, err := core.LoadConfig(c.projectPath())
 	if err != nil {
-		WriteError(w, r, http.StatusInternalServerError, fmt.Sprintf("Couldn't load config: %v", err))
+		WriteMessageError(w, r, http.StatusInternalServerError, msg.New("Couldn't load config: {detail}", "detail", err.Error()))
 		return
 	}
 
@@ -212,7 +213,7 @@ func (c *ConfigAPI) HandleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 			if apiKey, ok := value.(string); ok {
 				// Empty string means delete, non-empty means save
 				if err := c.credStore.SetAPIKey(providerName, apiKey); err != nil {
-					WriteError(w, r, http.StatusInternalServerError, fmt.Sprintf("Couldn't save %s API key: %v", providerName, err))
+					WriteMessageError(w, r, http.StatusInternalServerError, msg.New("Couldn't save {provider} API key: {detail}", "provider", providerName, "detail", err.Error()))
 					return
 				}
 				if apiKey != "" {
@@ -335,14 +336,14 @@ func (c *ConfigAPI) HandleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 		if model, ok := modelValue.(string); ok && model != "" {
 			cfg, err := core.LoadConfig(c.projectPath())
 			if err != nil {
-				WriteError(w, r, http.StatusInternalServerError, fmt.Sprintf("Couldn't load config: %v", err))
+				WriteMessageError(w, r, http.StatusInternalServerError, msg.New("Couldn't load config: {detail}", "detail", err.Error()))
 				return
 			}
 
 			cfg.Model = model
 
 			if err := cfg.Save(c.projectPath()); err != nil {
-				WriteError(w, r, http.StatusInternalServerError, fmt.Sprintf("Couldn't save config: %v", err))
+				WriteMessageError(w, r, http.StatusInternalServerError, msg.New("Couldn't save config: {detail}", "detail", err.Error()))
 				return
 			}
 		}
@@ -368,7 +369,7 @@ func (c *ConfigAPI) HandleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 func (c *ConfigAPI) HandleGetPluginConfig(w http.ResponseWriter, r *http.Request) {
 	cfg, err := core.LoadConfig(c.projectPath())
 	if err != nil {
-		WriteError(w, r, http.StatusInternalServerError, fmt.Sprintf("Couldn't load config: %v", err))
+		WriteMessageError(w, r, http.StatusInternalServerError, msg.New("Couldn't load config: {detail}", "detail", err.Error()))
 		return
 	}
 
@@ -392,7 +393,7 @@ func (c *ConfigAPI) HandleUpdatePluginConfig(w http.ResponseWriter, r *http.Requ
 
 	cfg, err := core.LoadConfig(c.projectPath())
 	if err != nil {
-		WriteError(w, r, http.StatusInternalServerError, fmt.Sprintf("Couldn't load config: %v", err))
+		WriteMessageError(w, r, http.StatusInternalServerError, msg.New("Couldn't load config: {detail}", "detail", err.Error()))
 		return
 	}
 
@@ -400,7 +401,7 @@ func (c *ConfigAPI) HandleUpdatePluginConfig(w http.ResponseWriter, r *http.Requ
 	cfg.RememberPluginAttribution(req.Attribution)
 
 	if err := cfg.Save(c.projectPath()); err != nil {
-		WriteError(w, r, http.StatusInternalServerError, fmt.Sprintf("Couldn't save config: %v", err))
+		WriteMessageError(w, r, http.StatusInternalServerError, msg.New("Couldn't save config: {detail}", "detail", err.Error()))
 		return
 	}
 
@@ -424,24 +425,24 @@ func (c *ConfigAPI) HandleSetProviderEnabled(w http.ResponseWriter, r *http.Requ
 	}
 
 	if req.Provider == "" {
-		WriteError(w, r, http.StatusBadRequest, "Provider name is required")
+		WriteMessageError(w, r, http.StatusBadRequest, msg.New("Provider name is required"))
 		return
 	}
 
 	// Verify provider exists and has a switch: keyless or OAuth.
 	info, found := provider.GetProviderInfo(req.Provider)
 	if found && info.EffectiveAuthType() != provider.AuthTypeToggle && info.EffectiveAuthType() != provider.AuthTypeOAuthBearer {
-		WriteError(w, r, http.StatusBadRequest, "This provider cannot be enabled with a toggle")
+		WriteMessageError(w, r, http.StatusBadRequest, msg.New("This provider cannot be enabled with a toggle"))
 		return
 	}
 
 	if !found {
-		WriteError(w, r, http.StatusBadRequest, "Unknown provider")
+		WriteMessageError(w, r, http.StatusBadRequest, msg.New("Unknown provider"))
 		return
 	}
 
 	if err := c.credStore.SetProviderEnabled(req.Provider, req.Enabled); err != nil {
-		WriteError(w, r, http.StatusInternalServerError, fmt.Sprintf("Couldn't update provider: %v", err))
+		WriteMessageError(w, r, http.StatusInternalServerError, msg.New("Couldn't update provider: {detail}", "detail", err.Error()))
 		return
 	}
 

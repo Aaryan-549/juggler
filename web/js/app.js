@@ -25,6 +25,7 @@ import {
   initAllRegistries,
   collectFailedModules,
   newlyFailedModules,
+  anyLocalConversationBusy,
 } from './registries/reload-registries.js';
 import actionExecutor from './services/action-executor.js';
 import workerManager from './services/worker-manager.js';
@@ -42,12 +43,14 @@ import { reportDraftsFlushed } from '../sdk/lib/window-control.js';
 import { installLinkGuard } from './services/link-guard.js';
 import { installSelectionContainment } from './services/selection-containment.js';
 import { isPinboardView } from './utils/view-mode.js';
+import { isAnyPopupOpen } from './utils/popup-manager.js';
+import { createUILocaleReloader, reportUILocale } from './services/ui-locale.js';
 import './services/tooltip-manager.js'; // styled hover/focus tooltips (self-installs on import)
 import { MAX_CONVERSATIONS } from './model/session.js';
 import { normalizeAttachments } from './utils/attachments.js';
 import { itemField } from '../sdk/lib/message.js';
 import { showNotice } from './components/modal-dialog.js';
-import { failedModulesMessage, showConversationLimitAlert } from './services/app-notices.js';
+import { failedModulesMessage, noticeText, showConversationLimitAlert } from './services/app-notices.js';
 import { markUntranslated } from '../sdk/lib/i18n.js';
 import { openCommandManager } from './components/command-editor-dialog.js';
 import { exportConversation } from './components/conversation-export-dialog.js';
@@ -294,6 +297,27 @@ class JugglerApp {
       reportNewlyFailedModules();
     });
 
+    // A UI language chosen in another window reaches this one as a settings
+    // broadcast; the page is reloaded into it once nothing is running, open or
+    // being typed. Drafts go to disk first, as on a window close.
+    const localeReloader = createUILocaleReloader({
+      isBusy: anyLocalConversationBusy,
+      isModalOpen: isAnyPopupOpen,
+      hasUnsavedDraft: () => Array.from(document.querySelectorAll('composer-box'))
+        .some((box) => box.hasUnsavedDraft?.() === true),
+      reload: () => {
+        void this._flushDraftsForClose().finally(() => window.location.reload());
+      },
+    });
+    // A test server serves a page in the language its URL names (?uiLocale=,
+    // serveIndex), whatever the setting says; that page keeps it.
+    const localePinnedByTest = !!(/** @type {any} */ (window).JUGGLER_TEST_MODE)
+      && new URLSearchParams(window.location.search).has('uiLocale');
+    wsService.on('settings-changed', (/** @type {any} */ settings) => {
+      if (localePinnedByTest) return;
+      localeReloader.update(typeof settings?.uiLocale === 'string' ? settings.uiLocale : '');
+    });
+
     // Initialize services
     this._initializeServices();
 
@@ -515,6 +539,8 @@ class JugglerApp {
     // (project switches reload the page, so session:loaded carries the
     // current path each time).
     const syncWindowTitle = () => updateWindowTitle(session.projectPath || '');
+    // The native host's menus and dialogs follow this page's language.
+    reportUILocale();
     session.subscribe(/** @param {{type: string, data?: any}} event */ (event) => {
       if (event.type === 'session:loaded') syncWindowTitle();
       // A command (/commands) asked for the manager: the model only announces
@@ -625,8 +651,7 @@ class JugglerApp {
   /**
    * Session-scoped server messages, keyed by `type`. These carry no
    * `conversationId` — they are dispatched before the conversation lookup in
-   * {@link JugglerApp#_handleServerMessage}, which is why they live in their own
-   * table rather than the conversation one below.
+   * {@link JugglerApp#_handleServerMessage}.
    * @type {Record<string, (app: JugglerApp, session: import('./model/session.js').default, data: any) => void>}
    */
   static SESSION_MESSAGE_HANDLERS = {
@@ -646,7 +671,8 @@ class JugglerApp {
     // otherwise never see (an auto-name that gave up). Purely informational —
     // show it and move on.
     'notice': (_app, _session, data) => {
-      if (data.message) showNotice(data.message);
+      const text = noticeText(data);
+      if (text) showNotice(text);
     },
 
     // Targeted session metadata patch. Apply locally without a full
@@ -661,31 +687,6 @@ class JugglerApp {
     'session-changed': (app, session) => {
       app._handleSessionChanged(session);
     }
-  };
-
-  /**
-   * Conversation-scoped server messages, keyed by `type` and dispatched once the
-   * target conversation has been resolved. Messages recognised by SHAPE rather
-   * than by type (an `error` field, response `blocks`) stay in the ladder in
-   * {@link JugglerApp#_handleServerMessage}.
-   * @type {Record<string, (conversation: any, data: any) => void|Promise<void>>}
-   */
-  static CONVERSATION_MESSAGE_HANDLERS = {
-    // Tool execution request from claudecode provider (executes tools via MCP)
-    tool_use_request: (conversation, data) => conversation.handleToolUseRequest(data),
-
-    // Backend timed out waiting for tool approval - dismiss dialog silently.
-    // Route to the worker if it's handling this conversation.
-    tool_use_timeout: (conversation, data) => {
-      if (workerManager.isWorkerReady(data.conversationId)) {
-        workerManager.sendApprovalResponse(data.conversationId, data.toolUseId, 'cancel');
-        return;
-      }
-      conversation.resolveMessageThread(data.threadItemId).resolveApproval(data.toolUseId, 'cancel');
-    },
-
-    // Iteration control callback from provider
-    should_continue_request: (conversation, data) => conversation.handleShouldContinueRequest(data)
   };
 
   /**
@@ -727,14 +728,7 @@ class JugglerApp {
       return;
     }
 
-    // Route message to the appropriate conversation
-    const conversationHandler = JugglerApp.CONVERSATION_MESSAGE_HANDLERS[data.type];
-    if (conversationHandler) {
-      await conversationHandler(conversation, data);
-      return;
-    }
-
-    // The rest are recognised by shape, not by type.
+    // Conversation-scoped messages are recognised by shape, not by type.
     if (data.error) {
       // Error - backend may send {error: true, message: "..."} or {error: "message"}
       let errorMsg;
@@ -743,8 +737,8 @@ class JugglerApp {
       } else if (data.message) {
         errorMsg = data.message;
       } else {
-        // Diagnostic only: handleError logs it and matches it for "cancel"; the
-        // error item the user sees is written by the Go worker.
+        // Diagnostic only: handleError logs it; the error item the user sees
+        // is written by the Go worker.
         errorMsg = markUntranslated('Connection error - request failed');
       }
       conversation.handleError(errorMsg);
@@ -1182,8 +1176,10 @@ const app = new JugglerApp();
 // Export for debugging
 window.jugglerApp = app;
 
-// Test mode: poll for pending tests and navigate to headless-test.html to run them
-if (window.JUGGLER_TEST_MODE) {
+// Test mode: poll for pending tests and navigate to headless-test.html to run them.
+// A shell in a frame is one a browser test is hosting, not a pool slot, so it
+// takes nothing off the queue.
+if (window.JUGGLER_TEST_MODE && window.top === window) {
   setInterval(async () => {
     try {
       const entry = await fetchJson(apiUrl('/test/pending'));

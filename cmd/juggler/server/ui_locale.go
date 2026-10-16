@@ -5,9 +5,12 @@
 package server
 
 import (
+	"io/fs"
 	"net/http"
+	"os"
 
 	"juggler/cmd/juggler/core"
+	"juggler/cmd/juggler/msg"
 	"juggler/cmd/juggler/server/handlers"
 	"juggler/cmd/juggler/webui"
 	"juggler/web"
@@ -32,6 +35,24 @@ func (s *Server) uiLocale() string {
 		return ""
 	}
 	return core.NormalizeUILocale(s.settings.get().UILocale)
+}
+
+// testPageUILocale is the UI language a test server was asked to serve one page
+// in, through ?uiLocale=<tag>, so a browser test can render the whole shell in
+// a language without changing the setting every other page on that server
+// reads. Only a test server (testMode, set by RegisterTestRoutes) honours it;
+// any other server answers ok=false whatever the URL says. An invalid tag is
+// ignored. The page stays in that language when the setting changes
+// (app.js, createUILocaleReloader's caller).
+func (s *Server) testPageUILocale(r *http.Request) (locale string, ok bool) {
+	if !s.testMode {
+		return "", false
+	}
+	q := r.URL.Query().Get("uiLocale")
+	if q == "" || !core.IsValidUILocale(q) {
+		return "", false
+	}
+	return core.NormalizeUILocale(q), true
 }
 
 // uiCatalog is the catalogue for locale from the served asset tree (the disk
@@ -59,7 +80,7 @@ type uiCatalogResponse struct {
 func (s *Server) handleUICatalog(w http.ResponseWriter, r *http.Request) {
 	locale := r.URL.Query().Get("locale")
 	if !core.IsValidUILocale(locale) {
-		handlers.WriteError(w, r, http.StatusBadRequest, "invalid UI language")
+		handlers.WriteMessageError(w, r, http.StatusBadRequest, msg.New("invalid UI language"))
 		return
 	}
 	messages := s.uiCatalog(locale)
@@ -71,4 +92,31 @@ func (s *Server) handleUICatalog(w http.ResponseWriter, r *http.Request) {
 		extensions = s.extensionsAPI.Catalogs(locale)
 	}
 	handlers.WriteJSON(w, r, 0, uiCatalogResponse{Locale: locale, Messages: messages, Extensions: extensions})
+}
+
+// uiLocales is the UI languages the served asset tree has a catalogue for
+// (webui.AvailableLocales): the embedded tree's, and under --assets-from-disk
+// the on-disk tree's too, so a catalogue just added shows on reload.
+func (s *Server) uiLocales() []string {
+	trees := []fs.FS{web.Files}
+	if s.assetsFromDisk {
+		if staticDir, err := s.findStaticDir(); err == nil {
+			trees = append(trees, os.DirFS(staticDir))
+		}
+	}
+	return webui.AvailableLocales(trees...)
+}
+
+// uiLocalesResponse is GET /api/i18n/locales's body.
+type uiLocalesResponse struct {
+	// Locales are BCP 47 tags, sorted; never null.
+	Locales []string `json:"locales"`
+}
+
+// handleUILocales serves GET /api/i18n/locales: the UI languages there is a
+// catalogue for, which the Language picker in Settings → Appearance offers
+// beside English. Adding web/i18n/<tag>.json adds the language; nothing else
+// lists them.
+func (s *Server) handleUILocales(w http.ResponseWriter, r *http.Request) {
+	handlers.WriteJSON(w, r, 0, uiLocalesResponse{Locales: s.uiLocales()})
 }

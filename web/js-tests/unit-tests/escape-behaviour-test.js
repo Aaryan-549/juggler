@@ -510,6 +510,44 @@ export async function runTests(_ctx) {
         'the description should follow the choice');
     });
 
+    await run('a settings row that has been replaced stops listening for the preference', () => {
+      const realAdd = window.addEventListener;
+      const realRemove = window.removeEventListener;
+      /** @type {Set<any>} */
+      const live = new Set();
+      window.addEventListener = /** @type {any} */ (function (/** @type {string} */ type, /** @type {any} */ fn, /** @type {any} */ opts) {
+        if (type === ESCAPE_BEHAVIOUR_EVENT) live.add(fn);
+        return realAdd.call(window, type, fn, opts);
+      });
+      window.removeEventListener = /** @type {any} */ (function (/** @type {string} */ type, /** @type {any} */ fn, /** @type {any} */ opts) {
+        if (type === ESCAPE_BEHAVIOUR_EVENT) live.delete(fn);
+        return realRemove.call(window, type, fn, opts);
+      });
+      /** @type {HTMLElement|null} */
+      let kept = null;
+      try {
+        setEscapePreset('stop');
+        for (let i = 0; i < 3; i++) {
+          const gone = buildEscapeBehaviourRow();
+          document.body.appendChild(gone);
+          gone.remove();
+        }
+        kept = buildEscapeBehaviourRow();
+        document.body.appendChild(kept);
+        window.dispatchEvent(new Event(ESCAPE_BEHAVIOUR_EVENT));
+        assert(live.size === 1, `${live.size} rows still listen after three were replaced (want 1)`);
+        setEscapePreset('two-step');
+        window.dispatchEvent(new Event(ESCAPE_BEHAVIOUR_EVENT));
+        const select = /** @type {HTMLSelectElement} */ (kept.querySelector('select'));
+        assert(select.value === 'two-step', 'the row on screen stopped following the preference');
+      } finally {
+        kept?.remove();
+        window.dispatchEvent(new Event(ESCAPE_BEHAVIOUR_EVENT));
+        window.addEventListener = realAdd;
+        window.removeEventListener = realRemove;
+      }
+    });
+
     await run('en-XA: the settings row, every preset description and the armed cue are translated', async () => {
       await underPseudoLocale('escape-behaviour-test', async () => {
         const mac = isMac();

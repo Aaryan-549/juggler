@@ -32,7 +32,7 @@ import {
   workspaceFinishActor,
   finishWorkspace
 } from '../services/workspace-provisioning.js';
-import { extractErrorMessage } from '../../sdk/lib/error-utils.js';
+import { errorText } from '../../sdk/lib/error-utils.js';
 import { t } from '../../sdk/lib/i18n.js';
 import workspaceProviderRegistry from '../registries/workspace-provider-registry.js';
 import { capabilityLabel } from '../utils/capability-label.js';
@@ -638,7 +638,7 @@ class WorkspacePanel extends HTMLElement {
       // point of this row is that the user learns what happened, and a failure
       // they are not told about is indistinguishable from a button that does
       // nothing.
-      showNotice(extractErrorMessage(error));
+      showNotice(errorText(error));
     } finally {
       this._running = '';
       this._standDown();

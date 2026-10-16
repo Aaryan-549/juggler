@@ -28,6 +28,7 @@ import { extractErrorMessage } from '../../sdk/lib/error-utils.js';
 import { setupButton } from './workspace-setup-form.js';
 import { showNotice } from './modal-dialog.js';
 import { t } from '../../sdk/lib/i18n.js';
+import { displayConversationName } from '../model/conversation-naming.js';
 
 /** Gives each dialog's checkboxes ids of their own, for their labels. */
 let dialogCount = 0;
@@ -91,7 +92,8 @@ export function openConversationExport(conversation, options = {}) {
         const html = await conversationToHtml(conversation, {
           includeToolDetails, includeFiles, loadAsset: options.loadAsset
         });
-        const path = await save(exportFileName(conversation?.name || ''), html, 'text/html');
+        const name = conversation?.name ? displayConversationName(conversation.name) : '';
+        const path = await save(exportFileName(name), html, 'text/html');
         modal.close(path ? { saved: true, path } : { saved: false });
         return;
       } catch (failure) {

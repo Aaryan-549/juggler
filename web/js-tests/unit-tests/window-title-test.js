@@ -16,6 +16,8 @@
 
 import { windowTitleForProject } from '../../js/utils/window-title.js';
 import { assert } from '../utilities/test-helpers.js';
+import { isPseudoLocalized } from '../../sdk/lib/i18n.js';
+import { underPseudoLocale } from '../utilities/pseudo-locale.js';
 
 /**
  * @typedef {object} TestResult
@@ -84,6 +86,16 @@ export async function runTests(_ctx) {
     // must still read as something rather than a bare app name.
     assert(windowTitleForProject('') === 'Juggler - New Window',
       'expected the "New Window" placeholder');
+  });
+
+  await test('under en-XA the whole title is one translated message', async () => {
+    // The directory name is data, so it is a digit here.
+    await underPseudoLocale('window-title-test', () => {
+      for (const path of ['/7/8', '']) {
+        const title = windowTitleForProject(path);
+        assert(isPseudoLocalized(title), `title for ${JSON.stringify(path)}: ${JSON.stringify(title)}`);
+      }
+    });
   });
 
   return { passed, failed, errors };

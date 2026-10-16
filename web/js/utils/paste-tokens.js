@@ -19,7 +19,7 @@
  * @module utils/paste-tokens
  */
 
-import { formatBytes } from './format.js';
+import { formatBytesUntranslated } from './format.js';
 
 /** Open delimiter — U+2062 INVISIBLE TIMES. */
 export const PASTE_TOKEN_OPEN = '\u2062';
@@ -78,12 +78,17 @@ function blobLookup(blobs) {
 /**
  * Build a token string for `id` labelled with `bytes` (formatted as a compact
  * human size). This is the exact character run inserted into the textarea.
+ *
+ * The label is English, unit included, whatever the UI language: it is saved in
+ * drafts and parsed back by {@link pasteTokenRegex}, whose size portion may not
+ * hold a `]` a translated unit could carry, and an unresolvable token reaches
+ * the model as its bare label.
  * @param {number} id - Monotonic per-draft token id.
  * @param {number} bytes - Byte size of the captured content, for the label.
  * @returns {string} The delimited token string.
  */
 export function makeToken(id, bytes) {
-  const size = formatBytes(bytes) || `${Math.max(0, bytes | 0)} B`;
+  const size = formatBytesUntranslated(bytes) || `${Math.max(0, bytes | 0)} B`;
   return `${PASTE_TOKEN_OPEN}[Pasted #${id} · ${size}]${PASTE_TOKEN_CLOSE}`;
 }
 

@@ -87,17 +87,10 @@ export async function runTests() {
         const newThreadBtn = /** @type {HTMLElement} */ (box.querySelector('.new-thread-btn'));
         assert(!!sendBtn && !!newThreadBtn, 'the send and new-thread buttons must render');
 
-        // Send button, idle and held with no reason given.
+        // Send button, idle.
         box._updateSendButtonState();
         shown.push(['send title (idle)', sendBtn.getAttribute('title') || '']);
         shown.push(['send aria-label (idle)', sendBtn.getAttribute('aria-label') || '']);
-        box.setSendBlocked(true);
-        shown.push(['send title (held)', sendBtn.getAttribute('title') || '']);
-        shown.push(['send aria-label (held)', sendBtn.getAttribute('aria-label') || '']);
-        // A reason given by the caller is shown as given.
-        box.setSendBlocked(true, '1');
-        assert(sendBtn.getAttribute('title') === '1', `a held send's reason is shown as given: ${sendBtn.getAttribute('title')}`);
-        box.setSendBlocked(false);
 
         // New-thread button, idle and while a turn runs.
         let busy = false;
@@ -140,13 +133,6 @@ export async function runTests() {
           Math.random = realRandom;
           box._derivePlaceholderState = realDerive;
         }
-
-        // Input blocked, with no reason and with one (shown as given).
-        box.setBlocked(true);
-        shown.push(['blocked placeholder (no reason)', textarea.placeholder]);
-        box.setBlocked(true, '2');
-        assert(textarea.placeholder === '2', `a block's reason is shown as given: ${textarea.placeholder}`);
-        box.setBlocked(false);
 
         // A message one character over the cap.
         warnings.length = 0;
@@ -270,6 +256,30 @@ export async function runTests() {
       handler.init = realInit;
       handler.getCommands = realGetCommands;
       box._messageThread = realThread;
+      container.remove();
+    }
+  });
+
+  await run('the actions sheet\'s New Thread row is disabled while a turn runs, and re-enabled after', async () => {
+    const { box, container } = mountComposer();
+    let busy = true;
+    box._conversation = { isTurnActive: () => busy };
+    try {
+      await box._openActionsSheet();
+      const row = /** @type {HTMLElement|null} */ (document.querySelector('#actions-sheet [data-action="new-thread"]'));
+      assert(!!row, 'the actions sheet has no New Thread row');
+      assert(row.getAttribute('aria-disabled') === 'true' && row.classList.contains('disabled'),
+        `the row opened enabled mid-turn (aria-disabled=${row.getAttribute('aria-disabled')})`);
+      busy = false;
+      box._updateNewThreadControls();
+      assert(row.getAttribute('aria-disabled') === 'false' && !row.classList.contains('disabled'),
+        `the row stayed disabled after the turn (aria-disabled=${row.getAttribute('aria-disabled')})`);
+      busy = true;
+      box._updateNewThreadControls();
+      assert(row.getAttribute('aria-disabled') === 'true', 'a turn starting with the sheet open left the row enabled');
+    } finally {
+      box._closeActionsSheet();
+      box._conversation = null;
       container.remove();
     }
   });

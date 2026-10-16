@@ -431,7 +431,7 @@ func (c *Client) streamMessage(ctx context.Context, req provider.MessageRequest,
 // provider contract.
 //
 // It does not retry. The worker's turn loop owns retries, so the wait is
-// UI-visible ("Retrying attempt 2/3"), interruptible by a cancel or a new
+// UI-visible ("Retrying (attempt 2 of 3)"), interruptible by a cancel or a new
 // message, and charged to a single budget — none of which a provider-local
 // ladder offers, while a hidden one multiplies with the worker's rather than
 // bounding it. classifyStreamError does the provider's half of that bargain:

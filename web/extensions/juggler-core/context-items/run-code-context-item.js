@@ -11,7 +11,7 @@ import { beginProgramReads } from './read-history.js';
 import { renderProgramSdk, describeProgramTool, toolOwnName } from './code/render-sdk.js';
 import { journalCapabilities } from './code/program-journal.js';
 import { pointImageReadsAtImage } from './code/program-images.js';
-import { translator } from 'juggler/i18n';
+import { translator, markUntranslated } from 'juggler/i18n';
 
 const t = translator('@juggler/core');
 
@@ -190,7 +190,7 @@ class RunCodeContextItem extends QueryCodeContextItem {
       // carries this text: what the model's tool list already says, and what
       // the code parameter says, is not said again.
       programSdk: true,
-      description: 'Run a JavaScript program that calls tools; only what it returns enters the conversation, '
+      description: markUntranslated('Run a JavaScript program that calls tools; only what it returns enters the conversation, ')
         + 'plus a list of what it changed. Use it for work that loops, branches or aggregates over many tool calls. '
         + 'Each call is approved as if you made it directly, and a denial ends the program. One that waits for the '
         + 'user\'s approval pauses the program until they answer.',
@@ -199,18 +199,18 @@ class RunCodeContextItem extends QueryCodeContextItem {
         properties: {
           code: {
             type: 'string',
-            description: 'JavaScript (async/await OK; return a value). Browser realm, not Node. In scope: '
+            description: markUntranslated('JavaScript (async/await OK; return a value). Browser realm, not Node. In scope: ')
               + '`fs` (read-only fs.promises subset), `path` (POSIX), `grep(pattern, {cwd?, glob?, maxResults?, ignoreCase?})`, '
               + '`glob(pattern, {cwd?})`, `projectRoot`, `tools`, `describeTool`, `image(handleOrPath)`; `import()` modules under projectRoot. '
               + 'A call that produced images returns `{text, images}`; `await image(images[0])` attaches one to your result.'
           },
           description: {
             type: 'string',
-            description: 'Short user-facing description of what this program does.'
+            description: markUntranslated('Short user-facing description of what this program does.')
           },
           timeout: {
             type: 'number',
-            description: `Optional execution timeout in milliseconds (1000–${MAX_EXEC_TIMEOUT_MS}, default 120000). It includes time spent in tool calls, not time waiting for approval.`
+            description: markUntranslated(`Optional execution timeout in milliseconds (1000–${MAX_EXEC_TIMEOUT_MS}, default 120000). It includes time spent in tool calls, not time waiting for approval.`)
           }
         },
         required: ['code']

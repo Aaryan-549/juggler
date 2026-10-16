@@ -230,32 +230,6 @@ class EngineApp {
       return;
     }
 
-    // Handle tool_use_request (from claudecode provider)
-    if (data.type === 'tool_use_request') {
-      const conversationId = data.conversationId;
-      if (!conversationId || !this._connectionManager) return;
-      const session = this._connectionManager.getSession();
-      if (!session) return;
-      const conversation = session.getConversation(conversationId);
-      if (conversation) {
-        conversation.handleToolUseRequest(data);
-      }
-      return;
-    }
-
-    // Handle should_continue_request
-    if (data.type === 'should_continue_request') {
-      const conversationId = data.conversationId;
-      if (!conversationId || !this._connectionManager) return;
-      const session = this._connectionManager.getSession();
-      if (!session) return;
-      const conversation = session.getConversation(conversationId);
-      if (conversation) {
-        conversation.handleShouldContinueRequest(data);
-      }
-      return;
-    }
-
     // One unattended run, start to finish. It is addressed to the engine
     // because only the engine can seed a conversation (see engine-one-shot.js),
     // and the caller is blocked on the single reply it sends.

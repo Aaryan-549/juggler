@@ -14,9 +14,11 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"juggler/cmd/juggler/core"
+	"juggler/cmd/juggler/msg"
 	"juggler/internal/userpaths"
 	"juggler/internal/webviewenv"
 	"juggler/internal/windowgeom"
@@ -24,6 +26,10 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
 )
+
+// appWindowTitle is a window's title until its page reports the project it
+// shows (controlTitle).
+var appWindowTitle = msg.New("Juggler")
 
 const (
 	defaultWindowWidth  = windowgeom.DefaultWidth
@@ -249,6 +255,15 @@ type appState struct {
 
 	regOps chan func(*regState)
 	ids    chan string
+
+	// locale is the shell's UI language and catalogue (see locale.go).
+	locale atomic.Pointer[appLocale]
+	// menuBar is the application menu, and menuLabels every item in it whose
+	// label is a message, so a language change can relabel them. Both are
+	// written while the menu is built, before any page can report a language,
+	// and read on the main thread afterwards.
+	menuBar    *application.Menu
+	menuLabels []menuLabel
 }
 
 func newAppState(devMode int) *appState {
@@ -448,6 +463,13 @@ func (a *appState) run(specs []windowSpec) error {
 		initial = a.buildWindow(windowSpec{}, serverURL, proc, saved, hasSaved, windowOpts{})
 	}
 
+	// Take up the settings' UI language from the first server there is, ahead of
+	// its page, which reports the same thing once it loads (controlLocale). A
+	// locked-project window has no server and leaves this to the next window.
+	if initial.serverURL != "" {
+		go a.adoptLocale(initial.serverURL, startupLocale())
+	}
+
 	// Crash loudly if the initial window never becomes visible (e.g. the webview
 	// fails to realise but reports no error), instead of lingering invisibly.
 	// windowUp is closed once the window is confirmed visible; we consult it after
@@ -507,7 +529,7 @@ func (a *appState) tryBuildInitial(spec windowSpec) *winEntry {
 	serverURL, proc, err := spec.resolve()
 	if err != nil {
 		if locked, ok := err.(*lockedProjectError); ok {
-			return a.buildLockedProjectWindow(spec, locked.message(), "")
+			return a.buildLockedProjectWindow(spec, a.lockedMessage(locked), "")
 		}
 		logf("restore: skipping %+v: %v", spec.entry(), err)
 		return nil
@@ -658,7 +680,7 @@ func (a *appState) openWindow(spec windowSpec, opts windowOpts) {
 					// A locked window shows a static recovery page, not the app —
 					// there is no root font-size to scale, so zoom is not threaded,
 					// and the static page has no theme mode to seed either.
-					e := a.buildLockedProjectWindow(spec, locked.message(), opts.theme)
+					e := a.buildLockedProjectWindow(spec, a.lockedMessage(locked), opts.theme)
 					a.showWindow(e)
 					go a.warnIfWindowNeverVisible(e, "opened locked project")
 				})
@@ -1048,9 +1070,9 @@ func (a *appState) buildLockedProjectWindow(spec windowSpec, message, inheritedT
 	if bgTheme == "" {
 		bgTheme = "dark"
 	}
-	page := lockedProjectPage(message)
+	page := lockedProjectPage(a.tr(lockedPageTitle), message)
 	win := a.app.Window.NewWithOptions(application.WebviewWindowOptions{
-		Title:            "Project locked — Juggler",
+		Title:            a.tr(lockedWindowTitle),
 		URL:              page,
 		Width:            defaultWindowWidth,
 		Height:           defaultWindowHeight,
@@ -1137,7 +1159,7 @@ func (a *appState) buildWindow(spec windowSpec, serverURL string, serverProc *ex
 		// Startup placeholder only — the page reports its session path via the
 		// loopback control endpoint (action=title) once loaded, so the macOS
 		// "Window" menu names each window by the project it views.
-		Title:           "Juggler",
+		Title:           a.tr(appWindowTitle),
 		URL:             fullURL,
 		Width:           width,
 		Height:          height,

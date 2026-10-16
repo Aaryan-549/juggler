@@ -7,6 +7,7 @@ import { stripThinkingTags } from '../utils/content-utils.js';
 import { wrapWithIcon } from '../utils/icon-message-renderer.js';
 import { iconOptionsForItem } from '../utils/item-badge.js';
 import { formatTokens } from '../utils/format.js';
+import { t } from '../../sdk/lib/i18n.js';
 import { createStreamingMarkdown } from '../utils/streaming-markdown.js';
 
 /**
@@ -67,8 +68,10 @@ class ThinkingMessage extends BaseMessage {
    * @private
    */
   _tokenLabel(clean) {
-    if (!clean.length) return 'Thinking';
-    return `Thinking · ${formatTokens(estimateTokens(clean))} tokens`;
+    if (!clean.length) return t('Thinking');
+    const count = estimateTokens(clean);
+    return t('{count, plural, one {Thinking · {tokens} token} other {Thinking · {tokens} tokens}}',
+      { count, tokens: formatTokens(count) });
   }
 
   render() {

@@ -29,7 +29,7 @@
 
 import { presentModal } from '../utils/modal-surface.js';
 import { setupRows, probeSetupAdoptions, adoptSetupRow } from '../services/workspace-places.js';
-import { extractErrorMessage } from '../../sdk/lib/error-utils.js';
+import { errorText } from '../../sdk/lib/error-utils.js';
 import { setupButton, buildPlaceRows, handlePlaceRowKey } from './workspace-setup-form.js';
 import { t } from '../../sdk/lib/i18n.js';
 
@@ -110,7 +110,7 @@ export function openWorkspaceReconnect(conversation) {
         modal.close({ reconnected: true, workspaceId: restored.id });
       } catch (failure) {
         if (modal.closed) return;
-        error = extractErrorMessage(failure);
+        error = errorText(failure);
         render();
       }
     };

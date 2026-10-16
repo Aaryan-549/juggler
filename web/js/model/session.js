@@ -65,7 +65,6 @@ const RENAME_ERROR_CODES = new Map(/** @type {const} */ ([
  * @property {function(string): Promise<void>} deleteBinnedConversation - Permanently delete a single binned conversation
  * @property {function((number|null)=): Promise<void>} emptyBin - Permanently delete binned conversations: all of them, or only those last active more than N days ago
  * @property {function(string[], string=): Promise<null>} reorderConversations - Reorder conversations, naming the one a drag moved
- * @property {function(string, Uint8Array): Promise<void>} saveConversationBinary - Save conversation binary state
  */
 
 /**

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"juggler/cmd/juggler/msg"
 	"juggler/cmd/juggler/server/handlers"
 )
 
@@ -36,20 +37,6 @@ func (s *Server) handleGetConnectivity(w http.ResponseWriter, r *http.Request) {
 		tunnelMode = string(info.Mode)
 		tunnelRelay = info.Relay
 	}
-	// The WAN section of the UI is driven entirely by this list: a build with
-	// no registered tunnel modes reports an empty list and shows no WAN UI.
-	wanModes := []map[string]any{}
-	for _, spec := range TunnelModes() {
-		wanModes = append(wanModes, map[string]any{
-			"mode":            string(spec.Mode),
-			"title":           spec.Title,
-			"description":     spec.Description,
-			"startLabel":      spec.StartLabel,
-			"relayNote":       spec.RelayNote,
-			"unavailableHint": spec.UnavailableHint,
-			"available":       spec.IsAvailable(),
-		})
-	}
 	// One descriptor per connected viewer (this client included). The UI excludes
 	// itself by id to show how many OTHER clients share the session.
 	clients := s.hub.viewerClients()
@@ -64,11 +51,44 @@ func (s *Server) handleGetConnectivity(w http.ResponseWriter, r *http.Request) {
 		"tunnelURL":     s.GetTunnelURL(),
 		"tunnelMode":    tunnelMode,
 		"tunnelRelay":   tunnelRelay,
-		"wanModes":      wanModes,
+		"wanModes":      wanModesPayload(),
 		"clientCount":   len(clients),
 		"clients":       clients,
 		"peerIdentity":  peerIdentity,
 	})
+}
+
+// wanModesPayload is the wanModes list GET /api/connectivity reports. The WAN
+// section of the UI is driven entirely by it: a build with no registered
+// tunnel modes reports an empty list and shows no WAN UI. Each presentation
+// field is sent as its English under the plain key and, when the spec sets it,
+// as the message under the key plus "Message" (titleMessage, …), which the page
+// renders with serverText.
+func wanModesPayload() []map[string]any {
+	wanModes := []map[string]any{}
+	for _, spec := range TunnelModes() {
+		mode := map[string]any{
+			"mode":      string(spec.Mode),
+			"available": spec.IsAvailable(),
+		}
+		for _, field := range []struct {
+			name    string
+			message msg.Message
+		}{
+			{"title", spec.Title},
+			{"description", spec.Description},
+			{"startLabel", spec.StartLabel},
+			{"relayNote", spec.RelayNote},
+			{"unavailableHint", spec.UnavailableHint},
+		} {
+			mode[field.name] = field.message.English()
+			if !field.message.IsZero() {
+				mode[field.name+"Message"] = field.message
+			}
+		}
+		wanModes = append(wanModes, mode)
+	}
+	return wanModes
 }
 
 func (s *Server) handleSetLAN(w http.ResponseWriter, r *http.Request) {
@@ -101,17 +121,17 @@ func (s *Server) handleSetTunnel(w http.ResponseWriter, r *http.Request) {
 	if mode == "" {
 		modes := TunnelModes()
 		if len(modes) == 0 {
-			handlers.WriteError(w, r, http.StatusBadRequest, "no WAN tunnel modes are available in this build")
+			handlers.WriteMessageError(w, r, http.StatusBadRequest, msg.New("no WAN tunnel modes are available in this build"))
 			return
 		}
 		mode = modes[0].Mode
 	} else if _, ok := findTunnelMode(mode); !ok {
-		handlers.WriteError(w, r, http.StatusBadRequest, fmt.Sprintf("unknown tunnel mode %q", req.Mode))
+		handlers.WriteMessageError(w, r, http.StatusBadRequest, msg.New("unknown tunnel mode {mode}", "mode", strconv.Quote(req.Mode)))
 		return
 	}
 	tunnelURL, err := s.StartTunnelMode(mode)
 	if err != nil {
-		handlers.WriteError(w, r, http.StatusBadRequest, err.Error())
+		handlers.WriteErr(w, r, http.StatusBadRequest, err)
 		return
 	}
 	relay := false

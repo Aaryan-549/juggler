@@ -24,7 +24,9 @@ import {
 import McpToolContextItem from '../context-items/mcp-tool-context-item.js';
 import McpCommandType from '../commands/mcp-command-type.js';
 import { underPseudoLocale } from '../../../js-tests/utilities/pseudo-locale.js';
-import { isPseudoLocalized } from '../../../sdk/lib/i18n.js';
+import {
+  isPseudoLocalized, registerCatalog, messageKey, pseudoLocalize, PSEUDO_LOCALE,
+} from '../../../sdk/lib/i18n.js';
 
 /** This extension's English for what the en-XA case draws, standing in for its catalogue. */
 const MCP_TEXT = [
@@ -82,6 +84,13 @@ export async function runTests(_ctx) {
     server: 'github', name: 'create_issue', title: 'Create Issue',
     description: 'Create a GitHub issue', inputSchema: { type: 'object', properties: { title: { type: 'string' } } },
     readOnly: ro, destructive: !ro, schemaTokens: 10
+  });
+
+  await run('/mcp states schema tokens as it always has in English', () => {
+    for (const [n, want] of [[500, '500'], [1000, '1.0k'], [1234, '1.2k'], [12345, '12.3k'], [1234567, '1234.6k']]) {
+      const got = McpCommandType._fmtTokens(/** @type {number} */ (n));
+      assert(got === want, `${n}: expected ${JSON.stringify(want)}, got ${JSON.stringify(got)}`);
+    }
   });
 
   await run('llm name is mcp__server__tool', () => {
@@ -288,6 +297,12 @@ export async function runTests(_ctx) {
     const originalFetch = window.fetch;
     try {
       await underPseudoLocale('mcp-tool-test', async () => {
+        // The `k` message has a context, which the plain-source list above cannot
+        // carry, so the extension's stand-in catalogue is registered again with it.
+        registerCatalog('@juggler/mcp', PSEUDO_LOCALE, {
+          ...Object.fromEntries(MCP_TEXT.map((s) => [s, pseudoLocalize(s)])),
+          [messageKey('{n}k', 'thousands, in a compact count')]: pseudoLocalize('{n}k'),
+        });
         /** @type {Record<string, string>} */
         const shown = {};
         let failOp = '';
@@ -383,11 +398,13 @@ export async function runTests(_ctx) {
           { name: '1', status: 'running', serverName: '3', serverVersion: '4', toolCount: 1, schemaTokens: 500 },
           { name: '2', status: 'failed', toolCount: 2, error: '6\n7' },
           { name: '8', status: 'stopped', toolCount: 0 },
+          // Past a thousand the count carries a `k`, which is translated too.
+          { name: '5', status: 'running', toolCount: 3, schemaTokens: 1234 },
         ];
         const list = String((await cmd.execute(['restart', '1']))?.message);
         // Each line is its own message; the error line under a server is data.
         list.split('\n').forEach((line, i) => { if (/[A-Za-z]/.test(line)) shown[`/mcp list line ${i}`] = line; });
-        assert(list.split('\n').length === 5, `list: ${JSON.stringify(list)}`);
+        assert(list.split('\n').length === 6, `list: ${JSON.stringify(list)}`);
         await say('/mcp start, no server', ['start']);
         await say('/mcp logs, no server', ['logs']);
         // The subcommand is the identifier the user typed, inserted as data.

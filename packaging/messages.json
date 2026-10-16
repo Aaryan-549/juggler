@@ -1,0 +1,13 @@
+{
+  "infoPlist": {
+    "NSMicrophoneUsageDescription": "A program you ran from Juggler asked to use the microphone."
+  },
+  "inno": {
+    "AddToPath": "Add Juggler to PATH (run 'juggler' from any terminal)",
+    "CommandLineGroup": "Command line:",
+    "DesktopIcon": "Create a desktop shortcut",
+    "AdditionalIconsGroup": "Additional icons:",
+    "UninstallJuggler": "Uninstall Juggler",
+    "LaunchJuggler": "Launch Juggler"
+  }
+}

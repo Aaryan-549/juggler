@@ -108,7 +108,7 @@ func TestClassifyClaudeAuthFailure(t *testing.T) {
 			if got.Status != tt.status {
 				t.Errorf("Status = %d, want %d", got.Status, tt.status)
 			}
-			if got.Hint != claudeSignInHint {
+			if got.Hint != claudeSignInHint.English() {
 				t.Errorf("Hint = %q, want the single shared hint", got.Hint)
 			}
 			// The CLI's own words are the only diagnosable part; dropping them
@@ -142,7 +142,7 @@ func TestResultEventAuthFailureIsTyped(t *testing.T) {
 	if authErr.Status != 401 {
 		t.Errorf("Status = %d, want 401", authErr.Status)
 	}
-	if authErr.Hint != claudeSignInHint {
+	if authErr.Hint != claudeSignInHint.English() {
 		t.Errorf("Hint = %q, want the sign-in hint", authErr.Hint)
 	}
 	// The remediation is useless if the underlying text is thrown away.

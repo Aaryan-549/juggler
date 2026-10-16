@@ -24,7 +24,7 @@ import { renderMarkdown, looksLikeMarkdown } from '../../sdk/lib/markdown.js';
 import { ExtensionSettingsEditor } from './settings/extensions-settings.js';
 import { apiUrl } from '../utils/api-url.js';
 import { getAppSession } from '../utils/app-session.js';
-import { t, markForTranslation, htmlSlots, withHtml } from '../../sdk/lib/i18n.js';
+import { t, markForTranslation, markUntranslated, htmlSlots, withHtml } from '../../sdk/lib/i18n.js';
 
 /**
  * @typedef {object} CapCard
@@ -629,8 +629,8 @@ class PluginCatalog extends JugglerElement {
     await fetchJson(apiUrl('/config/plugins'), {
       method: 'PUT',
       body: { disabled: disabledList, attribution },
-      // i18n-ignore: reaches only the console and HttpError.message; the notice shows httpErrorText's detail
-      errorPrefix: 'Failed to save extension config',
+      // Reaches only the console and HttpError.message; the notice shows httpErrorText's detail.
+      errorPrefix: markUntranslated('Failed to save extension config'),
     });
   }
 

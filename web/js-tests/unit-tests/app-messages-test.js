@@ -14,7 +14,7 @@
 import { assert } from '../utilities/test-helpers.js';
 import { underPseudoLocale } from '../utilities/pseudo-locale.js';
 import { isPseudoLocalized } from '../../sdk/lib/i18n.js';
-import { failedModulesMessage, showConversationLimitAlert } from '../../js/services/app-notices.js';
+import { failedModulesMessage, noticeText, showConversationLimitAlert } from '../../js/services/app-notices.js';
 import { MAX_CONVERSATIONS } from '../../js/model/session.js';
 
 /**
@@ -112,6 +112,18 @@ export async function runTests(_ctx) {
     const raw = shown.filter((s) => !isPseudoLocalized(s));
     if (raw.length > 0) problems.push(`plain English under en-XA: ${JSON.stringify(raw)}`);
     assert(problems.length === 0, problems.join('; '));
+  });
+
+  await run('a server notice: its English without a message, translated with one', async () => {
+    const english = 'No cheap model is set, so background tasks like naming tabs can\'t run. Pick one in Settings → Defaults.';
+    const frame = { type: 'notice', message: english, text: { key: english } };
+    assert(noticeText({ type: 'notice', message: english }) === english, 'a frame with no message shows its English');
+    assert(noticeText({ type: 'notice' }) === '', 'a frame with nothing shows nothing');
+    let shown = '';
+    await underPseudoLocale('app-messages-test', async () => {
+      shown = noticeText(frame);
+    });
+    assert(isPseudoLocalized(shown), `plain English under en-XA: ${JSON.stringify(shown)}`);
   });
 
   return { passed, failed, errors };

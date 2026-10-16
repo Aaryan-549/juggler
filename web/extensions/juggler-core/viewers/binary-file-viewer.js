@@ -6,7 +6,7 @@
 import FileViewer from 'juggler/file-viewer';
 import { stat } from 'juggler/ops';
 import { extensionOf } from 'juggler/file-source';
-import { formatFileSize } from 'juggler/item-utils';
+import { formatFileSizeForDisplay } from 'juggler/item-utils';
 import { createElement, injectStylesOnce, formatRelativeDateTime } from 'juggler/ui';
 import { translator, markUntranslated } from 'juggler/i18n';
 
@@ -134,7 +134,7 @@ class BinaryFileViewer extends FileViewer {
 
     const facts = createElement('div', 'binary-file__facts');
     addFact(facts, t('Kind'), kindOf(source));
-    if (source.size) addFact(facts, t('Size'), formatFileSize(source.size));
+    if (source.size) addFact(facts, t('Size'), formatFileSizeForDisplay(source.size));
     if (modified !== null) {
       const { short, full } = formatRelativeDateTime(modified);
       addFact(facts, t('Modified'), short, full);

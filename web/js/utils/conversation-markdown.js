@@ -28,6 +28,8 @@ import {
 import { stripThinkingTags } from './content-utils.js';
 import { getThreadDisplayContent } from './thread-display.js';
 import { itemGoal } from '../model/thread-alias.js';
+import { displayConversationName } from '../model/conversation-naming.js';
+import { itemContentText } from './item-text.js';
 
 /**
  * Tool-input fields that say what a call was for, best first. A tool's
@@ -143,7 +145,7 @@ export function itemsToMarkdown(items, { title = '', siblingArray } = {}) {
       speak('assistant');
       blocks.push(`> **Sub-thread**: ${goal}${result ? `\n>\n${quote(result)}` : ''}`);
     } else if (isErrorMessage(item)) {
-      const text = String(plain(itemField(item, 'message')) || '').trim() || textOf(item);
+      const text = String(plain(itemField(item, 'message')) || '').trim() || itemContentText(item).trim() || textOf(item);
       if (text) blocks.push(`> **Error**: ${text.replace(/\n/g, '\n> ')}`);
     }
   }
@@ -161,5 +163,6 @@ export function itemsToMarkdown(items, { title = '', siblingArray } = {}) {
 export function conversationToMarkdown(conversation) {
   const thread = conversation?.rootMessageThread;
   if (!thread) return '';
-  return itemsToMarkdown(thread.items, { title: conversation.name || '', siblingArray: thread.yarray });
+  const title = conversation.name ? displayConversationName(conversation.name) : '';
+  return itemsToMarkdown(thread.items, { title, siblingArray: thread.yarray });
 }

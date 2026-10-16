@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"juggler/cmd/juggler/core"
+	"juggler/cmd/juggler/msg"
 	"juggler/cmd/juggler/providers/provider"
 	"juggler/cmd/juggler/server/handlers"
 	"juggler/internal/hostcheck"
@@ -243,7 +244,7 @@ func sameHiddenModels(a, b map[string][]string) bool {
 // without waiting for the next scheduled poll.
 func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 	if s.settings == nil {
-		handlers.WriteError(w, r, http.StatusServiceUnavailable, "settings unavailable")
+		handlers.WriteMessageError(w, r, http.StatusServiceUnavailable, msg.New("settings unavailable"))
 		return
 	}
 	// Seed the decode target from the current document so a partial PUT (e.g. the
@@ -284,11 +285,11 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 	// keys this request actually named.
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<16))
 	if err != nil {
-		handlers.WriteError(w, r, http.StatusBadRequest, "invalid JSON body")
+		handlers.WriteMessageError(w, r, http.StatusBadRequest, msg.New("invalid JSON body"))
 		return
 	}
 	if err := json.Unmarshal(body, &incoming); err != nil {
-		handlers.WriteError(w, r, http.StatusBadRequest, "invalid JSON body")
+		handlers.WriteMessageError(w, r, http.StatusBadRequest, msg.New("invalid JSON body"))
 		return
 	}
 	// posted holds just the provider keys the request sent under the two model
@@ -308,12 +309,12 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 	_ = json.Unmarshal(body, &posted)
 	// A non-empty mode must be one we recognise; empty normalises to automatic.
 	if incoming.Updates.Mode != "" && !core.IsKnownUpdateMode(incoming.Updates.Mode) {
-		handlers.WriteError(w, r, http.StatusBadRequest, "invalid update mode")
+		handlers.WriteMessageError(w, r, http.StatusBadRequest, msg.New("invalid update mode"))
 		return
 	}
 	// A non-empty wanOnLaunch must name a registered tunnel mode; "" means none.
 	if incoming.Connectivity.WANOnLaunch != "" && !isRegisteredTunnelMode(incoming.Connectivity.WANOnLaunch) {
-		handlers.WriteError(w, r, http.StatusBadRequest, "invalid WAN launch mode")
+		handlers.WriteMessageError(w, r, http.StatusBadRequest, msg.New("invalid WAN launch mode"))
 		return
 	}
 	// Allowed hosts the request sends must each be a name the server would
@@ -322,24 +323,24 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 	// must not reject every later PUT that never mentions it.
 	if posted.Connectivity.AllowedHosts != nil {
 		if _, err := hostcheck.NewAllowList(*posted.Connectivity.AllowedHosts); err != nil {
-			handlers.WriteError(w, r, http.StatusBadRequest, err.Error())
+			handlers.WriteErr(w, r, http.StatusBadRequest, err)
 			return
 		}
 	}
 	// A non-empty UI language must be a language tag: it is written into every
 	// page's markup. "" is the default, English.
 	if incoming.UILocale != "" && !core.IsValidUILocale(incoming.UILocale) {
-		handlers.WriteError(w, r, http.StatusBadRequest, "invalid UI language")
+		handlers.WriteMessageError(w, r, http.StatusBadRequest, msg.New("invalid UI language"))
 		return
 	}
 	incoming.UILocale = core.NormalizeUILocale(incoming.UILocale)
 	// A non-empty proxy mode must be recognised; manual mode needs a usable URL.
 	if incoming.Network.Proxy.Mode != "" && !core.IsKnownProxyMode(incoming.Network.Proxy.Mode) {
-		handlers.WriteError(w, r, http.StatusBadRequest, "invalid proxy mode")
+		handlers.WriteMessageError(w, r, http.StatusBadRequest, msg.New("invalid proxy mode"))
 		return
 	}
 	if incoming.Network.Proxy.Mode == core.ProxyModeManual && !validProxyURL(incoming.Network.Proxy.URL) {
-		handlers.WriteError(w, r, http.StatusBadRequest, "invalid proxy URL")
+		handlers.WriteMessageError(w, r, http.StatusBadRequest, msg.New("invalid proxy URL"))
 		return
 	}
 	// Every hidden-model list the request sends must name a provider this build
@@ -351,7 +352,7 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 	// ones that touch no model settings at all.
 	for providerName := range posted.Models.Hidden {
 		if _, ok := provider.GetProviderInfo(providerName); !ok {
-			handlers.WriteError(w, r, http.StatusBadRequest, "unknown provider in hidden models: "+providerName)
+			handlers.WriteMessageError(w, r, http.StatusBadRequest, msg.New("unknown provider in hidden models: {provider}", "provider", providerName))
 			return
 		}
 	}
@@ -360,14 +361,14 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 	// is how "not overridden" is spelled, so it is accepted and normalised away.
 	for providerName := range posted.Models.Limits {
 		if _, ok := provider.GetProviderInfo(providerName); !ok {
-			handlers.WriteError(w, r, http.StatusBadRequest, "unknown provider in model limits: "+providerName)
+			handlers.WriteMessageError(w, r, http.StatusBadRequest, msg.New("unknown provider in model limits: {provider}", "provider", providerName))
 			return
 		}
 		// Naming a provider replaces its whole set, so the merged value at this
 		// key is exactly what the request posted.
 		for modelID, limits := range incoming.Models.Limits[providerName] {
 			if limits.ContextWindow < 0 || limits.MaxOutputTokens < 0 {
-				handlers.WriteError(w, r, http.StatusBadRequest, "negative model limit for "+providerName+" "+modelID)
+				handlers.WriteMessageError(w, r, http.StatusBadRequest, msg.New("negative model limit for {provider} {model}", "provider", providerName, "model", modelID))
 				return
 			}
 		}
@@ -383,11 +384,11 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		// nothing was written — so it is answered 400, carrying which bound it
 		// crossed.
 		if errors.Is(err, core.ErrUIPrefsRejected) {
-			handlers.WriteError(w, r, http.StatusBadRequest, err.Error())
+			handlers.WriteErr(w, r, http.StatusBadRequest, err)
 			return
 		}
 		jlog.Error("settings: save failed: %v", err)
-		handlers.WriteError(w, r, http.StatusInternalServerError, "Couldn't save settings")
+		handlers.WriteMessageError(w, r, http.StatusInternalServerError, msg.New("Couldn't save settings"))
 		return
 	}
 	// Read back the stored document: the save normalises the hidden-model lists

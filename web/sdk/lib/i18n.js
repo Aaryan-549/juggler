@@ -285,6 +285,29 @@ export function translator(namespace) {
 }
 
 /**
+ * Translate a message the server sent: the wire form of a Go `msg.Message`,
+ * `{key, params?, context?}`, whose key is its English template. The server
+ * sends the English it rendered alongside, as `fallback`, which is returned
+ * whenever `message` is not a message — absent, null, or without a non-empty
+ * string key — so an older server, or a field the server leaves as plain
+ * text, still shows. Params that are not an object are dropped, and a context
+ * that is not a string is ignored. Its argument is data, not a literal, so
+ * `scripts/i18n extract` finds the template in the Go source instead.
+ * @param {{key?: unknown, params?: unknown, context?: unknown}|null|undefined} message - The wire message.
+ * @param {string} [fallback] - The English the server rendered for it.
+ * @returns {string} The message in the active locale, or the fallback.
+ */
+export function serverText(message, fallback = '') {
+  if (!message || typeof message !== 'object' || typeof message.key !== 'string' || message.key === '') {
+    return fallback;
+  }
+  const params = message.params && typeof message.params === 'object'
+    ? /** @type {Record<string, unknown>} */ (message.params) : undefined;
+  const context = typeof message.context === 'string' && message.context !== '' ? message.context : undefined;
+  return t(message.key, params, context ? { context } : undefined);
+}
+
+/**
  * Mark English source text that is translated later, where it is rendered —
  * the entries of a module-level table, say, whose labels are passed to `t()`
  * when the menu is built. Returns its argument unchanged; its job is to let
@@ -454,13 +477,27 @@ function parse(message) {
   if (parsedCache.has(message)) return /** @type {MessageNode[]|null} */ (parsedCache.get(message));
   let nodes = null;
   try {
-    const parser = new Parser(message);
-    nodes = parser.parseNodes(false);
-    if (parser.pos !== message.length) nodes = null;
+    nodes = parseMessage(message);
   } catch {
     nodes = null;
   }
   parsedCache.set(message, nodes);
+  return nodes;
+}
+
+/**
+ * Parse a message into nodes, for tooling that checks one (scripts/i18n holds
+ * every translation to its English source with it). Uncached, and not part of
+ * `juggler/i18n`.
+ * @param {string} message
+ * @returns {MessageNode[]} The parsed message.
+ * @throws {Error} When the message is malformed. A plural or select with no
+ *   `other` branch throws an error whose `missingOther` is `{kind, name}`.
+ */
+export function parseMessage(message) {
+  const parser = new Parser(message);
+  const nodes = parser.parseNodes(false);
+  if (parser.pos !== message.length) throw new Error('unmatched }');
   return nodes;
 }
 
@@ -574,7 +611,7 @@ class Parser {
       options[key] = this.parseNodes(inPlural || kind === 'plural');
       this.expect('}');
     }
-    if (!options.other) throw new Error(`${kind} without other`);
+    if (!options.other) throw Object.assign(new Error(`${kind} without other`), { missingOther: { kind, name } });
     return { type: kind, name, options };
   }
 
@@ -755,6 +792,34 @@ export function formatDate(value, options) {
 export function formatRelativeTime(value, unit, options) {
   const locale = formattingLocale();
   return cachedFormatter('relative', locale, options, () => new Intl.RelativeTimeFormat(locale, options)).format(value, unit);
+}
+
+/**
+ * Join items into a list for the active locale (`Intl.ListFormat`). The
+ * default `unit` type is a plain list — `a, b, c` in English — for names
+ * shown side by side; `conjunction` reads "a, b, and c" and `disjunction`
+ * "a, b, or c". The items are inserted as given, so an item that is markup
+ * stays markup. Where the runtime has no `Intl.ListFormat` the items are
+ * joined with `, `. Under the pseudo-locale the separators' letters are
+ * accented like a translated message's, so "or" and "and" read as translated.
+ * @param {Iterable<string>} items
+ * @param {{type?: 'unit'|'conjunction'|'disjunction'}} [options]
+ * @returns {string} The list.
+ */
+export function formatList(items, options = {}) {
+  const list = [...items].map(String);
+  const type = options.type || 'unit';
+  const ListFormat = /** @type {any} */ (Intl).ListFormat;
+  if (typeof ListFormat !== 'function') return list.join(', ');
+  const locale = formattingLocale();
+  const opts = { type, style: type === 'unit' ? 'short' : 'long' };
+  const formatter = cachedFormatter('list', locale, opts, () => new ListFormat(locale, opts));
+  if (uiLocale !== PSEUDO_LOCALE) return formatter.format(list);
+  return formatter.formatToParts(list)
+    .map((/** @type {{type: string, value: string}} */ part) => (part.type === 'literal'
+      ? [...part.value].map((c) => PSEUDO_LETTERS[c] || c).join('')
+      : part.value))
+    .join('');
 }
 
 // ---------------------------------------------------------------------------

@@ -145,25 +145,25 @@ class MemoryContextItem extends ContextItem {
         name: 'memory',
         category: 'meta', // internal durable state, not a project-source mutation
         description:
-					'Record or remove a durable project fact in long-term memory, injected at the start of ' +
+					markUntranslated('Record or remove a durable project fact in long-term memory, injected at the start of ' +
 					'every future conversation. "remember" stores one concise durable fact (a build/test ' +
 					'command, a convention, a correction the user made); "forget" removes one now stale or ' +
-					'wrong. NOT for ephemeral within-task state.',
+					'wrong. NOT for ephemeral within-task state.'),
         input_schema: {
           type: 'object',
           properties: {
             action: {
               type: 'string',
               enum: ['remember', 'forget'],
-              description: 'Whether to add a fact ("remember") or remove matching facts ("forget")'
+              description: markUntranslated('Whether to add a fact ("remember") or remove matching facts ("forget")')
             },
             fact: {
               type: 'string',
-              description: 'The durable one-line fact to record (required for "remember")'
+              description: markUntranslated('The durable one-line fact to record (required for "remember")')
             },
             match: {
               type: 'string',
-              description: 'Case-insensitive substring identifying the entry/entries to remove (required for "forget")'
+              description: markUntranslated('Case-insensitive substring identifying the entry/entries to remove (required for "forget")')
             }
           },
           required: ['action']
@@ -616,7 +616,7 @@ class MemoryContextItem extends ContextItem {
     container.textContent = '';
 
     container.appendChild(
-      createElement('div', 'memory-panel-note', t('Durable facts the assistant maintains across conversations. Shown live from {file}; each conversation is given the list as it stood when that conversation began, so changes here reach new conversations. Delete entries here, or edit the file by hand.', { file: MemoryContextItem.DEFAULT_PATH }))
+      createElement('div', 'memory-panel-note', t('Durable facts the assistant maintains across conversations. Shown live from {file}; each conversation is given the list as it stood when that conversation began, so changes here reach new conversations. Delete entries here, or edit the file by hand.', { file: this._memoryPath() }))
     );
 
     if (entries.length === 0) {

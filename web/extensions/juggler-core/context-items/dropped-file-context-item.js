@@ -46,7 +46,7 @@ class DroppedFileContextItem extends ContextItem {
   /** @type {import('juggler/context-item').ContextItemManifest} */
   static MANIFEST = {
     id: 'dropped-file',
-    name: 'Dropped File',
+    name: 'Dropped file',
     version: '1.0.0',
     description: 'Text file dropped into the composer (inline content snapshot)',
     author: 'Juggler Team',
@@ -104,13 +104,13 @@ class DroppedFileContextItem extends ContextItem {
    * @returns {import('juggler/context-item').ResultStatusMessage} Status UI config
    */
   getStatusUI() {
-    const name = this.data.filename || t('Dropped File');
-    return { typeName: t('Dropped File'), summary: name, status: 'success' };
+    const name = this.data.filename || t('Dropped file');
+    return { typeName: t('Dropped file'), summary: name, status: 'success' };
   }
 
   /** @returns {string} Item title */
   getTitle() {
-    return this.data.filename || t('Dropped File');
+    return this.data.filename || t('Dropped file');
   }
 
   /** @returns {string} Brief summary for transaction display */

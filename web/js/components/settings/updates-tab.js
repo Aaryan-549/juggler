@@ -11,7 +11,7 @@
 
 import { getUpdaterState, startCheck } from '../../services/updater-control.js';
 import { fetchJson } from '../../services/http.js';
-import { extractErrorMessage } from '../../../sdk/lib/error-utils.js';
+import { errorText } from '../../../sdk/lib/error-utils.js';
 import { apiUrl } from '../../utils/api-url.js';
 import { t, markForTranslation } from '../../../sdk/lib/i18n.js';
 
@@ -258,7 +258,7 @@ export class UpdatesTab {
       // Revert the UI to the last-known-good mode.
       this._mode = prev;
       this._reflectMode(prev);
-      this._setStatus(t('Couldn\'t save the update setting ({error}).', { error: extractErrorMessage(err) }));
+      this._setStatus(t('Couldn\'t save the update setting ({error}).', { error: errorText(err) }));
     }
   }
 
@@ -295,7 +295,7 @@ export class UpdatesTab {
       const updater = await getUpdaterState();
       this._renderVersion(status, updater);
     } catch (err) {
-      this._setStatus(t('Check failed ({error}).', { error: extractErrorMessage(err) }));
+      this._setStatus(t('Check failed ({error}).', { error: errorText(err) }));
     } finally {
       if (btn) btn.disabled = false;
     }

@@ -28,7 +28,7 @@ import pinboardStore from './pinboard-store.js';
 import pinboardItemRegistry from '../registries/pinboard-item-registry.js';
 import { initialPinId, isPinboardView } from '../utils/view-mode.js';
 import { cachedWindowPref, getWindowPref, setWindowPref } from './prefs.js';
-import { extractErrorMessage } from '../../sdk/lib/error-utils.js';
+import { errorText } from '../../sdk/lib/error-utils.js';
 import { t } from '../../sdk/lib/i18n.js';
 
 /** @typedef {import('./pinboard-store.js').Pin} Pin */
@@ -308,7 +308,7 @@ async function attempt(failed, edit) {
     pinboardView.setStatus('');
     return result;
   } catch (err) {
-    pinboardView.setStatus(failed(extractErrorMessage(err)));
+    pinboardView.setStatus(failed(errorText(err)));
     return null;
   }
 }

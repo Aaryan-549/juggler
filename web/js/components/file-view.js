@@ -4,8 +4,9 @@
 
 import fileViewerRegistry from '../registries/file-viewer-registry.js';
 import { toDescriptor } from '../../sdk/file-source.js';
-import { formatFileSize, injectFileContentStyles } from '../../sdk/lib/context-item-utils.js';
+import { formatFileSizeForDisplay, injectFileContentStyles } from '../../sdk/lib/context-item-utils.js';
 import { addFilePath } from '../utils/properties-panel-helpers.js';
+import { t } from '../../sdk/lib/i18n.js';
 import { CODE_REF_PATH_ATTR, CODE_REF_ABSOLUTE_ATTR, isAbsolutePath } from '../utils/code-selection.js';
 
 injectFileContentStyles();
@@ -122,15 +123,17 @@ class FileView extends HTMLElement {
     this.className = 'file-content-expanded';
 
     if (this.showPath) {
+      const size = formatFileSizeForDisplay(source.size);
       const info = (source.exists !== false && source.size)
-        ? [formatFileSize(source.size), source.totalLines ? `${source.totalLines} lines` : '']
-          .filter(Boolean).join(' | ')
+        ? (source.totalLines
+          ? t('{size} | {count, plural, one {{count} line} other {{count} lines}}', { size, count: source.totalLines })
+          : size)
         : undefined;
-      addFilePath(this, source.absPath || source.path || 'No file', info);
+      addFilePath(this, source.absPath || source.path || t('No file'), info);
     }
 
     if (source.exists === false) {
-      this._appendState('file-content-not-found', `File not found: ${source.path}`);
+      this._appendState('file-content-not-found', t('File not found: {path}', { path: source.path }));
       return;
     }
 

@@ -9,8 +9,10 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
+	"strconv"
 
 	"juggler/cmd/juggler/core"
+	"juggler/cmd/juggler/msg"
 	"juggler/cmd/juggler/providers/provider"
 	"juggler/cmd/juggler/server/handlers"
 	"juggler/internal/jlog"
@@ -58,7 +60,7 @@ func (s *Server) handleProviderSwitch(w http.ResponseWriter, r *http.Request) {
 	}
 	info, found := provider.GetProviderInfo(req.From)
 	if !found {
-		handlers.WriteError(w, r, http.StatusBadRequest, fmt.Sprintf("Unknown provider %q", req.From))
+		handlers.WriteMessageError(w, r, http.StatusBadRequest, msg.New("Unknown provider {provider}", "provider", strconv.Quote(req.From)))
 		return
 	}
 	var next *provider.Successor
@@ -66,15 +68,15 @@ func (s *Server) handleProviderSwitch(w http.ResponseWriter, r *http.Request) {
 		next = info.Successor(r.Context())
 	}
 	if next == nil {
-		handlers.WriteError(w, r, http.StatusConflict, info.DisplayName+" no longer needs switching.")
+		handlers.WriteMessageError(w, r, http.StatusConflict, msg.New("{provider} no longer needs switching.", "provider", info.DisplayName))
 		return
 	}
 	if _, ok := provider.GetProviderInfo(next.Provider); !ok {
-		handlers.WriteError(w, r, http.StatusConflict, fmt.Sprintf("Provider %q is not available in this build.", next.Provider))
+		handlers.WriteMessageError(w, r, http.StatusConflict, msg.New("Provider {provider} is not available in this build.", "provider", strconv.Quote(next.Provider)))
 		return
 	}
 	if err := s.switchProvider(req.From, next); err != nil {
-		handlers.WriteError(w, r, http.StatusInternalServerError, err.Error())
+		handlers.WriteErr(w, r, http.StatusInternalServerError, err)
 		return
 	}
 	s.RefreshProviders()

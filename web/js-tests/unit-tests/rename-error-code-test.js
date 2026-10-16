@@ -44,7 +44,7 @@ function httpError(status, detail) {
 
 /**
  * The server's 500 for a rename the filesystem refused, spelled the way
- * `RobustRename`'s error reaches `WriteError`.
+ * `RobustRename`'s error reaches `WriteErr`.
  * @param {string} newName - The name the user typed
  * @returns {HttpError} The error `fetchJson` would throw
  */

@@ -713,7 +713,7 @@ class UIEventManager {
       }
     }
 
-    applyMenuRoles(menu, t('Add Context Item'));
+    applyMenuRoles(menu, t('Add context item'));
     dropdown.appendChild(menu);
 
     // presentPopup owns body-append, dismissal wiring (outside-click via

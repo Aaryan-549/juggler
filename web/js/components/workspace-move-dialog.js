@@ -25,7 +25,7 @@
 
 import { presentModal } from '../utils/modal-surface.js';
 import { rebindConversation } from '../services/workspace-rebinding.js';
-import { extractErrorMessage } from '../../sdk/lib/error-utils.js';
+import { errorText } from '../../sdk/lib/error-utils.js';
 import { createFileActions } from '../utils/properties-panel-helpers.js';
 import { setupButton } from './workspace-setup-form.js';
 import { t } from '../../sdk/lib/i18n.js';
@@ -140,7 +140,7 @@ export function openWorkspaceMove(conversation, workspaceId) {
         // shown here, but a throw nobody expected would leave the dialog as it
         // was — a button that did nothing, which is the one thing it must never
         // be.
-        error = extractErrorMessage(failure);
+        error = errorText(failure);
       }
       if (modal.closed) return;
       moving = false;

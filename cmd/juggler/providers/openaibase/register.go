@@ -8,6 +8,7 @@ import (
 	"context"
 	"time"
 
+	"juggler/cmd/juggler/msg"
 	"juggler/cmd/juggler/providers/provider"
 	"juggler/cmd/juggler/providers/utils"
 )
@@ -20,7 +21,7 @@ type Descriptor struct {
 	// Registry metadata
 	Name          string
 	DisplayName   string
-	Description   string // Human-readable blurb shown in the settings UI. May be empty.
+	Description   msg.Message // Blurb shown in the settings UI, as a msg.New literal. May be zero.
 	AuthType      provider.AuthType
 	AuthSource    string
 	SignInMethod  string // e.g. "github_device"; enables in-app Sign in / Sign out UI

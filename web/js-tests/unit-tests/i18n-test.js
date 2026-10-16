@@ -23,7 +23,7 @@ import {
   t, registerCatalog, unregisterCatalog, markUntranslated, markForTranslation, setLocale, getLocale,
   formattingLocale, formatNumber, formatDate, formatRelativeTime,
   pseudoLocalize, isPseudoLocalized, messageKey, PSEUDO_LOCALE, htmlSlots, withHtml,
-  translator, CORE_NAMESPACE,
+  translator, CORE_NAMESPACE, serverText,
 } from '../../sdk/lib/i18n.js';
 import * as facade from '../../sdk/i18n.js';
 
@@ -279,6 +279,45 @@ export async function runTests(_ctx) {
       eq(facade.htmlSlots, htmlSlots, 'htmlSlots');
       eq(facade.withHtml, withHtml, 'withHtml');
     });
+
+    run('serverText renders a server message in English', 'en', () => {
+      eq(serverText({ key: 'Model {name} not found', params: { name: 'gpt' } }, 'fallback'), 'Model gpt not found', 'params');
+      eq(serverText({ key: '{n, plural, one {# file} other {# files}}', params: { n: 1234 } }, 'x'), '1,234 files', 'plural');
+      eq(serverText({ key: 'Close' }, 'x'), 'Close', 'no params');
+    });
+
+    // Its own namespace: earlier cases replace the suite's fr catalogue.
+    registerCatalog(NS + '-server', 'fr', {
+      'Hello, {name}': 'Bonjour, {name}',
+      [messageKey('Open', 'verb')]: 'Ouvrir',
+    });
+
+    run('serverText translates a server message', 'fr', () => {
+      eq(serverText({ key: 'Hello, {name}', params: { name: 'Ada' } }, 'Hello, Ada'), 'Bonjour, Ada', 'translated');
+      eq(serverText({ key: 'Open', context: 'verb' }, 'Open'), 'Ouvrir', 'its context picks the translation');
+      eq(serverText({ key: 'Open', context: 42 }, 'Open'), 'Open', 'a non-string context is ignored');
+    });
+
+    run('serverText follows the pseudo-locale', PSEUDO_LOCALE, () => {
+      const key = 'Cannot reach {host}';
+      registerCatalog(NS, PSEUDO_LOCALE, { [key]: pseudoLocalize(key) });
+      const out = serverText({ key, params: { host: 'example.com' } }, 'Cannot reach example.com');
+      assert(out.includes('example.com') && isPseudoLocalized(out.replace('example.com', '{host}')),
+        `pseudo-localised with the param kept: ${out}`);
+    });
+
+    run('serverText falls back to the English the server sent', 'fr', () => {
+      eq(serverText(null, 'Plain'), 'Plain', 'null');
+      eq(serverText(undefined, 'Plain'), 'Plain', 'undefined');
+      eq(serverText(/** @type {any} */ ('Close'), 'Plain'), 'Plain', 'a bare string is not a message');
+      eq(serverText({ key: 7 }, 'Plain'), 'Plain', 'a non-string key');
+      eq(serverText({ key: '' }, 'Plain'), 'Plain', 'an empty key');
+      eq(serverText({ key: 'Hello, {name}', params: 'oops' }, 'x'), 'Bonjour, {name}',
+        'malformed params are dropped, not thrown on');
+      eq(serverText(null), '', 'no fallback at all');
+      eq(facade.serverText, serverText, 'the facade exports it');
+    });
+    unregisterCatalog(NS + '-server');
 
     run('a select value named like an Object.prototype member takes the other branch', '', () => {
       const msg = '{kind, select, file {a file} other {something}}';

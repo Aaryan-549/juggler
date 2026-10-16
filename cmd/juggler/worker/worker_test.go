@@ -509,6 +509,10 @@ func TestModelValidation(t *testing.T) {
 	if code, _ := msg["code"].(string); code != "no-model" {
 		t.Errorf("Expected validation code 'no-model', got: %q", code)
 	}
+	// The words travel as a message too, for the client to show translated.
+	if key := statusTextKey(msg); key != "Please select a model before sending a message" {
+		t.Errorf("status text key = %q, want the no-model message", key)
+	}
 	t.Logf("SUCCESS: Got expected validation error: %s", msgText)
 }
 
@@ -590,6 +594,10 @@ func TestProviderUnavailableSurfacedAsValidationError(t *testing.T) {
 			if msg, _ := m["message"].(string); !strings.Contains(msg, "no API key configured for provider: test") {
 				t.Errorf("status message dropped the resolver detail: %q", msg)
 			}
+			m0 := m
+			if key := statusTextKey(m); key != "The provider for {model} ({provider}) can't be used. Pick another model, or configure {provider} in settings.{hasDetail, select, yes {\n\n{detail}} other {}}" {
+				t.Errorf("status text key = %q, want the provider-unavailable message", key)
+			}
 			var errItem *ConversationItem
 			items := w.doc.GetItems()
 			for i := range items {
@@ -606,6 +614,10 @@ func TestProviderUnavailableSurfacedAsValidationError(t *testing.T) {
 			}
 			if !strings.Contains(errItem.Content, "test-model") {
 				t.Errorf("error item doesn't name the model: %q", errItem.Content)
+			}
+			// The durable item carries the same message, for the row to translate.
+			if m := dataMessage(t, *errItem, "message"); m.Key != statusTextKey(m0) || m.English() != errItem.Content {
+				t.Errorf("error item message = %+v, want the warning's message rendering its content", m)
 			}
 			return
 		case <-deadline:
@@ -633,7 +645,18 @@ func TestAuthErrorSurfacedWithRemediation(t *testing.T) {
 		Status:   401,
 		Message:  cliText,
 		Hint:     hint,
-	}, "auth-required", "auth", hint, cliText)
+	}, "auth-required", "auth", hint, cliText, "")
+}
+
+// TestAuthErrorWithoutAHintLeadsWithItsOwnWords: a provider that gives no hint
+// is led by Juggler's own sentence, which travels as a message too.
+func TestAuthErrorWithoutAHintLeadsWithItsOwnWords(t *testing.T) {
+	const lead = "The provider isn't signed in."
+	assertUserFixableFailure(t, &provider.AuthError{
+		Provider: "claudecode",
+		Status:   401,
+		Message:  "401 unauthorized",
+	}, "auth-required", "auth", lead, "401 unauthorized", lead)
 }
 
 // TestSetupErrorSurfacedWithRemediation covers a provider that cannot run on
@@ -649,15 +672,27 @@ func TestSetupErrorSurfacedWithRemediation(t *testing.T) {
 		Provider: "claudecode",
 		Message:  detail,
 		Hint:     hint,
-	}, "provider-setup", "setup", hint, detail)
+	}, "provider-setup", "setup", hint, detail, "")
+}
+
+// TestSetupErrorWithoutAHintLeadsWithItsOwnWords is the setup twin of
+// TestAuthErrorWithoutAHintLeadsWithItsOwnWords.
+func TestSetupErrorWithoutAHintLeadsWithItsOwnWords(t *testing.T) {
+	const lead = "The provider isn't set up on this machine."
+	assertUserFixableFailure(t, &provider.SetupError{
+		Provider: "claudecode",
+		Message:  "claude executable not found.",
+	}, "provider-setup", "setup", lead, "claude executable not found.", lead)
 }
 
 // assertUserFixableFailure runs one turn whose provider call fails with failErr
 // and asserts the terminal shape every user-fixable failure shares: one call
 // and no retry, a composer warning carrying only the hint under wantCode, and a
 // durable error item that leads with the hint, keeps the provider's own text,
-// and carries wantKind for the transcript row to key its actions off.
-func assertUserFixableFailure(t *testing.T, failErr error, wantCode, wantKind, hint, detail string) {
+// and carries wantKind for the transcript row to key its actions off. The
+// warning's message key is wantKey, "" when the lead is the provider's own hint
+// and so has none.
+func assertUserFixableFailure(t *testing.T, failErr error, wantCode, wantKind, hint, detail, wantKey string) {
 	t.Helper()
 	w := NewConversationWorker("conv-auth", "user:test")
 	defer w.doc.Destroy()
@@ -721,6 +756,9 @@ func assertUserFixableFailure(t *testing.T, failErr error, wantCode, wantKind, h
 			if msg, _ := m["message"].(string); msg != hint {
 				t.Errorf("status message = %q, want just the hint", msg)
 			}
+			if key := statusTextKey(m); key != wantKey {
+				t.Errorf("status text key = %q, want %q", key, wantKey)
+			}
 
 			var errItem *ConversationItem
 			items := w.doc.GetItems()
@@ -750,6 +788,13 @@ func assertUserFixableFailure(t *testing.T, failErr error, wantCode, wantKind, h
 			}
 			if data["provider"] != "claudecode" {
 				t.Errorf("provider = %v, want \"claudecode\"", data["provider"])
+			}
+			// Juggler's own lead makes the item one message, the provider's text a
+			// param; a provider's own hint leaves it data, with nothing to translate.
+			if m := dataMessage(t, *errItem, "message"); wantKey == "" && !m.IsZero() {
+				t.Errorf("error item led by the provider's hint carries message %+v, want none", m)
+			} else if wantKey != "" && (!strings.HasPrefix(m.Key, wantKey) || m.English() != errItem.Content || m.Params["detail"] != detail) {
+				t.Errorf("error item message = %+v, want %q plus the provider text, rendering %q", m, wantKey, errItem.Content)
 			}
 			return
 		case <-deadline:

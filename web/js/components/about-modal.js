@@ -10,7 +10,7 @@ import { dragGuard } from '../utils/drag-guard.js';
 import JugglerElement from './juggler-element.js';
 import { apiUrl } from '../utils/api-url.js';
 import { durationToken } from '../utils/modal-scrim.js';
-import { t, markForTranslation, htmlSlots, withHtml } from '../../sdk/lib/i18n.js';
+import { t, markForTranslation, markUntranslated, htmlSlots, withHtml } from '../../sdk/lib/i18n.js';
 import { escapeHtml } from '../../sdk/lib/html.js';
 import { buildWordOfMouthAsk } from './word-of-mouth.js';
 
@@ -77,7 +77,7 @@ class AboutModal extends JugglerElement {
    */
   async _fetchVersion() {
     const data = await fetchJson(apiUrl('/version'), {
-      errorPrefix: '[AboutModal] Failed to fetch version',
+      errorPrefix: markUntranslated('[AboutModal] Failed to fetch version'), // only logged: the fallback swallows the error
       fallback: null,
     });
     return data?.version || UNKNOWN_VERSION;

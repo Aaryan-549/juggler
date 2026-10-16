@@ -5,7 +5,7 @@
 import CommandType from 'juggler/command-type';
 import { mcpListServers, mcpServerControl, mcpGetLog } from 'juggler/ops';
 import { extractErrorMessage } from 'juggler/ui';
-import { translator, markForTranslation } from 'juggler/i18n';
+import { translator, markForTranslation, formatNumber } from 'juggler/i18n';
 
 const t = translator('@juggler/mcp');
 
@@ -105,12 +105,16 @@ class McpCommandType extends CommandType {
   }
 
   /**
+   * A schema-token count: exact below a thousand, else thousands to one
+   * decimal ("1.2k"), in the UI language's digits with its `k` a message.
    * @param {number} n
    * @returns {string} Result value
    * @private
    */
   static _fmtTokens(n) {
-    return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
+    if (n < 1000) return formatNumber(n);
+    const thousands = formatNumber(n / 1000, { useGrouping: false, minimumFractionDigits: 1, maximumFractionDigits: 1 });
+    return t('{n}k', { n: thousands }, { context: 'thousands, in a compact count' });
   }
 }
 

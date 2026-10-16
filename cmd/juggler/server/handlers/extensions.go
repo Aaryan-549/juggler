@@ -16,6 +16,7 @@ import (
 	"sync/atomic"
 
 	"juggler/cmd/juggler/extmanifest"
+	"juggler/cmd/juggler/msg"
 	"juggler/internal/jlog"
 )
 
@@ -159,7 +160,7 @@ func (api *ExtensionsAPI) SetReloadBroadcast(fn func()) { api.broadcastReload = 
 // on one epoch, so no two of them load the same file under different URLs.
 func (api *ExtensionsAPI) HandleReload(w http.ResponseWriter, r *http.Request) {
 	if api.broadcastReload == nil {
-		WriteError(w, r, http.StatusServiceUnavailable, "Extension reload is not available")
+		WriteMessageError(w, r, http.StatusServiceUnavailable, msg.New("Extension reload is not available"))
 		return
 	}
 	jlog.Info("[PluginWatcher] Reload requested")

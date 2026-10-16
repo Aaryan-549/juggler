@@ -34,6 +34,7 @@ import {
 } from '../../js/utils/paste-tokens.js';
 import { normalizePasteBlobs, normalizeDraft } from '../../js/utils/attachments.js';
 import { initializeRegistries, assert } from '../utilities/test-helpers.js';
+import { underPseudoLocale } from '../utilities/pseudo-locale.js';
 import '../../js/components/composer.js';
 
 /**
@@ -123,6 +124,16 @@ export async function runTests() {
     assert(parsed[0].id === 7, `id should be 7, got ${parsed[0].id}`);
     assert(text.slice(parsed[0].start, parsed[0].end) === tok, 'span must cover the token');
     assert(hasTokens(text) && !hasTokens('plain'), 'hasTokens must detect presence');
+  });
+
+  await test('the label stays English and parseable under another UI language', async () => {
+    // A translated unit could carry the `]` the grammar stops at, and the label
+    // is saved in drafts, so the size keeps its English unit.
+    await underPseudoLocale('paste-token-test', () => {
+      const tok = makeToken(4, 38200);
+      assert(tok.includes('[Pasted #4 · 37 KB]'), `expected the English label, got ${JSON.stringify(tok)}`);
+      assert(parseTokens(`x ${tok} y`).length === 1, 'the token must still parse');
+    });
   });
 
   await test('expandPasteTokens resolves from a Map and from an array', () => {

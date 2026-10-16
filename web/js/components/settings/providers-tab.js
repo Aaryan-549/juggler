@@ -22,6 +22,8 @@ import { formatTokens } from '../../utils/format.js';
 import { CHECK_SVG, REFRESH_SVG } from '../../utils/icons.js';
 import { escapeHtml } from '../../../sdk/lib/html.js';
 import { t } from '../../../sdk/lib/i18n.js';
+import { errorText } from '../../../sdk/lib/error-utils.js';
+import { providerDescription, providerAuthHint } from '../../utils/provider-text.js';
 
 /**
  * Whether a published model's context window is a guess nobody has corrected:
@@ -443,7 +445,7 @@ export class ProvidersTab {
     if (provider.description) {
       const description = document.createElement('div');
       description.className = 'provider-description';
-      description.textContent = provider.description;
+      description.textContent = providerDescription(provider);
       infoColumn.appendChild(description);
     }
 
@@ -459,10 +461,10 @@ export class ProvidersTab {
     status.className = 'key-source-hint';
     status.id = `${provider.name}-oauth-status`;
     status.style.display = 'block';
-    // The hint is the server's own wording, so only the fallbacks are messages.
+    // The hint is the server's own wording, translated where it sent a message.
     status.textContent = provider.available
-      ? (provider.authHint || t('Signed in'))
-      : (provider.authHint || t('Sign in to continue'));
+      ? (providerAuthHint(provider) || t('Signed in'))
+      : (providerAuthHint(provider) || t('Sign in to continue'));
     controlColumn.appendChild(status);
 
     const buttonGroup = document.createElement('div');
@@ -594,7 +596,7 @@ export class ProvidersTab {
       button.disabled = false;
       button.classList.remove('spinning');
       if (status) status.textContent = originalStatus;
-      await showAlert(err instanceof Error ? err.message : t('Refresh failed'), provider.displayName);
+      await showAlert(err instanceof Error ? errorText(err) : t('Refresh failed'), provider.displayName);
     }
   }
 
@@ -737,7 +739,7 @@ export class ProvidersTab {
       setStatus(t('Signed in with GitHub'));
       await this._refreshAfterAuthChange(provider, true);
     } catch (err) {
-      setStatus(provider.authHint || t('Sign in to continue'));
+      setStatus(providerAuthHint(provider) || t('Sign in to continue'));
       button.disabled = false;
       button.textContent = originalText;
       // i18n-ignore: a product name
@@ -814,6 +816,7 @@ export class ProvidersTab {
   async _refreshAfterAuthChange(provider, available) {
     provider.available = available;
     provider.authHint = available ? t('Signed in with GitHub') : '';
+    provider.authHintMessage = null;
     this.renderProviderFields();
     this.updateAllButtons();
   }
@@ -847,7 +850,7 @@ export class ProvidersTab {
     if (provider.description) {
       const description = document.createElement('div');
       description.className = 'provider-description';
-      description.textContent = provider.description;
+      description.textContent = providerDescription(provider);
       infoColumn.appendChild(description);
     }
 
@@ -862,12 +865,13 @@ export class ProvidersTab {
     // models are gone from the menu and the toggle still reads on, so without
     // this the first news of it is a failed turn. Same status line and re-check
     // the OAuth providers get, shown only when there is something to report.
-    if (toggle.checked && provider.authHint) {
+    const authHint = providerAuthHint(provider);
+    if (toggle.checked && authHint) {
       const status = document.createElement('div');
       status.className = 'key-source-hint';
       status.id = `${provider.name}-oauth-status`;
       status.style.display = 'block';
-      status.textContent = provider.authHint;
+      status.textContent = authHint;
       controlColumn.appendChild(status);
 
       const buttonGroup = document.createElement('div');
@@ -1688,7 +1692,7 @@ export class ProvidersTab {
       if (toggle) {
         toggle.checked = !enabled;
       }
-      await showAlert(error instanceof Error ? error.message : t("Couldn't update provider"), t('Error'));
+      await showAlert(error instanceof Error ? errorText(error) : t("Couldn't update provider"), t('Error'));
     }
   }
 
@@ -1781,7 +1785,7 @@ export class ProvidersTab {
       // providers-update is what refreshes every model selector.
     } catch (error) {
       console.error('Failed to save API key:', error);
-      await showAlert(error instanceof Error ? error.message : t('Failed to save API key'), t('Error'));
+      await showAlert(error instanceof Error ? errorText(error) : t('Failed to save API key'), t('Error'));
     }
   }
 
@@ -1805,7 +1809,7 @@ export class ProvidersTab {
       // providers-update is what drops the key from every model selector.
     } catch (error) {
       console.error('Failed to delete API key:', error);
-      await showAlert(error instanceof Error ? error.message : t('Failed to delete API key'), t('Error'));
+      await showAlert(error instanceof Error ? errorText(error) : t('Failed to delete API key'), t('Error'));
     }
   }
 }

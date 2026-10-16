@@ -30,6 +30,7 @@ import (
 	"runtime/debug"
 	"time"
 
+	"juggler/cmd/juggler/msg"
 	"juggler/internal/jlog"
 )
 
@@ -66,7 +67,8 @@ func (r *run) recoverTurnPanic() {
 	requireDocLockAfterPanic("a turn", panicValue, stack)
 
 	r.cancelInFlightCall(threadID)
-	r.sendErrorWithData(turnPanicMessage(panicValue), string(stack), nil)
+	report := turnPanicMessage(panicValue)
+	r.sendErrorWithData(report.English(), &report, string(stack), nil)
 
 	// The run is over, whatever it was doing. Dropping the claim takes
 	// finishStrategyRun past its awaiting_llm early return, which would leave
@@ -98,7 +100,8 @@ func (r *run) recoverTurnBackstop(tr *run) {
 	tr.cancelInFlightCall(threadID)
 	tr.t.txnID = ""
 	if dest, ok := tr.resolveThread(threadID); ok {
-		tr.sendErrorTo(dest, turnPanicMessage(panicValue), string(stack), nil)
+		report := turnPanicMessage(panicValue)
+		tr.sendErrorTo(dest, report.English(), &report, string(stack), nil)
 	}
 	if threadID != "" {
 		tr.settleThreadRun(threadID, false)
@@ -138,6 +141,7 @@ func (r *run) cancelInFlightCall(threadID string) {
 // turnPanicMessage is the error item's text for a recovered panic. It says what
 // happened in words a user can act on, and keeps the panic value, which is what
 // a bug report needs.
-func turnPanicMessage(panicValue any) string {
-	return fmt.Sprintf("Internal error: this turn crashed and was stopped (%v). The conversation is safe to continue.", panicValue)
+func turnPanicMessage(panicValue any) msg.Message {
+	return msg.New("Internal error: this turn crashed and was stopped ({detail}). The conversation is safe to continue.",
+		"detail", fmt.Sprint(panicValue))
 }

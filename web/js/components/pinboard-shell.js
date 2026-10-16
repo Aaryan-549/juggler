@@ -36,7 +36,7 @@ import { REGISTRIES_RELOADED } from '../registries/reload-registries.js';
 import keyShortcutManager, { eventMatchesBinding } from '../services/key-shortcut-manager.js';
 import { markPopupOpen, isAnyPopupOpen } from '../utils/popup-manager.js';
 import { attachSwipeDismiss } from '../utils/swipe-dismiss.js';
-import { extractErrorMessage } from '../../sdk/lib/error-utils.js';
+import { errorText } from '../../sdk/lib/error-utils.js';
 import { isPinboardView } from '../utils/view-mode.js';
 import { t } from '../../sdk/lib/i18n.js';
 import findBar from './find-bar.js';
@@ -294,7 +294,7 @@ class PinboardShell extends JugglerElement {
     if (hasProject && !this._loadStarted) {
       this._loadStarted = true;
       this._loaded = pinboardStore.load().catch((err) => {
-        pinboardView.setStatus(t('Couldn\'t load the pinboard. {error}', { error: extractErrorMessage(err) }));
+        pinboardView.setStatus(t('Couldn\'t load the pinboard. {error}', { error: errorText(err) }));
       });
     }
     const enabled = pinboardItemRegistry.getEnabledTypes();

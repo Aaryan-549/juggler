@@ -71,7 +71,7 @@ func convOwnershipMiddleware(ledger convOwnershipLedger) mux.MiddlewareFunc {
 				convID := mux.Vars(r)["convId"]
 				if err := ledger.CheckConvDelete(convID, lane); err != nil {
 					jlog.Error("[conv-ownership] REJECTED %s %s: %v", r.Method, r.URL.Path, err)
-					handlers.WriteError(w, r, http.StatusForbidden, err.Error())
+					handlers.WriteErr(w, r, http.StatusForbidden, err)
 					return
 				}
 				if route.GetName() == routeConversationBin {

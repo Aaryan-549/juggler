@@ -24,6 +24,8 @@
 
 import { assert } from '../utilities/test-helpers.js';
 import wsService from '../../js/services/websocket.js';
+import { isPseudoLocalized } from '../../sdk/lib/i18n.js';
+import { underPseudoLocale } from '../utilities/pseudo-locale.js';
 import '../../js/components/settings-panel.js';
 
 /**
@@ -285,6 +287,40 @@ export async function runTests(_ctx) {
       assert(posted.length === 1 && posted[0].provider === 'fake-plan' && posted[0].enabled === false,
         `the switch must post {provider, enabled:false}, got ${JSON.stringify(posted)}`);
     });
+  });
+
+  // The description and the hint are the server's wording: the English in
+  // `description` / `authHint`, and the messages they were rendered from in
+  // `descriptionMessage` / `authHintMessage`, which the row translates. The
+  // stand-in catalogue plays the part of the server's.
+  await run('under en-XA a row shows its server description and hint translated', async () => {
+    const keylessDescription = 'Stands in for a CLI-backed provider.';
+    const oauthDescription = 'Stands in for a subscription login.';
+    const oauthHint = 'Signed in via the stand-in app';
+    const keyless = {
+      ...keylessProvider({ available: false, credentialed: true, authHint: SIGN_IN_HINT }),
+      descriptionMessage: { key: keylessDescription },
+      authHintMessage: { key: SIGN_IN_HINT },
+    };
+    const oauth = {
+      ...oauthProvider({ available: true, authHint: oauthHint }),
+      descriptionMessage: { key: oauthDescription },
+      authHintMessage: { key: oauthHint },
+    };
+    await underPseudoLocale('keyless-signin-messages', async () => {
+      for (const provider of [keyless, oauth]) {
+        await withPanel(provider, async (el) => {
+          const row = el.querySelector(`[data-provider="${provider.name}"]`);
+          assert(!!row, `the ${provider.name} row must render`);
+          const shown = (row.querySelector('.provider-description')?.textContent || '');
+          assert(isPseudoLocalized(shown),
+            `the description must be translated, got ${JSON.stringify(shown)}`);
+          const status = el.querySelector(`#${provider.name}-oauth-status`)?.textContent || '';
+          assert(isPseudoLocalized(status),
+            `the hint must be translated, got ${JSON.stringify(status)}`);
+        });
+      }
+    }, { 'keyless-signin-stub': [keylessDescription, oauthDescription, oauthHint, SIGN_IN_HINT] });
   });
 
   return { passed, failed, errors };

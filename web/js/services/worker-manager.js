@@ -66,6 +66,8 @@ import { bytesToBase64 } from '../utils/base64.js';
  * @property {object} [payload] - Payload
  * @property {string} [status] - Status
  * @property {string} [message] - Message
+ * @property {{key?: unknown, params?: unknown, context?: unknown}} [text] - The
+ *   message as a server message, for `serverText()`; `message` is its English
  * @property {string} [stack] - Stack trace
  * @property {boolean} [success] - Success flag (for ack messages)
  * @property {string} [error] - Error message (for error/save-error messages)

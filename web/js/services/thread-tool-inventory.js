@@ -22,7 +22,7 @@ import { isComposableTool } from './composable-tools.js';
 import contextItemRegistry from '../registries/context-item-registry.js';
 import strategyRegistry from '../registries/strategy-registry.js';
 import { capabilityLabel } from '../utils/capability-label.js';
-import { t } from '../../sdk/lib/i18n.js';
+import { t, formatList } from '../../sdk/lib/i18n.js';
 
 /**
  * @typedef {object} ToolInventory
@@ -182,8 +182,8 @@ export function formatToolDrift(drift) {
  */
 export function toolDriftDetail(drift) {
   return [
-    drift?.added.length ? t('Added: {names}', { names: drift.added.join(', ') }) : '',
-    drift?.removed.length ? t('Gone: {names}', { names: drift.removed.join(', ') }) : ''
+    drift?.added.length ? t('Added: {names}', { names: formatList(drift.added) }) : '',
+    drift?.removed.length ? t('Gone: {names}', { names: formatList(drift.removed) }) : ''
   ].filter(Boolean).join('\n');
 }
 

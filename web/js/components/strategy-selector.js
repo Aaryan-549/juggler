@@ -713,10 +713,10 @@ class StrategySelector extends HTMLElement {
 
     return this._strategies.map(({ id, manifest }) => {
       const isActive = id === this._currentStrategyId;
-      const colorStyle = manifest.color ? `style="--strategy-color: ${manifest.color}"` : '';
+      const colorStyle = manifest.color ? `style="--strategy-color: ${escapeHtml(manifest.color)}"` : '';
 
       const iconHtml = manifest.icon
-        ? `<span class="strategy-item-icon ${manifest.icon}" aria-hidden="true"></span>`
+        ? `<span class="strategy-item-icon ${escapeHtml(manifest.icon)}" aria-hidden="true"></span>`
         : '';
       const name = capabilityLabel(manifest.name, id, strategyRegistry);
       const description = capabilityLabel(manifest.description, id, strategyRegistry);
@@ -725,7 +725,7 @@ class StrategySelector extends HTMLElement {
       // its details — since a menu item may not contain another control. The
       // <li> is only the row they share, and clicks on the body bubble to it.
       return `
-                <li class="strategy-item ${isActive ? 'active' : ''}" data-strategy-id="${id}" role="none" ${colorStyle}>
+                <li class="strategy-item ${isActive ? 'active' : ''}" data-strategy-id="${escapeHtml(id)}" role="none" ${colorStyle}>
                     <div class="strategy-item-body" role="menuitemradio" aria-checked="${isActive}">
                         <header class="strategy-item-header">
                             <span class="strategy-item-label">
@@ -735,7 +735,7 @@ class StrategySelector extends HTMLElement {
                         </header>
                         <p class="strategy-item-description">${escapeHtml(description)}</p>
                     </div>
-                    <button type="button" class="strategy-info-button btn-ghost" role="menuitem" data-strategy-info-id="${id}" title="${escapeHtml(t('View strategy details'))}" aria-label="${escapeHtml(t('View {name} strategy details', { name }))}">${INFO_SVG}</button>
+                    <button type="button" class="strategy-info-button btn-ghost" role="menuitem" data-strategy-info-id="${escapeHtml(id)}" title="${escapeHtml(t('View strategy details'))}" aria-label="${escapeHtml(t('View {name} strategy details', { name }))}">${INFO_SVG}</button>
                 </li>
             `;
     }).join('');
@@ -858,7 +858,7 @@ class StrategySelector extends HTMLElement {
     const dropdownContent = this.generateDropdownContent();
 
     // Build style attribute for color if defined
-    const colorStyle = strategyColor ? `style="--strategy-color: ${strategyColor}"` : '';
+    const colorStyle = strategyColor ? `style="--strategy-color: ${escapeHtml(strategyColor)}"` : '';
     const hasColorAttr = strategyColor ? 'data-has-color="true"' : '';
 
     // While open, the dropdown has been relocated out of this element to
@@ -895,7 +895,7 @@ class StrategySelector extends HTMLElement {
       : '';
 
     const buttonIconHtml = strategyIcon
-      ? `<span class="strategy-icon ${strategyIcon}" aria-hidden="true"></span>`
+      ? `<span class="strategy-icon ${escapeHtml(strategyIcon)}" aria-hidden="true"></span>`
       : '';
 
     this.innerHTML = `

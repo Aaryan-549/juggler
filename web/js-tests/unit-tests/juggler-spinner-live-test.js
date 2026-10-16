@@ -432,7 +432,7 @@ export async function runTests() {
   try {
     const el = mount(true); mounted.push(el);
     el.clubs = 6;
-    if (el.getAttribute('aria-label') !== 'Loading')
+    if (el.getAttribute('aria-label') !== 'Working')
       throw new Error(`aria-label changed to ${el.getAttribute('aria-label')}`);
     for (const pivot of Array.from(el.children)) {
       if (/** @type {Element} */ (pivot).getAttribute('aria-hidden') !== 'true')

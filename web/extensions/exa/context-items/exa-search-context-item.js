@@ -89,49 +89,49 @@ class ExaSearchContextItem extends ContextItem {
     return [{
       name: 'exa_search',
       category: 'read',
-      description: 'Search the web with Exa. Returns ranked results with the passages that match the query; ask for full page text only when the surrounding page matters.',
+      description: markUntranslated('Search the web with Exa. Returns ranked results with the passages that match the query; ask for full page text only when the surrounding page matters.'),
       input_schema: {
         type: 'object',
         properties: {
           query: {
             type: 'string',
             minLength: 1,
-            description: 'The search query'
+            description: markUntranslated('The search query')
           },
           numResults: {
             type: 'integer',
             minimum: 1,
             maximum: 100,
             default: 10,
-            description: 'Number of results to return (default 10)'
+            description: markUntranslated('Number of results to return (default 10)')
           },
           type: {
             type: 'string',
             enum: ['instant', 'fast', 'auto', 'deep-lite', 'deep', 'deep-reasoning'],
             default: 'auto',
-            description: 'Search mode (default auto)'
+            description: markUntranslated('Search mode (default auto)')
           },
           include_domains: {
             type: 'array',
             items: { type: 'string' },
-            description: 'Only include results from these domains or domain paths'
+            description: markUntranslated('Only include results from these domains or domain paths')
           },
           exclude_domains: {
             type: 'array',
             items: { type: 'string' },
-            description: 'Exclude results from these domains or domain paths'
+            description: markUntranslated('Exclude results from these domains or domain paths')
           },
           contents: {
             type: 'string',
             enum: ['highlights', 'text', 'none'],
             default: 'highlights',
-            description: 'How much of each page to return: "highlights" for the passages matching the query (default), "text" for full page text, "none" for titles and links only'
+            description: markUntranslated('How much of each page to return: "highlights" for the passages matching the query (default), "text" for full page text, "none" for titles and links only')
           },
           maxCharacters: {
             type: 'integer',
             minimum: 1,
             maximum: MAX_RESULT_CHARS,
-            description: `Characters of content per result (defaults to a share of the context budget, at most ${MAX_RESULT_CHARS})`
+            description: markUntranslated(`Characters of content per result (defaults to a share of the context budget, at most ${MAX_RESULT_CHARS})`)
           }
         },
         required: ['query']
@@ -252,7 +252,7 @@ class ExaSearchContextItem extends ContextItem {
 
     const result = /** @type {ExaSearchResult} */ (outcome.result);
     if (!result.results?.length) {
-      return this.successSummary(`No Exa results found for "${query}"`, { icon: '○' });
+      return this.successSummary(markUntranslated(`No Exa results found for "${query}"`), { icon: '○' });
     }
 
     const lines = [`Exa search results for "${query}":\n`];

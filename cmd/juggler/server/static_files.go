@@ -457,7 +457,9 @@ func (s *Server) serveIndex(w http.ResponseWriter, r *http.Request) {
 	}
 
 	nonce := generateCSPNonce()
-	setHTMLSecurityHeadersFramed(w, nonce, false, nativeControlOrigin(r))
+	// A test server lets a browser test host the whole shell in a same-origin
+	// frame (see testPageUILocale); every other server lets nothing frame it.
+	setHTMLSecurityHeadersFramed(w, nonce, s.testMode, nativeControlOrigin(r))
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache, must-revalidate")
 
@@ -493,6 +495,9 @@ func (s *Server) serveIndex(w http.ResponseWriter, r *http.Request) {
 	// viewer gets the same one. With none chosen the page is plain English and
 	// carries no catalogue at all.
 	uiLocale := s.uiLocale()
+	if pinned, ok := s.testPageUILocale(r); ok {
+		uiLocale = pinned
+	}
 	htmlLang := webui.SourceLocale
 	var uiCatalog map[string]string
 	if uiLocale != "" {

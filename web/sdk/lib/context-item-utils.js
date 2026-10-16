@@ -15,26 +15,47 @@ import { renderMarkdown, decorateCodeBlocks } from './markdown.js';
 import { highlightCode } from './syntax-highlight.js';
 import { renderLineNumberedCode } from './code-lines.js';
 import { injectStylesOnce } from './inject-styles.js';
+import { formatNumber } from './i18n.js';
+import { SIZE_UNITS, sizeWithUnit } from './unit-messages.js';
 
 /**
- * Format file size in human-readable format
+ * A byte count's 1024-step tier: 0 for bytes, 1 for KB, and so on.
+ * @param {number} bytes - A positive byte count.
+ * @returns {number} The tier, an index into {@link SIZE_UNITS}.
+ */
+function sizeTier(bytes) {
+  return Math.min(SIZE_UNITS.length - 1, Math.floor(Math.log(bytes) / Math.log(1024)));
+}
+
+/**
+ * Format a file size for text the model reads (tool results, summaries): always
+ * English, whatever the UI language. A viewer shows sizes through
+ * {@link formatFileSizeForDisplay}, which reads the same in English.
  * @param {number} bytes - File size in bytes
  * @returns {string} Formatted size (e.g., "1.5 KB", "2.3 MB")
  */
 export function formatFileSize(bytes) {
   if (bytes === 0) return '0 B';
   if (bytes === null || bytes === undefined) return '—';
+  const i = sizeTier(bytes);
+  if (i === 0) return `${bytes} B`;
+  return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${SIZE_UNITS[i]}`;
+}
 
-  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-  const k = 1024;
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  const size = bytes / Math.pow(k, i);
-
-  if (i === 0) {
-    return `${bytes} B`;
-  }
-
-  return `${size.toFixed(1)} ${units[i]}`;
+/**
+ * Format a file size for the UI: {@link formatFileSize}'s figures, with the
+ * digits in the UI language's number format and the unit a message.
+ * @param {number} bytes - File size in bytes
+ * @returns {string} Formatted size (e.g., "1.5 KB", "2.3 MB")
+ */
+export function formatFileSizeForDisplay(bytes) {
+  if (bytes === null || bytes === undefined) return '—';
+  if (bytes === 0) return sizeWithUnit(formatNumber(0), 'B');
+  const i = sizeTier(bytes);
+  if (i === 0) return sizeWithUnit(formatNumber(bytes, { useGrouping: false }), 'B');
+  const figure = formatNumber(bytes / Math.pow(1024, i),
+    { useGrouping: false, minimumFractionDigits: 1, maximumFractionDigits: 1 });
+  return sizeWithUnit(figure, SIZE_UNITS[i] ?? 'TB');
 }
 
 /**

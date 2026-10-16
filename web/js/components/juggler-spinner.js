@@ -214,7 +214,8 @@ class JugglerSpinner extends HTMLElement {
   connectedCallback() {
     if (this.childElementCount === 0) this._renderClubs(DEFAULT_CLUBS);
     if (!this.hasAttribute('role')) this.setAttribute('role', 'status');
-    if (!this.hasAttribute('aria-label')) this.setAttribute('aria-label', t('Loading'));
+    // A live spinner stands in front of a running turn, which is work, not a load.
+    if (!this.hasAttribute('aria-label')) this.setAttribute('aria-label', this.isLive ? t('Working') : t('Loading'));
     this._observeVisibility();
   }
 

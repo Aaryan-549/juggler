@@ -8,6 +8,8 @@ import (
 	"errors"
 	"runtime"
 
+	"juggler/cmd/juggler/msg"
+
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
@@ -29,26 +31,15 @@ var afterAppInit = func(*appState) {}
 // buildAppMenu installs the application menu onto the root menu, from
 // installAppMenu. Default: the platform application menu, no extra items.
 //
-// It mirrors Wails' AppMenu role (About, Services, Hide/HideOthers/UnHide,
-// Quit) rather than using it, for the one difference addAboutItem makes; macOS
-// treats the first submenu as the app menu whatever its label, and the Services
-// role keeps its native submenu injection. Like that role, it is macOS-only:
+// The menu itself is appMenuNode. Like Wails' AppMenu role, it is macOS-only:
 // nothing else shows an application menu (Linux is suppressed a caller up, and
-// the frameless Windows window displays no menu bar at all).
+// the frameless Windows window displays no menu bar at all). A replacement adds
+// it with a.addMenuNode, so its labels follow the UI language.
 var buildAppMenu = func(a *appState, menu *application.Menu) {
 	if runtime.GOOS != "darwin" {
 		return
 	}
-	appMenu := menu.AddSubmenu("Juggler")
-	addAboutItem(a, appMenu)
-	appMenu.AddSeparator()
-	appMenu.AddRole(application.ServicesMenu)
-	appMenu.AddSeparator()
-	appMenu.AddRole(application.Hide)
-	appMenu.AddRole(application.HideOthers)
-	appMenu.AddRole(application.UnHide)
-	appMenu.AddSeparator()
-	appMenu.AddRole(application.Quit)
+	a.addMenuNode(menu, appMenuNode(a))
 }
 
 // UpdaterSnapshot is the in-app updater's current state, marshalled to the page
@@ -65,6 +56,9 @@ type UpdaterSnapshot struct {
 	Written    int64  `json:"written,omitempty"`
 	Total      int64  `json:"total,omitempty"`
 	Error      string `json:"error,omitempty"`
+	// ErrorMessage is Error as a message, for the page to show in its own
+	// language, when the failure has one; Error stays the English.
+	ErrorMessage *msg.Message `json:"errorMessage,omitempty"`
 	// ErrorStage is which phase produced Error ("check", "download", "verify",
 	// "install"). The page leads with it so a check that couldn't reach the
 	// server doesn't claim an update failed — nothing was being updated.

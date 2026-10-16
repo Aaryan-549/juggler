@@ -14,6 +14,7 @@ import { registerContextMenuProvider, codeReferenceMenuItem } from '../services/
 import { copyToClipboard } from '../../sdk/lib/clipboard.js';
 import { isAbsolutePath } from '../utils/code-selection.js';
 import { t, formatNumber, markForTranslation } from '../../sdk/lib/i18n.js';
+import { errorText } from '../../sdk/lib/error-utils.js';
 
 /** @typedef {import('../lib/diff-types.js').DiffHunk} DiffHunk */
 /** @typedef {import('../lib/diff-types.js').DiffLine} DiffLine */
@@ -162,9 +163,10 @@ function splitRows(lines) {
  * @returns {string} The gutter cell as HTML.
  */
 function lineNumberCell(side, number) {
+  const shown = number === null || number === undefined ? '' : lineNumber(number);
   return side === 'old'
-    ? `<span class="line-num old">${number ?? ''}</span>`
-    : `<span class="line-num new">${number ?? ''}</span>`;
+    ? `<span class="line-num old">${shown}</span>`
+    : `<span class="line-num new">${shown}</span>`;
 }
 
 /**
@@ -469,7 +471,7 @@ class DiffViewer extends HTMLElement {
    */
   setError(error) {
     this.mode = 'error';
-    this.errorText = error instanceof Error ? error.message : String(error ?? '');
+    this.errorText = error instanceof Error ? errorText(error) : String(error ?? '');
     this.render();
   }
 
@@ -593,8 +595,8 @@ class DiffViewer extends HTMLElement {
         </diff-body>
         ${fileComments}
         <diff-stats>
-          <span class="add-count">+${model.added}</span>
-          <span class="remove-count">-${model.removed}</span>
+          <span class="add-count">+${formatNumber(model.added)}</span>
+          <span class="remove-count">-${formatNumber(model.removed)}</span>
         </diff-stats>
       </diff-content>
     `;

@@ -5,7 +5,7 @@
 
 import ContextItem from 'juggler/context-item';
 import { createTextBlock, formatFileContentForLLM } from 'juggler/item-utils';
-import { translator } from 'juggler/i18n';
+import { translator, markUntranslated } from 'juggler/i18n';
 import { formatGrepResults } from './search/grep-format.js';
 import { creditProgramRead } from './read-history.js';
 import { absolutePathKey } from './path-approval.js';
@@ -73,27 +73,27 @@ class BatchContextItem extends ContextItem {
       {
         name: 'batch_read',
         category: 'read',
-        description: 'Read up to 10 files in a single call. Returns combined content with file separators. More efficient than multiple read calls.',
+        description: markUntranslated('Read up to 10 files in a single call. Returns combined content with file separators. More efficient than multiple read calls.'),
         input_schema: {
           type: 'object',
           properties: {
             files: {
               type: 'array',
-              description: 'Array of files to read (max 10)',
+              description: markUntranslated('Array of files to read (max 10)'),
               items: {
                 type: 'object',
                 properties: {
                   file_path: {
                     type: 'string',
-                    description: 'Absolute file path'
+                    description: markUntranslated('Absolute file path')
                   },
                   offset: {
                     type: 'number',
-                    description: 'Line number to start from (1-indexed)'
+                    description: markUntranslated('Line number to start from (1-indexed)')
                   },
                   limit: {
                     type: 'number',
-                    description: 'Number of lines to read'
+                    description: markUntranslated('Number of lines to read')
                   }
                 },
                 required: ['file_path']
@@ -107,32 +107,32 @@ class BatchContextItem extends ContextItem {
       {
         name: 'batch_grep',
         category: 'read',
-        description: 'Run up to 10 grep searches in a single call. Returns combined results with search separators. More efficient than multiple grep calls.',
+        description: markUntranslated('Run up to 10 grep searches in a single call. Returns combined results with search separators. More efficient than multiple grep calls.'),
         input_schema: {
           type: 'object',
           properties: {
             searches: {
               type: 'array',
-              description: 'Array of searches to run (max 10)',
+              description: markUntranslated('Array of searches to run (max 10)'),
               items: {
                 type: 'object',
                 properties: {
                   pattern: {
                     type: 'string',
-                    description: 'Regex pattern to search for'
+                    description: markUntranslated('Regex pattern to search for')
                   },
                   path: {
                     type: 'string',
-                    description: 'Directory to search in'
+                    description: markUntranslated('Directory to search in')
                   },
                   glob: {
                     type: 'string',
-                    description: 'File glob filter'
+                    description: markUntranslated('File glob filter')
                   },
                   output_mode: {
                     type: 'string',
                     enum: ['content', 'files_with_matches', 'count'],
-                    description: 'Output format (default: files_with_matches)'
+                    description: markUntranslated('Output format (default: files_with_matches)')
                   }
                 },
                 required: ['pattern']
@@ -389,8 +389,12 @@ class BatchContextItem extends ContextItem {
 
     return this.buildStatusUI(actionStatus, {
       typeName: isBatchRead ? t('BatchRead') : t('BatchGrep'),
-      pending: isBatchRead ? t('{count} files...', { count }) : t('{count} searches...', { count }),
-      success: isBatchRead ? t('{count} files completed', { count }) : t('{count} searches completed', { count }),
+      pending: isBatchRead
+        ? t('{count, plural, one {{count} file...} other {{count} files...}}', { count })
+        : t('{count, plural, one {{count} search...} other {{count} searches...}}', { count }),
+      success: isBatchRead
+        ? t('{count, plural, one {{count} file completed} other {{count} files completed}}', { count })
+        : t('{count, plural, one {{count} search completed} other {{count} searches completed}}', { count }),
       failurePrefix: t('failed')
     });
   }
@@ -433,7 +437,7 @@ class BatchContextItem extends ContextItem {
 
     const count = entries.length;
     const section = helpers.labeledSubsection(isGrep
-      ? t('{count, plural, =1 {Searche} other {Searches ({count})}}', { count })
+      ? t('{count, plural, =1 {Search} other {Searches ({count})}}', { count })
       : t('{count, plural, =1 {File} other {Files ({count})}}', { count }));
 
     if (isGrep) {
@@ -483,11 +487,11 @@ class BatchContextItem extends ContextItem {
    * @private
    */
   static _grepLine(search) {
-    const scope = [
-      search.path ? `in ${code(search.path)}` : '',
-      search.glob ? `matching ${code(search.glob)}` : '',
-    ].filter(Boolean);
-    return code(search.pattern || '') + (scope.length ? ` — ${scope.join(', ')}` : '');
+    const params = { pattern: code(search.pattern || ''), path: code(search.path || ''), glob: code(search.glob || '') };
+    if (search.path && search.glob) return t('{pattern} — in {path}, matching {glob}', params);
+    if (search.path) return t('{pattern} — in {path}', params);
+    if (search.glob) return t('{pattern} — matching {glob}', params);
+    return params.pattern;
   }
 
   /**

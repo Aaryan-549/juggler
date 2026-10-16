@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"juggler/cmd/juggler/msg"
 	"juggler/cmd/juggler/providers/provider"
 	providerutils "juggler/cmd/juggler/providers/utils"
 )
@@ -491,15 +492,17 @@ func (r *run) mergeProcessingPhase(phase string) {
 	})
 }
 
-// cacheMissNoticeLead states, in plain English, what a provider cache miss cost.
-// The provider's own reason is appended after it verbatim: the lead goes ABOVE
-// the underlying text, never in place of it.
-const cacheMissNoticeLead = "Claude Code re-read the whole conversation instead of using its cached copy, so this turn cost more than it needed to."
-
-// cacheMissNoticeSummary is the same statement cut to a transcript row. The row
-// has one line to say what happened in, so it drops the cache the lead names and
-// keeps the cost, which is the part worth reading in passing.
-const cacheMissNoticeSummary = "Claude Code re-read the whole conversation"
+// cacheMissNoticeText is a cache-miss notice's text. The content states, in
+// plain English, what the miss cost, with the provider's own reason after it
+// verbatim: the lead goes ABOVE the underlying text, never in place of it. The
+// summary is the same statement cut to a transcript row, which has one line to
+// say what happened in, so it drops the cache the lead names and keeps the
+// cost, which is the part worth reading in passing.
+func cacheMissNoticeText(reason string) (summary, content msg.Message) {
+	return msg.New("Claude Code re-read the whole conversation"),
+		msg.New("Claude Code re-read the whole conversation instead of using its cached copy, so this turn cost more than it needed to.\n\nReason: {reason}",
+			"reason", reason)
+}
 
 // insertCacheMissNotice records a consequential provider cache miss in the
 // transcript, at the point in the conversation where it happened — after the
@@ -517,18 +520,18 @@ func (r *run) insertCacheMissNotice(reason string) {
 		return
 	}
 	r.t.lastCacheMissNotice = reason
-	r.appendTargetMessage(ConversationItem{
-		Type:   ItemTypeNotice,
-		ItemID: generateItemID(),
-		// The summary is the row's only text — the transcript shows a warning
-		// triangle, a "Warning" lozenge and this — so it is a sentence that
-		// explains itself, kept to one line. The detail is in Content, for the
-		// panel.
-		Summary:   cacheMissNoticeSummary,
-		Content:   cacheMissNoticeLead + "\n\nReason: " + reason,
+	notice := ConversationItem{
+		Type:      ItemTypeNotice,
+		ItemID:    generateItemID(),
 		Source:    "claudecode",
 		Timestamp: time.Now().Format(time.RFC3339),
-	})
+	}
+	// The summary is the row's only text — the transcript shows a warning
+	// triangle, a "Warning" lozenge and this — so it is a sentence that explains
+	// itself, kept to one line. The detail is in Content, for the panel.
+	summary, content := cacheMissNoticeText(reason)
+	setNoticeText(&notice, summary, content)
+	r.appendTargetMessage(notice)
 }
 
 // insertProviderNotice records a durable warning the provider composed in full
@@ -559,10 +562,6 @@ func (r *run) insertProviderNotice(notice *StreamNotice) {
 	})
 }
 
-// truncationNoticeLead states, in plain English, what a max_tokens stop
-// actually was. The measured numbers follow it; the lead never replaces them.
-const truncationNoticeLead = "The model hit its output limit before it finished, so this turn stops mid-reply."
-
 // insertTruncationNotice records that the provider ended a turn at its output
 // budget, at the point in the conversation where it happened.
 //
@@ -581,42 +580,45 @@ const truncationNoticeLead = "The model hit its output limit before it finished,
 func (r *run) insertTruncationNotice(response *LLMResponse) {
 	reserve := r.resolveContextWindow().ReserveTokens
 
-	var detail strings.Builder
-	detail.WriteString(truncationNoticeLead)
-	// The reported case: a reasoning model that never reached an answer. Worth
-	// saying outright, because the transcript shows thinking and then nothing,
-	// which reads like a crash rather than a budget.
-	if !hasAssistantText(response) {
-		detail.WriteString(" It spent the whole budget thinking, so there is no answer to show.")
-	}
-	detail.WriteString("\n\n")
+	// The measured figures say whichever of the budget and its use are known.
+	budget := "none"
 	switch {
 	case reserve > 0 && response.OutputTokens > 0:
-		fmt.Fprintf(&detail, "Output budget: %d tokens; this turn used %d. ", reserve, response.OutputTokens)
+		budget = "both"
 	case reserve > 0:
-		fmt.Fprintf(&detail, "Output budget: %d tokens. ", reserve)
+		budget = "reserve"
 	case response.OutputTokens > 0:
-		fmt.Fprintf(&detail, "This turn produced %d output tokens. ", response.OutputTokens)
+		budget = "used"
 	}
-	detail.WriteString("Thinking counts against that budget. To allow longer replies, raise this model's " +
-		"Max output tokens under its provider's \"Models and token limits\" in Settings. Unless you set it there, " +
-		"the budget comes from the model's own limit or is derived from its context window, so a window smaller " +
-		"than the one your server really serves shrinks replies too.")
+	// The lead states, in plain English, what a max_tokens stop actually was;
+	// the measured numbers follow it, and it never replaces them. The reported
+	// case — a reasoning model that never reached an answer — is said outright,
+	// because the transcript shows thinking and then nothing, which reads like a
+	// crash rather than a budget.
+	content := msg.New("The model hit its output limit before it finished, so this turn stops mid-reply."+
+		"{thinkingOnly, select, yes { It spent the whole budget thinking, so there is no answer to show.} other {}}\n\n"+
+		"{budget, select, both {Output budget: {reserve} tokens; this turn used {used}. } reserve {Output budget: {reserve} tokens. } used {This turn produced {used} output tokens. } other {}}"+
+		"Thinking counts against that budget. To allow longer replies, raise this model's "+
+		"Max output tokens under its provider's \"Models and token limits\" in Settings. Unless you set it there, "+
+		"the budget comes from the model's own limit or is derived from its context window, so a window smaller "+
+		"than the one your server really serves shrinks replies too.",
+		"thinkingOnly", yesNo(!hasAssistantText(response)), "budget", budget,
+		"reserve", reserve, "used", response.OutputTokens)
 
 	source := ""
 	if mc := r.resolveModelConfig(); mc != nil {
 		source = mc.Provider
 	}
-	r.appendTargetMessage(ConversationItem{
-		Type:   ItemTypeNotice,
-		ItemID: generateItemID(),
-		// The lead alone is the row: it already says what happened in one line,
-		// and the measured numbers that follow it are the panel's business.
-		Summary:   truncationNoticeLead,
-		Content:   detail.String(),
+	notice := ConversationItem{
+		Type:      ItemTypeNotice,
+		ItemID:    generateItemID(),
 		Source:    source,
 		Timestamp: time.Now().Format(time.RFC3339),
-	})
+	}
+	// The lead alone is the row: it already says what happened in one line, and
+	// the measured numbers that follow it are the panel's business.
+	setNoticeText(&notice, msg.New("The model hit its output limit before it finished, so this turn stops mid-reply."), content)
+	r.appendTargetMessage(notice)
 }
 
 func (r *run) finalizeStreaming() {

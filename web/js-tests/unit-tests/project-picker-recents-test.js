@@ -167,6 +167,42 @@ export async function runTests() {
     }
   });
 
+  await run('a pre-filled path is the attribute value exactly, entities and all', async () => {
+    const PATH = '/work/&amp;/<b>"x\'';
+    const { element, cancel } = buildPickerPanel({ currentPath: PATH });
+    try {
+      assert(!element.querySelector('b'), `markup in the path became elements: ${element.innerHTML}`);
+      const value = element.querySelector('path-input')?.getAttribute('value');
+      assert(value === PATH, `value read ${JSON.stringify(value)}, want ${JSON.stringify(PATH)}`);
+    } finally {
+      cancel();
+    }
+  });
+
+  await run('a new window opened on the current project is given its path, not the status line', async () => {
+    /** @type {string[]} */
+    const launched = [];
+    const { element, promise, cancel } = buildPickerPanel({
+      currentPath: '/work/here',
+      confirmOpensNewWindow: true,
+      onNewWindow: (p) => { launched.push(p); },
+      validate: async () => ({ valid: true, current: true, path: '/work/here' }),
+    });
+    document.body.appendChild(element);
+    try {
+      const openBtn = /** @type {HTMLButtonElement} */ (element.querySelector('.pp-btn-open'));
+      element.querySelector('path-input')?.dispatchEvent(new CustomEvent('path-change', { detail: { value: '/work/here' } }));
+      assert(await waitUntil(() => !openBtn.disabled), 'the open button never enabled');
+      openBtn.click();
+      await settleWithin(promise, 1000);
+      assert(launched.length === 1 && launched[0] === '/work/here',
+        `the new window was given ${JSON.stringify(launched)}, want ["/work/here"]`);
+    } finally {
+      cancel();
+      element.remove();
+    }
+  });
+
   await run('under en-XA every state the picker draws is translated', async () => {
     const root = document.documentElement;
     const hadWindowMode = root.dataset.windowMode;
@@ -250,6 +286,8 @@ export async function runTests() {
         };
         check(await statusFor({ valid: true, current: true }), 'current project');
         check(await statusFor({ valid: false }), 'invalid');
+        check(await statusFor({ valid: false, error: 'path not found', errorMessage: { key: 'path not found' } }),
+          'invalid, as the server worded it');
         check(await statusFor(new Error('1')), 'check failed');
         // The Browse… button draws only under a native host, which this page
         // never has; its label is checked from the catalogue.

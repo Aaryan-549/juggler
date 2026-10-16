@@ -181,7 +181,7 @@ function _buildOutputSection(blob) {
   };
 
   const section = _section(t('LLM Output'), {
-    summary: blob.outputTokens ? t('{count} tokens', { count: formatLocaleNumber(blob.outputTokens) }) : '',
+    summary: blob.outputTokens ? t('{count, plural, one {{tokens} token} other {{tokens} tokens}}', { count: blob.outputTokens, tokens: formatLocaleNumber(blob.outputTokens) }) : '',
     copyText: JSON.stringify(reconstructed, null, 2),
     copyLabel: t('Copy the output as JSON')
   });
@@ -399,10 +399,10 @@ function _buildToolsRow(tools, blob, messageThread) {
   const groups = groupToolsByOrigin(tools);
   const mcpCount = groups.reduce((n, g) => n + (g.server === null ? 0 : g.tools.length), 0);
   const label = mcpCount
-    ? t('{count, plural, other {{count} tools}} · {mcp, plural, other {{mcp} from MCP}}', {
+    ? t('{count, plural, one {{count} tool} other {{count} tools}} · {mcp, plural, other {{mcp} from MCP}}', {
       count: tools.length, mcp: mcpCount
     })
-    : t('{count, plural, other {{count} tools}}', { count: tools.length });
+    : t('{count, plural, one {{count} tool} other {{count} tools}}', { count: tools.length });
   return _row(t('tools', undefined, { context: 'transaction row kind' }), label, tools, { body: () => _buildToolList(groups, tools, blob, messageThread) });
 }
 

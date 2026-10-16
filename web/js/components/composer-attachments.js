@@ -21,7 +21,7 @@
 
 import apiService from '../services/api.js';
 import { createImageThumb } from '../utils/image-lightbox.js';
-import { extractErrorMessage } from '../../sdk/lib/error-utils.js';
+import { errorText } from '../../sdk/lib/error-utils.js';
 import { t, formatNumber, markUntranslated } from '../../sdk/lib/i18n.js';
 
 /**
@@ -314,7 +314,7 @@ export async function uploadAndAdd(composer, file) {
     if (idx !== -1) composer._pendingAttachments.splice(idx, 1);
     if (placeholder._previewURL) URL.revokeObjectURL(placeholder._previewURL);
     renderAttachmentChips(composer);
-    composer.showWarning(t('Image upload failed: {error}', { error: extractErrorMessage(err) }));
+    composer.showWarning(t('Image upload failed: {error}', { error: errorText(err) }));
   }
 }
 

@@ -26,7 +26,6 @@ import { formatTokens } from '../../../js/utils/format.js';
 import { assert } from '../../../js-tests/utilities/test-helpers.js';
 import { underPseudoLocale, shownStrings } from '../../../js-tests/utilities/pseudo-locale.js';
 import { isPseudoLocalized } from '../../../sdk/lib/i18n.js';
-import { fetchExtensions } from '../../../js/services/extensions.js';
 
 /** A stand-in extension and the strategy name its catalogue translates. */
 const STANDIN_EXTENSION = 'test-i18n-strategies';
@@ -220,10 +219,6 @@ export async function runTests(_ctx) {
     // The strategy registry is pinned: the stand-in strategy belongs to a
     // stand-in extension, whatever this lane has registered.
     const realGetExtensionId = strategyRegistry.getExtensionId;
-    // The tool-list walk reaches fetchExtensions(); a first call made under
-    // en-XA would register the real extension catalogues over the stand-ins.
-    // Made here, in English, it caches the list and registers nothing.
-    await fetchExtensions();
     try {
       /** @type {any} */ (strategyRegistry).getExtensionId =
         (/** @type {string} */ id) => (id === 'test-i18n-standin' ? STANDIN_EXTENSION : null);

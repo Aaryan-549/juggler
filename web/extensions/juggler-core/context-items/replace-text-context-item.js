@@ -76,26 +76,26 @@ class ReplaceTextContextItem extends EditBase {
       properties: {
         file_path: {
           type: 'string',
-          description: 'The absolute path to the file to modify. Must be inside the working directory unless the user explicitly asked for a location outside it.'
+          description: markUntranslated('The absolute path to the file to modify. Must be inside the working directory unless the user explicitly asked for a location outside it.')
         },
         old_string: {
           type: 'string',
-          description: 'The text to replace (must be different from new_string)'
+          description: markUntranslated('The text to replace (must be different from new_string)')
         },
         new_string: {
           type: 'string',
-          description: 'The text to replace it with (must be different from old_string)'
+          description: markUntranslated('The text to replace it with (must be different from old_string)')
         },
         replace_all: {
           type: 'boolean',
           default: false,
-          description: 'Replace all occurrences of old_string (default false)'
+          description: markUntranslated('Replace all occurrences of old_string (default false)')
         }
       },
       required: ['file_path', 'old_string', 'new_string']
     };
 
-    const description = 'Performs exact string replacements in files. Read the file first — the edit is refused if this conversation has not read it, or if it changed on disk since. It also fails if old_string is not unique in the file: include more surrounding context, or use replace_all.';
+    const description = markUntranslated('Performs exact string replacements in files. Read the file first — the edit is refused if this conversation has not read it, or if it changed on disk since. It also fails if old_string is not unique in the file: include more surrounding context, or use replace_all.');
 
     return [
       {
@@ -251,9 +251,9 @@ class ReplaceTextContextItem extends EditBase {
     const MAX_LINES = 40;
     const MAX_CHARS = 4000;
     if (oldContentLines > MAX_LINES || oldContentChars > MAX_CHARS) {
-      return `The old_str is very large (${oldContentLines} lines, ${oldContentChars} characters) and did not match. ` +
+      return markUntranslated(`The old_str is very large (${oldContentLines} lines, ${oldContentChars} characters) and did not match. ` +
         `For a block this big, the write tool is usually more reliable than reproducing it exactly. ` +
-        `Otherwise re-read the file and copy the exact text (including whitespace) for a smaller, unique old_str.`;
+        `Otherwise re-read the file and copy the exact text (including whitespace) for a smaller, unique old_str.`);
     }
     return err.message;
   }
@@ -474,7 +474,7 @@ class ReplaceTextContextItem extends EditBase {
       status = 'error';
     }
 
-    return { typeName: t('Replace'), summary, status };
+    return { typeName: t('Replace', undefined, { context: 'tool name' }), summary, status };
   }
 
   /**
@@ -505,7 +505,7 @@ class ReplaceTextContextItem extends EditBase {
         helpers.addSubsection(wrapper, t('Search'), input.old_string, 'properties-panel-code');
       }
       if (input.new_string !== undefined) {
-        helpers.addSubsection(wrapper, t('Replace'), input.new_string, 'properties-panel-code');
+        helpers.addSubsection(wrapper, t('Replace', undefined, { context: 'replacement text label' }), input.new_string, 'properties-panel-code');
       }
       const fullResult = result.get ? result.get('fullResult') : result?.fullResult;
       const fullObj = fullResult?.toJSON ? fullResult.toJSON() : fullResult;
@@ -519,7 +519,7 @@ class ReplaceTextContextItem extends EditBase {
         helpers.addSubsection(wrapper, t('Search'), input.old_string, 'properties-panel-code');
       }
       if (input.new_string !== undefined) {
-        helpers.addSubsection(wrapper, t('Replace'), input.new_string, 'properties-panel-code');
+        helpers.addSubsection(wrapper, t('Replace', undefined, { context: 'replacement text label' }), input.new_string, 'properties-panel-code');
       }
     }
     return { skipResultSection: true };

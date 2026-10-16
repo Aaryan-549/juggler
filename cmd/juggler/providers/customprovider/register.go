@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strings"
 
+	"juggler/cmd/juggler/msg"
 	"juggler/cmd/juggler/providers/openaibase"
 	"juggler/cmd/juggler/providers/provider"
 	"juggler/cmd/juggler/providers/utils"
@@ -158,7 +159,7 @@ func registerInstance(id string, inst Instance) {
 	openaibase.Register(openaibase.Descriptor{
 		Name:        RegisteredName(id),
 		DisplayName: displayName,
-		Description: "A custom endpoint speaking the OpenAI Chat Completions API. Its base URL and request headers are set in the Custom Providers tab; the API key is optional, for endpoints that need one. Models come from the endpoint's own model list, along with their context windows where it publishes them (vLLM, llama.cpp and LiteLLM all do; for LM Studio, use the LM Studio provider, which reads each model's loaded window). For a model it says nothing about, Juggler assumes 128k, or 8k for a server on this machine or your local network — set the real figure per model below.",
+		Description: msg.New("A custom endpoint speaking the OpenAI Chat Completions API. Its base URL and request headers are set in the Custom Providers tab; the API key is optional, for endpoints that need one. Models come from the endpoint's own model list, along with their context windows where it publishes them (vLLM, llama.cpp and LiteLLM all do; for LM Studio, use the LM Studio provider, which reads each model's loaded window). For a model it says nothing about, Juggler assumes 128k, or 8k for a server on this machine or your local network — set the real figure per model below."),
 		// Per-instance credential slot and environment variable, so several
 		// endpoints hold distinct secrets. The environment form folds the
 		// hyphens an id may carry to underscores, since a shell cannot set a

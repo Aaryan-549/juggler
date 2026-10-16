@@ -17,7 +17,7 @@
 
 import { assert } from '../utilities/test-helpers.js';
 import { underPseudoLocale } from '../utilities/pseudo-locale.js';
-import { isPseudoLocalized } from '../../sdk/lib/i18n.js';
+import { isPseudoLocalized, setLocale } from '../../sdk/lib/i18n.js';
 import {
   attachProgramSdk,
   diffToolNames,
@@ -192,6 +192,22 @@ export async function runTests(_ctx) {
     const detail = toolDriftDetail(drift);
     assert(detail.includes('Added: mcp__linear__list_issues'), `detail was ${JSON.stringify(detail)}`);
     assert(detail.includes('Gone: bash, glob'), `detail was ${JSON.stringify(detail)}`);
+  });
+
+  await run('drift: the names are listed the way the UI language lists them', () => {
+    // A language whose plain list is not a comma join; asserted, so the case
+    // cannot pass vacuously on a runtime that lists it with commas after all.
+    const locale = 'ja';
+    const expected = new Intl.ListFormat(locale, { type: 'unit', style: 'short' }).format(['bash', 'glob']);
+    assert(expected !== 'bash, glob', `${locale} lists with commas here, so this case proves nothing`);
+    const previous = setLocale(locale);
+    try {
+      const drift = diffToolNames([{ name: 'bash' }, { name: 'glob' }], []);
+      const detail = toolDriftDetail(drift);
+      assert(detail === `Gone: ${expected}`, `expected ${JSON.stringify(`Gone: ${expected}`)}, got ${JSON.stringify(detail)}`);
+    } finally {
+      setLocale(previous);
+    }
   });
 
   await run('drift: comparison is by name, not by schema', () => {

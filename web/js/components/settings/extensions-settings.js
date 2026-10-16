@@ -5,6 +5,7 @@
 import { extensionConfigGet, extensionConfigSet } from '../../services/ops-api.js';
 import { showConfirm } from '../modal-dialog.js';
 import { t, htmlSlots, withHtml } from '../../../sdk/lib/i18n.js';
+import { errorText } from '../../../sdk/lib/error-utils.js';
 
 /** @typedef {import('../../services/extensions.js').ExtensionSetting} ExtensionSetting */
 
@@ -523,7 +524,7 @@ export class ExtensionSettingsEditor {
    * @returns {string} Useful user-facing message
    */
   _errorMessage(error, fallback) {
-    return error instanceof Error && error.message ? error.message : fallback;
+    return error instanceof Error && error.message ? errorText(error) : fallback;
   }
 
   /**

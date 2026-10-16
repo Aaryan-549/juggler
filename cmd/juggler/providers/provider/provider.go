@@ -9,6 +9,8 @@ import (
 	"encoding/json"
 	"math"
 	"time"
+
+	"juggler/cmd/juggler/msg"
 )
 
 // Message represents a unified conversation message using discriminated union via Type field.
@@ -767,7 +769,9 @@ const (
 type ProviderInfo struct {
 	Name        string
 	DisplayName string
-	Description string // Human-readable blurb shown in the settings UI. May be empty.
+	// Description is the blurb shown in the settings UI, written as a msg.New
+	// literal so it is catalogued and shown translated. May be zero.
+	Description msg.Message
 	AuthType    AuthType
 	AuthSource  string // Optional source name for non-key auth (e.g., a CLI-owned login).
 	// SignInMethod names an interactive, in-app sign-in the provider supports
@@ -797,7 +801,7 @@ type ProviderInfo struct {
 	// point of gating here. A provider that sets this must compute its model list
 	// locally (no network, no subprocess), because the refresh still lists its
 	// models when not-ready so the menu can show them disabled alongside the hint.
-	ReadinessCheck func() (ready bool, hint string)
+	ReadinessCheck func() (ready bool, hint msg.Message)
 	// ModelContextWindows is the static context-window map for built-in models.
 	// May be nil for providers whose models come from a runtime source (e.g. a
 	// CLI subprocess or local daemon). Consumers should treat empty/nil as

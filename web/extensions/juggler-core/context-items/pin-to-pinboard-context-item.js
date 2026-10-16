@@ -198,7 +198,7 @@ class PinToPinboardContextItem extends ContextItem {
       'It is also how to show the user something you have made rather than describe it: write it to a file in the project and pin that file. An HTML file is shown as the rendered page, scripts running, with its source a click away — so a report, chart or mock-up can be looked at, not just read.',
       listed ? `Installed types:\n${listed}` : '',
       'A type installed after this list was built is accepted too: use its id and give it whatever parameters it expects, and it will validate its own config.',
-    ].filter(Boolean).join('\n\n');
+    ].filter(Boolean).map(markUntranslated).join('\n\n');
 
     return [{
       name: 'pin_to_pinboard',
@@ -209,11 +209,11 @@ class PinToPinboardContextItem extends ContextItem {
         properties: {
           type: {
             type: 'string',
-            description: 'Which kind of Pinboard item to add — the id of one of the installed types listed above.',
+            description: markUntranslated('Which kind of Pinboard item to add — the id of one of the installed types listed above.'),
           },
           parameters: {
             type: 'object',
-            description: 'Parameters for the requested type, as listed above. Pass an empty object for a type that takes none.',
+            description: markUntranslated('Parameters for the requested type, as listed above. Pass an empty object for a type that takes none.'),
           },
         },
         required: ['type', 'parameters'],

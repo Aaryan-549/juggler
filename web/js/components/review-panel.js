@@ -21,7 +21,7 @@
  */
 
 import { createDiffViewer } from './diff-viewer.js';
-import { t } from '../../sdk/lib/i18n.js';
+import { serverText, t, formatNumber } from '../../sdk/lib/i18n.js';
 
 /**
  * Scroll one box just far enough to show something inside it, and scroll
@@ -78,6 +78,8 @@ function revealInScroller(scroller, target) {
  * @property {boolean} complete - Whether everything was reached. A false here is
  *   drawn, never papered over: a partial list stays on screen, described as partial.
  * @property {string[]} warnings - What could not be reviewed, one sentence each
+ * @property {{key?: unknown}[]} [warningMessages] - The same warnings, in the same
+ *   order, as server messages; each is shown via `serverText()`, its warning the fallback
  * @property {ReviewGroup[]} groups - The groups, in the order to show them
  * @property {string} [scope] - What is being compared, when this manifest says
  *   more than the panel's `scopeLabel` — the tree it was read from, say. It rides
@@ -361,7 +363,7 @@ class ReviewPanel {
       // that could not reach everything knows a floor, not a total.
       parts.push(t('{count, plural, one {{count} file} other {{count} files}}{partial, select, yes { so far} other {}}',
         { count: files.length, partial: this._manifest.complete ? 'no' : 'yes' }));
-      if (added > 0 || removed > 0) parts.push(`+${added} −${removed}`);
+      if (added > 0 || removed > 0) parts.push(`+${formatNumber(added)} −${formatNumber(removed)}`);
     }
     this._scopeTextEl.textContent = parts.filter(Boolean).join(' · ');
   }
@@ -375,7 +377,8 @@ class ReviewPanel {
     if (warnings.length === 0) return;
     this._warningsEl.append(el('div', 'review-panel__warnings-lead', t('Not everything could be reviewed:')));
     const list = el('ul', 'review-panel__warning-list');
-    for (const warning of warnings) list.append(el('li', '', warning));
+    const messages = this._manifest?.warningMessages || [];
+    warnings.forEach((warning, i) => list.append(el('li', '', serverText(messages[i], warning))));
     this._warningsEl.append(list);
   }
 
@@ -432,7 +435,7 @@ class ReviewPanel {
     const added = file.added || 0;
     const removed = file.removed || 0;
     if (added > 0 || removed > 0) {
-      button.append(el('span', 'review-panel__stat', `+${added} −${removed}`));
+      button.append(el('span', 'review-panel__stat', `+${formatNumber(added)} −${formatNumber(removed)}`));
     }
     button.append(el('span', 'review-panel__count', ''));
     button.addEventListener('click', () => this._select(fileKey(file.repo, file.path), true));
@@ -465,7 +468,7 @@ class ReviewPanel {
       count,
     }));
     const badge = button.querySelector('.review-panel__count');
-    if (badge) badge.textContent = count > 0 ? String(count) : '';
+    if (badge) badge.textContent = count > 0 ? formatNumber(count) : '';
   }
 
   /**

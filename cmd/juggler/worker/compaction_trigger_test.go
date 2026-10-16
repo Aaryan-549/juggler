@@ -326,6 +326,9 @@ func TestHandleContextOverflowFoldLeavesTailNotice(t *testing.T) {
 	if last.Content == "" {
 		t.Fatal("notice carries no detail content")
 	}
+	if summary, _ := assertNoticeMessages(t, last); summary.Params["count"] != float64(4) {
+		t.Errorf("summaryMessage params = %v, want the folded count", summary.Params)
+	}
 }
 
 // assumedWindowNotices returns the notices that point at a model's Context
@@ -394,6 +397,9 @@ func TestAssumedWindowNoticeBeforeAutoCompaction(t *testing.T) {
 	_ = json.Unmarshal(notice.Data, &data)
 	if data.Settings.Tab != "providers" || data.Settings.Provider != "local" || data.Settings.Model != "qwen3.6-35b" {
 		t.Errorf("notice link = %+v, want the providers tab at local/qwen3.6-35b", data.Settings)
+	}
+	if summary, _ := assertNoticeMessages(t, notice); summary.Params["model"] != "qwen3.6-35b" {
+		t.Errorf("summaryMessage params = %v, want the model", summary.Params)
 	}
 }
 

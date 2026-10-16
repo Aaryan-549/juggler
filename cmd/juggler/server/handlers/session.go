@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"juggler/cmd/juggler/core"
+	"juggler/cmd/juggler/msg"
 	"juggler/cmd/juggler/worker"
 	"juggler/cmd/juggler/workspace"
 	"juggler/internal/jlog"
@@ -191,7 +192,7 @@ func (api *SessionAPI) HandleSetWindowState(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if err := api.manager().SetWindowState(windowRole(r), ws); err != nil {
-		WriteError(w, r, http.StatusInternalServerError, err.Error())
+		WriteErr(w, r, http.StatusInternalServerError, err)
 		return
 	}
 	WriteSuccess(w, r, nil)
@@ -210,7 +211,7 @@ func boardID(w http.ResponseWriter, r *http.Request) (string, bool) {
 		return core.MainBoardID, true
 	}
 	if !core.ValidBoardID(id) {
-		WriteError(w, r, http.StatusBadRequest, fmt.Sprintf("invalid board id %q", id))
+		WriteMessageError(w, r, http.StatusBadRequest, msg.New("invalid board id {id}", "id", strconv.Quote(id)))
 		return "", false
 	}
 	return id, true
@@ -252,14 +253,14 @@ func (api *SessionAPI) HandlePinboardOperations(w http.ResponseWriter, r *http.R
 		return
 	}
 	if len(req.Operations) == 0 {
-		WriteError(w, r, http.StatusBadRequest, "operations is required")
+		WriteMessageError(w, r, http.StatusBadRequest, msg.New("operations is required"))
 		return
 	}
 	pins, err := api.manager().ApplyPinboardOps(board, req.Operations)
 	if err != nil {
 		// A rejected batch is a malformed request, not a server fault: the ops
 		// describe pins that can't exist, or more of them than the board holds.
-		WriteError(w, r, http.StatusBadRequest, err.Error())
+		WriteErr(w, r, http.StatusBadRequest, err)
 		return
 	}
 	WriteJSON(w, r, http.StatusOK, map[string]any{"board": board, "pins": pins})
@@ -313,7 +314,7 @@ func (api *SessionAPI) HandleCreateBoard(w http.ResponseWriter, r *http.Request)
 	}
 	board, err := api.manager().CreateBoard(req.ID, req.Conversation, req.Pins)
 	if err != nil {
-		WriteError(w, r, http.StatusBadRequest, err.Error())
+		WriteErr(w, r, http.StatusBadRequest, err)
 		return
 	}
 	WriteJSON(w, r, http.StatusOK, map[string]any{"board": board})
@@ -327,7 +328,7 @@ func (api *SessionAPI) HandleDeleteBoard(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if err := api.manager().DeleteBoard(board); err != nil {
-		WriteError(w, r, http.StatusBadRequest, err.Error())
+		WriteErr(w, r, http.StatusBadRequest, err)
 		return
 	}
 	WriteSuccess(w, r, nil)
@@ -371,7 +372,7 @@ func (api *SessionAPI) HandleSetUIZoom(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := api.manager().SetWindowUIZoom(windowRole(r), body.UIZoom); err != nil {
-		WriteError(w, r, http.StatusInternalServerError, err.Error())
+		WriteErr(w, r, http.StatusInternalServerError, err)
 		return
 	}
 	WriteSuccess(w, r, nil)
@@ -403,7 +404,7 @@ func (api *SessionAPI) HandleSetUITheme(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if err := api.manager().SetWindowUITheme(windowRole(r), body.UITheme); err != nil {
-		WriteError(w, r, http.StatusInternalServerError, err.Error())
+		WriteErr(w, r, http.StatusInternalServerError, err)
 		return
 	}
 	WriteSuccess(w, r, nil)
@@ -461,7 +462,7 @@ func (api *SessionAPI) HandleSetUIPrefs(w http.ResponseWriter, r *http.Request) 
 		if errors.Is(err, core.ErrUIPrefsRejected) {
 			status = http.StatusBadRequest
 		}
-		WriteError(w, r, status, err.Error())
+		WriteErr(w, r, status, err)
 		return
 	}
 	WriteSuccess(w, r, nil)
@@ -525,7 +526,7 @@ func (api *SessionAPI) HandleUpdateSession(w http.ResponseWriter, r *http.Reques
 		}
 		return nil
 	}); err != nil {
-		WriteError(w, r, http.StatusInternalServerError, err.Error())
+		WriteErr(w, r, http.StatusInternalServerError, err)
 		return
 	}
 
@@ -544,7 +545,7 @@ func (api *SessionAPI) HandlePatchSessionMetadata(w http.ResponseWriter, r *http
 		return
 	}
 	if req.Metadata == nil {
-		WriteError(w, r, http.StatusBadRequest, "metadata is required")
+		WriteMessageError(w, r, http.StatusBadRequest, msg.New("metadata is required"))
 		return
 	}
 
@@ -554,7 +555,7 @@ func (api *SessionAPI) HandlePatchSessionMetadata(w http.ResponseWriter, r *http
 	// detector, killing the whole server under load.
 	changed, err := api.manager().PatchMetadata(req.Metadata)
 	if err != nil {
-		WriteError(w, r, http.StatusInternalServerError, err.Error())
+		WriteErr(w, r, http.StatusInternalServerError, err)
 		return
 	}
 
@@ -624,7 +625,7 @@ func (api *SessionAPI) HandleCreateConversation(w http.ResponseWriter, r *http.R
 		} else if errors.Is(err, core.ErrConvIDExists) {
 			status = http.StatusConflict
 		}
-		WriteError(w, r, status, err.Error())
+		WriteErr(w, r, status, err)
 		return
 	}
 
@@ -642,7 +643,7 @@ func (api *SessionAPI) HandleCreateConversation(w http.ResponseWriter, r *http.R
 	if req.DuplicateFrom != "" {
 		if err := api.duplicateConversationFiles(req.DuplicateFrom, id); err != nil {
 			jlog.Error("[session.Duplicate] conv=%s → %s failed: %v", req.DuplicateFrom, id, err)
-			WriteError(w, r, http.StatusInternalServerError, "Couldn't duplicate conversation: "+err.Error())
+			WriteMessageError(w, r, http.StatusInternalServerError, msg.New("Couldn't duplicate conversation: {detail}", "detail", err.Error()))
 			return
 		}
 		jlog.Info("[session.Duplicate] conv=%s → %s (server-side file copy)", req.DuplicateFrom, id)
@@ -662,7 +663,7 @@ func (api *SessionAPI) HandleCreateConversation(w http.ResponseWriter, r *http.R
 		}
 		if err := api.workerManager.SeedNewConversation(id, finalName, projectPath, created, model); err != nil {
 			jlog.Error("[session.Create] seed conv=%s failed: %v", id, err)
-			WriteError(w, r, http.StatusInternalServerError, "Couldn't initialize conversation: "+err.Error())
+			WriteMessageError(w, r, http.StatusInternalServerError, msg.New("Couldn't initialize conversation: {detail}", "detail", err.Error()))
 			return
 		}
 	}
@@ -734,7 +735,7 @@ func (api *SessionAPI) cloneDocSource(srcID string) ([]byte, error) {
 func ConvIDFromVars(w http.ResponseWriter, r *http.Request) (string, bool) {
 	convID := mux.Vars(r)["convId"]
 	if convID == "" {
-		WriteError(w, r, http.StatusBadRequest, "Conversation ID is required")
+		WriteMessageError(w, r, http.StatusBadRequest, msg.New("Conversation ID is required"))
 		return "", false
 	}
 	return convID, true
@@ -749,13 +750,13 @@ func (api *SessionAPI) HandleGetConversation(w http.ResponseWriter, r *http.Requ
 
 	yjsData, err := api.manager().LoadConversationBinary(convID)
 	if err != nil {
-		WriteError(w, r, http.StatusNotFound, err.Error())
+		WriteErr(w, r, http.StatusNotFound, err)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/octet-stream")
 	if _, err := w.Write(yjsData); err != nil {
-		WriteError(w, r, http.StatusInternalServerError, "Couldn't write response")
+		WriteMessageError(w, r, http.StatusInternalServerError, msg.New("Couldn't write response"))
 	}
 }
 
@@ -774,12 +775,12 @@ func (api *SessionAPI) HandleGetAsset(w http.ResponseWriter, r *http.Request) {
 	}
 	sha := mux.Vars(r)["sha"]
 	if !assetSHARe.MatchString(sha) {
-		WriteError(w, r, http.StatusBadRequest, "Invalid asset id")
+		WriteMessageError(w, r, http.StatusBadRequest, msg.New("Invalid asset id"))
 		return
 	}
 	convDir, ok := api.manager().ConvDir(convID)
 	if !ok {
-		WriteError(w, r, http.StatusNotFound, "Conversation not found")
+		WriteMessageError(w, r, http.StatusNotFound, msg.New("Conversation not found"))
 		return
 	}
 
@@ -795,13 +796,13 @@ func (api *SessionAPI) HandleGetAsset(w http.ResponseWriter, r *http.Request) {
 		break
 	}
 	if assetPath == "" {
-		WriteError(w, r, http.StatusNotFound, "Asset not found")
+		WriteMessageError(w, r, http.StatusNotFound, msg.New("Asset not found"))
 		return
 	}
 
 	f, err := os.Open(assetPath)
 	if err != nil {
-		WriteError(w, r, http.StatusNotFound, "Asset not found")
+		WriteMessageError(w, r, http.StatusNotFound, msg.New("Asset not found"))
 		return
 	}
 	defer f.Close()
@@ -847,7 +848,7 @@ func (api *SessionAPI) HandleUploadAsset(w http.ResponseWriter, r *http.Request)
 		contentType = strings.TrimSpace(mediaType)
 	}
 	if !strings.HasPrefix(contentType, "image/") {
-		WriteError(w, r, http.StatusBadRequest, "Only image/* uploads are accepted")
+		WriteMessageError(w, r, http.StatusBadRequest, msg.New("Only image/* uploads are accepted"))
 		return
 	}
 
@@ -858,17 +859,17 @@ func (api *SessionAPI) HandleUploadAsset(w http.ResponseWriter, r *http.Request)
 	r.Body = http.MaxBytesReader(w, r.Body, maxAssetUploadBytes)
 	data, err := io.ReadAll(r.Body)
 	if err != nil {
-		WriteError(w, r, http.StatusBadRequest, "Upload too large or read failed")
+		WriteMessageError(w, r, http.StatusBadRequest, msg.New("Upload too large or read failed"))
 		return
 	}
 	if len(data) == 0 {
-		WriteError(w, r, http.StatusBadRequest, "Empty upload")
+		WriteMessageError(w, r, http.StatusBadRequest, msg.New("Empty upload"))
 		return
 	}
 
 	ref, err := assetStore.Save(convID, data, contentType)
 	if err != nil {
-		WriteError(w, r, http.StatusInternalServerError, err.Error())
+		WriteErr(w, r, http.StatusInternalServerError, err)
 		return
 	}
 	WriteJSON(w, r, http.StatusOK, ref)
@@ -894,15 +895,15 @@ func (api *SessionAPI) programStore() *worker.ProgramStore {
 func writeProgramStoreError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, worker.ErrBadProgramKey):
-		WriteError(w, r, http.StatusBadRequest, "Invalid tool-use id")
+		WriteMessageError(w, r, http.StatusBadRequest, msg.New("Invalid tool-use id"))
 	case errors.Is(err, worker.ErrProgramTooLarge):
-		WriteError(w, r, http.StatusRequestEntityTooLarge, "Program snapshot too large")
+		WriteMessageError(w, r, http.StatusRequestEntityTooLarge, msg.New("Program snapshot too large"))
 	case errors.Is(err, worker.ErrUnknownConversation):
-		WriteError(w, r, http.StatusNotFound, "No such conversation")
+		WriteMessageError(w, r, http.StatusNotFound, msg.New("No such conversation"))
 	case errors.Is(err, os.ErrNotExist):
-		WriteError(w, r, http.StatusNotFound, "No program snapshot")
+		WriteMessageError(w, r, http.StatusNotFound, msg.New("No program snapshot"))
 	default:
-		WriteError(w, r, http.StatusInternalServerError, err.Error())
+		WriteErr(w, r, http.StatusInternalServerError, err)
 	}
 }
 
@@ -923,7 +924,7 @@ func (api *SessionAPI) HandlePutProgram(w http.ResponseWriter, r *http.Request) 
 			writeProgramStoreError(w, r, worker.ErrProgramTooLarge)
 			return
 		}
-		WriteError(w, r, http.StatusBadRequest, "Couldn't read request body")
+		WriteMessageError(w, r, http.StatusBadRequest, msg.New("Couldn't read request body"))
 		return
 	}
 	if err := api.programStore().Save(convID, mux.Vars(r)["toolUseId"], data); err != nil {
@@ -979,7 +980,7 @@ func (api *SessionAPI) HandleUpdateConversation(w http.ResponseWriter, r *http.R
 	if contentType == "application/octet-stream" {
 		yjsData, err := io.ReadAll(r.Body)
 		if err != nil {
-			WriteError(w, r, http.StatusBadRequest, "Couldn't read request body")
+			WriteMessageError(w, r, http.StatusBadRequest, msg.New("Couldn't read request body"))
 			return
 		}
 
@@ -993,14 +994,14 @@ func (api *SessionAPI) HandleUpdateConversation(w http.ResponseWriter, r *http.R
 		// it is the loaded project).
 		saved, err := api.manager().SaveConversationBinaryIfOwned(convID, yjsData)
 		if err != nil {
-			WriteError(w, r, http.StatusInternalServerError, err.Error())
+			WriteErr(w, r, http.StatusInternalServerError, err)
 			return
 		}
 		if !saved {
 			jlog.Debug("[session.Update] skipped unowned conv=%s (not in loaded project)", convID)
 		}
 	} else {
-		WriteError(w, r, http.StatusBadRequest, "Only binary format (application/octet-stream) is supported")
+		WriteMessageError(w, r, http.StatusBadRequest, msg.New("Only binary format (application/octet-stream) is supported"))
 		return
 	}
 
@@ -1041,7 +1042,7 @@ func (api *SessionAPI) HandleDeleteConversation(w http.ResponseWriter, r *http.R
 	}
 
 	if err := api.manager().DeleteConversation(convID, permanent); err != nil {
-		WriteError(w, r, http.StatusInternalServerError, err.Error())
+		WriteErr(w, r, http.StatusInternalServerError, err)
 		return
 	}
 
@@ -1076,10 +1077,10 @@ func (api *SessionAPI) HandleBinConversation(w http.ResponseWriter, r *http.Requ
 
 	if err := api.manager().BinConversation(convID); err != nil {
 		if errors.Is(err, core.ErrConversationNotFound) {
-			WriteError(w, r, http.StatusNotFound, "Conversation not found")
+			WriteMessageError(w, r, http.StatusNotFound, msg.New("Conversation not found"))
 			return
 		}
-		WriteError(w, r, http.StatusInternalServerError, err.Error())
+		WriteErr(w, r, http.StatusInternalServerError, err)
 		return
 	}
 
@@ -1100,10 +1101,10 @@ func (api *SessionAPI) HandleRestoreConversation(w http.ResponseWriter, r *http.
 
 	if err := api.manager().RestoreConversation(convID); err != nil {
 		if errors.Is(err, core.ErrConversationNotFound) {
-			WriteError(w, r, http.StatusNotFound, "Conversation not found")
+			WriteMessageError(w, r, http.StatusNotFound, msg.New("Conversation not found"))
 			return
 		}
-		WriteError(w, r, http.StatusInternalServerError, err.Error())
+		WriteErr(w, r, http.StatusInternalServerError, err)
 		return
 	}
 
@@ -1143,7 +1144,7 @@ func (api *SessionAPI) HandleDeleteBinnedConversation(w http.ResponseWriter, r *
 	}
 
 	if err := api.manager().DeleteBinnedConversation(convID); err != nil {
-		WriteError(w, r, http.StatusInternalServerError, err.Error())
+		WriteErr(w, r, http.StatusInternalServerError, err)
 		return
 	}
 
@@ -1163,7 +1164,7 @@ func (api *SessionAPI) HandleEmptyBin(w http.ResponseWriter, r *http.Request) {
 	if raw := r.URL.Query().Get("olderThanDays"); raw != "" {
 		days, convErr := strconv.Atoi(raw)
 		if convErr != nil || days <= 0 {
-			WriteError(w, r, http.StatusBadRequest, fmt.Sprintf("olderThanDays must be a positive integer, got %q", raw))
+			WriteMessageError(w, r, http.StatusBadRequest, msg.New("olderThanDays must be a positive integer, got {value}", "value", strconv.Quote(raw)))
 			return
 		}
 		removed, err = api.manager().EmptyBinOlderThan(days)
@@ -1171,7 +1172,7 @@ func (api *SessionAPI) HandleEmptyBin(w http.ResponseWriter, r *http.Request) {
 		removed, err = api.manager().EmptyBin()
 	}
 	if err != nil {
-		WriteError(w, r, http.StatusInternalServerError, err.Error())
+		WriteErr(w, r, http.StatusInternalServerError, err)
 		return
 	}
 
@@ -1203,13 +1204,13 @@ func (api *SessionAPI) HandleRenameConversation(w http.ResponseWriter, r *http.R
 	if err != nil {
 		switch {
 		case errors.Is(err, core.ErrInvalidName):
-			WriteError(w, r, http.StatusBadRequest, "Name is invalid")
+			WriteMessageError(w, r, http.StatusBadRequest, msg.New("Name is invalid"))
 		case errors.Is(err, core.ErrNameCollision):
-			WriteError(w, r, http.StatusConflict, "Name already in use")
+			WriteMessageError(w, r, http.StatusConflict, msg.New("Name already in use"))
 		case errors.Is(err, core.ErrConversationNotFound):
-			WriteError(w, r, http.StatusNotFound, "Conversation not found")
+			WriteMessageError(w, r, http.StatusNotFound, msg.New("Conversation not found"))
 		default:
-			WriteError(w, r, http.StatusInternalServerError, err.Error())
+			WriteErr(w, r, http.StatusInternalServerError, err)
 		}
 		return
 	}
@@ -1242,7 +1243,7 @@ func (api *SessionAPI) HandleReorderConversations(w http.ResponseWriter, r *http
 
 	merged, reanchored, err := api.manager().ReorderConversations(req.Order, req.Moved)
 	if err != nil {
-		WriteError(w, r, http.StatusInternalServerError, err.Error())
+		WriteErr(w, r, http.StatusInternalServerError, err)
 		return
 	}
 

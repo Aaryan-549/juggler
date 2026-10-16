@@ -60,25 +60,25 @@ class MonitorContextItem extends ContextItem {
       properties: {
         command: {
           type: 'string',
-          description: 'Shell command whose stdout lines become events. Self-filter so only lines you would act on are emitted (e.g. `tail -f build.log | grep --line-buffered -E "ERROR|FAILED"`), and flush every pipe stage (grep --line-buffered, awk fflush()).'
+          description: markUntranslated('Shell command whose stdout lines become events. Self-filter so only lines you would act on are emitted (e.g. `tail -f build.log | grep --line-buffered -E "ERROR|FAILED"`), and flush every pipe stage (grep --line-buffered, awk fflush()).')
         },
         description: {
           type: 'string',
-          description: 'Short human-readable description of what is being monitored (shown with each event).'
+          description: markUntranslated('Short human-readable description of what is being monitored (shown with each event).')
         },
         persistent: {
           type: 'boolean',
-          description: 'Keep the monitor running for the session\'s lifetime (for log tails watched indefinitely). When false (default) it ends when the command exits or times out.'
+          description: markUntranslated('Keep the monitor running for the session\'s lifetime (for log tails watched indefinitely). When false (default) it ends when the command exits or times out.')
         },
         timeout_ms: {
           type: 'number',
-          description: `Kill the monitor after this many milliseconds. Larger values are capped at ${MAX_EXEC_TIMEOUT_MS}. Ignored when persistent is true.`
+          description: markUntranslated(`Kill the monitor after this many milliseconds. Larger values are capped at ${MAX_EXEC_TIMEOUT_MS}. Ignored when persistent is true.`)
         }
       },
       required: ['command', 'description']
     };
 
-    const description = 'Start a background command whose stdout lines stream into the conversation as events, surfacing when you next yield — they are not replies from the user. Use for "tell me when the build fails / the deploy finishes". Read full output with TaskOutput; stop with TaskStop.';
+    const description = markUntranslated('Start a background command whose stdout lines stream into the conversation as events, surfacing when you next yield — they are not replies from the user. Use for "tell me when the build fails / the deploy finishes". Read full output with TaskOutput; stop with TaskStop.');
 
     return [
       {

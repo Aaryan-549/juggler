@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"juggler/cmd/juggler/msg"
 	"juggler/internal/logpaths"
 )
 
@@ -47,13 +48,13 @@ func (api *LogsAPI) HandleList(w http.ResponseWriter, r *http.Request) {
 func (api *LogsAPI) HandleContent(w http.ResponseWriter, r *http.Request) {
 	abs, ok := logpaths.Resolve(r.URL.Query().Get("path"))
 	if !ok {
-		WriteError(w, r, http.StatusForbidden, "path is not a Juggler log file")
+		WriteMessageError(w, r, http.StatusForbidden, msg.New("path is not a Juggler log file"))
 		return
 	}
 	offset, _ := strconv.ParseInt(r.URL.Query().Get("offset"), 10, 64)
 	win, err := logpaths.ReadWindow(abs, offset, maxInitialLogBytes)
 	if err != nil {
-		WriteError(w, r, http.StatusNotFound, "log file is unavailable")
+		WriteMessageError(w, r, http.StatusNotFound, msg.New("log file is unavailable"))
 		return
 	}
 	WriteJSON(w, r, 0, win)

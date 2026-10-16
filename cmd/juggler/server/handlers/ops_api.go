@@ -12,6 +12,7 @@ import (
 	"net/http"
 
 	"juggler/cmd/juggler/core"
+	"juggler/cmd/juggler/msg"
 	"juggler/cmd/juggler/ops"
 	"juggler/cmd/juggler/workspace"
 	"juggler/internal/jlog"
@@ -37,11 +38,14 @@ type OperationRequest struct {
 
 // OperationResponse represents the response from a native operation. A failure
 // carries its message in Error and, when the op failed with an *ops.CodedError,
-// that error's Code and Detail beside it.
+// that error's Code and Detail beside it. Error is always English — it is what
+// a tool result tells the model — and Message, when the failure is a msg.Error
+// (see ErrorMessage), is the same text for the UI to show translated.
 type OperationResponse struct {
 	Success bool           `json:"success"`
 	Data    any            `json:"data,omitempty"`
 	Error   string         `json:"error,omitempty"`
+	Message *msg.Message   `json:"message,omitempty"`
 	Code    string         `json:"code,omitempty"`
 	Detail  map[string]any `json:"detail,omitempty"`
 }
@@ -64,13 +68,13 @@ func NewOpsAPI(resolve workspace.ResolveFunc) *OpsAPI {
 func (api *OpsAPI) HandleOperationCall(w http.ResponseWriter, r *http.Request) {
 	var req OperationRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		api.sendError(w, r, fmt.Sprintf("Invalid request: %v", err), http.StatusBadRequest)
+		api.sendError(w, r, msg.New("Invalid request: {detail}", "detail", err.Error()), http.StatusBadRequest)
 		return
 	}
 
 	// Every operation belongs to a project, whichever workspace it runs in.
 	if project, err := api.resolve(core.DefaultWorkspaceID); err != nil || project.Root() == "" {
-		api.sendError(w, r, "no project loaded", http.StatusConflict)
+		api.sendError(w, r, msg.New("no project loaded"), http.StatusConflict)
 		return
 	}
 
@@ -125,10 +129,11 @@ func (api *OpsAPI) sendSuccess(w http.ResponseWriter, r *http.Request, data any)
 }
 
 // sendError sends an error response
-func (api *OpsAPI) sendError(w http.ResponseWriter, r *http.Request, message string, statusCode int) {
+func (api *OpsAPI) sendError(w http.ResponseWriter, r *http.Request, m msg.Message, statusCode int) {
 	WriteJSON(w, r, statusCode, OperationResponse{
 		Success: false,
-		Error:   message,
+		Error:   m.English(),
+		Message: &m,
 	})
 }
 
@@ -136,7 +141,7 @@ func (api *OpsAPI) sendError(w http.ResponseWriter, r *http.Request, message str
 // Operation errors like "search string not found" are not server errors. A
 // coded error's code and detail travel beside its message.
 func (api *OpsAPI) sendOperationError(w http.ResponseWriter, r *http.Request, err error) {
-	resp := OperationResponse{Success: false, Error: err.Error()}
+	resp := OperationResponse{Success: false, Error: err.Error(), Message: ErrorMessage(err)}
 	var coded *ops.CodedError
 	if errors.As(err, &coded) {
 		resp.Code = coded.Code

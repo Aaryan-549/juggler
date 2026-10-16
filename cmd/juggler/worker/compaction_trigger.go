@@ -44,6 +44,7 @@ import (
 	"math"
 	"time"
 
+	"juggler/cmd/juggler/msg"
 	"juggler/cmd/juggler/providers/provider"
 )
 
@@ -419,7 +420,7 @@ func (r *run) compactToFit(limitErr *provider.ContextLimitExceededError, modelCo
 		envelope = 0
 	}
 
-	r.beginCompactionStatus("Compacting")
+	r.beginCompactionStatus(msg.New("Compacting"))
 	r.recordCompactionStart(compactionKindAuto, window, reserve, envelope)
 
 	// A trailing tool-result payload too large for the suffix budget can never
@@ -682,19 +683,21 @@ func (r *run) insertCompactionNotice(foldedItems int) {
 	if mc := r.resolveModelConfig(); mc != nil {
 		source = mc.Provider
 	}
-	r.appendTargetMessage(ConversationItem{
-		Type:   ItemTypeNotice,
-		ItemID: generateItemID(),
-		// The row's whole text: what happened, how much of it, and the one thing
-		// a reader watching their context fill actually wants to know.
-		Summary: fmt.Sprintf("Folded %d earlier items into a summary thread. Nothing was discarded.", foldedItems),
-		Content: fmt.Sprintf("The conversation neared the model's context window, so the oldest %d items were folded into a summary thread, "+
-			"which stands where the folded history began. It keeps those items verbatim; undo restores them.\n\n"+
-			"Not folded: standing context (the system prompt, agents files and memory), the recent conversation, "+
-			"and the invocation that set a sub-thread's task.", foldedItems),
+	notice := ConversationItem{
+		Type:      ItemTypeNotice,
+		ItemID:    generateItemID(),
 		Source:    source,
 		Timestamp: time.Now().Format(time.RFC3339),
-	})
+	}
+	// The summary is the row's whole text: what happened, how much of it, and
+	// the one thing a reader watching their context fill actually wants to know.
+	setNoticeText(&notice,
+		msg.New("Folded {count} earlier items into a summary thread. Nothing was discarded.", "count", foldedItems),
+		msg.New("The conversation neared the model's context window, so the oldest {count} items were folded into a summary thread, "+
+			"which stands where the folded history began. It keeps those items verbatim; undo restores them.\n\n"+
+			"Not folded: standing context (the system prompt, agents files and memory), the recent conversation, "+
+			"and the invocation that set a sub-thread's task.", "count", foldedItems))
+	r.appendTargetMessage(notice)
 }
 
 // assumedWindowNoticeData is the Data payload of a notice about an assumed
@@ -751,22 +754,24 @@ func (r *run) assumedWindowNotice(mc *ModelConfig) (ConversationItem, bool) {
 	if err != nil {
 		return ConversationItem{}, false
 	}
-	return ConversationItem{
-		Type:   ItemTypeNotice,
-		ItemID: generateItemID(),
-		Summary: fmt.Sprintf("Compacting at an assumed %d-token context window for %s — set the real size in Settings.",
-			info.WindowTokens, mc.Model),
-		Content: fmt.Sprintf("The server didn't report the context window for %s, so Juggler assumed %d tokens. "+
-			"That figure decides when this conversation is compacted, and each reply — compaction summaries included — "+
-			"is capped at %d tokens because of it. A model loaded with a larger window compacts far sooner than it needs "+
-			"to and writes shorter answers.\n\n"+
-			"Enter the window the model is actually loaded with in Settings → Providers, on this model's row. "+
-			"It applies from the next turn.",
-			mc.Model, info.WindowTokens, info.ReserveTokens),
+	notice := ConversationItem{
+		Type:      ItemTypeNotice,
+		ItemID:    generateItemID(),
 		Source:    mc.Provider,
 		Data:      raw,
 		Timestamp: time.Now().Format(time.RFC3339),
-	}, true
+	}
+	setNoticeText(&notice,
+		msg.New("Compacting at an assumed {window}-token context window for {model} — set the real size in Settings.",
+			"window", info.WindowTokens, "model", mc.Model),
+		msg.New("The server didn't report the context window for {model}, so Juggler assumed {window} tokens. "+
+			"That figure decides when this conversation is compacted, and each reply — compaction summaries included — "+
+			"is capped at {reserve} tokens because of it. A model loaded with a larger window compacts far sooner than it needs "+
+			"to and writes shorter answers.\n\n"+
+			"Enter the window the model is actually loaded with in Settings → Providers, on this model's row. "+
+			"It applies from the next turn.",
+			"model", mc.Model, "window", info.WindowTokens, "reserve", info.ReserveTokens))
+	return notice, true
 }
 
 // hasAssumedWindowNotice reports whether root or the current target already

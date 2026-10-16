@@ -15,7 +15,7 @@ import wsService from '../../services/websocket.js';
 import { ProxySettings } from './proxy-settings.js';
 import { fetchJson, httpErrorText } from '../../services/http.js';
 import { apiUrl } from '../../utils/api-url.js';
-import { t } from '../../../sdk/lib/i18n.js';
+import { t, serverText } from '../../../sdk/lib/i18n.js';
 
 /** Polling interval (ms) for refreshing the Connectivity tab while it's open. */
 const CONNECTIVITY_POLL_MS = 2000;
@@ -33,6 +33,11 @@ const CONNECTIVITY_POLL_MS = 2000;
  * @property {string} relayNote - Optional note shown while active
  * @property {string} unavailableHint - Shown instead of Start when unavailable
  * @property {boolean} available - Whether the mode can start on this machine
+ * @property {object} [titleMessage] - The message `title` was rendered from
+ * @property {object} [descriptionMessage] - The message `description` was rendered from
+ * @property {object} [startLabelMessage] - The message `startLabel` was rendered from
+ * @property {object} [relayNoteMessage] - The message `relayNote` was rendered from
+ * @property {object} [unavailableHintMessage] - The message `unavailableHint` was rendered from
  */
 
 /**
@@ -368,11 +373,13 @@ export class ConnectivityTab {
         li.appendChild(originEl);
 
         // Device + connected-since, muted. Either may be absent.
-        const parts = [clientDeviceLabel(c.userAgent), formatTimeAgo(c.connectedAt)].filter(Boolean);
-        if (parts.length) {
+        const device = clientDeviceLabel(c.userAgent);
+        const since = formatTimeAgo(c.connectedAt);
+        const metaText = device && since ? t('{device} — {since}', { device, since }) : (device || since);
+        if (metaText) {
           const meta = document.createElement('span');
           meta.className = 'connectivity-client-meta';
-          meta.textContent = parts.join(' — ');
+          meta.textContent = metaText;
           li.appendChild(meta);
         }
 
@@ -590,16 +597,19 @@ export class ConnectivityTab {
     const activeMode = c.tunnelEnabled ? (c.tunnelMode || '') : '';
 
     for (const mode of c.wanModes || []) {
+      // Each field is the server's English beside the message it was rendered
+      // from (`titleMessage`, …), shown translated where one was sent.
+      const title = serverText(mode.titleMessage, mode.title || '');
       section.appendChild(this._buildWANModeBlock({
         mode: mode.mode,
-        title: mode.title,
-        description: mode.description,
-        startLabel: mode.startLabel || t('Start {mode}', { mode: mode.title }),
+        title,
+        description: serverText(mode.descriptionMessage, mode.description || ''),
+        startLabel: serverText(mode.startLabelMessage, mode.startLabel || '') || t('Start {mode}', { mode: title }),
         available: !!mode.available,
         isActive: activeMode === mode.mode,
         url: activeMode === mode.mode ? c.tunnelURL : '',
-        relayNote: mode.relayNote || '',
-        unavailableHint: mode.unavailableHint || '',
+        relayNote: serverText(mode.relayNoteMessage, mode.relayNote || ''),
+        unavailableHint: serverText(mode.unavailableHintMessage, mode.unavailableHint || ''),
       }));
     }
 

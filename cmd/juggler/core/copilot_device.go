@@ -11,9 +11,11 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
+	"juggler/cmd/juggler/msg"
 	"juggler/internal/httpx"
 )
 
@@ -116,7 +118,7 @@ func StartCopilotDeviceLogin(ctx context.Context, host string) (CopilotDeviceCod
 		return CopilotDeviceCode{}, fmt.Errorf("github device-code request failed: %s", copilotErrText(raw.Error, raw.ErrorDetail))
 	}
 	if raw.DeviceCode == "" || raw.UserCode == "" {
-		return CopilotDeviceCode{}, fmt.Errorf("github device-code response was incomplete")
+		return CopilotDeviceCode{}, msg.NewError("github device-code response was incomplete")
 	}
 	interval := raw.Interval
 	if interval <= 0 {
@@ -142,10 +144,10 @@ func PollCopilotDeviceLogin(ctx context.Context, host, deviceCode string) (Copil
 		host = copilotDefaultHost
 	}
 	if !copilotValidHost(host) {
-		return "", fmt.Errorf("%q is not github.com or a *.ghe.com host", host)
+		return "", msg.NewError("{host} is not github.com or a *.ghe.com host", "host", strconv.Quote(host))
 	}
 	if strings.TrimSpace(deviceCode) == "" {
-		return "", fmt.Errorf("device code is required")
+		return "", msg.NewError("device code is required")
 	}
 	var raw struct {
 		AccessToken string `json:"access_token"`
@@ -276,7 +278,7 @@ func CopilotHost() string {
 func SetCopilotHost(host string) error {
 	host = copilotNormalizeHost(host)
 	if host != "" && !copilotValidHost(host) {
-		return fmt.Errorf("%q is not github.com or a *.ghe.com host", host)
+		return msg.NewError("{host} is not github.com or a *.ghe.com host", "host", strconv.Quote(host))
 	}
 	if host == copilotDefaultHost {
 		host = ""

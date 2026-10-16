@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"juggler/cmd/juggler/core"
+	"juggler/cmd/juggler/msg"
 	"juggler/cmd/juggler/server/handlers"
 )
 
@@ -60,13 +61,13 @@ func (s *Server) handleLLMComplete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if strings.TrimSpace(req.Prompt) == "" {
-		handlers.WriteError(w, r, http.StatusBadRequest, "prompt is required")
+		handlers.WriteMessageError(w, r, http.StatusBadRequest, msg.New("prompt is required"))
 		return
 	}
 
-	modelRef, errMsg := s.resolveLLMCompleteModel(r.Context(), req.Model)
-	if errMsg != "" {
-		handlers.WriteError(w, r, http.StatusBadRequest, errMsg)
+	modelRef, err := s.resolveLLMCompleteModel(r.Context(), req.Model)
+	if err != nil {
+		handlers.WriteErr(w, r, http.StatusBadRequest, err)
 		return
 	}
 
@@ -81,8 +82,8 @@ func (s *Server) handleLLMComplete(w http.ResponseWriter, r *http.Request) {
 		Timeout:   clampCompleteTimeout(req.TimeoutMs),
 	})
 	if err != nil {
-		status, msg := completeErrorStatus(err)
-		handlers.WriteError(w, r, status, msg)
+		status, reply := completeErrorStatus(err)
+		handlers.WriteErr(w, r, status, reply)
 		return
 	}
 
@@ -128,20 +129,20 @@ func clampCompleteTimeout(ms int64) time.Duration {
 // was too slow (504), or stop and go and fix something (502). An unclassified
 // failure keeps its own text, since that text is all the user has to tell a dead
 // credential from an unreachable host.
-func completeErrorStatus(err error) (int, string) {
+func completeErrorStatus(err error) (int, error) {
 	switch {
 	case errors.Is(err, ErrQuickCompleteBusy):
-		return http.StatusTooManyRequests, "Too many concurrent completions, try again"
+		return http.StatusTooManyRequests, msg.NewError("Too many concurrent completions, try again")
 	case errors.Is(err, ErrQuickCompleteTimeout):
-		return http.StatusGatewayTimeout, "The model didn't answer in time"
+		return http.StatusGatewayTimeout, msg.NewError("The model didn't answer in time")
 	default:
-		return http.StatusBadGateway, err.Error()
+		return http.StatusBadGateway, err
 	}
 }
 
 // resolveLLMCompleteModel resolves the request's `model` union to a concrete
-// ModelRef, or returns a non-empty error message describing why it couldn't.
-func (s *Server) resolveLLMCompleteModel(ctx context.Context, raw json.RawMessage) (core.ModelRef, string) {
+// ModelRef, or returns an error saying why it couldn't.
+func (s *Server) resolveLLMCompleteModel(ctx context.Context, raw json.RawMessage) (core.ModelRef, error) {
 	// Omitted / null ⇒ cheap.
 	trimmed := strings.TrimSpace(string(raw))
 	if len(raw) == 0 || trimmed == "null" {
@@ -157,11 +158,11 @@ func (s *Server) resolveLLMCompleteModel(ctx context.Context, raw json.RawMessag
 		case "default":
 			ref, _ := s.resolveDefaultModel(ctx)
 			if ref.Provider == "" || ref.Model == "" {
-				return core.ModelRef{}, "no default model available"
+				return core.ModelRef{}, msg.NewError("no default model available")
 			}
-			return ref, ""
+			return ref, nil
 		default:
-			return core.ModelRef{}, "unknown model alias: " + alias
+			return core.ModelRef{}, msg.NewError("unknown model alias: {alias}", "alias", alias)
 		}
 	}
 
@@ -172,13 +173,13 @@ func (s *Server) resolveLLMCompleteModel(ctx context.Context, raw json.RawMessag
 		Thinking string `json:"thinking"`
 	}
 	if err := json.Unmarshal(raw, &obj); err != nil || obj.Provider == "" || obj.Model == "" {
-		return core.ModelRef{}, "invalid model: expected \"cheap\", \"default\", or {provider, model}"
+		return core.ModelRef{}, msg.NewError("invalid model: expected \"cheap\", \"default\", or '{provider, model}'")
 	}
 	concrete, ok := s.liveModelMatch(obj.Provider, obj.Model)
 	if !ok {
-		return core.ModelRef{}, "model not available: " + obj.Provider + "/" + obj.Model
+		return core.ModelRef{}, msg.NewError("model not available: {provider}/{model}", "provider", obj.Provider, "model", obj.Model)
 	}
-	return core.ModelRef{Provider: obj.Provider, Model: concrete, Thinking: obj.Thinking}, ""
+	return core.ModelRef{Provider: obj.Provider, Model: concrete, Thinking: obj.Thinking}, nil
 }
 
 // resolveCheapAlias resolves the "cheap" alias: the cheap model derived from the
@@ -187,11 +188,11 @@ func (s *Server) resolveLLMCompleteModel(ctx context.Context, raw json.RawMessag
 // Goes through cheapModelForTask because a request has arrived that wanted to
 // run: the 400 reaches whichever caller asked, but the reason it failed is a
 // setting, and the person who has to change it may be nowhere near that caller.
-func (s *Server) resolveCheapAlias(ctx context.Context) (core.ModelRef, string) {
+func (s *Server) resolveCheapAlias(ctx context.Context) (core.ModelRef, error) {
 	primary, _ := s.resolveDefaultModel(ctx)
 	ref, ok := s.cheapModelForTask(ctx, primary)
 	if !ok {
-		return core.ModelRef{}, "no cheap model available"
+		return core.ModelRef{}, msg.NewError("no cheap model available")
 	}
-	return ref, ""
+	return ref, nil
 }

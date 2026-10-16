@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"juggler/cmd/juggler/msg"
 	"juggler/cmd/juggler/providers/provider"
 )
 
@@ -234,7 +235,7 @@ func (r *run) runOneTurn(st *strategyRunState, explicitContinuation bool) turnVe
 		if errors.Is(err, ErrCancelled) {
 			return turnDone
 		}
-		r.sendError(fmt.Sprintf("Failed to get context/tools: %v", err), "")
+		r.sendError(msg.New("Failed to get context/tools: {detail}", "detail", err.Error()))
 		return turnDone
 	}
 
@@ -313,7 +314,7 @@ func (r *run) runOneTurn(st *strategyRunState, explicitContinuation bool) turnVe
 		if errors.Is(err, ErrCancelled) {
 			return turnDone
 		}
-		r.sendError(fmt.Sprintf("Error processing response: %v", err), "")
+		r.sendError(msg.New("Error processing response: {detail}", "detail", err.Error()))
 		return turnDone
 	}
 
@@ -413,8 +414,8 @@ func (r *run) settleTurn(st *strategyRunState, response *LLMResponse, shouldCont
 			r.insertBarrenStallPlaceholder()
 			return turnDone
 		}
-		r.sendStatus("retrying", fmt.Sprintf(
-			"No response — retrying (%d/%d)", st.barrenTurns, MaxBarrenTurns))
+		r.sendStatusText("retrying", msg.New("No response — retrying ({attempt}/{max})",
+			"attempt", st.barrenTurns, "max", MaxBarrenTurns))
 		r.batcher.Flush()
 		return turnContinue
 	}
@@ -723,11 +724,7 @@ func (r *run) callLLMWithRetry(req json.RawMessage) (*LLMResponse, error) {
 		r.log.Info("Retryable LLM error (%v), retrying in %v (attempt %d/%d, %v of %v budget spent)",
 			err, wait, attempt+1, MaxLLMRetries, r.t.retrySpent.Round(time.Second), MaxLLMRetryWindow)
 
-		status := rErr.retryStatus(attempt+1, MaxLLMRetries)
-		if r.t.retrySpent >= time.Minute {
-			status = fmt.Sprintf("%s — %s so far", status, r.t.retrySpent.Round(time.Second))
-		}
-		r.sendRetryingStatus(status)
+		r.sendRetryingStatus(rErr.retryStatus(attempt+1, MaxLLMRetries, r.t.retrySpent))
 		r.batcher.Flush()
 
 		res := r.waitForRetryDelay(wait)
@@ -801,9 +798,9 @@ func (r *run) resetLLMRetryBudget() {
 // label survives into the next attempt. Without the latch the loop announced a
 // retry and then immediately claimed to be streaming again, so the UI read
 // "Receiving" for however long the fresh attempt spent backing off.
-func (r *run) sendRetryingStatus(message string) {
+func (r *run) sendRetryingStatus(status msg.Message) {
 	r.t.retryStatusActive = true
-	r.sendStatus("retrying", message)
+	r.sendStatusText("retrying", status)
 }
 
 // clearRetryingStatus flips the spinner off "retrying" once real content

@@ -5,7 +5,7 @@
 
 import ContextItem from 'juggler/context-item';
 import { formatPathForStatus } from 'juggler/item-utils';
-import { translator } from 'juggler/i18n';
+import { translator, markUntranslated } from 'juggler/i18n';
 import { toolInputPath, isPathAllowed, folderGrantSuggestions, stripInjectedApprovalFlags, gitignoreDisabled } from './path-approval.js';
 import { buildGitignoreSection } from './search-scope-section.js';
 import { formatGrepResults } from './search/grep-format.js';
@@ -86,66 +86,66 @@ class SearchContextItem extends ContextItem {
       properties: {
         pattern: {
           type: 'string',
-          description: 'The regular expression pattern to search for in file contents'
+          description: markUntranslated('The regular expression pattern to search for in file contents')
         },
         path: {
           type: 'string',
-          description: 'File or directory to search in. Defaults to current working directory.'
+          description: markUntranslated('File or directory to search in. Defaults to current working directory.')
         },
         glob: {
           type: 'string',
-          description: 'Glob pattern to filter files (e.g., "*.js", "*.{ts,tsx}")'
+          description: markUntranslated('Glob pattern to filter files (e.g., "*.js", "*.{ts,tsx}")')
         },
         type: {
           type: 'string',
-          description: 'File type to search (e.g., js, py, go, rust). More efficient than glob for standard file types.'
+          description: markUntranslated('File type to search (e.g., js, py, go, rust). More efficient than glob for standard file types.')
         },
         output_mode: {
           type: 'string',
           enum: ['content', 'files_with_matches', 'count'],
-          description: 'Output mode: "content" shows matching lines, "files_with_matches" shows file paths (default), "count" shows match counts.'
+          description: markUntranslated('Output mode: "content" shows matching lines, "files_with_matches" shows file paths (default), "count" shows match counts.')
         },
         '-A': {
           type: 'number',
-          description: 'Number of lines to show after each match. Requires output_mode: "content".'
+          description: markUntranslated('Number of lines to show after each match. Requires output_mode: "content".')
         },
         '-B': {
           type: 'number',
-          description: 'Number of lines to show before each match. Requires output_mode: "content".'
+          description: markUntranslated('Number of lines to show before each match. Requires output_mode: "content".')
         },
         '-C': {
           type: 'number',
-          description: 'Number of lines to show before and after each match. Requires output_mode: "content".'
+          description: markUntranslated('Number of lines to show before and after each match. Requires output_mode: "content".')
         },
         '-i': {
           type: 'boolean',
-          description: 'Case insensitive search'
+          description: markUntranslated('Case insensitive search')
         },
         '-n': {
           type: 'boolean',
-          description: 'Show line numbers in output. Defaults to true.'
+          description: markUntranslated('Show line numbers in output. Defaults to true.')
         },
         multiline: {
           type: 'boolean',
-          description: 'Enable multiline mode where patterns can span lines. Default: false.'
+          description: markUntranslated('Enable multiline mode where patterns can span lines. Default: false.')
         },
         head_limit: {
           type: 'number',
-          description: 'Limit output to first N entries.'
+          description: markUntranslated('Limit output to first N entries.')
         },
         offset: {
           type: 'number',
-          description: 'Skip first N entries before applying head_limit.'
+          description: markUntranslated('Skip first N entries before applying head_limit.')
         },
         noIgnore: {
           type: 'boolean',
-          description: 'Search files ignored by .gitignore too. Default false.'
+          description: markUntranslated('Search files ignored by .gitignore too. Default false.')
         }
       },
       required: ['pattern']
     };
 
-    const description = 'A powerful search tool built on ripgrep. Supports full regex syntax, file filtering with glob or type, and multiple output modes. Results respect nested .gitignore files by default; pass noIgnore to include ignored files.';
+    const description = markUntranslated('A powerful search tool built on ripgrep. Supports full regex syntax, file filtering with glob or type, and multiple output modes. Results respect nested .gitignore files by default; pass noIgnore to include ignored files.');
 
     return [
       {
@@ -360,8 +360,8 @@ class SearchContextItem extends ContextItem {
         if (!result) return shownPath ? t('{pattern} in {path}', { pattern, path: shownPath }) : pattern;
         const counts = { pattern, matchCount: result.matchCount, fileCount: result.fileCount };
         return shownPath
-          ? t('{pattern} in {path} ({matchCount} matches in {fileCount} files)', { ...counts, path: shownPath })
-          : t('{pattern} ({matchCount} matches in {fileCount} files)', counts);
+          ? t('{pattern} in {path} ({matchCount, plural, one {{matchCount} match} other {{matchCount} matches}} in {fileCount, plural, one {{fileCount} file} other {{fileCount} files}})', { ...counts, path: shownPath })
+          : t('{pattern} ({matchCount, plural, one {{matchCount} match} other {{matchCount} matches}} in {fileCount, plural, one {{fileCount} file} other {{fileCount} files}})', counts);
       },
       failurePrefix: shownPath ? t('failed in {path}', { path: shownPath }) : t('failed')
     });

@@ -532,6 +532,7 @@ class PinboardPanel extends JugglerElement {
       await composeForThread(thread, text);
     } catch (err) {
       console.error('[Pinboard] Could not put a board\'s text in the prompt:', err);
+      pinboardView.setStatus(t("Couldn't put the board's text in the prompt: {error}", { error: extractErrorMessage(err) }));
     }
   }
 
@@ -788,7 +789,7 @@ class PinboardPanel extends JugglerElement {
     line.className = 'pinboard-placeholder__line';
     if (!gone) line.textContent = t('Opening the conversation.');
     else if (this._boardTitle) line.textContent = t('“{title}” has gone.', { title: this._boardTitle });
-    else line.textContent = t('This conversation is no longer available');
+    else line.textContent = t('This conversation is no longer available.');
     placeholder.replaceChildren(line);
     return true;
   }

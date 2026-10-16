@@ -15,7 +15,7 @@
  * @module unit-tests/transaction-tool-list-test
  */
 
-import { assert } from '../utilities/test-helpers.js';
+import { assert, waitFor } from '../utilities/test-helpers.js';
 import { renderTransactionDetail } from '../../js/components/transaction-detail-renderer.js';
 import { setLocale, formatDate, isPseudoLocalized } from '../../sdk/lib/i18n.js';
 import { underPseudoLocale, shownStrings } from '../utilities/pseudo-locale.js';
@@ -313,16 +313,14 @@ export async function runTests(_ctx) {
 
   /**
    * Wait for the drift annotation, which lands a few microtasks after render.
+   * Rides `waitFor`'s patience, and throws, saying why it gave up, if the line
+   * never appears.
    * @param {HTMLElement} row - The opened tools row
-   * @returns {Promise<string>} The drift line's text ('' when there is none)
+   * @returns {Promise<string>} The drift line's text
    */
   const driftText = async (row) => {
-    for (let i = 0; i < 50; i++) {
-      const line = row.querySelector('.tx-tools-drift');
-      if (line) return line.textContent || '';
-      await new Promise((resolve) => setTimeout(resolve, 5));
-    }
-    return '';
+    await waitFor(() => !!row.querySelector('.tx-tools-drift'), { description: 'the tool list\'s drift line' });
+    return row.querySelector('.tx-tools-drift')?.textContent || '';
   };
 
   await run('a tool that appeared since the turn is reported, not silently missing', async () => {

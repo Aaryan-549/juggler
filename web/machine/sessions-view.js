@@ -20,7 +20,7 @@
 
 import { t, formatRelativeTime } from '../sdk/lib/i18n.js';
 import { OPEN_IN_NEW_SVG } from '../js/utils/icons.js';
-import { extractErrorMessage } from '../sdk/lib/error-utils.js';
+import { extractErrorMessage, errorText } from '../sdk/lib/error-utils.js';
 import { ControlApiError } from './control-api.js';
 
 /** How many recent projects the page offers. */
@@ -269,7 +269,7 @@ export function mountSessionsPage(root, {
       return true;
     } catch (err) {
       win?.close();
-      showLaunchError(err instanceof Error ? err.message : t('The session could not be started.'));
+      showLaunchError(err instanceof Error ? errorText(err) : t('The session could not be started.'));
       return false;
     }
   }
@@ -298,7 +298,7 @@ export function mountSessionsPage(root, {
     try {
       await api.stopSession(s.id);
     } catch (err) {
-      showLaunchError(err instanceof Error ? err.message : t('The session could not be stopped.'));
+      showLaunchError(err instanceof Error ? errorText(err) : t('The session could not be stopped.'));
     } finally {
       pending.delete(s.id);
     }

@@ -178,7 +178,7 @@ class GroupWorkspaceProvider extends WorkspaceProvider {
   async cleanupPartial(workspace, ctx) {
     void workspace;
     void ctx;
-    return { removed: true, message: t('Nothing was built for a group, so nothing is left of it.') };
+    return { removed: true };
   }
 }
 

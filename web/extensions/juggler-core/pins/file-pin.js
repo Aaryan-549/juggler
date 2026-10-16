@@ -303,7 +303,7 @@ class FilePin extends PinboardItemType {
       const total = result.totalLines || 0;
       if (!result.isDirectory && shown && total > shown) {
         body.appendChild(createElement('div', 'file-pin__note',
-          t('{shown, plural, other {First {shown} lines of {total}.}}', { shown, total })));
+          t('{shown, plural, one {First line of {total}.} other {First {shown} lines of {total}.}}', { shown, total })));
       }
     };
 

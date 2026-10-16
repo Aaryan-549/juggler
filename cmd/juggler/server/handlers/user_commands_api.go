@@ -5,10 +5,11 @@
 package handlers
 
 import (
-	"fmt"
 	"net/http"
+	"strconv"
 
 	"juggler/cmd/juggler/core"
+	"juggler/cmd/juggler/msg"
 
 	"github.com/gorilla/mux"
 )
@@ -59,7 +60,7 @@ func (api *UserCommandsAPI) resolveTarget(w http.ResponseWriter, r *http.Request
 	name = mux.Vars(r)["name"]
 	dir = api.scopeDir(scope)
 	if dir == "" {
-		WriteError(w, r, http.StatusBadRequest, fmt.Sprintf("unknown or unavailable scope %q", scope))
+		WriteMessageError(w, r, http.StatusBadRequest, msg.New("unknown or unavailable scope {scope}", "scope", strconv.Quote(scope)))
 		return "", "", "", false
 	}
 	return scope, name, dir, true
@@ -92,7 +93,7 @@ func (api *UserCommandsAPI) HandlePut(w http.ResponseWriter, r *http.Request) {
 
 	cmd, err := core.WriteUserCommand(dir, scope, name, spec)
 	if err != nil {
-		WriteError(w, r, http.StatusInternalServerError, err.Error())
+		WriteErr(w, r, http.StatusInternalServerError, err)
 		return
 	}
 	WriteJSON(w, r, 0, cmd)
@@ -106,11 +107,11 @@ func (api *UserCommandsAPI) HandleDelete(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if !core.ValidUserCommandName(name) {
-		WriteError(w, r, http.StatusBadRequest, "invalid command name")
+		WriteMessageError(w, r, http.StatusBadRequest, msg.New("invalid command name"))
 		return
 	}
 	if err := core.DeleteUserCommand(dir, name); err != nil {
-		WriteError(w, r, http.StatusInternalServerError, err.Error())
+		WriteErr(w, r, http.StatusInternalServerError, err)
 		return
 	}
 	WriteJSON(w, r, 0, map[string]bool{"deleted": true})

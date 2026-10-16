@@ -9,6 +9,9 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"strconv"
+
+	"juggler/cmd/juggler/msg"
 )
 
 // Workspace is the environment a conversation's tools run in: somewhere to
@@ -93,7 +96,7 @@ func (w Workspace) OpenError() error {
 	if w.Kind == WorkspaceKindLocal {
 		return nil
 	}
-	return fmt.Errorf("workspace %s is a %q workspace, which this server cannot open", w.Name(), w.Kind)
+	return msg.NewError("workspace {name} is a {kind} workspace, which this server cannot open", "name", w.Name(), "kind", strconv.Quote(string(w.Kind)))
 }
 
 // The three states of a workspace. There are three rather than the obvious
@@ -322,26 +325,26 @@ type WorkspaceLookup func(id string) (Workspace, bool)
 // workspace.Resolver answers it with the project.
 func (lookup WorkspaceLookup) Usable(id string) (Workspace, error) {
 	if lookup == nil {
-		return Workspace{}, fmt.Errorf("unknown workspace: %s", id)
+		return Workspace{}, msg.NewError("unknown workspace: {id}", "id", id)
 	}
 	ws, ok := lookup(id)
 	if !ok {
-		return Workspace{}, fmt.Errorf("unknown workspace: %s", id)
+		return Workspace{}, msg.NewError("unknown workspace: {id}", "id", id)
 	}
 	switch ws.State {
 	case WorkspaceStateReady:
 	case WorkspaceStateProvisioning:
-		return Workspace{}, fmt.Errorf("workspace %s is still being created", ws.Name())
+		return Workspace{}, msg.NewError("workspace {name} is still being created", "name", ws.Name())
 	case WorkspaceStateClosed:
-		return Workspace{}, fmt.Errorf("workspace %s was closed", ws.Name())
+		return Workspace{}, msg.NewError("workspace {name} was closed", "name", ws.Name())
 	default:
-		return Workspace{}, fmt.Errorf("workspace %s is in an unknown state: %s", ws.Name(), ws.State)
+		return Workspace{}, msg.NewError("workspace {name} is in an unknown state: {state}", "name", ws.Name(), "state", string(ws.State))
 	}
 	if err := ws.OpenError(); err != nil {
 		return Workspace{}, err
 	}
 	if info, err := os.Stat(ws.Root); err != nil || !info.IsDir() {
-		return Workspace{}, fmt.Errorf("workspace %s is missing its root: %s", ws.Name(), ws.Root)
+		return Workspace{}, msg.NewError("workspace {name} is missing its root: {root}", "name", ws.Name(), "root", ws.Root)
 	}
 	return ws, nil
 }

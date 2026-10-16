@@ -17,6 +17,8 @@
  * Resolved once at module load — the owner bakes the value into the URL and it
  * never changes for the life of the document.
  */
+import { t } from './i18n.js';
+
 const CONTROL_BASE = (() => {
   // The engine worker has no window and is never a native-hosted window, so it
   // has no control endpoint — bail before touching window.location.
@@ -203,7 +205,7 @@ async function pickPath(action, query = '') {
  * @returns {Promise<string|null>} The chosen directory path, or null.
  */
 export async function pickDirectory() {
-  return pickPath('pick-directory');
+  return pickPath('pick-directory', '?title=' + encodeURIComponent(t('Open project folder')));
 }
 
 /**

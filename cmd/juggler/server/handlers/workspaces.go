@@ -11,6 +11,7 @@ import (
 	"github.com/gorilla/mux"
 
 	"juggler/cmd/juggler/core"
+	"juggler/cmd/juggler/msg"
 	"juggler/cmd/juggler/workspace"
 )
 
@@ -29,7 +30,7 @@ import (
 func workspaceID(w http.ResponseWriter, r *http.Request) (string, bool) {
 	id := mux.Vars(r)["workspaceId"]
 	if id == "" {
-		WriteError(w, r, http.StatusBadRequest, "workspace id is required")
+		WriteMessageError(w, r, http.StatusBadRequest, msg.New("workspace id is required"))
 		return "", false
 	}
 	return id, true
@@ -118,7 +119,7 @@ func (api *SessionAPI) HandleRegisterWorkspace(w http.ResponseWriter, r *http.Re
 	}
 	ws, err := api.manager().RegisterWorkspace(req)
 	if err != nil {
-		WriteError(w, r, http.StatusBadRequest, err.Error())
+		WriteErr(w, r, http.StatusBadRequest, err)
 		return
 	}
 	WriteJSON(w, r, http.StatusOK, map[string]any{"workspace": describeOne(ws)})
@@ -144,7 +145,7 @@ func (api *SessionAPI) HandleUpdateWorkspace(w http.ResponseWriter, r *http.Requ
 	}
 	ws, err := api.manager().UpdateWorkspace(id, patch)
 	if err != nil {
-		WriteError(w, r, workspaceStatus(err), err.Error())
+		WriteErr(w, r, workspaceStatus(err), err)
 		return
 	}
 	WriteJSON(w, r, http.StatusOK, map[string]any{"workspace": describeOne(ws)})
@@ -162,7 +163,7 @@ func (api *SessionAPI) HandleCloseWorkspace(w http.ResponseWriter, r *http.Reque
 	}
 	ws, err := api.manager().CloseWorkspace(id)
 	if err != nil {
-		WriteError(w, r, workspaceStatus(err), err.Error())
+		WriteErr(w, r, workspaceStatus(err), err)
 		return
 	}
 	WriteJSON(w, r, http.StatusOK, map[string]any{"workspace": describeOne(ws)})
@@ -178,7 +179,7 @@ func (api *SessionAPI) HandleUnregisterWorkspace(w http.ResponseWriter, r *http.
 		return
 	}
 	if err := api.manager().UnregisterWorkspace(id); err != nil {
-		WriteError(w, r, http.StatusInternalServerError, err.Error())
+		WriteErr(w, r, http.StatusInternalServerError, err)
 		return
 	}
 	WriteSuccess(w, r, nil)
@@ -201,7 +202,7 @@ func (api *SessionAPI) HandleReorderWorkspaces(w http.ResponseWriter, r *http.Re
 	}
 	list, err := api.manager().ReorderWorkspaces(req.IDs)
 	if err != nil {
-		WriteError(w, r, workspaceStatus(err), err.Error())
+		WriteErr(w, r, workspaceStatus(err), err)
 		return
 	}
 	WriteJSON(w, r, http.StatusOK, map[string]any{"workspaces": workspace.Describe(list)})

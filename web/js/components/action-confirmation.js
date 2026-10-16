@@ -3,7 +3,7 @@
 //   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
 
 import { escapeHtml } from '../../sdk/lib/html.js';
-import { t, htmlSlots, withHtml } from '../../sdk/lib/i18n.js';
+import { t, htmlSlots, withHtml, formatList } from '../../sdk/lib/i18n.js';
 
 /**
  * Inline folder glyph prefixed to a folder-grant `<code>` span, so a grant
@@ -258,17 +258,12 @@ class ActionConfirmation extends HTMLElement {
     }
     const prefix = isPathGrant ? FOLDER_ICON_SVG : '';
     const cls = isPathGrant ? 'pattern-highlight path-highlight' : 'pattern-highlight';
-    const spans = parts.map(p => `<code class="${cls}">${prefix}${escapeHtml(p)}</code>`);
-    const last = /** @type {string} */ (spans.pop());
-    let joined = last;
-    const [first] = spans;
-    if (spans.length === 1 && first !== undefined) {
-      const pair = { first, last };
-      joined = withHtml(t('{first} or {last}', htmlSlots(pair)), pair);
-    } else if (spans.length > 1) {
-      const list = { list: spans.join(', '), last };
-      joined = withHtml(t('{list}, or {last}', htmlSlots(list)), list);
-    }
+    /** @type {Record<string, string>} */
+    const spans = Object.fromEntries(parts.map((p, i) => [`p${i}`, `<code class="${cls}">${prefix}${escapeHtml(p)}</code>`]));
+    // The list is formatted over slot stand-ins, so the language's own "or" is
+    // escaped as text and the spans go in as markup.
+    const slots = htmlSlots(spans);
+    const joined = withHtml(formatList(Object.keys(spans).map((name) => String(slots[name])), { type: 'disjunction' }), spans);
     // A folder grant whitelists reads under a directory; word it so it reads as
     // access, not a command pattern.
     const slot = { patterns: joined };

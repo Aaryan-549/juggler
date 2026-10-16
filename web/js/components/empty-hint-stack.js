@@ -22,6 +22,8 @@
  */
 
 import { formatBindingLabel, isMac } from '../services/key-shortcut-manager.js';
+import { escapeHtml } from '../../sdk/lib/html.js';
+import { t } from '../../sdk/lib/i18n.js';
 import './empty-hint-tips.js';
 
 /**
@@ -43,22 +45,22 @@ export function emptyHintStackMarkup() {
   const newline = formatBindingLabel({ key: 'Enter', shift: true }, mac);
   return `
     <div class="empty-hint-stack">
-      <p class="empty-hint-lead">Type your message below</p>
+      <p class="empty-hint-lead">${escapeHtml(t('Type your message below'))}</p>
       <div class="empty-hint-keys">
         <div class="empty-hint-row empty-hint-pointer">
-          <span class="empty-hint-key">${send}</span><span>Send</span>
+          <span class="empty-hint-key">${send}</span><span>${escapeHtml(t('Send'))}</span>
         </div>
         <div class="empty-hint-row empty-hint-pointer">
-          <span class="empty-hint-key">${newline}</span><span>New line</span>
+          <span class="empty-hint-key">${newline}</span><span>${escapeHtml(t('New line'))}</span>
         </div>
         <div class="empty-hint-row">
-          <span class="empty-hint-key">@</span><span>Reference a file</span>
+          <span class="empty-hint-key">@</span><span>${escapeHtml(t('Reference a file'))}</span>
         </div>
         <div class="empty-hint-row">
-          <span class="empty-hint-key">/</span><span>Run a command</span>
+          <span class="empty-hint-key">/</span><span>${escapeHtml(t('Run a command'))}</span>
         </div>
       </div>
-      <p class="empty-hint-lead empty-hint-pointer">Drag-and-drop a file or image to attach it</p>
+      <p class="empty-hint-lead empty-hint-pointer">${escapeHtml(t('Drag-and-drop a file or image to attach it'))}</p>
       <empty-hint-tips class="empty-hint-tips"></empty-hint-tips>
     </div>
   `;

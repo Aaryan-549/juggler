@@ -13,7 +13,7 @@ import { modelLabelFromList } from '../../model/model-display.js';
 import { buildModelConfig } from '../../model/model-config.js';
 import { presentPopup } from '../../utils/popup-surface.js';
 import { closePopupById } from '../../utils/popup-manager.js';
-import { extractErrorMessage } from '../../../sdk/lib/error-utils.js';
+import { errorText } from '../../../sdk/lib/error-utils.js';
 import { buildToggleRow } from './notifications-tab.js';
 import '../model-picker/model-chip.js';
 import { MODEL_PICKER_OFF } from '../model-picker/model-picker.js';
@@ -32,6 +32,7 @@ import { showAlert } from '../modal-dialog.js';
 import { apiUrl } from '../../utils/api-url.js';
 import { getAppSession } from '../../utils/app-session.js';
 import { t } from '../../../sdk/lib/i18n.js';
+import { providerAuthHint } from '../../utils/provider-text.js';
 
 /**
  * Popup id shared by both model rows, so opening one row's picker closes the
@@ -872,7 +873,7 @@ export class DefaultsTab {
       console.error('[SettingsPanel] Failed to save cheap model:', err);
       this.cheapModel = previous;
       this.renderCheapModelField();
-      await showAlert(t('Couldn\'t save the cheap model.\n\n{error}', { error: extractErrorMessage(err) }), t('Error'));
+      await showAlert(t('Couldn\'t save the cheap model.\n\n{error}', { error: errorText(err) }), t('Error'));
     }
   }
 
@@ -925,7 +926,7 @@ export class DefaultsTab {
     if (!p) return t('Provider not registered.');
     // authHint is the server's own wording for its sign-in state.
     if (!p.available) return p.authType === 'oauth_bearer'
-      ? (p.authHint || t('Provider is unavailable. Sign in to continue.'))
+      ? (providerAuthHint(p) || t('Provider is unavailable. Sign in to continue.'))
       : t('Provider is configured but has no API key.');
     const hasModel = p.modelsWithContext && p.modelsWithContext.some((/** @type {{id: string}} */ m) => m.id === ref.model);
     if (p.modelsWithContext && !hasModel) {
@@ -962,7 +963,7 @@ export class DefaultsTab {
       console.error('[SettingsPanel] Failed to save default model:', err);
       this.defaultModel = previous;
       this.renderDefaultModelField();
-      await showAlert(t('Couldn\'t save the default model.\n\n{error}', { error: extractErrorMessage(err) }), t('Error'));
+      await showAlert(t('Couldn\'t save the default model.\n\n{error}', { error: errorText(err) }), t('Error'));
     }
   }
 }

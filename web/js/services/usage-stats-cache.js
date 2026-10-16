@@ -21,6 +21,7 @@
 import { extractErrorMessage } from '../../sdk/lib/error-utils.js';
 import { fetchJson } from './http.js';
 import { apiUrl } from '../utils/api-url.js';
+import { t } from '../../sdk/lib/i18n.js';
 
 /**
  * @typedef {object} UsageStat
@@ -120,7 +121,7 @@ const usageStatsCache = {
     const fetchPromise = (async () => {
       try {
         const data = await fetchJson(apiUrl(`/providers/usage?provider=${encodeURIComponent(providerName)}`),
-          { errorPrefix: 'usage fetch failed' });
+          { errorPrefix: t('Usage fetch failed') });
         /** @type {UsageStats[]} */
         const list = Array.isArray(data?.usage) ? data.usage : [];
         const snapshot = list.find(u => u && u.provider === providerName) || null;

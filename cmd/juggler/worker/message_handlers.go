@@ -6,7 +6,6 @@ package worker
 
 import (
 	"encoding/json"
-	"fmt"
 	"strings"
 	"time"
 
@@ -33,7 +32,7 @@ func (w *ConversationWorker) sendReadyWithDocMetadata() {
 func (r *run) handleInit(payload json.RawMessage) {
 	var msg InitMessage
 	if !r.decodePayload("init", payload, &msg) {
-		r.sendError("Failed to parse init message", "")
+		r.sendError(malformedMessageError("init"))
 		return
 	}
 
@@ -119,7 +118,7 @@ func (r *run) handleInit(payload json.RawMessage) {
 	if err := r.loadStateFromDisk(msg.Conversation.LoadFromDisk); err != nil {
 		r.log.Error("Failed to load state from disk: %v", err)
 		if msg.Conversation.LoadFromDisk {
-			r.sendError(fmt.Sprintf("Conversation data not found: %v", err), "")
+			r.sendError(conversationNotFoundError(err))
 			return
 		}
 	} else {
@@ -271,7 +270,7 @@ func (r *run) handleInit(payload json.RawMessage) {
 func (r *run) handleSendMessage(payload json.RawMessage) {
 	var msg SendMessageMessage
 	if !r.decodePayload("send-message", payload, &msg) {
-		r.sendError("Failed to parse send-message", "")
+		r.sendError(malformedMessageError("send-message"))
 		return
 	}
 
@@ -345,14 +344,11 @@ func (r *run) handleSendMessage(payload json.RawMessage) {
 	modelConfig := r.doc.ResolveEffectiveModelConfig(msg.ThreadItemID)
 
 	if modelConfig == nil || modelConfig.Model == "" {
-		errMsg := "Please select a model before sending a message"
-		if msg.IsContinuation {
-			errMsg = "Please select a model before continuing"
-		}
+		warning := noModelWarning(msg.IsContinuation)
 		// code "no-model" marks the recoverable divergence case: the client may
 		// hold a valid model this worker's doc never received (outbound sync gap).
 		// The client self-heals by re-broadcasting its config and retrying once.
-		r.sendStatusWithCode("validation-error", errMsg, "no-model")
+		r.sendStatusWithCode("validation-error", warning.English(), &warning, "no-model")
 		return
 	}
 
@@ -373,7 +369,7 @@ func (r *run) handleSendMessage(payload json.RawMessage) {
 	// a parent LLM relies on to invoke a subthread more than once, so the human
 	// path and the delegation path are one mechanism.
 	if !destFound {
-		r.sendError(fmt.Sprintf("Thread item %s not found", msg.ThreadItemID), "")
+		r.sendError(threadNotFoundError(msg.ThreadItemID))
 		return
 	}
 

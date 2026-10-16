@@ -5,9 +5,8 @@
 package workspace
 
 import (
-	"fmt"
-
 	"juggler/cmd/juggler/core"
+	"juggler/cmd/juggler/msg"
 	"juggler/cmd/juggler/ops"
 )
 
@@ -55,7 +54,7 @@ func (r *Resolver) Resolve(id string) (Workspace, error) {
 		return r.withIndex(&local{root: project, isProject: true}), nil
 	}
 	if r.lookup == nil {
-		return nil, fmt.Errorf("no session is loaded, so workspace %s cannot be resolved", id)
+		return nil, msg.NewError("no session is loaded, so workspace {id} cannot be resolved", "id", id)
 	}
 	row, err := r.lookup.Usable(id)
 	if err != nil {

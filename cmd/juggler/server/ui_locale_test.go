@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -18,6 +19,7 @@ import (
 
 	"juggler/cmd/juggler/core"
 	"juggler/cmd/juggler/server/handlers"
+	"juggler/cmd/juggler/webui"
 	"juggler/internal/userpaths/userpathstest"
 	"juggler/web"
 )
@@ -109,6 +111,59 @@ func TestIndexInjectsUILocale(t *testing.T) {
 	}
 }
 
+// A test server serves one page in the language its URL asks for, and lets a
+// same-origin test frame it; any other server ignores the parameter and refuses
+// to be framed. The stored setting is untouched either way.
+func TestIndexUILocaleParamOnlyInTestMode(t *testing.T) {
+	userpathstest.Isolate(t)
+	mgr, err := core.NewSessionManagerForPath(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewSessionManagerForPath: %v", err)
+	}
+	t.Cleanup(mgr.Shutdown)
+
+	for _, testMode := range []bool{false, true} {
+		s := &Server{router: mux.NewRouter(), settings: newSettingsStore(), testMode: testMode}
+		s.projectState.Store(&projectState{sessionManager: mgr, projectPath: t.TempDir()})
+		if err := s.loadIndexTemplate(); err != nil {
+			t.Fatalf("loadIndexTemplate: %v", err)
+		}
+		serve := func(target string) *httptest.ResponseRecorder {
+			req := httptest.NewRequest(http.MethodGet, target, nil)
+			req.RemoteAddr = localViewerAddr
+			rec := httptest.NewRecorder()
+			s.serveIndex(rec, req)
+			return rec
+		}
+
+		rec := serve("/?uiLocale=en-XA")
+		page := rec.Body.String()
+		ancestors := directive(rec.Header().Get("Content-Security-Policy"), "frame-ancestors")
+		if testMode {
+			if !strings.Contains(page, `<html lang="en-XA" data-ui-locale="en-XA">`) || !strings.Contains(page, "juggler-ui-catalog") {
+				t.Fatalf("test mode: ?uiLocale=en-XA was not honoured: %.200q", page)
+			}
+			if ancestors != "frame-ancestors 'self'" {
+				t.Fatalf("test mode: %q, want frame-ancestors 'self'", ancestors)
+			}
+		} else {
+			if !strings.Contains(page, `<html lang="en">`) || strings.Contains(page, "juggler-ui-catalog") {
+				t.Fatalf("outside test mode ?uiLocale must be ignored: %.200q", page)
+			}
+			if ancestors != "frame-ancestors 'none'" {
+				t.Fatalf("outside test mode: %q, want frame-ancestors 'none'", ancestors)
+			}
+		}
+		if got := s.settings.get().UILocale; got != "" {
+			t.Fatalf("testMode=%v: serving the page changed the stored uiLocale to %q", testMode, got)
+		}
+		// An invalid tag is ignored even in test mode.
+		if page := serve("/?uiLocale=en_GB").Body.String(); !strings.Contains(page, `<html lang="en">`) {
+			t.Fatalf("testMode=%v: an invalid ?uiLocale was honoured: %.200q", testMode, page)
+		}
+	}
+}
+
 // The catalogue is inlined inside a <script> element, so a message containing
 // markup must not be able to close it. html/template's JS escaping is what
 // guarantees that; this pins that the template hands it a value, not a string
@@ -186,6 +241,29 @@ func keys(m map[string]map[string]string) []string {
 	return out
 }
 
+// A catalogue source registered with webui reaches the engine through the
+// route and the viewer through the page, both from the same lookup.
+func TestUICatalogServesRegisteredSources(t *testing.T) {
+	t.Cleanup(webui.RegisterCatalogFS(fstest.MapFS{
+		"i18n/en-XA.json": {Data: []byte(`{"Registered only":"[Ŕéĝîšţéŕéð ··]"}`)},
+	}, "i18n"))
+	s := &Server{}
+	rec := httptest.NewRecorder()
+	s.handleUICatalog(rec, httptest.NewRequest(http.MethodGet, "/api/i18n/catalog?locale=en-XA", nil))
+	var body struct {
+		Messages map[string]string `json:"messages"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v (%s)", err, rec.Body.String())
+	}
+	if body.Messages["Registered only"] != "[Ŕéĝîšţéŕéð ··]" {
+		t.Fatalf("the registered message is not served: %d messages", len(body.Messages))
+	}
+	if got := s.uiCatalog("en-XA")["Registered only"]; got != "[Ŕéĝîšţéŕéð ··]" {
+		t.Fatalf("the page catalogue lacks the registered message: %q", got)
+	}
+}
+
 // The same response carries each extension's catalogue under its id, so one
 // request gives a client everything it registers.
 func TestUICatalogRouteCarriesExtensionCatalogues(t *testing.T) {
@@ -207,5 +285,33 @@ func TestUICatalogRouteCarriesExtensionCatalogues(t *testing.T) {
 	}
 	if body.Extensions["@t/x"]["Go"] != "[Ĝö ··]" {
 		t.Fatalf("extensions = %v, want @t/x's en-XA catalogue", body.Extensions)
+	}
+}
+
+// The Language picker asks which UI languages exist rather than carrying a
+// list: every real catalogue in web/i18n, which today is none.
+func TestUILocalesRoute(t *testing.T) {
+	s := &Server{}
+	rec := httptest.NewRecorder()
+	s.handleUILocales(rec, httptest.NewRequest(http.MethodGet, "/api/i18n/locales", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"locales":[`) {
+		t.Fatalf("the list is an array, never absent or null: %s", rec.Body.String())
+	}
+	var body struct {
+		Locales []string `json:"locales"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if want := webui.AvailableLocales(web.Files); !slices.Equal(body.Locales, want) {
+		t.Fatalf("locales = %q, want the embedded catalogue's %q", body.Locales, want)
+	}
+	for _, tag := range body.Locales {
+		if tag == "en" || tag == "en-XA" {
+			t.Fatalf("%s is offered as a language: %q", tag, body.Locales)
+		}
 	}
 }

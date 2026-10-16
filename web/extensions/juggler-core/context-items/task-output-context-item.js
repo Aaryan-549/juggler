@@ -5,7 +5,7 @@
 
 import ContextItem from 'juggler/context-item';
 import { shellOutputDelta } from 'juggler/ops';
-import { translator } from 'juggler/i18n';
+import { translator, markUntranslated } from 'juggler/i18n';
 
 const t = translator('@juggler/core');
 
@@ -43,13 +43,13 @@ class TaskOutputContextItem extends ContextItem {
       {
         name: 'TaskOutput',
         category: 'read',
-        description: 'Read a background task\'s status and only the NEW output since your last read (tasks started by Monitor or bash run_in_background), plus the exit code once finished — polling is cheap and never repeats output. To learn of completion without polling, prefer an `until … done` guard in the background command, or Monitor.',
+        description: markUntranslated('Read a background task\'s status and only the NEW output since your last read (tasks started by Monitor or bash run_in_background), plus the exit code once finished — polling is cheap and never repeats output. To learn of completion without polling, prefer an `until … done` guard in the background command, or Monitor.'),
         input_schema: {
           type: 'object',
           properties: {
             task_id: {
               type: 'string',
-              description: 'The task id returned when the background task was started.'
+              description: markUntranslated('The task id returned when the background task was started.')
             }
           },
           required: ['task_id']

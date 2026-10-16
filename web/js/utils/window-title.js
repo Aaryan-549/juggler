@@ -33,7 +33,7 @@ export function windowTitleForProject(projectPath) {
   // Both separators: the desktop app reports native paths, so Windows projects
   // arrive backslash-separated.
   const dirName = (projectPath || '').replace(/[/\\]+$/, '').split(/[/\\]/).pop();
-  return 'Juggler - ' + (dirName || t('New Window')); // i18n-ignore: product name
+  return dirName ? t('Juggler - {name}', { name: dirName }) : t('Juggler - New Window');
 }
 
 /**

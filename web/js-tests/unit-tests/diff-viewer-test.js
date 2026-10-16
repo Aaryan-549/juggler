@@ -15,7 +15,7 @@
 
 import { assert } from '../utilities/test-helpers.js';
 import { underPseudoLocale, shownStrings } from '../utilities/pseudo-locale.js';
-import { isPseudoLocalized } from '../../sdk/lib/i18n.js';
+import { isPseudoLocalized, setLocale } from '../../sdk/lib/i18n.js';
 import { SPLIT_MIN_REM, createDiffViewer } from '../../js/components/diff-viewer.js';
 import { resolveMenu } from '../../js/services/context-menu-service.js';
 
@@ -167,6 +167,37 @@ export async function runTests() {
       shown.push(...menu.map((s) => `menu: ${s}`), `header: ${headerFallback}`);
       const raw = shown.filter((s) => !isPseudoLocalized(s.slice(s.indexOf(': ') + 2)));
       assert(raw.length === 0, `plain English under en-XA (${shown.length} shown): ${JSON.stringify(raw)}`);
+    });
+
+    await test('the totals and the gutter are in the UI language\'s digits', async () => {
+      const hunks = [{ oldStart: 1234, oldLines: 1, newStart: 1234, newLines: 1, lines: [
+        { kind: 'remove', text: 'a', oldLine: 1234 },
+        { kind: 'add', text: 'b', newLine: 1234 },
+      ] }];
+      /**
+       * @param {string} locale - The UI locale to draw under.
+       * @returns {{add: string, remove: string, gutter: string[]}} What the viewer shows.
+       */
+      const drawn = (locale) => {
+        const previous = setLocale(locale);
+        try {
+          const viewer = mount(Math.round(SPLIT_MIN_REM * rem / 2), true);
+          viewer.setPatch({ path: '1/2.3', added: 1234, removed: 5, hunks });
+          return {
+            add: viewer.querySelector('diff-stats .add-count')?.textContent || '',
+            remove: viewer.querySelector('diff-stats .remove-count')?.textContent || '',
+            gutter: [...viewer.querySelectorAll('.line-num')].map((n) => n.textContent || '').filter(Boolean),
+          };
+        } finally {
+          setLocale(previous);
+        }
+      };
+      const en = drawn('en');
+      assert(en.add === '+1,234' && en.remove === '-5', `English totals are grouped: ${JSON.stringify(en)}`);
+      assert(en.gutter.length > 0 && en.gutter.every((n) => n === '1234'), `English line numbers are ungrouped: ${JSON.stringify(en)}`);
+      const ar = drawn('ar-EG');
+      assert(ar.add === '+١٬٢٣٤' && ar.remove === '-٥', `Arabic totals: ${JSON.stringify(ar)}`);
+      assert(ar.gutter.length > 0 && ar.gutter.every((n) => n === '١٢٣٤'), `Arabic line numbers: ${JSON.stringify(ar)}`);
     });
   } finally {
     while (mounted.length > 0) mounted.pop()?.remove();

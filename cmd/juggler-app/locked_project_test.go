@@ -26,7 +26,7 @@ import (
 func TestLockedProjectPageSurvivesItsOwnEncoding(t *testing.T) {
 	const message = "This project is locked by another process."
 
-	page := lockedProjectPage(message)
+	page := lockedProjectPage("Project locked", message)
 	doc, err := decodeDataURL(page)
 	if err != nil {
 		t.Fatalf("the window URL is not a decodable data URL: %v", err)
@@ -68,7 +68,7 @@ func decodeDataURL(page string) (string, error) {
 func TestLockedProjectErrorExplainsSafeRecovery(t *testing.T) {
 	project := t.TempDir()
 	err := newLockedProjectError(project, &core.InstanceInfo{PID: 123, Host: "127.0.0.1", Port: 7777})
-	message := err.message()
+	message := (&appState{}).lockedMessage(err)
 	for _, want := range []string{
 		"could not connect",
 		filepath.Join(project, ".juggler", "juggler.lock"),

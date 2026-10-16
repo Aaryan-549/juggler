@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"juggler/cmd/juggler/core"
+	"juggler/cmd/juggler/msg"
 	"juggler/cmd/juggler/providers/openaibase"
 	"juggler/cmd/juggler/providers/provider"
 	"juggler/cmd/juggler/providers/utils"
@@ -76,7 +77,7 @@ func Register() {
 	openaibase.Register(openaibase.Descriptor{
 		Name:            "ollama",
 		DisplayName:     "Ollama (local)",
-		Description:     "Runs models locally via an Ollama daemon. The model list below mirrors whatever you have pulled (`ollama pull <name>`). Point at a non-default daemon (LAN, remote workstation) by setting the host below; otherwise defaults to http://localhost:11434. Juggler enforces the context window each model actually serves: its Modelfile num_ctx, or a conservative 4096 otherwise; declare a higher daemon default via ollama_num_ctx in credentials.json.",
+		Description:     msg.New("Runs models locally via an Ollama daemon. The model list below mirrors whatever you have pulled (`ollama pull <name>`). Point at a non-default daemon (LAN, remote workstation) by setting the host below; otherwise defaults to http://localhost:11434. Juggler enforces the context window each model actually serves: its Modelfile num_ctx, or a conservative 4096 otherwise; declare a higher daemon default via ollama_num_ctx in credentials.json."),
 		AutoDetect:      daemon.AutoDetect(),
 		DisplayProvider: "Ollama",
 		ContextWindowFn: getContextWindowInfo,

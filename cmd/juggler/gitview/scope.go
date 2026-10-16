@@ -7,12 +7,13 @@ package gitview
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os/exec"
 	"regexp"
 	"strings"
 	"time"
 	"unicode"
+
+	"juggler/cmd/juggler/msg"
 )
 
 // ScopeKind is what a review compares: which two states of a repository stand
@@ -76,11 +77,14 @@ type Scope struct {
 }
 
 // ScopeInfo is how a scope is reported back: the spelling it was asked for by,
-// the comparison it came down to, and a sentence that says which.
+// the comparison it came down to, and a sentence that says which — in English,
+// and as a message for the client to show translated. A commit range's label is
+// git's own notation rather than words, so it has no message.
 type ScopeInfo struct {
-	Input string    `json:"input"`
-	Kind  ScopeKind `json:"kind"`
-	Label string    `json:"label"`
+	Input        string       `json:"input"`
+	Kind         ScopeKind    `json:"kind"`
+	Label        string       `json:"label"`
+	LabelMessage *msg.Message `json:"labelMessage,omitempty"`
 }
 
 // ParseScope reads a scope as typed. A scope it cannot read is a *RequestError,
@@ -88,10 +92,10 @@ type ScopeInfo struct {
 func ParseScope(raw string) (Scope, error) {
 	input := strings.Join(strings.Fields(raw), " ")
 	if len(input) > scopeMaxLen {
-		return Scope{}, &RequestError{fmt.Sprintf("Scope is longer than %d characters", scopeMaxLen)}
+		return Scope{}, &RequestError{msg.NewError("Scope is longer than {max} characters", "max", scopeMaxLen)}
 	}
 	if strings.ContainsFunc(raw, func(r rune) bool { return unicode.IsControl(r) && !unicode.IsSpace(r) }) {
-		return Scope{}, &RequestError{"Scope holds a control character"}
+		return Scope{}, &RequestError{msg.NewError("Scope holds a control character")}
 	}
 
 	switch input {
@@ -107,7 +111,7 @@ func ParseScope(raw string) (Scope, error) {
 		return Scope{input: input, kind: ScopeCommits, left: "HEAD^1", right: "HEAD", last: true}, nil
 	}
 	if presetPattern.MatchString(input) {
-		return Scope{}, &RequestError{fmt.Sprintf("Unknown scope %s: the presets are @uncommitted, @staged, @unstaged, @branch and @last", input)}
+		return Scope{}, &RequestError{msg.NewError("Unknown scope {scope}: the presets are @uncommitted, @staged, @unstaged, @branch and @last", "scope", input)}
 	}
 
 	var cached, mergeBase, worktree bool
@@ -122,7 +126,7 @@ func ParseScope(raw string) (Scope, error) {
 			worktree = true
 		default:
 			if strings.HasPrefix(token, "-") {
-				return Scope{}, &RequestError{fmt.Sprintf("Unsupported option %s: only --cached, --staged, --merge-base and --worktree are understood", token)}
+				return Scope{}, &RequestError{msg.NewError("Unsupported option {option}: only --cached, --staged, --merge-base and --worktree are understood", "option", token)}
 			}
 			revs = append(revs, token)
 		}
@@ -132,15 +136,15 @@ func ParseScope(raw string) (Scope, error) {
 	switch {
 	case worktree:
 		if cached || mergeBase || len(revs) > 0 {
-			return Scope{}, &RequestError{"--worktree compares the working tree with the index and takes nothing else"}
+			return Scope{}, &RequestError{msg.NewError("--worktree compares the working tree with the index and takes nothing else")}
 		}
 		s.kind = ScopeUnstaged
 		return s, nil
 	case len(revs) > 2:
-		return Scope{}, &RequestError{"A scope compares at most two commits"}
+		return Scope{}, &RequestError{msg.NewError("A scope compares at most two commits")}
 	case len(revs) == 1 && strings.Contains(revs[0], ".."):
 		if cached || mergeBase {
-			return Scope{}, &RequestError{"A range compares two commits, so --cached and --merge-base do not apply"}
+			return Scope{}, &RequestError{msg.NewError("A range compares two commits, so --cached and --merge-base do not apply")}
 		}
 		left, right, symmetric := strings.Cut(revs[0], "...")
 		if !symmetric {
@@ -149,7 +153,7 @@ func ParseScope(raw string) (Scope, error) {
 		s.kind, s.left, s.right, s.mergeBase = ScopeCommits, left, right, symmetric
 	case len(revs) == 2:
 		if cached {
-			return Scope{}, &RequestError{"--cached compares the index with one commit, not two"}
+			return Scope{}, &RequestError{msg.NewError("--cached compares the index with one commit, not two")}
 		}
 		s.kind, s.left, s.right, s.mergeBase = ScopeCommits, revs[0], revs[1], mergeBase
 	case len(revs) == 1:
@@ -159,7 +163,7 @@ func ParseScope(raw string) (Scope, error) {
 		}
 	default:
 		if mergeBase {
-			return Scope{}, &RequestError{"--merge-base needs a commit to find the merge-base with"}
+			return Scope{}, &RequestError{msg.NewError("--merge-base needs a commit to find the merge-base with")}
 		}
 		s.kind = ScopeWorktree
 		if cached {
@@ -185,14 +189,18 @@ func checkRevision(rev string) error {
 	case rev == "":
 		return nil
 	case strings.HasPrefix(rev, "-"), strings.HasPrefix(rev, "."), strings.Contains(rev, ".."):
-		return &RequestError{fmt.Sprintf("Not a revision: %s", rev)}
+		return &RequestError{msg.NewError("Not a revision: {revision}", "revision", rev)}
 	}
 	return nil
 }
 
 // Info is the scope as it is reported back with a review.
 func (s Scope) Info() ScopeInfo {
-	return ScopeInfo{Input: s.Input(), Kind: s.Kind(), Label: s.Label()}
+	info := ScopeInfo{Input: s.Input(), Kind: s.Kind(), Label: s.Label()}
+	if m, words := s.labelMessage(); words {
+		info.LabelMessage = &m
+	}
+	return info
 }
 
 // Input is the scope's spelling, whitespace folded; the zero Scope's is the
@@ -214,36 +222,48 @@ func (s Scope) Kind() ScopeKind {
 
 // Label says, in a phrase, what is being compared.
 func (s Scope) Label() string {
-	name := func(rev string) string {
-		if rev == "" {
-			return "HEAD"
-		}
-		return rev
+	if m, words := s.labelMessage(); words {
+		return m.English()
 	}
+	if s.mergeBase {
+		return revisionName(s.left) + "..." + revisionName(s.right)
+	}
+	return revisionName(s.left) + ".." + revisionName(s.right)
+}
+
+// revisionName is a revision as a label names it, "" being HEAD.
+func revisionName(rev string) string {
+	if rev == "" {
+		return "HEAD"
+	}
+	return rev
+}
+
+// labelMessage is Label as a message, and false for a commit range, whose label
+// is git's notation rather than words a language translates.
+func (s Scope) labelMessage() (msg.Message, bool) {
+	name := revisionName
 	switch {
 	case s.branch:
-		return "Working tree against the merge-base with the default branch"
+		return msg.New("Working tree against the merge-base with the default branch"), true
 	case s.last:
-		return "Last commit against its parent"
+		return msg.New("Last commit against its parent"), true
 	}
 	switch s.Kind() {
 	case ScopeIndex:
 		if s.mergeBase {
-			return "Staged against the merge-base with " + name(s.left)
+			return msg.New("Staged against the merge-base with {revision}", "revision", name(s.left)), true
 		}
-		return "Staged against " + name(s.left)
+		return msg.New("Staged against {revision}", "revision", name(s.left)), true
 	case ScopeUnstaged:
-		return "Working tree against the index"
+		return msg.New("Working tree against the index"), true
 	case ScopeCommits:
-		if s.mergeBase {
-			return name(s.left) + "..." + name(s.right)
-		}
-		return name(s.left) + ".." + name(s.right)
+		return msg.Message{}, false
 	}
 	if s.mergeBase {
-		return "Working tree against the merge-base with " + name(s.left)
+		return msg.New("Working tree against the merge-base with {revision}", "revision", name(s.left)), true
 	}
-	return "Working tree against " + name(s.left)
+	return msg.New("Working tree against {revision}", "revision", name(s.left)), true
 }
 
 // IsDefault reports whether this is the working tree against HEAD, staged and
@@ -381,9 +401,9 @@ func resolveCommit(ctx context.Context, dir, rev string, budget time.Duration) (
 	case err != nil:
 		return "", err
 	case !ok && rev == "HEAD":
-		return "", &RequestError{"This repository has no commits yet"}
+		return "", &RequestError{msg.NewError("This repository has no commits yet")}
 	case !ok:
-		return "", &RequestError{fmt.Sprintf("Unknown revision %s", rev)}
+		return "", &RequestError{msg.NewError("Unknown revision {revision}", "revision", rev)}
 	}
 	return id, nil
 }
@@ -395,7 +415,7 @@ func mergeBaseOf(ctx context.Context, dir, a, b string, budget time.Duration) (s
 	case err != nil:
 		return "", err
 	case !ok:
-		return "", &RequestError{fmt.Sprintf("%s and %s have no common ancestor", shortID(a), shortID(b))}
+		return "", &RequestError{msg.NewError("{first} and {second} have no common ancestor", "first", shortID(a), "second", shortID(b))}
 	}
 	return id, nil
 }
@@ -412,7 +432,7 @@ func defaultBranch(ctx context.Context, dir string, budget time.Duration) (strin
 			return name, nil
 		}
 	}
-	return "", &RequestError{"No default branch: none of " + strings.Join(defaultBranchCandidates, ", ") + " exists"}
+	return "", &RequestError{msg.NewError("No default branch: none of {branches} exists", "branches", strings.Join(defaultBranchCandidates, ", "))}
 }
 
 // gitEmptyTree is the id of the tree with nothing in it, asked of git because it

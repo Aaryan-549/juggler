@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"juggler/cmd/juggler/msg"
 	"juggler/cmd/juggler/providers/provider"
 	"juggler/internal/jlog"
 
@@ -845,7 +846,7 @@ func (r *run) recoverWorkerPanic(msgType string) {
 	stack := debug.Stack()
 	r.log.Error("Panic handling message %s: %v\n%s", msgType, panicValue, stack)
 	requireDocLockAfterPanic("handling message "+msgType, panicValue, stack)
-	r.sendError(fmt.Sprintf("Internal error: %v", panicValue), "")
+	r.sendError(msg.New("Internal error: {detail}", "detail", fmt.Sprint(panicValue)))
 }
 
 // handleMessage processes a single message from the main event loop.
@@ -1122,18 +1123,25 @@ func (w *ConversationWorker) replyWS(data []byte) {
 }
 
 func (r *run) sendStatus(status, message string) {
-	r.sendStatusWithCode(status, message, "")
+	r.sendStatusWithCode(status, message, nil, "")
+}
+
+// sendStatusText is sendStatus for a status line the user reads: its English as
+// `message`, and the message itself as `text`, for the client to show translated.
+func (r *run) sendStatusText(status string, m msg.Message) {
+	r.sendStatusWithCode(status, m.English(), &m, "")
 }
 
 // sendStatusWithCode is sendStatus plus a machine-readable `code` the client can
-// branch on without matching English text. Used for the model-validation errors
-// so the client can tell a recoverable divergence (code "no-model" — self-heal
-// by re-broadcasting its own config) apart from a genuinely unusable model
-// (code "provider-unavailable" — never auto-retry). Empty code ⇒ omitted, so
-// every existing sendStatus caller is unchanged on the wire.
-func (r *run) sendStatusWithCode(status, message, code string) {
+// branch on without matching English text, and `text`, the message as a
+// msg.Message when there is one (nil for text that is only data). The code is
+// used for the model-validation errors so the client can tell a recoverable
+// divergence (code "no-model" — self-heal by re-broadcasting its own config)
+// apart from a genuinely unusable model (code "provider-unavailable" — never
+// auto-retry). An empty code and a nil text are omitted on the wire.
+func (r *run) sendStatusWithCode(status, message string, text *msg.Message, code string) {
 	r.updateElapsedAnchor(status)
-	r.writeProcessingState(status, message, code)
+	r.writeProcessingState(status, message, text, code)
 	if status == "idle" {
 		if r.sched.owns(r.t) {
 			// A turn goroutine's idle edge is finalized by the actor as it retires
@@ -1160,6 +1168,9 @@ func (r *run) sendStatusWithCode(status, message, code string) {
 	}
 	if code != "" {
 		wsMsg["code"] = code
+	}
+	if text != nil {
+		wsMsg["text"] = *text
 	}
 	r.send(wsMsg)
 }
@@ -1198,7 +1209,7 @@ func (r *run) updateElapsedAnchor(status string) {
 // writeProcessingState publishes the frame every client renders the spinner
 // from: the doc-native `processingState` blob, rebuilt from scratch on each
 // call, and this run's own entry in the registry underneath it, rebuilt with it.
-func (r *run) writeProcessingState(status, message, code string) {
+func (r *run) writeProcessingState(status, message string, text *msg.Message, code string) {
 	// Include threadItemId so frontend knows which column to target
 	stateMap := map[string]any{
 		"status":       status,
@@ -1207,6 +1218,9 @@ func (r *run) writeProcessingState(status, message, code string) {
 	}
 	if code != "" {
 		stateMap["code"] = code
+	}
+	if text != nil {
+		stateMap["text"] = *text
 	}
 	holdsClaim := statusHoldsClaim(status)
 	if holdsClaim {
@@ -1233,6 +1247,11 @@ func (r *run) writeProcessingState(status, message, code string) {
 			entry["code"] = code
 		} else {
 			delete(entry, "code")
+		}
+		if text != nil {
+			entry["text"] = *text
+		} else {
+			delete(entry, "text")
 		}
 		entry["startedAt"] = r.t.processingStartedAt.Load()
 		dropPhaseProgress(entry)
@@ -1311,18 +1330,22 @@ func (w *ConversationWorker) sendReadyWithMetadata(metadata map[string]any) {
 	w.reply(msg)
 }
 
-func (r *run) sendError(message, stack string) {
-	r.sendErrorWithData(message, stack, nil)
+// sendError reports an error Juggler words itself into the run's own thread.
+func (r *run) sendError(m msg.Message) {
+	r.sendErrorWithData(m.English(), &m, "", nil)
 }
 
 // sendErrorWithData reports an error into the run's own thread; see sendErrorTo.
-func (r *run) sendErrorWithData(message, stack string, data map[string]any) {
-	r.sendErrorTo(r.t.thread, message, stack, data)
+func (r *run) sendErrorWithData(message string, text *msg.Message, stack string, data map[string]any) {
+	r.sendErrorTo(r.t.thread, message, text, stack, data)
 }
 
 // sendErrorTo appends an error item to dest (visible in the UI via Yjs sync)
-// and sends the same error on the wire, with its stack, for logging.
-func (r *run) sendErrorTo(dest threadContext, message, stack string, data map[string]any) {
+// and sends the same error on the wire, with its stack, for logging. message is
+// the English the item stores as Content; text is the message it was rendered
+// from, stored in Data as "message" for the transcript to show translated, or
+// nil for text that is only data (a provider's or the OS's own words).
+func (r *run) sendErrorTo(dest threadContext, message string, text *msg.Message, stack string, data map[string]any) {
 	summary := extractErrorSummary(message)
 	msg := ConversationItem{
 		Type:      ItemTypeError,
@@ -1330,6 +1353,14 @@ func (r *run) sendErrorTo(dest threadContext, message, stack string, data map[st
 		Content:   message,
 		Summary:   summary,
 		Timestamp: time.Now().Format(time.RFC3339),
+	}
+	if text != nil {
+		withText := make(map[string]any, len(data)+1)
+		for k, v := range data {
+			withText[k] = v
+		}
+		withText["message"] = *text
+		data = withText
 	}
 	if data != nil {
 		msg.Data, _ = json.Marshal(data)

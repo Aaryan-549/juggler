@@ -15,6 +15,7 @@ import (
 	"fmt"
 
 	"juggler/cmd/juggler/core"
+	"juggler/cmd/juggler/msg"
 	"juggler/cmd/juggler/providers/openaibase"
 	"juggler/cmd/juggler/providers/provider"
 	"juggler/cmd/juggler/providers/utils"
@@ -43,7 +44,7 @@ func Register() {
 	openaibase.Register(openaibase.Descriptor{
 		Name:         "copilot",
 		DisplayName:  "GitHub Copilot",
-		Description:  "Uses your GitHub Copilot plan, including the free one. No API key required — sign in with GitHub here, or reuse a Copilot login from VS Code, a JetBrains IDE, or Neovim.",
+		Description:  msg.New("Uses your GitHub Copilot plan, including the free one. No API key required — sign in with GitHub here, or reuse a Copilot login from VS Code, a JetBrains IDE, or Neovim."),
 		AuthType:     provider.AuthTypeOAuthBearer,
 		AuthSource:   "github_copilot",
 		SignInMethod: "github_device",

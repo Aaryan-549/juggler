@@ -24,7 +24,8 @@ import ReplaceTextContextItem from '../context-items/replace-text-context-item.j
 const CORE_TEXT = [
   '⚠ Write outside the project folder: {path}',
   'file edits', 'file edits + allow {folder}', 'file edits (writes outside the project still prompt)',
-  'Replace', 'cancelled: {file}', 'failed in {file}', 'failed',
+  // Context-keyed messages, as messageKey() writes them.
+  'tool name\u0004Replace', 'replacement text label\u0004Replace', 'cancelled: {file}', 'failed in {file}', 'failed',
   'Search', 'Edit failed',
 ];
 

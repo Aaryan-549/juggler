@@ -11,6 +11,8 @@ import (
 	"slices"
 
 	"github.com/pion/webrtc/v4"
+
+	"juggler/cmd/juggler/msg"
 )
 
 // TunnelHost is the capability surface the server hands to a tunnel-mode
@@ -61,12 +63,14 @@ type TunnelModeSpec struct {
 	// Mode is the wire identifier (POST /api/connectivity/tunnel {"mode": ...}).
 	Mode TunnelMode
 
-	// Web UI presentation, served verbatim by GET /api/connectivity:
-	Title           string // short mode name, e.g. "Direct P2P"
-	Description     string // one-paragraph explanation of the trade-offs
-	StartLabel      string // start-button label, e.g. "Start Direct P2P"
-	RelayNote       string // optional note shown while active, e.g. that traffic is proxied
-	UnavailableHint string // shown instead of the start button when unavailable
+	// Web UI presentation, served by GET /api/connectivity as the English and
+	// beside it the message, for the page to show translated (wanModesPayload).
+	// Write each as a msg.New literal so `scripts/i18n extract` catalogues it.
+	Title           msg.Message // short mode name, e.g. "Direct P2P"
+	Description     msg.Message // one-paragraph explanation of the trade-offs
+	StartLabel      msg.Message // start-button label, e.g. "Start Direct P2P"
+	RelayNote       msg.Message // optional note shown while active, e.g. that traffic is proxied
+	UnavailableHint msg.Message // shown instead of the start button when unavailable
 
 	// Terminal UX, consumed by cmd/juggler/app:
 	FlagName           string // startup flag name, e.g. "tunnel" ("" = no flag)

@@ -7,6 +7,7 @@ package claudecode
 import (
 	"strings"
 
+	"juggler/cmd/juggler/msg"
 	"juggler/cmd/juggler/providers/provider"
 )
 
@@ -19,7 +20,7 @@ import (
 // subcommand deliberately — `auth login` has been observed reporting success
 // while persisting nothing, whereas the in-session `/login` is what the CLI's
 // own error text tells people to run.
-const claudeSignInHint = "Claude Code isn't signed in. Run claude in a terminal and use /login."
+var claudeSignInHint = msg.New("Claude Code isn't signed in. Run claude in a terminal and use /login.")
 
 // authFailureMarkers identify a CLI failure as an authentication problem from
 // its text alone. Needed alongside the HTTP status because the CLI reports the
@@ -59,7 +60,7 @@ func classifyClaudeAuthFailure(status int, text string) *provider.AuthError {
 		Provider: "claudecode",
 		Status:   status,
 		Message:  strings.TrimSpace(text),
-		Hint:     claudeSignInHint,
+		Hint:     claudeSignInHint.English(),
 	}
 }
 

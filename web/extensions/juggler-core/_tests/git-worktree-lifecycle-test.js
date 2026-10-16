@@ -74,7 +74,7 @@ const CORE_TEXT = [
   'Let this conversation write it',
   'It has read the work; the commit happens on its next turn.',
   'Fast-forward {repoTarget, select, named {{repo}} other {the repository}} to {branchTarget, select, named {{branch}} other {this branch}}',
-  'Runs git merge --ff-only {branchTarget, select, named {{branch}} other {this branch}} in {repoTarget, select, named {{repo}} other {the repository}}, moving the branch it has checked out to this one. Git refuses it if that branch has diverged. The worktree is untouched.',
+  "{branchTarget, select, named {Runs git merge --ff-only {branch}} other {Runs git merge --ff-only with this worktree's branch}} in {repoTarget, select, named {{repo}} other {the repository}}, moving the branch it has checked out to this one. Git refuses it if that branch has diverged. The worktree is untouched.",
   'Close the workspace, keep the worktree',
   '{target, select, named {The worktree and {branch} stay on disk, ready to be adopted again. Conversations here go to the bin, which they can be restored from.} other {The worktree and its branch stay on disk, ready to be adopted again. Conversations here go to the bin, which they can be restored from.}}',
   'Close the workspace and delete the worktree',
@@ -93,7 +93,7 @@ const CORE_TEXT = [
   '{repoTarget, select, named {{repo}} other {The repository}} cannot be reached from {baseTarget, select, named {{base}} other {the base workspace}}, so there is nowhere to merge it into.',
   '{repoTarget, select, named {{repo}} other {The repository}} cannot be reached from {baseTarget, select, named {{base}} other {the base workspace}}, so the worktree is not ours to remove from here.',
   'There is no record of which branch this worktree is on, so there is nothing to merge.',
-  '{count, plural, one {This worktree has an uncommitted change. Commit them first — a fast-forward moves commits, and these would be left behind.} other {This worktree has {count} uncommitted changes. Commit them first — a fast-forward moves commits, and these would be left behind.}}',
+  '{count, plural, one {This worktree has an uncommitted change. Commit it first — a fast-forward moves commits, and it would be left behind.} other {This worktree has {count} uncommitted changes. Commit them first — a fast-forward moves commits, and these would be left behind.}}',
   'Couldn’t ask the repository which branch it has out.',
   'Couldn’t ask the repository which branch it has out.\n\n{detail}',
   '{repo} has a detached HEAD, so there is no branch to fast-forward to {branch}.',
@@ -1007,11 +1007,11 @@ export async function runTests() {
           shown['unclaimed'] = report.orphanedArtifacts[0].detail;
 
           // Cleanup: nothing checkpointed, a tree that would not go, one that did.
-          shown['cleanup nothing'] = (await hooks.cleanupPartial(unnamed, ctx)).message;
+          assert((await hooks.cleanupPartial(unnamed, ctx)).removed === false, 'nothing checkpointed is not removed');
           respond = () => ({ success: true, stdout: '' });
-          shown['cleanup left'] = (await hooks.cleanupPartial(named, ctx)).message;
+          assert((await hooks.cleanupPartial(named, ctx)).removed === false, 'a tree that would not go is not removed');
           respond = () => ({ success: false, stdout: '' });
-          shown['cleanup removed'] = (await hooks.cleanupPartial(named, ctx)).message;
+          assert((await hooks.cleanupPartial(named, ctx)).removed === true, 'a tree that went is removed');
         }, { '@juggler/core': CORE_TEXT });
       } finally {
         if (realStatus) /** @type {any} */ (api).getGitStatus = realStatus;

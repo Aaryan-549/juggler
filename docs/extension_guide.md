@@ -1490,8 +1490,34 @@ is not a flat object of strings. At runtime one such file costs the extension
 all of its translations — every language, not just that file's — but the
 extension still loads, with a warning in the catalog saying why.
 
+**Generate `en.json` and `en-XA.json` rather than writing them.**
+
+```bash
+juggler ext i18n extract ./my-extension   # write en.json and en-XA.json
+juggler ext i18n check ./my-extension     # exit 1 if either is out of date, or a translation is broken
+juggler ext i18n pseudo ./my-extension    # rebuild en-XA.json from en.json
+```
+
+`extract` collects the literal first argument of every `t()` or
+`markForTranslation()` (keyed with its context when the call gives one), plus
+the manifest and `MANIFEST` text above, from every `.js` file outside `_tests/`.
+It also lists keys in your other language files whose English no longer
+exists. A message has to be written out at the call, as a string, a template
+with no `${}`, or a `+` of those. A `t()` of a variable is skipped, since it
+translates a message marked somewhere else. A context that isn't a literal is
+an error, because the message would be filed under a key the runtime never
+asks for. `check` also reads every translation file and refuses one that:
+- has a key whose English no longer exists;
+- doesn't parse;
+- adds or drops a `{placeholder}`;
+- has a plural or select with no `other` branch;
+- uses a plural category the language doesn't have;
+- adds HTML the English doesn't have.
+
+An empty string counts as not yet translated. `check` fits in CI.
+
 **Check it with the pseudo-locale.** `en-XA` accents every letter and pads each
-string (`[Šéåŕçĥ ŕéšûļţš ·····]`). With an `en-XA.json` in your catalogue and
+string (`[Šéåŕçĥ ŕéšûļţš ·····]`). With an `en-XA.json` in your catalogue (`juggler ext i18n extract` writes one) and
 the language set to en-XA (Settings → Appearance → Language, shown in dev mode),
 any plain English left on screen is a string you missed, and anything clipped
 is a layout that will not survive a longer language.

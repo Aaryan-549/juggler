@@ -5,6 +5,7 @@
 
 import ContextItem from 'juggler/context-item';
 import { writeUserCommand, USER_COMMAND_NAME_RE } from '../../../js/services/user-commands.js';
+import { markUntranslated } from 'juggler/i18n';
 
 /**
  * DefineCommandContextItem — lets the assistant create a user-defined slash
@@ -70,50 +71,50 @@ class DefineCommandContextItem extends ContextItem {
         name: 'define_command',
         category: 'meta',
         description:
-          'Create a user-defined slash command, invoked with /name — for when the user asks to save, ' +
+          markUntranslated('Create a user-defined slash command, invoked with /name — for when the user asks to save, ' +
           'name, or repeat a prompt or workflow. The command is a prompt template: $1..$9 for ' +
           'positional arguments, $ARGUMENTS for everything after the command name. The user approves ' +
-          'the full definition before it is written.',
+          'the full definition before it is written.'),
         input_schema: {
           type: 'object',
           properties: {
             name: {
               type: 'string',
-              description: 'Command name (the /name), lowercase letters, digits and hyphens, starting with a letter',
+              description: markUntranslated('Command name (the /name), lowercase letters, digits and hyphens, starting with a letter'),
             },
             description: {
               type: 'string',
-              description: 'One-line description shown in the slash menu',
+              description: markUntranslated('One-line description shown in the slash menu'),
             },
             template: {
               type: 'string',
-              description: 'The prompt template ($1..$9 positional args, $ARGUMENTS for the full argument string).',
+              description: markUntranslated('The prompt template ($1..$9 positional args, $ARGUMENTS for the full argument string).'),
             },
             run: {
               type: 'string',
               enum: DefineCommandContextItem.RUN_MODES,
-              description: 'How invoking the command behaves: send immediately (default), insert as a draft, or run in a sub-thread',
+              description: markUntranslated('How invoking the command behaves: send immediately (default), insert as a draft, or run in a sub-thread'),
             },
             argsHint: {
               type: 'string',
-              description: 'Optional hint text describing the expected arguments (e.g. "<pr-number>")',
+              description: markUntranslated('Optional hint text describing the expected arguments (e.g. "<pr-number>")'),
             },
             strategy: {
               type: 'string',
-              description: 'Optional strategy id override (subthread run mode only), e.g. "read-only"',
+              description: markUntranslated('Optional strategy id override (subthread run mode only), e.g. "read-only"'),
             },
             model: {
               type: 'string',
-              description: 'Optional model id override (subthread run mode only)',
+              description: markUntranslated('Optional model id override (subthread run mode only)'),
             },
             goal: {
               type: 'string',
-              description: 'Optional very short user-facing thread label (subthread run mode only); the task belongs in `template`.',
+              description: markUntranslated('Optional very short user-facing thread label (subthread run mode only); the task belongs in `template`.'),
             },
             scope: {
               type: 'string',
               enum: ['user', 'project'],
-              description: 'Where to store it: "project" (this project, git-shareable; default) or "user" (all your projects)',
+              description: markUntranslated('Where to store it: "project" (this project, git-shareable; default) or "user" (all your projects)'),
             },
           },
           required: ['name', 'description', 'template'],
@@ -200,7 +201,7 @@ class DefineCommandContextItem extends ContextItem {
     }
     const r = /** @type {{name?: string, scope?: string}} */ (outcome.result || {});
     const where = r.scope === 'user' ? 'all projects' : 'this project';
-    return this.successSummary(`Created /${r.name} (${where}). Invoke it with /${r.name}.`);
+    return this.successSummary(markUntranslated(`Created /${r.name} (${where}). Invoke it with /${r.name}.`));
   }
 
   /**

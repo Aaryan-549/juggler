@@ -602,9 +602,7 @@
 				"ci-text-block",
 				"skill-ci-expanded",
 				"skill-load-*",
-				"skill-panel-*",
-				"thinking-block",
-				"thinking-block-*"
+				"skill-panel-*"
 			]
 		},
 		{

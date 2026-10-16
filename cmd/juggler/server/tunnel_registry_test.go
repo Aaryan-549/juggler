@@ -6,8 +6,11 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
+
+	"juggler/cmd/juggler/msg"
 )
 
 // fakeTunnelProvider is a no-op TunnelProvider for registry-dispatch tests.
@@ -50,7 +53,7 @@ func TestTunnelRegistryDispatch(t *testing.T) {
 		},
 		TunnelModeSpec{
 			Mode:            "gone",
-			UnavailableHint: "install the gone helper",
+			UnavailableHint: msg.New("install the gone helper"),
 			Available:       func() bool { return false },
 			New: func(host TunnelHost) TunnelProvider {
 				return &fakeTunnelProvider{mode: "gone", host: host, done: make(chan struct{})}
@@ -79,6 +82,68 @@ func TestTunnelRegistryDispatch(t *testing.T) {
 		t.Fatal("unavailable mode should return an error")
 	} else if want := "install the gone helper"; !strings.Contains(err.Error(), want) {
 		t.Fatalf("unavailable error %q should contain the spec's hint %q", err, want)
+	}
+}
+
+// TestWANModesPayloadCarriesMessages pins what GET /api/connectivity reports
+// for each mode: the English in the plain keys an older client reads, and
+// beside each the message it renders from, for a client to translate. A field
+// the spec leaves empty sends no message.
+func TestWANModesPayloadCarriesMessages(t *testing.T) {
+	withTestTunnelModes(t, TunnelModeSpec{
+		Mode:            "fake",
+		Title:           msg.New("Fake tunnel"),
+		Description:     msg.New("Tunnels through {via}.", "via", "nothing"),
+		StartLabel:      msg.New("Start the fake tunnel"),
+		UnavailableHint: msg.New("Requires the fake helper."),
+		Available:       func() bool { return false },
+		New:             func(TunnelHost) TunnelProvider { return nil },
+	})
+
+	raw, err := json.Marshal(wanModesPayload())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var modes []map[string]any
+	if err := json.Unmarshal(raw, &modes); err != nil {
+		t.Fatal(err)
+	}
+	if len(modes) != 1 {
+		t.Fatalf("got %d modes, want 1: %s", len(modes), raw)
+	}
+	m := modes[0]
+	wantEnglish := map[string]string{
+		"title":           "Fake tunnel",
+		"description":     "Tunnels through nothing.",
+		"startLabel":      "Start the fake tunnel",
+		"relayNote":       "",
+		"unavailableHint": "Requires the fake helper.",
+	}
+	for field, want := range wantEnglish {
+		if got := m[field]; got != want {
+			t.Errorf("%s = %#v, want %q", field, got, want)
+		}
+	}
+	wantKeys := map[string]string{
+		"titleMessage":           "Fake tunnel",
+		"descriptionMessage":     "Tunnels through {via}.",
+		"startLabelMessage":      "Start the fake tunnel",
+		"unavailableHintMessage": "Requires the fake helper.",
+	}
+	for field, want := range wantKeys {
+		message, _ := m[field].(map[string]any)
+		if message == nil || message["key"] != want {
+			t.Errorf("%s = %#v, want a message keyed %q", field, m[field], want)
+		}
+	}
+	if params, _ := m["descriptionMessage"].(map[string]any)["params"].(map[string]any); params["via"] != "nothing" {
+		t.Errorf("descriptionMessage params = %#v, want via=nothing", m["descriptionMessage"])
+	}
+	if _, ok := m["relayNoteMessage"]; ok {
+		t.Errorf("an empty relayNote must send no message: %s", raw)
+	}
+	if m["available"] != false || m["mode"] != "fake" {
+		t.Errorf("mode/available = %#v/%#v", m["mode"], m["available"])
 	}
 }
 

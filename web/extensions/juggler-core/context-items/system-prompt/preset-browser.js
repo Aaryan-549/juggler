@@ -25,7 +25,7 @@ import { createElement, presentPopup } from 'juggler/ui';
 import { translator, markForTranslation } from 'juggler/i18n';
 import { attachMenuKeyboard, focusMenuItem } from '../../../../js/utils/menu-roles.js';
 import { systemPromptRegistry } from '../../../../sdk/lib/system-prompt-registry.js';
-import { extractErrorMessage } from '../../../../sdk/lib/error-utils.js';
+import { errorText } from '../../../../sdk/lib/error-utils.js';
 import {
   ensureUserPresetsLoaded,
   getDefaultPresetId,
@@ -248,7 +248,7 @@ function buildPresetMenuItem(item, preset, defaultId, selectedId, dropdown, cont
         await setDefaultPreset(preset.id);
         renderPresetMenu(item, dropdown, container);
       } catch (err) {
-        console.error('[SystemPrompt] set default failed:', err);
+        await reportPresetFailure(err, t("Couldn't set default preset"), '[SystemPrompt] set default failed:');
       }
     });
     row.appendChild(setBtn);
@@ -349,7 +349,9 @@ async function saveCurrentAsPreset(item, dropdown, container) {
             selectPreset(item, existing.id);
             renderPresetMenu(item, dropdown, container);
           } catch (err) {
-            await reportPresetFailure(err, 'update', '[SystemPrompt] update preset failed:');
+            await reportPresetFailure(err,
+              t("{verb, select, update {Couldn't update preset} other {Couldn't save preset}}", { verb: 'update' }),
+              '[SystemPrompt] update preset failed:');
           }
           return;
         }
@@ -369,7 +371,9 @@ async function saveCurrentAsPreset(item, dropdown, container) {
     selectPreset(item, preset.id);
     renderPresetMenu(item, dropdown, container);
   } catch (err) {
-    await reportPresetFailure(err, 'save', '[SystemPrompt] save preset failed:');
+    await reportPresetFailure(err,
+      t("{verb, select, update {Couldn't update preset} other {Couldn't save preset}}", { verb: 'save' }),
+      '[SystemPrompt] save preset failed:');
   }
 }
 
@@ -389,17 +393,17 @@ function selectPreset(item, presetId) {
  * user whether the name collided or the disk is full, so it is shown rather
  * than summarised away.
  * @param {unknown} err - The thrown error
- * @param {'save'|'update'} verb - What was being attempted
+ * @param {string} title - What failed, as the notice's title
  * @param {string} logPrefix - Console prefix for the developer-facing log
  * @returns {Promise<void>}
  */
-async function reportPresetFailure(err, verb, logPrefix) {
+async function reportPresetFailure(err, title, logPrefix) {
   console.error(logPrefix, err);
   const showConfirm = /** @type {any} */ (window).showConfirm;
   if (showConfirm) {
     await showConfirm(
-      extractErrorMessage(err),
-      t("{verb, select, update {Couldn't update preset} other {Couldn't save preset}}", { verb }),
+      errorText(err),
+      title,
       { confirmText: t('OK') }
     );
   }
@@ -494,7 +498,7 @@ function buildManageRow(item, preset, container, rerender) {
       await deleteUserPreset(preset.id);
       rerender();
     } catch (err) {
-      console.error('[SystemPrompt] delete preset failed:', err);
+      await reportPresetFailure(err, t("Couldn't delete preset"), '[SystemPrompt] delete preset failed:');
     }
   });
   row.appendChild(delBtn);

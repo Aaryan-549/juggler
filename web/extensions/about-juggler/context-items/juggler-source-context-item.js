@@ -4,8 +4,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import ContextItem from 'juggler/context-item';
-import { translator } from 'juggler/i18n';
-import { resolveAssetUrl } from '../../../js/utils/asset-url.js';
+import { translator, markUntranslated } from 'juggler/i18n';
+import { resolveAssetUrl } from 'juggler/ui';
 
 const t = translator('@juggler/about');
 
@@ -93,7 +93,7 @@ class JugglerSourceContextItem extends ContextItem {
       properties: {
         path: {
           type: 'string',
-          description: 'Repo-relative path under sdk/ or extensions/ — e.g. '
+          description: markUntranslated('Repo-relative path under sdk/ or extensions/ — e.g. ')
             + '"sdk/context-item.js" or '
             + '"extensions/juggler-core/context-items/read-file-context-item.js". '
             + 'A leading "web/" is accepted.'
@@ -102,13 +102,13 @@ class JugglerSourceContextItem extends ContextItem {
       required: ['path']
     };
 
-    const description = 'Read the source of Juggler\'s extension SDK base classes '
+    const description = markUntranslated('Read the source of Juggler\'s extension SDK base classes '
       + 'and built-in example extensions, for writing or debugging an extension '
       + 'without the repo checked out: sdk/ holds the base classes (context-item.js, '
       + 'strategy-type.js, command-type.js — each opens with a quickstart and method '
       + 'reference), extensions/ the working examples. Use it when the AboutJuggler '
       + 'manual points at a file and you need its exact API; for anything else about '
-      + 'Juggler, call AboutJuggler.';
+      + 'Juggler, call AboutJuggler.');
 
     return [
       {

@@ -441,6 +441,62 @@ func TestHandlePutSettingsModelLimitsRejected(t *testing.T) {
 	}
 }
 
+// TestHandlePutSettingsErrorCarriesMessage: a refused PUT answers with its
+// English in error, as ever, and the message the UI translates beside it — the
+// template and the values it names, never the sentence with them baked in.
+func TestHandlePutSettingsErrorCarriesMessage(t *testing.T) {
+	userpathstest.Isolate(t)
+	const providerName = "settings-error-message-provider"
+	provider.RegisterProvider(provider.ProviderInfo{Name: providerName}, func(provider.Config) (provider.Provider, error) {
+		return nil, nil
+	})
+	s := &Server{
+		settings:        newSettingsStore(),
+		testMode:        true,
+		providerRefresh: providerRefresh{providersReady: make(chan struct{})},
+	}
+	cases := []struct {
+		body, english, key string
+		params             map[string]any
+	}{
+		{`{"updates":{"mode":"garbage"}}`, "invalid update mode", "invalid update mode", nil},
+		{
+			`{"models":{"limits":{"` + providerName + `":{"a-model":{"contextWindow":-1}}}}}`,
+			"negative model limit for " + providerName + " a-model",
+			"negative model limit for {provider} {model}",
+			map[string]any{"provider": providerName, "model": "a-model"},
+		},
+	}
+	for _, tc := range cases {
+		rec := httptest.NewRecorder()
+		s.handlePutSettings(rec, httptest.NewRequest("PUT", "/api/settings", strings.NewReader(tc.body)))
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("PUT %s: status = %d, want 400", tc.body, rec.Code)
+		}
+		var env struct {
+			Error   string `json:"error"`
+			Message *struct {
+				Key    string         `json:"key"`
+				Params map[string]any `json:"params"`
+			} `json:"message"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
+			t.Fatalf("decode %s: %v", rec.Body.String(), err)
+		}
+		if env.Error != tc.english {
+			t.Errorf("PUT %s: error = %q, want %q", tc.body, env.Error, tc.english)
+		}
+		if env.Message == nil || env.Message.Key != tc.key {
+			t.Fatalf("PUT %s: message = %+v, want key %q", tc.body, env.Message, tc.key)
+		}
+		for name, want := range tc.params {
+			if got := env.Message.Params[name]; got != want {
+				t.Errorf("PUT %s: params.%s = %v, want %v", tc.body, name, got, want)
+			}
+		}
+	}
+}
+
 // TestHandlePutSettingsStaleUnknownProviderDoesNotBlockPut pins the scope of the
 // unknown-provider rejection: it covers the provider keys a request actually
 // sends, not the ones the handler inherits from the stored document. A

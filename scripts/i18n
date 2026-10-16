@@ -9,10 +9,31 @@
  *                          catalogues hold that no longer exist in the source
  *                          (stale: the English was reworded)
  *   scripts/i18n pseudo    regenerate each en-XA.json from its en.json
- *   scripts/i18n check     fail if any en.json or en-XA.json is out of date (run by lint)
- *   scripts/i18n status    each catalogue's coverage
+ *   scripts/i18n check     fail if any en.json or en-XA.json is out of date, or any
+ *                          translation is wrong: a stale key, a value that does not
+ *                          parse, placeholders that differ from the English, a
+ *                          plural branch the locale lacks, or markup (run by lint)
+ *   scripts/i18n status    each catalogue's coverage (an empty translation is missing)
  *
- * The catalogues: web/i18n for the core UI, and, for an extension whose
+ * Each command also takes `--go-root <dir>` (repeatable) and `--catalog <dir>`,
+ * which replace the catalogues below with one: the messages in the Go under
+ * those roots, written to that directory. That is for a module that builds on
+ * this one and keeps its own catalogue, which the server is handed through
+ * webui.RegisterCatalogFS. Paths are relative to the working directory.
+ *
+ * Go messages are the template of every msg.New, msg.NewCtx and msg.NewError
+ * call (package juggler/cmd/juggler/msg, imported under its own name), outside
+ * test files, testdata and vendored trees. The template must be a string
+ * literal, or a `+` of them, and a call whose template is not is refused: it
+ * would never be extracted, and so never translated.
+ *
+ * The installers' own text — the macOS Info.plist strings and the Windows
+ * installer's messages — is English source too, kept in packaging/messages.json
+ * (`{section: {name: English}}`) and collected into the core catalogue, so a
+ * reworded sentence leaves en.json out of date. scripts/i18n-bundle reads the
+ * same file to write that text into each bundle, translated.
+ *
+ * The catalogues: web/i18n for the core UI, the Go under cmd/ and the installers' text, and, for an extension whose
  * manifest names one, its `provides.i18n` directory — holding the messages in
  * that extension's files, its capabilities' `MANIFEST` name and description,
  * and its manifest's name and setting text. An
@@ -56,6 +77,27 @@ const I18N_SOURCES = [/(^|\/)i18n\.js$/, /^juggler\/i18n$/];
 
 /** The functions whose literal first argument is a message. */
 const MESSAGE_FUNCTIONS = new Set(['t', 'markForTranslation']);
+
+/** The Go trees whose messages belong in the core catalogue. */
+const GO_ROOTS = ['cmd'];
+
+/** The Go message package's name, as its callers qualify it. */
+const GO_MESSAGE_PACKAGE = 'msg';
+
+/**
+ * The msg functions that take a template, and which of their arguments it is:
+ * NewCtx's first is the context.
+ */
+const GO_MESSAGE_FUNCTIONS = new Map([['New', 0], ['NewError', 0], ['NewCtx', 1]]);
+
+/** Directories under a Go root that hold no shipped Go. */
+const GO_EXCLUDED_DIRS = new Set(['testdata', 'vendor', '3rdparty', 'node_modules']);
+
+/** The installers' English source, which belongs in the core catalogue. */
+const PACKAGING_MESSAGES = path.join(repoRoot, 'packaging', 'messages.json');
+
+/** Set by --go-root/--catalog: the one catalogue the command works on. */
+let targetOverride = null;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -112,8 +154,33 @@ function uiFiles() {
  * @property {string} label - How it is named in output (its directory, repo-relative).
  * @property {string} dir - Absolute catalogue directory.
  * @property {string[]} files - Repo-relative source files whose messages it holds.
+ * @property {string[]} [goFiles] - Absolute Go source files whose messages it holds.
+ * @property {string} [packagingFile] - Absolute path of the installers' English source, for the core one.
  * @property {any} [manifest] - The extension manifest, for an extension's.
  */
+
+/**
+ * Every shipped Go file under the given roots, absolute, sorted: no test
+ * files, and nothing under testdata, vendored or hidden directories.
+ * @param {string[]} roots - Absolute directories.
+ * @returns {string[]}
+ */
+function goFiles(roots) {
+  const out = [];
+  const walk = (dir) => {
+    if (!fs.existsSync(dir)) return;
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const child = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (!GO_EXCLUDED_DIRS.has(entry.name) && !entry.name.startsWith('.')) walk(child);
+      } else if (entry.name.endsWith('.go') && !entry.name.endsWith('_test.go')) {
+        out.push(child);
+      }
+    }
+  };
+  for (const root of roots) walk(root);
+  return out.sort();
+}
 
 /**
  * The extensions that ship their own catalogues.
@@ -145,10 +212,15 @@ function catalogueExtensions() {
  * @returns {Target[]}
  */
 function targets() {
+  if (targetOverride) return [targetOverride];
   const exts = catalogueExtensions();
   const owned = (rel) => exts.some((e) => rel.startsWith(`${e.root}/`));
   return [
-    { label: 'web/i18n', dir: i18nDir, files: uiFiles().filter((rel) => !owned(rel)) },
+    {
+      label: 'web/i18n', dir: i18nDir, files: uiFiles().filter((rel) => !owned(rel)),
+      goFiles: goFiles(GO_ROOTS.map((root) => path.join(repoRoot, root))),
+      packagingFile: PACKAGING_MESSAGES,
+    },
     ...exts.map((e) => ({
       label: e.i18nDir, dir: path.join(repoRoot, e.i18nDir), files: jsFiles([e.root]), manifest: e.manifest,
     })),
@@ -287,6 +359,154 @@ function capabilityMessages(ast) {
   return out;
 }
 
+/** Go's single-character escapes in an interpreted string literal. */
+const GO_ESCAPES = { a: '\x07', b: '\b', f: '\f', n: '\n', r: '\r', t: '\t', v: '\v', '\\': '\\', '"': '"' };
+
+/**
+ * The value of an interpreted Go string literal's body, as the compiler reads
+ * it: \x and octal escapes are bytes, so the whole is assembled as UTF-8.
+ * @param {string} body - The text between the quotes.
+ * @returns {string}
+ */
+function decodeGoString(body) {
+  const bytes = [];
+  const push = (s) => bytes.push(...Buffer.from(s, 'utf8'));
+  for (let i = 0; i < body.length;) {
+    if (body[i] !== '\\') {
+      const ch = String.fromCodePoint(/** @type {number} */ (body.codePointAt(i)));
+      push(ch);
+      i += ch.length;
+      continue;
+    }
+    const e = body[i + 1];
+    if (Object.hasOwn(GO_ESCAPES, e)) {
+      push(GO_ESCAPES[e]);
+      i += 2;
+    } else if (e === 'x') {
+      bytes.push(parseInt(body.slice(i + 2, i + 4), 16));
+      i += 4;
+    } else if (e === 'u' || e === 'U') {
+      const n = e === 'u' ? 4 : 8;
+      push(String.fromCodePoint(parseInt(body.slice(i + 2, i + 2 + n), 16)));
+      i += 2 + n;
+    } else if (/[0-7]/.test(e)) {
+      bytes.push(parseInt(body.slice(i + 1, i + 4), 8));
+      i += 4;
+    } else {
+      throw new Error(`unknown escape \\${e}`);
+    }
+  }
+  return Buffer.from(bytes).toString('utf8');
+}
+
+/**
+ * Go source as tokens: identifiers, string literals (decoded) and single
+ * punctuation characters, with comments, whitespace and rune literals gone.
+ * @param {string} text
+ * @returns {Array<{type: 'ident'|'string'|'punct', value: string, line: number}>}
+ */
+function goTokens(text) {
+  const out = [];
+  let line = 1;
+  let i = 0;
+  while (i < text.length) {
+    const c = text[i];
+    if (c === '\n') { line++; i++; continue; }
+    if (/\s/.test(c)) { i++; continue; }
+    if (text.startsWith('//', i)) {
+      while (i < text.length && text[i] !== '\n') i++;
+      continue;
+    }
+    if (text.startsWith('/*', i)) {
+      const end = text.indexOf('*/', i + 2);
+      const stop = end < 0 ? text.length : end + 2;
+      line += (text.slice(i, stop).match(/\n/g) || []).length;
+      i = stop;
+      continue;
+    }
+    if (c === '`') {
+      const end = text.indexOf('`', i + 1);
+      const stop = end < 0 ? text.length : end;
+      const body = text.slice(i + 1, stop);
+      out.push({ type: 'string', value: body.replace(/\r/g, ''), line });
+      line += (body.match(/\n/g) || []).length;
+      i = stop + 1;
+      continue;
+    }
+    if (c === '"' || c === "'") {
+      let j = i + 1;
+      while (j < text.length && text[j] !== c && text[j] !== '\n') j += text[j] === '\\' ? 2 : 1;
+      if (c === '"') out.push({ type: 'string', value: decodeGoString(text.slice(i + 1, j)), line });
+      i = j + 1;
+      continue;
+    }
+    const word = /^[\p{L}\p{N}_]+/u.exec(text.slice(i, i + 256));
+    if (word) {
+      out.push({ type: 'ident', value: word[0], line });
+      i += word[0].length;
+      continue;
+    }
+    out.push({ type: 'punct', value: c, line });
+    i++;
+  }
+  return out;
+}
+
+/**
+ * The messages in one Go file: the template of each msg.New, msg.NewCtx and
+ * msg.NewError call, with NewCtx's context.
+ * @param {string} text
+ * @param {string} where - The file, as problems name it.
+ * @returns {{found: Array<{source: string, context?: string}>, problems: string[]}}
+ */
+function goMessages(text, where) {
+  const found = [];
+  const problems = [];
+  if (!text.includes(`${GO_MESSAGE_PACKAGE}.`)) return { found, problems };
+  let toks;
+  try {
+    toks = goTokens(text);
+  } catch (err) {
+    return { found, problems: [`${where}: ${err.message}`] };
+  }
+  const is = (k, type, value) => toks[k] && toks[k].type === type && toks[k].value === value;
+  // A literal, or a `+` of literals, ending the argument; else null.
+  const literalArg = (k) => {
+    if (!toks[k] || toks[k].type !== 'string') return null;
+    let value = toks[k].value;
+    k++;
+    while (is(k, 'punct', '+') && toks[k + 1]?.type === 'string') {
+      value += toks[k + 1].value;
+      k += 2;
+    }
+    return is(k, 'punct', ',') || is(k, 'punct', ')') ? { value, next: k } : null;
+  };
+  for (let k = 0; k + 3 < toks.length; k++) {
+    if (!is(k, 'ident', GO_MESSAGE_PACKAGE) || !is(k + 1, 'punct', '.') || is(k - 1, 'punct', '.')) continue;
+    const fn = toks[k + 2].value;
+    if (toks[k + 2].type !== 'ident' || !GO_MESSAGE_FUNCTIONS.has(fn) || !is(k + 3, 'punct', '(')) continue;
+    const at = `${where}:${toks[k].line}`;
+    let next = k + 4;
+    let context;
+    if (GO_MESSAGE_FUNCTIONS.get(fn) === 1) {
+      const ctx = literalArg(next);
+      if (!ctx || !is(ctx.next, 'punct', ',')) {
+        problems.push(`${at}: ${GO_MESSAGE_PACKAGE}.${fn}() context must be a string literal`);
+        continue;
+      }
+      context = ctx.value;
+      next = ctx.next + 1;
+    }
+    const template = literalArg(next);
+    if (!template) {
+      problems.push(`${at}: ${GO_MESSAGE_PACKAGE}.${fn}() template must be a string literal, so it is extracted`);
+      continue;
+    }
+    found.push({ source: template.value, context });
+  }
+  return { found, problems };
+}
+
 /**
  * Collect a catalogue's messages: every t()/markForTranslation() literal in its
  * files, every capability's `MANIFEST` name and description, and, for an
@@ -296,20 +516,34 @@ function capabilityMessages(ast) {
  * @returns {{messages: Record<string, string>, problems: string[]}}
  */
 function extract(sdk, target) {
-  const { parse } = espree();
   /** @type {Record<string, string>} */
   const messages = {};
   const problems = [];
   if (target.manifest) {
     for (const source of manifestMessages(target.manifest)) messages[sdk.messageKey(source)] = source;
   }
+  if (target.packagingFile) {
+    const sections = JSON.parse(fs.readFileSync(target.packagingFile, 'utf8'));
+    for (const section of Object.values(sections)) {
+      for (const source of Object.values(section)) messages[sdk.messageKey(source)] = source;
+    }
+  }
+  for (const file of target.goFiles || []) {
+    const where = path.relative(process.cwd(), file).split(path.sep).join('/');
+    const result = goMessages(fs.readFileSync(file, 'utf8'), where);
+    for (const { source, context } of result.found) messages[sdk.messageKey(source, context)] = source;
+    problems.push(...result.problems);
+  }
+  // Loaded only when there is JavaScript to parse: a Go-only catalogue needs
+  // no tooling install.
+  const parse = target.files.length ? espree().parse : null;
   for (const rel of target.files) {
     const text = fs.readFileSync(path.join(repoRoot, rel), 'utf8');
     const hasI18n = /\bi18n\b/.test(text);
     if (!hasI18n && !/\bMANIFEST\b/.test(text)) continue;
     let ast;
     try {
-      ast = parse(text, { ecmaVersion: 'latest', sourceType: 'module', loc: true });
+      ast = /** @type {any} */ (parse)(text, { ecmaVersion: 'latest', sourceType: 'module', loc: true });
     } catch (err) {
       problems.push(`${rel}: does not parse: ${err.message}`);
       continue;
@@ -398,6 +632,223 @@ function translationFiles(dir) {
     .sort();
 }
 
+// ---------------------------------------------------------------------------
+// Translation checks
+// ---------------------------------------------------------------------------
+//
+// A translation file is held to its catalogue's messages, so a bad translation
+// fails lint instead of falling back to English (or rendering wrongly) in the
+// UI. `juggler ext i18n check` ports these rules to Go
+// (cmd/juggler/i18nextract/translation.go, cmd/juggler/msg/check.go), word for
+// word; testdata/translation-check.json there is run through both.
+
+/**
+ * HTML element names: a `<name …>` or `</name>` in a translation is markup only
+ * when the name is one of these, so a usage placeholder such as `<project>` is
+ * text. The Go port keeps the same list.
+ */
+const HTML_ELEMENTS = new Set(('a abbr address area article aside audio b bdi bdo big blockquote body br button '
+  + 'canvas caption center cite code col colgroup dd del details dfn dialog div dl dt em embed fieldset '
+  + 'figcaption figure font footer form h1 h2 h3 h4 h5 h6 head header hr html i iframe img input ins kbd '
+  + 'label legend li link main mark meta meter nav noscript object ol optgroup option output p picture pre '
+  + 'progress q rp rt ruby s samp script section select small source span strike strong style sub summary '
+  + 'sup svg table tbody td template textarea tfoot th thead time title tr track tt u ul var video wbr').split(' '));
+
+/** A tag: `<name>`, `</name>`, `<name/>` or `<name attrs…>`. */
+const TAG_PATTERN = /<\/?([A-Za-z][A-Za-z0-9]*)(?:[ \t\n\r\f/][^<>]*)?>/g;
+
+/**
+ * The first HTML tag in text, or ''.
+ * @param {string} text
+ * @returns {string}
+ */
+function firstHtmlTag(text) {
+  for (const m of text.matchAll(TAG_PATTERN)) {
+    if (HTML_ELEMENTS.has(m[1].toLowerCase())) return m[0];
+  }
+  return '';
+}
+
+/**
+ * The plural categories of a locale, as Intl.PluralRules has them, or null for
+ * a tag it rejects or has no rules for.
+ * @param {string} locale
+ * @returns {string[]|null}
+ */
+function pluralCategories(locale) {
+  try {
+    if (Intl.PluralRules.supportedLocalesOf([locale]).length === 0) return null;
+    return new Intl.PluralRules(locale).resolvedOptions().pluralCategories;
+  } catch {
+    return null;
+  }
+}
+
+const ARG = 1;
+const PLURAL = 2;
+const SELECT = 4;
+
+/**
+ * How a message uses each argument name: a mask of ARG, PLURAL and SELECT.
+ * @param {any[]} nodes
+ * @param {Map<string, number>} [uses]
+ * @returns {Map<string, number>}
+ */
+function argumentUses(nodes, uses = new Map()) {
+  for (const node of nodes) {
+    if (typeof node === 'string' || node.type === 'pound') continue;
+    const bit = node.type === 'arg' ? ARG : node.type === 'plural' ? PLURAL : SELECT;
+    uses.set(node.name, (uses.get(node.name) || 0) | bit);
+    if (node.options) for (const branch of Object.values(node.options)) argumentUses(branch, uses);
+  }
+  return uses;
+}
+
+/**
+ * @param {number} mask
+ * @returns {string} How an argument is used, as a message names it.
+ */
+function describeUse(mask) {
+  const kinds = [];
+  if (mask & PLURAL) kinds.push('a plural');
+  if (mask & SELECT) kinds.push('a select');
+  return kinds.length ? kinds.join(' and ') : 'a plain placeholder';
+}
+
+/**
+ * The plural branches of nodes whose keyword is neither one of the locale's
+ * categories nor `=N`, in document order, each node's keys sorted.
+ * @param {any[]} nodes
+ * @param {string} locale
+ * @param {string[]} categories
+ * @param {Array<{kind: string, message: string}>} out
+ */
+function pluralCategoryProblems(nodes, locale, categories, out) {
+  for (const node of nodes) {
+    if (typeof node === 'string' || !node.options) continue;
+    const keys = Object.keys(node.options).sort();
+    if (node.type === 'plural') {
+      for (const key of keys) {
+        if (key.startsWith('=') || categories.includes(key)) continue;
+        out.push({
+          kind: 'plural-category',
+          message: `{${node.name}, plural, …} has a "${key}" branch, which is not a plural category in ${locale}`
+            + ` (${categories.join(', ')}) — use one of those, or =N`,
+        });
+      }
+    }
+    for (const key of keys) pluralCategoryProblems(node.options[key], locale, categories, out);
+  }
+}
+
+/**
+ * What is wrong with one translation of one message.
+ * @param {any} sdk
+ * @param {string} source - The English.
+ * @param {string} translation
+ * @param {string} locale
+ * @param {string[]|null} categories - The locale's plural categories; null skips that check.
+ * @returns {Array<{kind: string, message: string}>}
+ */
+function messageProblems(sdk, source, translation, locale, categories) {
+  let nodes;
+  try {
+    nodes = sdk.parseMessage(translation);
+  } catch (err) {
+    if (err && err.missingOther) {
+      const { kind, name } = err.missingOther;
+      return [{ kind: 'no-other', message: `{${name}, ${kind}, …} has no "other" branch, which every plural and select needs` }];
+    }
+    return [{ kind: 'syntax', message: 'does not parse as a message — check its braces and apostrophes' }];
+  }
+  const out = [];
+  let sourceNodes = null;
+  try {
+    sourceNodes = sdk.parseMessage(source);
+  } catch {
+    // An English source that does not parse is shown as written; there are
+    // no arguments to hold the translation to.
+  }
+  if (sourceNodes) {
+    const want = argumentUses(sourceNodes);
+    const got = argumentUses(nodes);
+    const gotNames = [...got.keys()].sort();
+    for (const name of gotNames) {
+      if (!want.has(name)) out.push({ kind: 'unknown-argument', message: `uses {${name}}, which the English does not have` });
+    }
+    for (const name of [...want.keys()].sort()) {
+      if (!got.has(name)) out.push({ kind: 'missing-argument', message: `drops {${name}}, which the English has` });
+    }
+    for (const name of gotNames) {
+      if (!want.has(name)) continue;
+      const g = /** @type {number} */ (got.get(name)) & (PLURAL | SELECT);
+      const w = /** @type {number} */ (want.get(name)) & (PLURAL | SELECT);
+      if (g !== w) {
+        out.push({
+          kind: 'argument-kind',
+          message: `uses {${name}} as ${describeUse(g)}, but the English uses it as ${describeUse(w)}`,
+        });
+      }
+    }
+  }
+  if (categories) pluralCategoryProblems(nodes, locale, categories, out);
+  const tag = firstHtmlTag(translation);
+  if (tag && !firstHtmlTag(source)) {
+    out.push({
+      kind: 'html',
+      message: `has HTML markup (${tag}), which the English does not — put markup in a {placeholder} filled with htmlSlots()`,
+    });
+  }
+  return out;
+}
+
+/**
+ * What is wrong with a translation file: problems with the file as a whole
+ * (key null), then each entry's, in key order. An empty value is untranslated
+ * and passes.
+ * @param {any} sdk
+ * @param {Record<string, string>} source - Catalogue key → English.
+ * @param {string} text - The file's content.
+ * @param {string} locale - Its locale (the file name).
+ * @returns {Array<{key: string|null, kind: string, message: string}>}
+ */
+function translationProblems(sdk, source, text, locale) {
+  let catalog;
+  try {
+    catalog = JSON.parse(text);
+  } catch {
+    return [{ key: null, kind: 'json', message: 'does not parse as JSON' }];
+  }
+  if (catalog === null || typeof catalog !== 'object' || Array.isArray(catalog)) {
+    return [{ key: null, kind: 'not-object', message: 'is not a JSON object mapping each English source to its translation' }];
+  }
+  const out = [];
+  const categories = pluralCategories(locale);
+  if (!categories) {
+    out.push({
+      key: null, kind: 'locale',
+      message: `"${locale}" is not a locale with plural rules — name the file after one, such as fr or pt-BR`,
+    });
+  }
+  for (const key of Object.keys(catalog).sort()) {
+    const value = catalog[key];
+    if (typeof value !== 'string') {
+      out.push({ key, kind: 'not-string', message: 'the translation is not a string' });
+      continue;
+    }
+    if (value === '') continue;
+    if (!Object.hasOwn(source, key)) {
+      out.push({
+        key, kind: 'stale',
+        message: 'not in en.json — the English changed or was removed; retranslate it under the current English, then delete this entry',
+      });
+      continue;
+    }
+    for (const p of messageProblems(sdk, source[key], value, locale, categories)) out.push({ key, ...p });
+  }
+  return out;
+}
+
 /**
  * Write a target's source list and pseudo-locale.
  * @param {any} sdk
@@ -460,9 +911,17 @@ function cmdCheck(sdk) {
     const want = serializeCatalog(messages);
     const wantPseudo = serializeCatalog(pseudoCatalog(sdk, messages));
     if (read(path.join(target.dir, 'en.json')) !== want || read(path.join(target.dir, 'en-XA.json')) !== wantPseudo) {
-      console.error(`${target.label}/en.json or en-XA.json is out of date with the t() calls in the source.`);
-      console.error('Run: node scripts/i18n extract');
+      console.error(`${target.label}/en.json or en-XA.json is out of date with the messages in the source.`);
+      console.error(`Run: node scripts/i18n extract${process.argv.slice(3).map((a) => ` ${a}`).join('')}`);
       status = 1;
+    }
+    for (const file of translationFiles(target.dir)) {
+      const text = fs.readFileSync(path.join(target.dir, file), 'utf8');
+      for (const p of translationProblems(sdk, messages, text, file.replace(/\.json$/, ''))) {
+        const where = p.key === null ? '' : ` ${JSON.stringify(p.key)}:`;
+        console.error(`${target.label}/${file}:${where} ${p.message}`);
+        status = 1;
+      }
     }
   }
   return status;
@@ -487,15 +946,46 @@ function cmdStatus(_sdk) {
 
 const COMMANDS = { extract: cmdExtract, pseudo: cmdPseudo, check: cmdCheck, status: cmdStatus };
 
-(async () => {
+// Required rather than run, it is the translation check, for the Go port's
+// parity test (cmd/juggler/i18nextract/translation_test.go).
+module.exports = { loadSdk, translationProblems };
+
+/** Run the command named on the command line. */
+async function main() {
   const name = process.argv[2];
   const cmd = COMMANDS[name];
+  const usage = `usage: scripts/i18n <${Object.keys(COMMANDS).join('|')}> [--go-root <dir>]... [--catalog <dir>]`;
   if (!cmd) {
-    console.error(`usage: scripts/i18n <${Object.keys(COMMANDS).join('|')}>`);
+    console.error(usage);
     process.exit(2);
   }
+  const roots = [];
+  let catalog = null;
+  const args = process.argv.slice(3);
+  for (let i = 0; i < args.length; i += 2) {
+    if (args[i] === '--go-root' && args[i + 1]) roots.push(path.resolve(args[i + 1]));
+    else if (args[i] === '--catalog' && args[i + 1]) catalog = path.resolve(args[i + 1]);
+    else {
+      console.error(usage);
+      process.exit(2);
+    }
+  }
+  if ((roots.length > 0) !== (catalog !== null)) {
+    console.error('--go-root and --catalog go together: the roots to extract, and the catalogue they fill');
+    process.exit(2);
+  }
+  if (catalog !== null) {
+    targetOverride = {
+      label: path.relative(process.cwd(), catalog).split(path.sep).join('/') || '.',
+      dir: catalog, files: [], goFiles: goFiles(roots),
+    };
+  }
   process.exit(await cmd(await loadSdk()));
-})().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+}
+
+if (require.main === module) {
+  main().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+}

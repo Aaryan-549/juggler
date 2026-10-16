@@ -1,0 +1,242 @@
+#!/usr/bin/env node
+/**
+ * i18n-bundle — the installers' localized text, generated from the UI
+ * catalogues at packaging time, so adding a catalogue needs no build edits.
+ *
+ *   scripts/i18n-bundle mac <Juggler.app/Contents>
+ *       Adds to Contents/Info.plist the Info.plist text of packaging/messages.json
+ *       (its `infoPlist` section, in English) and `CFBundleLocalizations`: `en`
+ *       and every real catalogue. Replaces every Contents/Resources/*.lproj
+ *       with one per localization, each holding an InfoPlist.strings of the
+ *       text that catalogue translates (UTF-8, which CFBundle reads as well as
+ *       UTF-16). Text a catalogue leaves untranslated is left out, and macOS
+ *       shows the Info.plist English. Run after the Info.plist is written and
+ *       before the bundle is signed.
+ *
+ *   scripts/i18n-bundle inno <file>
+ *       Writes an Inno Setup include holding `[Languages]` — English, and each
+ *       real catalogue Inno ships a language file for (INNO_LANGUAGES) — and
+ *       `[CustomMessages]`: every message of packaging/messages.json's `inno`
+ *       section, for every language, translated from its catalogue or else in
+ *       English. Each other language is guarded by an `#if FileExists`, so a
+ *       compiler older than the language file still builds, in fewer languages.
+ *       packaging/windows/juggler.iss includes it and uses the messages as
+ *       `{cm:<name>}`.
+ *
+ * Both take `--catalog <dir>`, the catalogue directory to read (default
+ * web/i18n). A real catalogue is any <locale>.json in it but en.json (the
+ * source list) and en-XA.json (the pseudo-locale).
+ *
+ * packaging/messages.json is English source: `scripts/i18n extract` puts each
+ * of its messages in web/i18n/en.json, keyed by the English, which is what a
+ * translation is looked up by here.
+ *
+ * Locale ids: a catalogue's name is a BCP 47 tag in canonical case (`fr`,
+ * `pt-BR`, `zh-Hant`), which Apple takes as a localization id unchanged — in
+ * CFBundleLocalizations and as the .lproj name.
+ */
+
+'use strict';
+
+const fs = require('fs');
+const path = require('path');
+
+const repoRoot = path.resolve(__dirname, '..');
+const MESSAGES_FILE = path.join(repoRoot, 'packaging', 'messages.json');
+
+/** The source language: its catalogue is the source list, not a translation. */
+const SOURCE_LOCALE = 'en';
+
+/** A catalogue name that is a BCP 47 tag. */
+const LOCALE_TAG = /^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$/;
+
+/**
+ * The language file Inno Setup ships for a catalogue's locale, under the
+ * compiler's Languages directory (the official set; English is its
+ * Default.isl). Matched on the whole id, so a regional catalogue Inno has no
+ * file for (`fr-CA`) is left out rather than guessed at. A catalogue missing
+ * here is left out of the installer, which then shows English.
+ * @type {Record<string, string>}
+ */
+const INNO_LANGUAGES = {
+  ar: 'Arabic',
+  bg: 'Bulgarian',
+  ca: 'Catalan',
+  co: 'Corsican',
+  cs: 'Czech',
+  da: 'Danish',
+  de: 'German',
+  es: 'Spanish',
+  fi: 'Finnish',
+  fr: 'French',
+  he: 'Hebrew',
+  hu: 'Hungarian',
+  hy: 'Armenian',
+  is: 'Icelandic',
+  it: 'Italian',
+  ja: 'Japanese',
+  ko: 'Korean',
+  lt: 'Lithuanian',
+  nb: 'Norwegian',
+  nl: 'Dutch',
+  pl: 'Polish',
+  pt: 'Portuguese',
+  'pt-BR': 'BrazilianPortuguese',
+  ru: 'Russian',
+  sk: 'Slovak',
+  sl: 'Slovenian',
+  sv: 'Swedish',
+  ta: 'Tamil',
+  th: 'Thai',
+  tr: 'Turkish',
+  uk: 'Ukrainian',
+  'zh-Hans': 'ChineseSimplified',
+  'zh-Hant': 'ChineseTraditional',
+};
+
+/** What an Inno message cannot hold: format arguments, constants, line breaks. */
+const INNO_UNSAFE = /[%{}\r\n]/;
+
+/**
+ * The real catalogues in a directory, by locale id, sorted.
+ * @param {string} dir
+ * @returns {Array<{locale: string, messages: Record<string, string>}>}
+ */
+function translations(dir) {
+  if (!fs.existsSync(path.join(dir, `${SOURCE_LOCALE}.json`))) {
+    throw new Error(`${dir} holds no ${SOURCE_LOCALE}.json: not a catalogue directory`);
+  }
+  return fs.readdirSync(dir)
+    .filter((f) => f.endsWith('.json') && f !== `${SOURCE_LOCALE}.json` && f !== `${SOURCE_LOCALE}-XA.json`)
+    .sort()
+    .map((f) => {
+      const locale = f.slice(0, -'.json'.length);
+      if (!LOCALE_TAG.test(locale)) throw new Error(`${path.join(dir, f)}: the name is not a locale tag`);
+      return { locale, messages: JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')) };
+    });
+}
+
+/**
+ * A catalogue's translation of an English message, or null when it has none.
+ * @param {Record<string, string>} messages
+ * @param {string} english
+ * @returns {string|null}
+ */
+function translate(messages, english) {
+  const s = messages[english];
+  return typeof s === 'string' && s !== '' ? s : null;
+}
+
+/** @returns {Record<string, Record<string, string>>} packaging/messages.json. */
+function readSources() {
+  return JSON.parse(fs.readFileSync(MESSAGES_FILE, 'utf8'));
+}
+
+/** @param {string} s @returns {string} s as XML character data. */
+function xmlEscape(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/** @param {string} s @returns {string} s as a quoted .strings literal. */
+function stringsLiteral(s) {
+  return `"${s.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n')}"`;
+}
+
+/**
+ * @param {string} contents - The bundle's Contents directory.
+ * @param {string} catalogDir
+ */
+function cmdMac(contents, catalogDir) {
+  const text = readSources().infoPlist;
+  const locales = translations(catalogDir);
+  const plistFile = path.join(contents, 'Info.plist');
+  const plist = fs.readFileSync(plistFile, 'utf8');
+  const end = plist.lastIndexOf('</dict>');
+  if (end < 0) throw new Error(`${plistFile}: no top-level </dict> to add to`);
+  const added = [
+    `  <key>CFBundleLocalizations</key><array>${
+      [SOURCE_LOCALE, ...locales.map((l) => l.locale)].map((id) => `<string>${id}</string>`).join('')}</array>`,
+    ...Object.entries(text).map(([key, english]) => `  <key>${key}</key><string>${xmlEscape(english)}</string>`),
+  ];
+  for (const key of ['CFBundleLocalizations', ...Object.keys(text)]) {
+    if (plist.includes(`<key>${key}</key>`)) throw new Error(`${plistFile} already has ${key}, which this writes`);
+  }
+  fs.writeFileSync(plistFile, `${plist.slice(0, end)}${added.join('\n')}\n${plist.slice(end)}`);
+
+  // Every .lproj in the bundle is written here, so one for a catalogue that
+  // has since gone is removed rather than left declaring a language.
+  const resources = path.join(contents, 'Resources');
+  fs.mkdirSync(resources, { recursive: true });
+  for (const entry of fs.readdirSync(resources)) {
+    if (entry.endsWith('.lproj')) fs.rmSync(path.join(resources, entry), { recursive: true, force: true });
+  }
+  const sourceMessages = Object.fromEntries(Object.values(text).map((english) => [english, english]));
+  for (const { locale, messages } of [{ locale: SOURCE_LOCALE, messages: sourceMessages }, ...locales]) {
+    const lines = [`/* Generated by scripts/i18n-bundle from the ${locale} catalogue. */`];
+    for (const [key, english] of Object.entries(text)) {
+      const s = translate(messages, english);
+      if (s !== null) lines.push(`${stringsLiteral(key)} = ${stringsLiteral(s)};`);
+    }
+    const dir = path.join(resources, `${locale}.lproj`);
+    fs.mkdirSync(dir);
+    fs.writeFileSync(path.join(dir, 'InfoPlist.strings'), `${lines.join('\n')}\n`);
+  }
+}
+
+/**
+ * @param {string} outFile
+ * @param {string} catalogDir
+ */
+function cmdInno(outFile, catalogDir) {
+  const text = readSources().inno;
+  const languages = [
+    { name: 'english', file: 'compiler:Default.isl', guard: null, messages: {}, label: 'packaging/messages.json' },
+    ...translations(catalogDir)
+      .filter((l) => Object.hasOwn(INNO_LANGUAGES, l.locale))
+      .map((l) => {
+        const stem = INNO_LANGUAGES[l.locale];
+        return {
+          name: stem.toLowerCase(),
+          file: `compiler:Languages\\${stem}.isl`,
+          guard: `#if FileExists(CompilerPath + "Languages\\${stem}.isl")`,
+          messages: l.messages,
+          label: `${l.locale}.json`,
+        };
+      }),
+  ];
+  const guarded = (lang, lines) => (lang.guard ? [lang.guard, ...lines, '#endif'] : lines);
+  const out = ['; Generated by scripts/i18n-bundle from the UI catalogues. Do not edit.', '', '[Languages]'];
+  for (const lang of languages) out.push(...guarded(lang, [`Name: "${lang.name}"; MessagesFile: "${lang.file}"`]));
+  out.push('', '[CustomMessages]');
+  const problems = [];
+  for (const lang of languages) {
+    const lines = Object.entries(text).map(([name, english]) => {
+      const s = translate(lang.messages, english) ?? english;
+      if (INNO_UNSAFE.test(s)) problems.push(`${lang.label}: ${JSON.stringify(s)}: an installer message cannot hold %, {, } or a line break`);
+      return `${lang.name}.${name}=${s}`;
+    });
+    out.push(...guarded(lang, lines));
+  }
+  if (problems.length) throw new Error(problems.join('\n'));
+  fs.mkdirSync(path.dirname(outFile), { recursive: true });
+  // Inno Setup reads a script as UTF-8 only when it opens with a byte-order mark.
+  fs.writeFileSync(outFile, `\uFEFF${out.join('\r\n')}\r\n`);
+}
+
+const COMMANDS = { mac: cmdMac, inno: cmdInno };
+
+const usage = 'usage: scripts/i18n-bundle <mac <Contents dir> | inno <out file>> [--catalog <dir>]';
+const [name, target, ...rest] = process.argv.slice(2);
+let catalogDir = path.join(repoRoot, 'web', 'i18n');
+if (rest.length === 2 && rest[0] === '--catalog') catalogDir = path.resolve(rest[1]);
+if (!Object.hasOwn(COMMANDS, name) || !target || (rest.length !== 0 && rest.length !== 2)
+  || (rest.length === 2 && rest[0] !== '--catalog')) {
+  console.error(usage);
+  process.exit(2);
+}
+try {
+  COMMANDS[name](path.resolve(target), catalogDir);
+} catch (err) {
+  console.error(`i18n-bundle ${name}: ${err.message}`);
+  process.exit(1);
+}

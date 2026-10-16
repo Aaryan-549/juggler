@@ -18,6 +18,24 @@ import { fetchLiveFile, liveFileSource, liveFileInfo, renderLiveFileBody } from 
 const t = translator('@juggler/core');
 
 /**
+ * The panel header's path row. With no file there is no path to act on, so the
+ * placeholder is drawn as plain text — no `data-file-path` for the context menu
+ * and no open/copy/pin buttons.
+ * @param {HTMLElement} host - Where the row goes
+ * @param {string} absolute - The file's absolute path, or '' when there is none
+ * @param {string} [info] - Annotation under the path (size, line count)
+ */
+function addPathRow(host, absolute, info) {
+  if (absolute) {
+    addFilePath(host, absolute, info, { pin: absolute });
+    return;
+  }
+  const row = createElement('div', 'properties-panel-filepath-row');
+  row.appendChild(createElement('div', 'properties-panel-filepath', t('No file')));
+  host.appendChild(row);
+}
+
+/**
  * Safety ceiling (characters) on the file body a single pinned/@-mentioned file
  * contributes to the request. A pin is deliberate, so this is far more generous
  * than the per-`read`-call budget — it never touches a normal pinned file — but
@@ -517,8 +535,7 @@ class FileContentContextItem extends ContextItem {
     const body = createElement('div', 'file-content-body');
     container.appendChild(body);
 
-    addFilePath(headerHost, this.getAbsolutePath() || t('No file'), undefined,
-      { pin: this.getAbsolutePath() });
+    addPathRow(headerHost, this.getAbsolutePath());
 
     if (!this.data.path) {
       body.appendChild(createElement('div', 'file-content-loading', t('No file selected')));
@@ -537,7 +554,7 @@ class FileContentContextItem extends ContextItem {
       // Swap body. Replace the header info with the just-fetched stats.
       headerHost.replaceChildren();
       const absolute = this.getAbsolutePath() || r.path || '';
-      addFilePath(headerHost, absolute || t('No file'), liveFileInfo(r), { pin: absolute });
+      addPathRow(headerHost, absolute, liveFileInfo(r));
 
       const frozen = FileContentContextItem.isFrozen(this.data);
       if (frozen) {
@@ -755,8 +772,8 @@ class FileContentContextItem extends ContextItem {
     }
 
     note.appendChild(createElement('div', 'file-content-seeded-line', seeded
-      ? t('Added at the start of this conversation and frozen when it began, so that editing this file does not make the conversation re-read itself. Below is the frozen copy the conversation reads.')
-      : t('Mentioned in a message and frozen when it was sent, so that editing this file does not make the conversation re-read itself. Below is the frozen copy the conversation reads.')));
+      ? t("Added at the start of this conversation and frozen when it began, so editing the file doesn't make the conversation read it again. Below is the frozen copy the conversation reads.")
+      : t("Mentioned in a message and frozen when it was sent, so editing the file doesn't make the conversation read it again. Below is the frozen copy the conversation reads.")));
 
     // Offer the update only against a real difference.
     this._renderLive().then(live => {

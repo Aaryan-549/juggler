@@ -249,34 +249,59 @@ export async function runTests(_ctx) {
     // Resolution is covered elsewhere; this is about where focus goes.
     /** @type {any} */ (switcher)._resolveActiveSelector = () => selector;
     switcher.init();
+    // Focus is window-wide: every lane is a frame of one window, so a sibling
+    // lane's focus() during the frames below blurs this frame's element to
+    // <body> — and the HUD reads document.activeElement when it opens and when
+    // it closes, so a steal changes what the code under test does, not just
+    // what an assertion sees. The case therefore keeps focus lane-local: every
+    // focus() request is recorded instead of performed, and
+    // document.activeElement answers with the last element asked for.
+    const realFocus = HTMLElement.prototype.focus;
+    /** @type {HTMLElement} */
+    let focused = textarea;
+    /** @type {HTMLElement[]} */
+    const focusRequests = [];
+    HTMLElement.prototype.focus = function () {
+      focusRequests.push(this);
+      focused = this;
+    };
+    Object.defineProperty(document, 'activeElement', { get: () => focused, configurable: true });
     /**
      * @param {string} type - 'keydown' or 'keyup'
      * @param {KeyboardEventInit} init - The key
      * @returns {boolean} False when the event was preventDefault-ed
      */
-    const key = (type, init) => /** @type {HTMLElement} */ (document.activeElement || document.body)
+    const key = (type, init) => focused
       .dispatchEvent(new KeyboardEvent(type, { bubbles: true, cancelable: true, ...init }));
+    /**
+     * @returns {string} The focus() requests aimed anywhere but the composer.
+     */
+    const strayFocus = () => focusRequests.filter((el) => el !== textarea)
+      .map((el) => `${el.localName}${el.getAttribute('role') ? `[role=${el.getAttribute('role')}]` : ''}`).join(', ');
     try {
       selector.setMessageThread(/** @type {any} */ ({
         currentStrategyId: strategyRegistry.getAllManifests()[0].id,
         setStrategy() {},
       }));
-      textarea.focus();
-      assert(document.activeElement === textarea, 'sanity: the composer textarea has focus');
 
       key('keydown', { key: 'Tab', shiftKey: true });
+      // What a sibling lane's focus() does to this frame, taken on every run so
+      // the case is proven not to depend on the window's real focus.
+      realFocus.call(textarea);
+      textarea.blur();
       await frame();
       await frame();
       assert(!!selector._menu?.surface, 'the gesture did not open the strategy HUD');
-      assert(document.activeElement === textarea,
-        `the HUD took focus from the composer (on ${document.activeElement?.localName})`);
+      assert(strayFocus() === '', `the HUD took focus from the composer (focus() on ${strayFocus()})`);
 
       key('keydown', { key: 'Tab', shiftKey: true });
       key('keyup', { key: 'Shift' });
       assert(!selector._menu, 'releasing Shift did not close the HUD');
-      assert(document.activeElement === textarea,
-        `focus did not return to the composer (on ${document.activeElement?.localName})`);
+      assert(strayFocus() === '' && focused === textarea,
+        `focus did not stay in the composer (focus() on ${strayFocus() || focused.localName})`);
     } finally {
+      HTMLElement.prototype.focus = realFocus;
+      delete (/** @type {any} */ (document).activeElement);
       switcher.destroy();
       selector.closeDropdown();
       selector.remove();
@@ -316,6 +341,39 @@ export async function runTests(_ctx) {
       strategyRegistry.items.clear();
       for (const [k, v] of snapshot) strategyRegistry.items.set(k, v);
       selector.remove(); // disconnectedCallback → removes the listener
+    }
+  });
+
+  await run('a strategy\'s id, colour and icon cannot break out of the attributes they are drawn into', async () => {
+    const realManifests = strategyRegistry.getAllManifests;
+    const ID = 'test-esc-"><b class="esc-id-leak">1</b>';
+    const COLOR = 'red" data-esc-color-leak="1';
+    const ICON = 'esc-icon" data-esc-icon-leak="1';
+    let selector = /** @type {any} */ (null);
+    try {
+      strategyRegistry.getAllManifests = /** @type {any} */ (() => [{
+        id: ID,
+        manifest: { name: 'N', description: 'D', color: COLOR, icon: ICON },
+        modulePath: '(test)',
+      }]);
+      selector = /** @type {any} */ (document.createElement('strategy-selector'));
+      document.body.appendChild(selector);
+      selector.loadStrategies();
+      selector.setMessageThread(/** @type {any} */ ({ currentStrategyId: ID }));
+      selector._dropdownOpen = true;
+      selector.render();
+      const leaks = ['.esc-id-leak', '[data-esc-color-leak]', '[data-esc-icon-leak]']
+        .filter((sel) => selector.querySelector(sel));
+      assert(leaks.length === 0, `manifest data became markup: ${JSON.stringify(leaks)}`);
+      const row = /** @type {HTMLElement|null} */ (selector.querySelector('.strategy-item[data-strategy-id]'));
+      assert(row?.dataset.strategyId === ID, `the row's id did not survive intact: ${JSON.stringify(row?.dataset.strategyId)}`);
+      const info = /** @type {HTMLElement|null} */ (selector.querySelector('.strategy-info-button'));
+      assert(info?.dataset.strategyInfoId === ID, `the info button's id did not survive intact: ${JSON.stringify(info?.dataset.strategyInfoId)}`);
+      const iconClass = selector.querySelector('.strategy-item-icon')?.getAttribute('class');
+      assert(iconClass === `strategy-item-icon ${ICON}`, `the icon class read ${JSON.stringify(iconClass)}`);
+    } finally {
+      strategyRegistry.getAllManifests = realManifests;
+      selector?.remove();
     }
   });
 

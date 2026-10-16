@@ -7,10 +7,11 @@ package gitview
 import (
 	"context"
 	"errors"
-	"fmt"
 	"sort"
 	"strings"
 	"time"
+
+	"juggler/cmd/juggler/msg"
 )
 
 // Review bounds. A review is asked for rather than polled, so it can afford a
@@ -75,24 +76,30 @@ type gitReviewRepo struct {
 // working tree is not, so each one names itself in Warnings and Complete goes
 // false. Partial results stay in the answer — they are worth reading, they are
 // just not everything. Scope says what was compared.
+//
+// Warnings are English; WarningMessages are the same warnings, in the same
+// order, as messages for the client to show translated. What git said and the
+// names of repositories are data inside them, shown as they came.
 type Manifest struct {
-	Complete bool            `json:"complete"`
-	Warnings []string        `json:"warnings"`
-	Scope    ScopeInfo       `json:"scope"`
-	Repos    []gitReviewRepo `json:"repos"`
+	Complete        bool            `json:"complete"`
+	Warnings        []string        `json:"warnings"`
+	WarningMessages []msg.Message   `json:"warningMessages,omitempty"`
+	Scope           ScopeInfo       `json:"scope"`
+	Repos           []gitReviewRepo `json:"repos"`
 }
 
 // warn records something the review could not reach, once. A warning and an
 // incomplete review are the same statement made twice, so they are made in one
 // place: there is no way to add the first without the second.
-func (resp *Manifest) warn(format string, args ...any) {
-	msg := fmt.Sprintf(format, args...)
+func (resp *Manifest) warn(m msg.Message) {
+	text := m.English()
 	for _, existing := range resp.Warnings {
-		if existing == msg {
+		if existing == text {
 			return
 		}
 	}
-	resp.Warnings = append(resp.Warnings, msg)
+	resp.Warnings = append(resp.Warnings, text)
+	resp.WarningMessages = append(resp.WarningMessages, m)
 	resp.Complete = false
 }
 
@@ -126,7 +133,7 @@ func Review(ctx context.Context, root string, scope Scope) Manifest {
 
 	scan := scanRepos(ctx, root, reviewScanLimits())
 	for _, reason := range scan.Cut {
-		resp.warn("%s", reason)
+		resp.warn(reason)
 	}
 	budget := gitReviewMaxFiles
 	for _, dir := range scan.Repos {
@@ -165,7 +172,8 @@ func reviewRepo(ctx context.Context, root, dir string, scope Scope, budget int, 
 	if err != nil {
 		repo.Complete = false
 		repo.Error = gitReviewFailure(err)
-		resp.warn("Couldn't read %s: %s", repoDescription(rel), repo.Error)
+		resp.warn(msg.New("Couldn't read {where, select, root {the project repository} other {{repo}}}: {detail}",
+			append(repoParams(rel), "detail", repo.Error)...))
 		return repo
 	}
 	status.Path = rel
@@ -180,9 +188,10 @@ func reviewRepo(ctx context.Context, root, dir string, scope Scope, budget int, 
 		repo.Complete = false
 		switch {
 		case status.Total > len(status.Files):
-			resp.warn("%s: %d of %d changed files listed", repoDescription(rel), len(status.Files), status.Total)
+			resp.warn(filesListedWarning(rel, len(status.Files), status.Total))
 		default:
-			resp.warn("%s: more changes than could be read in one pass", repoDescription(rel))
+			resp.warn(msg.New("{where, select, root {the project repository} other {{repo}}}: more changes than could be read in one pass",
+				repoParams(rel)...))
 		}
 	}
 
@@ -191,7 +200,7 @@ func reviewRepo(ctx context.Context, root, dir string, scope Scope, budget int, 
 	// them, so the count failing has to produce one.
 	if err := repoDiffstats(ctx, dir, gitReviewPerCmd, &repo.RepoStatus); err != nil {
 		repo.Complete = false
-		resp.warn("Couldn't count the changed lines in %s: %s", repoDescription(rel), gitReviewFailure(err))
+		resp.warn(countFailedWarning(rel, err))
 	}
 
 	// One order for the files, whoever listed them and however many refreshes
@@ -216,7 +225,8 @@ func reviewScopedRepo(ctx context.Context, dir string, scope Scope, budget int, 
 	if err != nil {
 		repo.Complete = false
 		repo.Error = gitReviewFailure(err)
-		resp.warn("Couldn't compare %s: %s", repoDescription(rel), repo.Error)
+		resp.warn(msg.New("Couldn't compare {where, select, root {the project repository} other {{repo}}}: {detail}",
+			append(repoParams(rel), "detail", repo.Error)...))
 		return
 	}
 	repo.Base, repo.Target, repo.BaseName = resolved.base, resolved.target, resolved.baseName
@@ -228,7 +238,8 @@ func reviewScopedRepo(ctx context.Context, dir string, scope Scope, budget int, 
 	if err != nil {
 		repo.Complete = false
 		repo.Error = gitReviewFailure(err)
-		resp.warn("Couldn't read %s: %s", repoDescription(rel), repo.Error)
+		resp.warn(msg.New("Couldn't read {where, select, root {the project repository} other {{repo}}}: {detail}",
+			append(repoParams(rel), "detail", repo.Error)...))
 		return
 	}
 	for _, file := range files {
@@ -248,14 +259,14 @@ func reviewScopedRepo(ctx context.Context, dir string, scope Scope, budget int, 
 	truncateGitFiles(&repo.RepoStatus, budget)
 	if repo.Truncated {
 		repo.Complete = false
-		resp.warn("%s: %d of %d changed files listed", repoDescription(rel), len(repo.Files), repo.Total)
+		resp.warn(filesListedWarning(rel, len(repo.Files), repo.Total))
 	}
 
 	out, err := gitRead(ctx, dir, gitReviewPerCmd, gitDiffMaxMeta,
 		resolved.diffArgs("--no-ext-diff", "--no-textconv", "--find-renames", "--numstat", "-z")...)
 	if err != nil {
 		repo.Complete = false
-		resp.warn("Couldn't count the changed lines in %s: %s", repoDescription(rel), gitReviewFailure(err))
+		resp.warn(countFailedWarning(rel, err))
 		return
 	}
 	applyGitDiffstats(&repo.RepoStatus, parseGitNumstat(out.Kept))
@@ -347,13 +358,27 @@ func scopedFiles(ctx context.Context, dir string, scope resolvedScope, status Re
 	return files, nil
 }
 
-// repoDescription names a repository in a sentence. The root repository has no
-// path to be called by, and "" in the middle of a warning names nothing.
-func repoDescription(rel string) string {
+// repoParams name a repository to a warning: {repo} its path, and {where}
+// "root" for the root repository, which has no path to be called by — "" in
+// the middle of a warning names nothing — so the warning words it instead.
+func repoParams(rel string) []any {
+	where := "nested"
 	if rel == "" {
-		return "the project repository"
+		where = "root"
 	}
-	return rel
+	return []any{"where", where, "repo", rel}
+}
+
+// filesListedWarning says a repository had more changed files than were listed.
+func filesListedWarning(rel string, listed, total int) msg.Message {
+	return msg.New("{where, select, root {the project repository} other {{repo}}}: {listed} of {total} changed files listed",
+		append(repoParams(rel), "listed", listed, "total", total)...)
+}
+
+// countFailedWarning says a repository's changed lines could not be counted.
+func countFailedWarning(rel string, err error) msg.Message {
+	return msg.New("Couldn't count the changed lines in {where, select, root {the project repository} other {{repo}}}: {detail}",
+		append(repoParams(rel), "detail", gitReviewFailure(err))...)
 }
 
 // gitReviewFailure says what went wrong in terms of the review rather than of

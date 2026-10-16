@@ -32,7 +32,26 @@
  * @module services/http
  */
 
-import { t } from '../../sdk/lib/i18n.js';
+import { t, serverText } from '../../sdk/lib/i18n.js';
+
+/**
+ * A message the server sent for the UI to translate: the wire form of a Go
+ * msg.Message, the argument serverText() takes.
+ * @typedef {{key: string, params?: Record<string, unknown>, context?: string}} ServerMessage
+ */
+
+/**
+ * The message a server error body carries for the UI to translate — the
+ * `message` beside `error` in the envelope every /api route writes (see
+ * handlers.WriteMessageError) — or undefined when it has none.
+ * @param {any} body - Parsed JSON error body
+ * @returns {ServerMessage|undefined} The message, or undefined
+ */
+export function bodyServerMessage(body) {
+  const message = body && typeof body === 'object' ? body.message : undefined;
+  return message && typeof message === 'object' && typeof message.key === 'string' && message.key !== ''
+    ? message : undefined;
+}
 
 /**
  * A non-OK HTTP response. Carries the status and the decoded error body so a
@@ -55,20 +74,30 @@ export class HttpError extends Error {
     this.detail = detail;
     /** @type {any} */
     this.body = body;
+    /**
+     * The server's message for `detail`, for the UI to show translated with
+     * serverText(); undefined when the server sent English alone. `detail`
+     * and `message` stay English, for a caller whose text the model reads.
+     * @type {ServerMessage|undefined}
+     */
+    this.serverMessage = bodyServerMessage(body);
   }
 }
 
 /**
  * The message to show a user for a caught request failure: an {@link HttpError}'s
  * server-supplied detail (no status prefix), any other Error's message, or
- * `fallbackMessage` when the thrown value carries nothing readable.
+ * `fallbackMessage` when the thrown value carries nothing readable. A server
+ * detail that came with a message (an HttpError's or an OpsError's
+ * `serverMessage`) is shown translated.
  * @param {unknown} error - The caught value
  * @param {string} [fallbackMessage] - Used when the error says nothing useful
  * @returns {string} A message fit for an alert or status line
  */
 export function httpErrorText(error, fallbackMessage = t('Request failed')) {
-  if (error instanceof HttpError) return error.detail || fallbackMessage;
-  return error instanceof Error && error.message ? error.message : fallbackMessage;
+  if (error instanceof HttpError) return serverText(error.serverMessage, error.detail) || fallbackMessage;
+  if (!(error instanceof Error) || !error.message) return fallbackMessage;
+  return serverText(/** @type {any} */ (error).serverMessage, error.message);
 }
 
 /**
@@ -107,6 +136,17 @@ async function decodeErrorBody(response) {
 export async function extractHttpErrorDetail(response) {
   const { detail } = await decodeErrorBody(response);
   return detail || `HTTP ${response.status}`;
+}
+
+/**
+ * {@link extractHttpErrorDetail}, with the message the server sent for the UI
+ * to translate it by, when it sent one.
+ * @param {Response} response - The non-OK response
+ * @returns {Promise<{detail: string, serverMessage: ServerMessage|undefined}>} The detail and its message
+ */
+export async function extractHttpErrorParts(response) {
+  const { detail, body } = await decodeErrorBody(response);
+  return { detail: detail || `HTTP ${response.status}`, serverMessage: bodyServerMessage(body) };
 }
 
 /**
@@ -192,7 +232,7 @@ export async function fetchJson(url, options = {}) {
       let message;
       if (errorPrefix) {
         message = detail
-          ? t('{prefix}: {detail}', { prefix: errorPrefix, detail })
+          ? t('{prefix}: {detail}', { prefix: errorPrefix, detail: serverText(bodyServerMessage(errorBody), detail) })
           : t('{prefix} (HTTP {status})', { prefix: errorPrefix, status: response.status });
       } else {
         message = detail ? `${status}: ${detail}` : status;

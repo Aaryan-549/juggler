@@ -19,6 +19,8 @@
 
 import { assert } from '../utilities/test-helpers.js';
 import usageStatsCache from '../../js/services/usage-stats-cache.js';
+import { underPseudoLocale } from '../utilities/pseudo-locale.js';
+import { isPseudoLocalized } from '../../sdk/lib/i18n.js';
 
 /**
  * @typedef {object} TestResult
@@ -171,6 +173,16 @@ export async function runTests(_ctx) {
     const afterThrow = await refreshWith(p, null, true); // thrown
     assert(afterThrow?.stats?.[0]?.usedPercent === 33, 'a thrown fetch resolves with the retained snapshot');
     assert(usageStatsCache.get(p)?.stats?.[0]?.usedPercent === 33, 'a thrown fetch must not clobber the cache');
+  });
+
+  // The usage card shows a failed fetch's message, so it is in the UI language.
+  await run('a failed fetch is reported in the UI language', async () => {
+    const p = 'codex-failed-locale';
+    await underPseudoLocale('usage-stats-cache-test', async () => {
+      await refreshWith(p, null); // HTTP 429, no body
+      const error = usageStatsCache.getError(p);
+      assert(isPseudoLocalized(error) && error.includes('429'), `a failed fetch reported ${JSON.stringify(error)}`);
+    });
   });
 
   await run('a provider error is exposed and cleared by a successful refresh', async () => {

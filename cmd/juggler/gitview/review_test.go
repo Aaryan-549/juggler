@@ -353,13 +353,13 @@ func TestGitReviewSearchSaysWhereItStopped(t *testing.T) {
 		if len(scan.Repos) != 2 {
 			t.Errorf("found %d repositories, want the 2 it was allowed", len(scan.Repos))
 		}
-		if !strings.Contains(strings.Join(scan.Cut, "\n"), "2 repositories") {
+		if !strings.Contains(fmt.Sprint(scan.Cut), "2 repositories") {
 			t.Errorf("Cut = %v, want the repository ceiling named", scan.Cut)
 		}
 	})
 	t.Run("too many directories", func(t *testing.T) {
 		scan := scanRepos(t.Context(), p.root, repoScanLimits{maxRepos: 8, maxDirs: 2})
-		if !strings.Contains(strings.Join(scan.Cut, "\n"), "2 directories") {
+		if !strings.Contains(fmt.Sprint(scan.Cut), "2 directories") {
 			t.Errorf("Cut = %v, want the directory ceiling named", scan.Cut)
 		}
 	})

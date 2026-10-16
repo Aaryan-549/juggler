@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"juggler/cmd/juggler/msg"
 	"juggler/cmd/juggler/providers/utils"
 	"juggler/internal/jlog"
 )
@@ -106,27 +107,29 @@ const (
 func resolveCopilotCredential() (ProviderCredential, error) {
 	token, err := loadCopilotBearer()
 	if err != nil {
-		return ProviderCredential{AuthHint: err.Error()}, err
+		return errorAuthHint(err), err
 	}
 	return ProviderCredential{
 		BearerToken: token,
 		Headers:     CopilotHeaders(),
 		KeySource:   KeySourceCopilot,
-		AuthHint:    copilotSignedInHint(),
-	}, nil
+	}.withAuthHint(copilotSignedInHint()), nil
 }
 
 // copilotSignedInHint labels the signed-in state, naming how the login was
 // sourced so the settings UI can tell a device-flow login from an editor one.
-func copilotSignedInHint() string {
-	var suffix string
-	if host := CopilotHost(); host != copilotDefaultHost {
-		suffix = " to " + host
+func copilotSignedInHint() msg.Message {
+	host := CopilotHost()
+	switch {
+	case host == copilotDefaultHost && copilotHasDeviceLogin():
+		return msg.New("Signed in with GitHub")
+	case host == copilotDefaultHost:
+		return msg.New("Signed in via your editor's Copilot login")
+	case copilotHasDeviceLogin():
+		return msg.New("Signed in with GitHub to {host}", "host", host)
+	default:
+		return msg.New("Signed in via your editor's Copilot login to {host}", "host", host)
 	}
-	if copilotHasDeviceLogin() {
-		return "Signed in with GitHub" + suffix
-	}
-	return "Signed in via your editor's Copilot login" + suffix
 }
 
 // CopilotHeaders are the headers api.githubcopilot.com (and the token-exchange

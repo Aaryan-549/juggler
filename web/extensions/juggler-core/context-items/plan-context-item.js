@@ -13,6 +13,9 @@ import { createPlanBlock, renderPlanMarkdown } from '../lib/task-lists.js';
 
 const t = translator('@juggler/core');
 
+/** The step statuses the tool schema allows, in lifecycle order. */
+const STEP_STATUSES = /** @type {const} */ (['pending', 'in_progress', 'completed', 'failed', 'skipped']);
+
 /**
  * A step status as the transcript row and the status line show it. The model
  * reads the raw status in its tool results.
@@ -22,7 +25,7 @@ const t = translator('@juggler/core');
 function statusLabel(status) {
   switch (status) {
     case 'pending': return t('pending');
-    case 'in_progress': return t('in_progress');
+    case 'in_progress': return t('in progress');
     case 'completed': return t('completed');
     case 'failed': return t('failed');
     case 'skipped': return t('skipped');
@@ -142,18 +145,6 @@ class PlanContextItem extends ContextItem {
     return true;
   }
 
-  /**
-   * Title for the properties-panel header / item card. The plan tool drives two
-   * distinct operations: "submit" proposes (creates/replaces) the plan, while
-   * the step actions change an existing plan. Label each for what it does so a
-   * creation and an update aren't both just "plan".
-   * @param {Record<string, unknown>} toolInput - Parsed tool input
-   * @returns {string} Display title
-   */
-  static getToolActionTitle(toolInput) {
-    return (toolInput?.action || 'submit') === 'submit' ? t('Plan') : t('Update plan');
-  }
-
   // ============================================================================
   // TOOL DEFINITIONS (action interface)
   // ============================================================================
@@ -167,18 +158,18 @@ class PlanContextItem extends ContextItem {
       {
         name: 'plan',
         category: 'meta',  // meta = internal state only, doesn't modify files. Ensures MCP ReadOnlyHint=true
-        description: 'Propose an implementation plan for user review and approval, then track its execution. Use ONLY when an approach warrants user sign-off, or when asked to plan — routine progress tracking is the todo tool\'s job. "submit" presents the plan for approval; the *_step actions track execution of the approved plan.',
+        description: markUntranslated('Propose an implementation plan for user review and approval, then track its execution. Use ONLY when an approach warrants user sign-off, or when asked to plan — routine progress tracking is the todo tool\'s job. "submit" presents the plan for approval; the *_step actions track execution of the approved plan.'),
         input_schema: {
           type: 'object',
           properties: {
             action: {
               type: 'string',
               enum: ['submit', 'start_step', 'complete_step', 'fail_step', 'skip_step'],
-              description: 'Action to perform'
+              description: markUntranslated('Action to perform')
             },
             title: {
               type: 'string',
-              description: 'Descriptive title for the plan, specific enough to distinguish this approach (required for submit)'
+              description: markUntranslated('Descriptive title for the plan, specific enough to distinguish this approach (required for submit)')
             },
             items: {
               type: 'array',
@@ -187,29 +178,29 @@ class PlanContextItem extends ContextItem {
                 properties: {
                   content: {
                     type: 'string',
-                    description: 'What this step accomplishes, in enough detail to review: the files involved (`backticks` for paths/code), the change, and how it is verified. One reviewable unit of work per step.'
+                    description: markUntranslated('What this step accomplishes, in enough detail to review: the files involved (`backticks` for paths/code), the change, and how it is verified. One reviewable unit of work per step.')
                   },
                   status: {
                     type: 'string',
-                    enum: ['pending', 'in_progress', 'completed', 'failed', 'skipped'],
-                    description: 'Initial status (usually pending)'
+                    enum: [...STEP_STATUSES],
+                    description: markUntranslated('Initial status (usually pending)')
                   }
                 },
                 required: ['content']
               },
-              description: 'List of plan steps (required for submit)'
+              description: markUntranslated('List of plan steps (required for submit)')
             },
             index: {
               type: 'number',
-              description: 'Step index, 1-based (required for start_step, complete_step, fail_step, skip_step)'
+              description: markUntranslated('Step index, 1-based (required for start_step, complete_step, fail_step, skip_step)')
             },
             result: {
               type: 'string',
-              description: 'Summary of what was accomplished (optional for complete_step, fail_step)'
+              description: markUntranslated('Summary of what was accomplished (optional for complete_step, fail_step)')
             },
             threadItemId: {
               type: 'string',
-              description: 'Thread item ID that executed this step (optional for complete_step)'
+              description: markUntranslated('Thread item ID that executed this step (optional for complete_step)')
             }
           },
           required: ['action']
@@ -467,7 +458,7 @@ class PlanContextItem extends ContextItem {
       }
       normalizedSteps.push({
         content,
-        status: item.status || 'pending',
+        status: PlanContextItem._resolveStepStatus(item),
         threadItemId: null,
         result: null
       });
@@ -489,6 +480,18 @@ class PlanContextItem extends ContextItem {
    */
   static _resolvePlanItems(toolInput) {
     return toolInput.items ?? toolInput.steps ?? toolInput.tasks;
+  }
+
+  /**
+   * Resolve a step's initial status, coercing anything outside the schema's
+   * enum to 'pending' (the default the model is told about).
+   * @param {Record<string, unknown>} item - A raw plan item
+   * @returns {PlanStep['status']} Normalized status
+   * @private
+   */
+  static _resolveStepStatus(item) {
+    const raw = item && item.status;
+    return STEP_STATUSES.includes(/** @type {any} */ (raw)) ? /** @type {PlanStep['status']} */ (raw) : 'pending';
   }
 
   /**

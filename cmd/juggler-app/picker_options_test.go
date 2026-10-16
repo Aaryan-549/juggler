@@ -29,7 +29,7 @@ func TestPickerOptions(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			files, title, _ := pickerOptions(c.action, c.rawTitle, "", "")
+			files, title, _ := pickerOptions(c.action, c.rawTitle, "Open project folder", "", "")
 			if files != c.wantFiles || title != c.wantTitle {
 				t.Fatalf("pickerOptions(%q, %q) = %v/%q, want %v/%q",
 					c.action, c.rawTitle, files, title, c.wantFiles, c.wantTitle)
@@ -66,7 +66,7 @@ func TestPickerOptionsStartingDirectory(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			if _, _, got := pickerOptions(c.action, "", c.rawDir, ""); got != c.want {
+			if _, _, got := pickerOptions(c.action, "", "", c.rawDir, ""); got != c.want {
 				t.Fatalf("pickerOptions(%q, dir=%q) directory = %q, want %q", c.action, c.rawDir, got, c.want)
 			}
 		})
@@ -97,7 +97,7 @@ func TestPickerOptionsRemembersWhereItLastPicked(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			if _, _, got := pickerOptions(c.action, "", c.rawDir, c.lastDir); got != c.want {
+			if _, _, got := pickerOptions(c.action, "", "", c.rawDir, c.lastDir); got != c.want {
 				t.Fatalf("pickerOptions(%q, dir=%q, last=%q) directory = %q, want %q",
 					c.action, c.rawDir, c.lastDir, got, c.want)
 			}

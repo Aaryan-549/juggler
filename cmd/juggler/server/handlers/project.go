@@ -6,13 +6,13 @@ package handlers
 
 import (
 	"errors"
-	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"juggler/cmd/juggler/core"
+	"juggler/cmd/juggler/msg"
 	"juggler/internal/userpaths"
 )
 
@@ -57,13 +57,13 @@ func (api *ProjectAPI) HandlePostProject(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if req.Path == "" {
-		WriteError(w, r, http.StatusBadRequest, "path is required")
+		WriteMessageError(w, r, http.StatusBadRequest, msg.New("path is required"))
 		return
 	}
 
 	abs, err := filepath.Abs(userpaths.ExpandHome(req.Path))
 	if err != nil {
-		WriteError(w, r, http.StatusBadRequest, err.Error())
+		WriteErr(w, r, http.StatusBadRequest, err)
 		return
 	}
 
@@ -82,7 +82,7 @@ func (api *ProjectAPI) switchAndRespond(w http.ResponseWriter, r *http.Request, 
 		case errors.Is(err, core.ErrProjectLocked):
 			status = http.StatusConflict
 		}
-		WriteError(w, r, status, err.Error())
+		WriteErr(w, r, status, err)
 		return
 	}
 
@@ -106,7 +106,7 @@ func (api *ProjectAPI) HandleNewProject(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if strings.TrimSpace(req.Parent) == "" {
-		WriteError(w, r, http.StatusBadRequest, "parent is required")
+		WriteMessageError(w, r, http.StatusBadRequest, msg.New("parent is required"))
 		return
 	}
 
@@ -116,31 +116,31 @@ func (api *ProjectAPI) HandleNewProject(w http.ResponseWriter, r *http.Request) 
 	name := strings.TrimSpace(req.Name)
 	switch {
 	case name == "":
-		WriteError(w, r, http.StatusBadRequest, "name is required")
+		WriteMessageError(w, r, http.StatusBadRequest, msg.New("name is required"))
 		return
 	case name == "." || name == "..":
-		WriteError(w, r, http.StatusBadRequest, "name must be a folder name, not a path")
+		WriteMessageError(w, r, http.StatusBadRequest, msg.New("name must be a folder name, not a path"))
 		return
 	case strings.ContainsAny(name, `/\`):
-		WriteError(w, r, http.StatusBadRequest, "name cannot contain a slash — it is created inside the parent folder")
+		WriteMessageError(w, r, http.StatusBadRequest, msg.New("name cannot contain a slash — it is created inside the parent folder"))
 		return
 	}
 
 	parent, err := filepath.Abs(userpaths.ExpandHome(req.Parent))
 	if err != nil {
-		WriteError(w, r, http.StatusBadRequest, err.Error())
+		WriteErr(w, r, http.StatusBadRequest, err)
 		return
 	}
 	info, err := os.Stat(parent)
 	switch {
 	case os.IsNotExist(err):
-		WriteError(w, r, http.StatusBadRequest, "parent folder not found: "+parent)
+		WriteMessageError(w, r, http.StatusBadRequest, msg.New("parent folder not found: {path}", "path", parent))
 		return
 	case err != nil:
-		WriteError(w, r, http.StatusBadRequest, err.Error())
+		WriteErr(w, r, http.StatusBadRequest, err)
 		return
 	case !info.IsDir():
-		WriteError(w, r, http.StatusBadRequest, "parent is not a folder: "+parent)
+		WriteMessageError(w, r, http.StatusBadRequest, msg.New("parent is not a folder: {path}", "path", parent))
 		return
 	}
 
@@ -153,10 +153,10 @@ func (api *ProjectAPI) HandleNewProject(w http.ResponseWriter, r *http.Request) 
 			// Not silently adopted: they asked to create something new, and
 			// opening a folder that is already full of someone else's work is a
 			// different decision, taken with the picker in front of them.
-			WriteError(w, r, http.StatusConflict, "there is already something called "+name+" in "+parent)
+			WriteMessageError(w, r, http.StatusConflict, msg.New("there is already something called {name} in {parent}", "name", name, "parent", parent))
 			return
 		}
-		WriteError(w, r, http.StatusInternalServerError, err.Error())
+		WriteErr(w, r, http.StatusInternalServerError, err)
 		return
 	}
 
@@ -165,12 +165,23 @@ func (api *ProjectAPI) HandleNewProject(w http.ResponseWriter, r *http.Request) 
 	api.switchAndRespond(w, r, abs)
 }
 
+// writeCheckRefusal answers /project/check for a path it refuses: 200 with
+// valid false, the English in "error" and, as the response is not the error
+// envelope, the message to translate it by in "errorMessage".
+func writeCheckRefusal(w http.ResponseWriter, r *http.Request, m msg.Message, locked bool) {
+	body := map[string]any{"valid": false, "error": m.English(), "errorMessage": m}
+	if locked {
+		body["locked"] = true
+	}
+	WriteJSON(w, r, 0, body)
+}
+
 // HandleCheckProject validates whether a path exists and is a directory, without switching.
 // GET /api/project/check?path=...
 func (api *ProjectAPI) HandleCheckProject(w http.ResponseWriter, r *http.Request) {
 	raw := r.URL.Query().Get("path")
 	if raw == "" {
-		WriteJSON(w, r, 0, map[string]any{"valid": false, "error": "path is required"})
+		writeCheckRefusal(w, r, msg.New("path is required"), false)
 		return
 	}
 	abs, err := filepath.Abs(userpaths.ExpandHome(raw))
@@ -180,7 +191,7 @@ func (api *ProjectAPI) HandleCheckProject(w http.ResponseWriter, r *http.Request
 	}
 	info, err := os.Stat(abs)
 	if os.IsNotExist(err) {
-		WriteJSON(w, r, 0, map[string]any{"valid": false, "error": "path not found"})
+		writeCheckRefusal(w, r, msg.New("path not found"), false)
 		return
 	}
 	if err != nil {
@@ -188,7 +199,7 @@ func (api *ProjectAPI) HandleCheckProject(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if !info.IsDir() {
-		WriteJSON(w, r, 0, map[string]any{"valid": false, "error": "not a directory"})
+		writeCheckRefusal(w, r, msg.New("not a directory"), false)
 		return
 	}
 
@@ -202,14 +213,14 @@ func (api *ProjectAPI) HandleCheckProject(w http.ResponseWriter, r *http.Request
 
 	// Check whether another instance already has this project open.
 	if locked, existing, _ := api.checkLockedFn(abs); locked {
-		msg := "Already open in another Juggler instance"
+		refusal := msg.New("Already open in another Juggler instance")
 		if existing != nil {
 			isRunning, _ := core.VerifyInstance(existing, abs)
 			if isRunning {
-				msg = fmt.Sprintf("Already open at http://%s:%d/", existing.Host, existing.Port)
+				refusal = msg.New("Already open at http://{host}:{port}/", "host", existing.Host, "port", existing.Port)
 			}
 		}
-		WriteJSON(w, r, 0, map[string]any{"valid": false, "error": msg, "locked": true})
+		writeCheckRefusal(w, r, refusal, true)
 		return
 	}
 

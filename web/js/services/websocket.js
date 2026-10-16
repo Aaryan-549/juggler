@@ -1030,49 +1030,6 @@ class WebSocketService {
   }
 
   /**
-   * Send a tool execution response back to the server (for claudecode provider)
-   * @param {string} requestId - Request ID to correlate with request
-   * @param {string} content - Tool result content
-   * @param {'success'|'error'|'cancelled'} resultStatus - Outcome of tool execution
-   * @param {string} [category] - Tool category: "read", "write", "meta"
-   * @returns {boolean} True if sent successfully
-   */
-  sendToolResponse(requestId, content, resultStatus, category) {
-    return this._sendJson({
-      type: 'tool_use_response',
-      requestId,
-      content,
-      resultStatus: resultStatus || 'success',
-      category: category || ''
-    }, 'tool response');
-  }
-
-  /**
-   * Signal to server that the user approved a tool and execution is starting.
-   * This allows the server to begin its execution timeout only from this point.
-   * @param {string} requestId - Request ID from the tool_use_request
-   */
-  sendToolStarted(requestId) {
-    this._sendJson({ type: 'tool_use_started', requestId }, 'tool_use_started', { silent: true });
-  }
-
-  /**
-   * Send shouldContinue response back to server (iteration control callback)
-   * @param {string} requestId - Request ID from server
-   * @param {boolean} shouldContinue - Whether to continue the loop
-   * @param {string} message - Message to inject if stopping
-   * @returns {boolean} True if sent successfully
-   */
-  sendShouldContinueResponse(requestId, shouldContinue, message) {
-    return this._sendJson({
-      type: 'should_continue_response',
-      requestId,
-      shouldContinue,
-      message
-    }, 'should_continue response');
-  }
-
-  /**
    * Send a shell-cancel request to stop a running shell command
    * @param {string} shellId - ID of the shell to cancel
    * @returns {boolean} True if sent successfully

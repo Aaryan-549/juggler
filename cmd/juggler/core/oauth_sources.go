@@ -4,6 +4,8 @@
 
 package core
 
+import "juggler/cmd/juggler/msg"
+
 // OAuth-bearer source registry. Providers whose auth is a short-lived bearer
 // minted from an external login (a CLI token file, a device-flow login, …)
 // register a resolver here keyed by their ProviderInfo.AuthSource;
@@ -50,7 +52,7 @@ func lookupOAuthBearerSource(name string) (OAuthBearerResolver, bool) {
 func resolveCodexCredential() (ProviderCredential, error) {
 	token, accountID, err := loadCodexCLIAccessToken()
 	if err != nil {
-		return ProviderCredential{AuthHint: err.Error()}, err
+		return errorAuthHint(err), err
 	}
 	var headers map[string]string
 	if accountID != "" {
@@ -60,6 +62,5 @@ func resolveCodexCredential() (ProviderCredential, error) {
 		BearerToken: token,
 		Headers:     headers,
 		KeySource:   KeySourceCodexCLI,
-		AuthHint:    "Signed in via Codex app/CLI",
-	}, nil
+	}.withAuthHint(msg.New("Signed in via Codex app/CLI")), nil
 }

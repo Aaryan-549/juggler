@@ -9,7 +9,7 @@
 //   warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the LICENSE file or
 //   <https://www.gnu.org/licenses/agpl-3.0.html> for full terms.
 
-import { extractErrorMessage } from '../../../sdk/lib/error-utils.js';
+import { errorText } from '../../../sdk/lib/error-utils.js';
 import { fetchJson } from '../../services/http.js';
 import { apiUrl } from '../../utils/api-url.js';
 import { t, markForTranslation } from '../../../sdk/lib/i18n.js';
@@ -282,7 +282,7 @@ export class ProxySettings {
       this._mode = prevMode;
       this._url = prevURL;
       this._reflect();
-      this._setStatus(t('Couldn\'t save the proxy setting ({error}).', { error: extractErrorMessage(err) }));
+      this._setStatus(t('Couldn\'t save the proxy setting ({error}).', { error: errorText(err) }));
     }
   }
 

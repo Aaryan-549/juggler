@@ -4,13 +4,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import ContextItem from 'juggler/context-item';
-import { formatDisplayPath, formatFileSize, formatFileContentForLLM, normalizeFilePath, injectFileContentStyles, basename } from 'juggler/item-utils';
+import { formatDisplayPath, formatFileSize, formatFileSizeForDisplay, formatFileContentForLLM, normalizeFilePath, injectFileContentStyles, basename } from 'juggler/item-utils';
 import { addFilePath } from 'juggler/ui';
 import { fileSourceFromReadResult } from 'juggler/file-source';
 import { extractFileSource } from 'juggler/registry';
 import { toolInputPath, dirname, isPathAllowed, folderGrantSuggestions, stripInjectedApprovalFlags, absolutePathKey } from './path-approval.js';
 import { creditProgramRead } from './read-history.js';
-import { translator } from 'juggler/i18n';
+import { translator, markUntranslated } from 'juggler/i18n';
 
 const t = translator('@juggler/core');
 
@@ -90,21 +90,21 @@ class ReadFileContextItem extends ContextItem {
       properties: {
         file_path: {
           type: 'string',
-          description: 'The absolute path to the file to read'
+          description: markUntranslated('The absolute path to the file to read')
         },
         offset: {
           type: 'number',
-          description: 'The line number to start reading from (1-indexed). Only provide if the file is too large to read at once.'
+          description: markUntranslated('The line number to start reading from (1-indexed). Only provide if the file is too large to read at once.')
         },
         limit: {
           type: 'number',
-          description: 'The number of lines to read. Only provide if the file is too large to read at once.'
+          description: markUntranslated('The number of lines to read. Only provide if the file is too large to read at once.')
         }
       },
       required: ['file_path']
     };
 
-    const description = 'Reads a local file, returned in <file> tags with cat -n line numbers. A file too large to return at once arrives a page at a time: the footer names the lines returned and the offset the next page starts at, so following it reads the whole file without gaps. Use offset and limit to choose a range yourself.';
+    const description = markUntranslated('Reads a local file, returned in <file> tags with cat -n line numbers. A file too large to return at once arrives a page at a time: the footer names the lines returned and the offset the next page starts at, so following it reads the whole file without gaps. Use offset and limit to choose a range yourself.');
 
     return [
       {
@@ -313,7 +313,7 @@ class ReadFileContextItem extends ContextItem {
     // explanation comes from the viewer layer, not from the backend's read op.
     const warning = result?.extracted?.warning || result?.warning;
     if (warning) {
-      return this.successSummary(`${formatDisplayPath(path)} (${warning})`, {
+      return this.successSummary(markUntranslated(`${formatDisplayPath(path)} (${warning})`), {
         details: `**WARNING**: ${warning}`,
         icon: '⚠'
       });
@@ -378,7 +378,7 @@ class ReadFileContextItem extends ContextItem {
     const container = document.createElement('div');
     container.className = 'file-content-expanded';
     const info = (data.exists !== false && data.size)
-      ? [formatFileSize(data.size), data.totalLines ? t('{count} lines', { count: data.totalLines }) : ''].filter(Boolean).join(' | ')
+      ? [formatFileSizeForDisplay(data.size), data.totalLines ? t('{count, plural, one {{count} line} other {{count} lines}}', { count: data.totalLines }) : ''].filter(Boolean).join(' | ')
       : undefined;
     addFilePath(container, absolutePath || data.path || t('No file'), info, { pin: absolutePath });
 
@@ -433,7 +433,7 @@ class ReadFileContextItem extends ContextItem {
         const endLine = lineOffset + (result.lineCount || 0) - 1;
         const isFullFile = lineOffset === 1 && endLine === result.totalLines;
         return isFullFile
-          ? t('{filename} ({count} lines)', { filename, count: result.totalLines })
+          ? t('{filename} ({count, plural, one {{count} line} other {{count} lines}})', { filename, count: result.totalLines })
           : t('{filename} (lines {start}-{end} of {total})', { filename, start: lineOffset, end: endLine, total: result.totalLines });
       },
       failurePrefix: `'${path}'`

@@ -639,8 +639,7 @@ export async function runTests() {
 
   await run('en-XA: the base provider\'s own sentences, and what a failed provision left behind, are translated', async () => {
     // The base class draws nothing itself: its finish refusal reaches the panel's
-    // notice, its cleanup verdict the reconcile pass, and the left-behind sentence
-    // the create dialog — each as given. So the sentences are checked as said.
+    // notice and the left-behind sentence the create dialog — each as given. So the sentences are checked as said.
     const registry = /** @type {any} */ (workspaceProviderRegistry);
     const savedItems = new Map(registry.items);
     const savedExtensions = new Map(registry.itemExtensions);
@@ -676,7 +675,6 @@ export async function runTests() {
         said.push({ where: 'finish', text: String(finished.message) });
         const cleaned = await provider.cleanupPartial(workspace, /** @type {any} */ ({}));
         assert(cleaned.removed === false, 'a provider with no cleanup removes nothing');
-        said.push({ where: 'cleanupPartial', text: String(cleaned.message) });
 
         /** @type {any} */
         let thrown = null;
@@ -701,7 +699,6 @@ export async function runTests() {
     const byWhere = Object.fromEntries(said.map(({ where, text }) => [where, text]));
     // The data rides inside the wrapper: the provider's name, the action, the reason.
     assert(byWhere.finish?.includes('4') && byWhere.finish.includes('5'), `the refusal names the provider and the ending, got ${JSON.stringify(byWhere.finish)}`);
-    assert(byWhere.cleanupPartial?.includes('4'), `the verdict names the provider, got ${JSON.stringify(byWhere.cleanupPartial)}`);
     assert(byWhere.leftBehind?.includes('7'), `what could not be undone is carried, got ${JSON.stringify(byWhere.leftBehind)}`);
     const raw = said.filter(({ text }) => !isPseudoLocalized(text));
     assert(raw.length === 0, `plain English under en-XA: ${JSON.stringify(raw)}`);

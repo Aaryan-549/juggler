@@ -662,9 +662,21 @@ export function buildEscapeBehaviourRow() {
     select.value = preset.id;
     desc.textContent = describeEscapePreset(preset);
   };
-  select.addEventListener('change', () => setEscapePreset(select.value));
-  // Another window (or the picker itself) changing the pref re-syncs the row.
-  window.addEventListener(ESCAPE_BEHAVIOUR_EVENT, sync);
+  select.addEventListener('change', () => {
+    setEscapePreset(select.value);
+    sync();
+  });
+  // Another window changing the pref re-syncs the row. The settings tab appends
+  // the row in the task that builds it and has no teardown, so a row found out of
+  // the document when the pref changes has been replaced: its listener goes.
+  const onChange = () => {
+    if (!row.isConnected) {
+      window.removeEventListener(ESCAPE_BEHAVIOUR_EVENT, onChange);
+      return;
+    }
+    sync();
+  };
+  window.addEventListener(ESCAPE_BEHAVIOUR_EVENT, onChange);
   sync();
 
   row.appendChild(info);

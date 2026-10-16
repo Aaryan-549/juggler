@@ -26,6 +26,7 @@
 
 import { showConfirm } from './modal-dialog.js';
 import { t, markForTranslation } from '../../sdk/lib/i18n.js';
+import { errorText } from '../../sdk/lib/error-utils.js';
 
 // ---------------------------------------------------------------------------
 // Pure config helpers (unit-tested directly — see mcp-settings-test.js / acp-settings-test.js)
@@ -339,7 +340,7 @@ export class ConfigTabController {
       this.error = '';
     } catch (e) {
       // Keep the last known state; surface an inline banner instead of throwing.
-      this.error = e instanceof Error ? e.message : t(this.spec.loadError);
+      this.error = e instanceof Error ? errorText(e) : t(this.spec.loadError);
     } finally {
       this.busy = false;
     }
@@ -559,7 +560,7 @@ export class ConfigTabController {
     try {
       await restart(name);
     } catch (e) {
-      this.error = e instanceof Error ? e.message : t('Failed to restart "{name}".', { name });
+      this.error = e instanceof Error ? errorText(e) : t('Failed to restart "{name}".', { name });
     }
     await this.refresh();
   }
@@ -616,7 +617,7 @@ export class ConfigTabController {
         await this.spec.onAfterSave({ entry: nextMap[name] || {}, enabled, scope, name });
       }
     } catch (e) {
-      this.error = e instanceof Error ? e.message : t('Failed to update "{name}".', { name });
+      this.error = e instanceof Error ? errorText(e) : t('Failed to update "{name}".', { name });
     }
     await this.refresh();
   }
@@ -635,7 +636,7 @@ export class ConfigTabController {
     try {
       await this.spec.ops.setConfig(scope, deleteConfigEntry(src, name));
     } catch (e) {
-      this.error = e instanceof Error ? e.message : t('Failed to remove "{name}".', { name });
+      this.error = e instanceof Error ? errorText(e) : t('Failed to remove "{name}".', { name });
     }
     if (this.logFor === name) { this.logFor = ''; this.logText = null; }
     await this.refresh();
@@ -1197,7 +1198,7 @@ export class ConfigTabController {
       try {
         entry = { ...entry, ...spec.formToConfigExtra(f) };
       } catch (e) {
-        f.error = e instanceof Error ? e.message : t('Invalid field.');
+        f.error = e instanceof Error ? errorText(e) : t('Invalid field.');
         this.render();
         return;
       }
@@ -1207,7 +1208,7 @@ export class ConfigTabController {
     try {
       await spec.ops.setConfig(scope, upsertConfigEntry(src, name, entry));
     } catch (e) {
-      f.error = e instanceof Error ? e.message : t(spec.saveFailMsg);
+      f.error = e instanceof Error ? errorText(e) : t(spec.saveFailMsg);
       this.render();
       return;
     }

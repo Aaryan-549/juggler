@@ -121,6 +121,40 @@ export function bindNetworkClients(button, { events = wsService, seed = fetchCli
 }
 
 /**
+ * Name the header's buttons in the user's language. index.html carries their
+ * names in English, which is what shows before this script runs; each is
+ * replaced here, once, with its translation. A control whose name follows its
+ * state (theme, undo/redo, the network count, the pinboard toggle) is named by
+ * whatever keeps that state, and is not listed.
+ * @param {ParentNode} [root] - Where the header is.
+ * @returns {void}
+ */
+function localizeHeaderMarkup(root = document) {
+  /** @type {Array<[string, string|null, string|null]>} id, title, aria-label */
+  const names = [
+    ['sidebar-toggle-button', t('Toggle conversations'), t('Toggle conversation sidebar')],
+    ['project-path-display', t('Project directory'), null],
+    ['project-path-chip', null, t('Change project folder')],
+    ['project-new-window-button', t('Open a new window'), t('Open a new window')],
+    ['control-undo-button', null, t('Undo last operation')],
+    ['control-redo-button', null, t('Redo last undone operation')],
+    ['tool-grouping-button', t('Group consecutive tool uses'), t('Group consecutive tool uses')],
+    ['zoom-out-button', t('Decrease font size'), t('Decrease font size')],
+    ['zoom-in-button', t('Increase font size'), t('Increase font size')],
+    ['bell-button', t('Toggle notification sounds'), t('Toggle notification sounds')],
+    ['help-button', t('Tips & keyboard shortcuts'), t('Tips and keyboard shortcuts')],
+    ['settings-button', t('Settings'), t('Settings')],
+    ['header-overflow-button', t('More'), t('More controls')],
+  ];
+  for (const [id, title, label] of names) {
+    const node = root.querySelector(`#${id}`);
+    if (!node) continue;
+    if (title !== null) node.setAttribute('title', title);
+    if (label !== null) node.setAttribute('aria-label', label);
+  }
+}
+
+/**
  * Wire up header controls (undo/redo, project path, network clients count).
  * @param {Session} session
  */
@@ -131,6 +165,7 @@ export function setupHeaderControls(session) {
   const pathChip = /** @type {HTMLButtonElement|null} */ (document.getElementById('project-path-chip'));
   const pathLabel = /** @type {HTMLElement|null} */ (pathDisplay?.querySelector('.ppd-path') ?? null);
   const newWindowBtn = /** @type {HTMLButtonElement|null} */ (document.getElementById('project-new-window-button'));
+  localizeHeaderMarkup();
 
   /** @type {Conversation|null} */
   let currentConversation = null;

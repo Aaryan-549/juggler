@@ -33,11 +33,12 @@ import {
   customProvidersSetKey,
 } from '../../services/ops-api.js';
 import providersCache from '../../services/providers-cache.js';
-import { extractErrorMessage } from '../../../sdk/lib/error-utils.js';
+import { errorText } from '../../../sdk/lib/error-utils.js';
 import { showConfirm } from '../modal-dialog.js';
 import { CHECK_SVG } from '../../utils/icons.js';
 import { escapeHtml } from '../../../sdk/lib/html.js';
 import { t } from '../../../sdk/lib/i18n.js';
+import { providerAuthHint } from '../../utils/provider-text.js';
 
 /**
  * The id rule, mirroring the server's. An id becomes a provider id, a DOM
@@ -229,7 +230,7 @@ export function buildEndpointCard(endpoint, ctx) {
 
     const provider = endpoint.registered ? ctx.providerFor(endpoint.providerId) : null;
     problem.textContent = endpoint.enabled
-      ? (endpoint.error || (provider && !provider.available ? (provider.authHint || '') : ''))
+      ? (endpoint.error || (provider && !provider.available ? providerAuthHint(provider) : ''))
       : '';
 
     if (!provider) {
@@ -267,7 +268,7 @@ export function buildEndpointCard(endpoint, ctx) {
       refresh({ remodel });
       return true;
     } catch (error) {
-      setStatus(t('Couldn’t save. {error}', { error: extractErrorMessage(error) }), 'error');
+      setStatus(t('Couldn’t save. {error}', { error: errorText(error) }), 'error');
       return false;
     }
   };
@@ -566,7 +567,7 @@ function buildKeyField(endpoint, ctx) {
       refresh();
       ctx.applyEndpoints(endpoints);
     } catch (error) {
-      field.setStatus(t('Couldn’t save the key. {error}', { error: extractErrorMessage(error) }), 'error');
+      field.setStatus(t('Couldn’t save the key. {error}', { error: errorText(error) }), 'error');
     }
   };
 
@@ -620,7 +621,7 @@ function buildRemoveRow(endpoint, ctx) {
       ctx.onRemoved(endpoints);
     } catch (error) {
       remove.disabled = false;
-      ctx.reportError(t('Couldn’t remove “{name}”. {error}', { name: label, error: extractErrorMessage(error) }));
+      ctx.reportError(t('Couldn’t remove “{name}”. {error}', { name: label, error: errorText(error) }));
     }
   });
 
@@ -714,7 +715,7 @@ export function buildAddEndpointForm(ctx) {
       ctx.onAdded(endpoints);
     } catch (error) {
       add.disabled = false;
-      urlField.setStatus(t('Couldn’t add it. {error}', { error: extractErrorMessage(error) }), 'error');
+      urlField.setStatus(t('Couldn’t add it. {error}', { error: errorText(error) }), 'error');
     }
   });
 

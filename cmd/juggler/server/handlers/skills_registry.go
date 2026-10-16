@@ -11,11 +11,13 @@ import (
 	"path"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"juggler/cmd/juggler/core"
+	"juggler/cmd/juggler/msg"
 
 	"github.com/gorilla/mux"
 )
@@ -448,17 +450,17 @@ func (api *SkillsRegistryAPI) HandleCatalogEntry(w http.ResponseWriter, r *http.
 	skillPath := r.URL.Query().Get("path")
 	src, ok := api.sourceByID(sourceID)
 	if !ok {
-		WriteError(w, r, http.StatusBadRequest, fmt.Sprintf("unknown source %q", sourceID))
+		WriteMessageError(w, r, http.StatusBadRequest, msg.New("unknown source {source}", "source", strconv.Quote(sourceID)))
 		return
 	}
 	cat := api.loadCatalog(src.ID)
 	if cat == nil {
-		WriteError(w, r, http.StatusNotFound, "source not fetched yet")
+		WriteMessageError(w, r, http.StatusNotFound, msg.New("source not fetched yet"))
 		return
 	}
 	entry, ok := findEntry(cat, skillPath)
 	if !ok {
-		WriteError(w, r, http.StatusNotFound, fmt.Sprintf("skill %q not found in %s", skillPath, sourceID))
+		WriteMessageError(w, r, http.StatusNotFound, msg.New("skill {skill} not found in {source}", "skill", strconv.Quote(skillPath), "source", sourceID))
 		return
 	}
 	prov := buildInstalledIndex(core.InstalledSkillRecords())
@@ -515,41 +517,41 @@ func (api *SkillsRegistryAPI) HandleInstall(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if !core.ValidSkillName(req.TargetName) {
-		WriteError(w, r, http.StatusBadRequest, "invalid target name (lowercase letters, digits, single hyphens; max 64 chars)")
+		WriteMessageError(w, r, http.StatusBadRequest, msg.New("invalid target name (lowercase letters, digits, single hyphens; max 64 chars)"))
 		return
 	}
 	if req.Target != "juggler" && req.Target != "agents" {
-		WriteError(w, r, http.StatusBadRequest, `target must be "juggler" or "agents"`)
+		WriteMessageError(w, r, http.StatusBadRequest, msg.New(`target must be "juggler" or "agents"`))
 		return
 	}
 	rootDir, ok := api.skills.resolveRootDir(req.Scope, req.Target)
 	if !ok {
-		WriteError(w, r, http.StatusBadRequest, fmt.Sprintf("unknown or unavailable root %q/%q", req.Scope, req.Target))
+		WriteMessageError(w, r, http.StatusBadRequest, msg.New("unknown or unavailable root {scope}/{target}", "scope", strconv.Quote(req.Scope), "target", strconv.Quote(req.Target)))
 		return
 	}
 	src, ok := api.sourceByID(req.Source)
 	if !ok {
-		WriteError(w, r, http.StatusBadRequest, fmt.Sprintf("unknown source %q", req.Source))
+		WriteMessageError(w, r, http.StatusBadRequest, msg.New("unknown source {source}", "source", strconv.Quote(req.Source)))
 		return
 	}
 	cat := api.loadCatalog(src.ID)
 	if cat == nil {
-		WriteError(w, r, http.StatusBadRequest, "source not fetched yet")
+		WriteMessageError(w, r, http.StatusBadRequest, msg.New("source not fetched yet"))
 		return
 	}
 	entry, ok := findEntry(cat, req.Path)
 	if !ok {
-		WriteError(w, r, http.StatusNotFound, fmt.Sprintf("skill %q not found in %s", req.Path, req.Source))
+		WriteMessageError(w, r, http.StatusNotFound, msg.New("skill {skill} not found in {source}", "skill", strconv.Quote(req.Path), "source", req.Source))
 		return
 	}
 
 	blobs := installBlobs(cat.Tree, entry.Path)
 	if len(blobs) == 0 {
-		WriteError(w, r, http.StatusBadRequest, "skill has no installable files")
+		WriteMessageError(w, r, http.StatusBadRequest, msg.New("skill has no installable files"))
 		return
 	}
 	if len(blobs) > core.MaxSkillFileListing {
-		WriteError(w, r, http.StatusBadRequest, fmt.Sprintf("skill has too many files (%d > %d)", len(blobs), core.MaxSkillFileListing))
+		WriteMessageError(w, r, http.StatusBadRequest, msg.New("skill has too many files ({count} > {max})", "count", len(blobs), "max", core.MaxSkillFileListing))
 		return
 	}
 	var total int64
@@ -557,18 +559,20 @@ func (api *SkillsRegistryAPI) HandleInstall(w http.ResponseWriter, r *http.Reque
 		total += b.Size
 	}
 	if total > maxSkillTotalSize {
-		WriteError(w, r, http.StatusBadRequest, fmt.Sprintf("skill too large (%d bytes > %d)", total, maxSkillTotalSize))
+		WriteMessageError(w, r, http.StatusBadRequest, msg.New("skill too large ({size} bytes > {max})", "size", total, "max", maxSkillTotalSize))
 		return
 	}
 
 	finalDir, ok := core.SkillDir(rootDir, req.TargetName)
 	if !ok {
-		WriteError(w, r, http.StatusBadRequest, "invalid install path")
+		WriteMessageError(w, r, http.StatusBadRequest, msg.New("invalid install path"))
 		return
 	}
 	if existing, clash := core.CollidingSkillDir(rootDir, req.TargetName); clash && req.Mode != "overwrite" {
+		clash := msg.New("a skill named {name} already exists here", "name", strconv.Quote(existing))
 		WriteJSON(w, r, http.StatusConflict, map[string]any{
-			"error":     fmt.Sprintf("a skill named %q already exists here", existing),
+			"error":     clash.English(),
+			"message":   clash,
 			"collision": true,
 			"existing":  existing,
 		})
@@ -577,7 +581,7 @@ func (api *SkillsRegistryAPI) HandleInstall(w http.ResponseWriter, r *http.Reque
 
 	inst, err := core.BeginSkillInstall(rootDir)
 	if err != nil {
-		WriteError(w, r, http.StatusInternalServerError, err.Error())
+		WriteErr(w, r, http.StatusInternalServerError, err)
 		return
 	}
 	defer inst.Abort() // no-op after a successful commit; cleans up on any error
@@ -585,16 +589,16 @@ func (api *SkillsRegistryAPI) HandleInstall(w http.ResponseWriter, r *http.Reque
 	for _, b := range blobs {
 		rel := strings.TrimPrefix(b.Path, entry.Path+"/")
 		if !inst.Accepts(rel) {
-			WriteError(w, r, http.StatusBadRequest, "skill contains an unsafe path: "+rel)
+			WriteMessageError(w, r, http.StatusBadRequest, msg.New("skill contains an unsafe path: {path}", "path", rel))
 			return
 		}
 		data, err := api.fetcher.Blob(r.Context(), src.Repo, cat.Commit, b.Path)
 		if err != nil {
-			WriteError(w, r, http.StatusBadGateway, "could not fetch "+rel+": "+err.Error())
+			WriteMessageError(w, r, http.StatusBadGateway, msg.New("could not fetch {path}: {detail}", "path", rel, "detail", err.Error()))
 			return
 		}
 		if err := inst.WriteFile(rel, data, b.Mode == "100755"); err != nil {
-			WriteError(w, r, http.StatusInternalServerError, err.Error())
+			WriteErr(w, r, http.StatusInternalServerError, err)
 			return
 		}
 	}
@@ -602,7 +606,7 @@ func (api *SkillsRegistryAPI) HandleInstall(w http.ResponseWriter, r *http.Reque
 	// Overwrite mode is the only way a collision reaches here, so replacing
 	// whatever is at finalDir is what was asked for.
 	if err := inst.Commit(finalDir); err != nil {
-		WriteError(w, r, http.StatusInternalServerError, err.Error())
+		WriteErr(w, r, http.StatusInternalServerError, err)
 		return
 	}
 
@@ -635,21 +639,21 @@ func (api *SkillsRegistryAPI) HandleUninstall(w http.ResponseWriter, r *http.Req
 	vars := mux.Vars(r)
 	scope, source, name := vars["scope"], vars["source"], vars["name"]
 	if !core.ValidSkillName(name) {
-		WriteError(w, r, http.StatusBadRequest, "invalid skill name")
+		WriteMessageError(w, r, http.StatusBadRequest, msg.New("invalid skill name"))
 		return
 	}
 	rootDir, ok := api.skills.resolveRootDir(scope, source)
 	if !ok {
-		WriteError(w, r, http.StatusBadRequest, fmt.Sprintf("unknown or unavailable source %q/%q", scope, source))
+		WriteMessageError(w, r, http.StatusBadRequest, msg.New("unknown or unavailable source {scope}/{source}", "scope", strconv.Quote(scope), "source", strconv.Quote(source)))
 		return
 	}
 	dir, ok := core.SkillDir(rootDir, name)
 	if !ok {
-		WriteError(w, r, http.StatusBadRequest, "invalid skill path")
+		WriteMessageError(w, r, http.StatusBadRequest, msg.New("invalid skill path"))
 		return
 	}
 	if err := core.UninstallSkill(dir); err != nil {
-		WriteError(w, r, http.StatusInternalServerError, err.Error())
+		WriteErr(w, r, http.StatusInternalServerError, err)
 		return
 	}
 	WriteJSON(w, r, 0, map[string]bool{"deleted": true})
@@ -695,17 +699,17 @@ func (api *SkillsRegistryAPI) HandleRestoreDefaultRegistry(w http.ResponseWriter
 		}
 	}
 	if seed == nil {
-		WriteError(w, r, http.StatusNotFound, fmt.Sprintf("unknown default source %q", id))
+		WriteMessageError(w, r, http.StatusNotFound, msg.New("unknown default source {source}", "source", strconv.Quote(id)))
 		return
 	}
 	if _, exists := api.sourceByID(id); exists {
-		WriteError(w, r, http.StatusConflict, fmt.Sprintf("source %q is already configured", id))
+		WriteMessageError(w, r, http.StatusConflict, msg.New("source {source} is already configured", "source", strconv.Quote(id)))
 		return
 	}
 	stored, _ := core.ReadSkillSources()
 	stored = append(stored, *seed)
 	if err := core.WriteSkillSources(stored); err != nil {
-		WriteError(w, r, http.StatusInternalServerError, "could not save source: "+err.Error())
+		WriteMessageError(w, r, http.StatusInternalServerError, msg.New("could not save source: {detail}", "detail", err.Error()))
 		return
 	}
 	WriteJSON(w, r, 0, *seed)
@@ -724,12 +728,12 @@ func (api *SkillsRegistryAPI) HandleAddRegistry(w http.ResponseWriter, r *http.R
 	}
 	repo, ref, err := parseRepoRef(req.URL)
 	if err != nil {
-		WriteError(w, r, http.StatusBadRequest, err.Error())
+		WriteErr(w, r, http.StatusBadRequest, err)
 		return
 	}
 	id := sourceIDFromRepo(repo)
 	if _, exists := api.sourceByID(id); exists {
-		WriteError(w, r, http.StatusConflict, fmt.Sprintf("source %q is already configured", id))
+		WriteMessageError(w, r, http.StatusConflict, msg.New("source {source} is already configured", "source", strconv.Quote(id)))
 		return
 	}
 	label := strings.TrimSpace(req.Label)
@@ -741,7 +745,7 @@ func (api *SkillsRegistryAPI) HandleAddRegistry(w http.ResponseWriter, r *http.R
 	stored, _ := core.ReadSkillSources()
 	stored = append(stored, src)
 	if err := core.WriteSkillSources(stored); err != nil {
-		WriteError(w, r, http.StatusInternalServerError, "could not save source: "+err.Error())
+		WriteMessageError(w, r, http.StatusInternalServerError, msg.New("could not save source: {detail}", "detail", err.Error()))
 		return
 	}
 	WriteJSON(w, r, 0, src)
@@ -752,7 +756,7 @@ func (api *SkillsRegistryAPI) HandleAddRegistry(w http.ResponseWriter, r *http.R
 func (api *SkillsRegistryAPI) HandleDeleteRegistry(w http.ResponseWriter, r *http.Request) {
 	id := mux.Vars(r)["id"]
 	if _, ok := api.sourceByID(id); !ok {
-		WriteError(w, r, http.StatusNotFound, fmt.Sprintf("unknown source %q", id))
+		WriteMessageError(w, r, http.StatusNotFound, msg.New("unknown source {source}", "source", strconv.Quote(id)))
 		return
 	}
 	stored, _ := core.ReadSkillSources()
@@ -763,7 +767,7 @@ func (api *SkillsRegistryAPI) HandleDeleteRegistry(w http.ResponseWriter, r *htt
 		}
 	}
 	if err := core.WriteSkillSources(kept); err != nil {
-		WriteError(w, r, http.StatusInternalServerError, "could not save sources: "+err.Error())
+		WriteMessageError(w, r, http.StatusInternalServerError, msg.New("could not save sources: {detail}", "detail", err.Error()))
 		return
 	}
 	_ = core.RemoveSkillCatalogCache(id)
@@ -863,7 +867,7 @@ func slugSkillName(name string) (string, bool) {
 func parseRepoRef(input string) (repo, ref string, err error) {
 	s := strings.TrimSpace(input)
 	if s == "" {
-		return "", "", fmt.Errorf("empty repository")
+		return "", "", msg.NewError("empty repository")
 	}
 	s = strings.TrimSuffix(s, "/")
 	s = strings.TrimPrefix(s, "https://")
@@ -873,11 +877,11 @@ func parseRepoRef(input string) (repo, ref string, err error) {
 	s = strings.TrimSuffix(s, ".git")
 	parts := strings.Split(s, "/")
 	if len(parts) < 2 || parts[0] == "" || parts[1] == "" {
-		return "", "", fmt.Errorf("expected a github.com/owner/repo URL or owner/repo")
+		return "", "", msg.NewError("expected a github.com/owner/repo URL or owner/repo")
 	}
 	repo = parts[0] + "/" + parts[1]
 	if !repoPattern.MatchString(repo) {
-		return "", "", fmt.Errorf("invalid repository %q", repo)
+		return "", "", msg.NewError("invalid repository {repo}", "repo", strconv.Quote(repo))
 	}
 	// github.com/owner/repo/tree/<ref>/... → capture ref.
 	if len(parts) >= 4 && parts[2] == "tree" {

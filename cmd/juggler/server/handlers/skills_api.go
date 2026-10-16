@@ -5,10 +5,11 @@
 package handlers
 
 import (
-	"fmt"
 	"net/http"
+	"strconv"
 
 	"juggler/cmd/juggler/core"
+	"juggler/cmd/juggler/msg"
 
 	"github.com/gorilla/mux"
 )
@@ -60,22 +61,22 @@ func (api *SkillsAPI) HandleGet(w http.ResponseWriter, r *http.Request) {
 	scope, source, name := vars["scope"], vars["source"], vars["name"]
 
 	if !core.ValidSkillName(name) {
-		WriteError(w, r, http.StatusBadRequest, "invalid skill name")
+		WriteMessageError(w, r, http.StatusBadRequest, msg.New("invalid skill name"))
 		return
 	}
 	rootDir, ok := api.resolveRootDir(scope, source)
 	if !ok {
-		WriteError(w, r, http.StatusBadRequest, fmt.Sprintf("unknown or unavailable source %q/%q", scope, source))
+		WriteMessageError(w, r, http.StatusBadRequest, msg.New("unknown or unavailable source {scope}/{source}", "scope", strconv.Quote(scope), "source", strconv.Quote(source)))
 		return
 	}
 	dir, ok := core.SkillDir(rootDir, name)
 	if !ok {
-		WriteError(w, r, http.StatusBadRequest, "invalid skill path")
+		WriteMessageError(w, r, http.StatusBadRequest, msg.New("invalid skill path"))
 		return
 	}
 	body, files, err := core.ReadSkill(dir)
 	if err != nil {
-		WriteError(w, r, http.StatusNotFound, fmt.Sprintf("skill %q not found in %s/%s", name, scope, source))
+		WriteMessageError(w, r, http.StatusNotFound, msg.New("skill {skill} not found in {scope}/{source}", "skill", strconv.Quote(name), "scope", scope, "source", source))
 		return
 	}
 	WriteJSON(w, r, 0, SkillDetail{

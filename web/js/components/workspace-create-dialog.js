@@ -30,7 +30,7 @@ import {
   adoptSetupRow
 } from '../services/workspace-places.js';
 import { provisionWorkspace, provisionLeftBehind, recordProgress } from '../services/workspace-provisioning.js';
-import { extractErrorMessage } from '../../sdk/lib/error-utils.js';
+import { errorText } from '../../sdk/lib/error-utils.js';
 import { t } from '../../sdk/lib/i18n.js';
 import {
   setupButton,
@@ -192,7 +192,7 @@ export function openWorkspaceCreate(session) {
         // whichever of the two it was: a cancel that left a tree on the disk is
         // still a tree on the disk.
         const leftBehind = provisionLeftBehind(failure);
-        const said = controller.signal.aborted ? '' : extractErrorMessage(failure);
+        const said = controller.signal.aborted ? '' : errorText(failure);
         error = [said, leftBehind].filter(Boolean).join(' ');
         render();
       }
@@ -220,7 +220,7 @@ export function openWorkspaceCreate(session) {
         render();
       } catch (failure) {
         if (modal.closed) return;
-        error = extractErrorMessage(failure);
+        error = errorText(failure);
         render();
       }
     };

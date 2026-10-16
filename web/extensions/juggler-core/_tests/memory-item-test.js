@@ -379,6 +379,17 @@ export async function runTests(ctx) {
     assert(MemoryContextItem.mergeOrReplace({}, []) === null, 'no existing → create new');
   });
 
+  // ---- properties panel ----
+
+  await test('the panel note names the file this item reads, not the default path', async () => {
+    const { item, path } = makeItem();
+    const panel = document.createElement('div');
+    await item._renderPanel(panel);
+    const note = panel.querySelector('.memory-panel-note')?.textContent ?? '';
+    assert(note.includes(path), `the note must name ${path}: ${JSON.stringify(note)}`);
+    assert(!note.includes(MemoryContextItem.DEFAULT_PATH), `the note must not name the default path: ${JSON.stringify(note)}`);
+  });
+
   // ---- en-XA: what the user sees is translated, what the model reads is not ----
 
   await test('en-XA: the card, every row, both panels translated; the model\u2019s result English', async () => {
@@ -448,7 +459,7 @@ export async function runTests(ctx) {
       await item._renderPanel(full);
       for (const [name, panel] of /** @type {Array<[string, HTMLElement]>} */ ([['empty', empty], ['one fact', full]])) {
         const note = panel.querySelector('.memory-panel-note')?.textContent ?? '';
-        shown[`store ${name}, note`] = note.replace('.juggler/MEMORY.md', '');
+        shown[`store ${name}, note`] = note.replace(item.data.path, '');
         assertPseudoLocalized(panel, { skip: '.memory-panel-note, .memory-date, .memory-text', atLeast: name === 'empty' ? 1 : 0, where: `store, ${name}` });
       }
       const del = full.querySelector('.memory-delete');

@@ -25,6 +25,8 @@
  * @property {number} [written] - Bytes downloaded so far.
  * @property {number} [total] - Total bytes to download (<=0 ⇒ indeterminate).
  * @property {string} [error] - Last error message, when state === 'error'.
+ * @property {import('./http.js').ServerMessage} [errorMessage] - `error` as a
+ *   message, for serverText(), when the failure has one.
  * @property {string} [errorStage] - Which phase produced `error`: check |
  *   download | verify | install.
  * @property {boolean} [appManagedServer] - Whether this window's server was
@@ -33,8 +35,8 @@
 
 import { windowControlURL } from '../../sdk/lib/window-control.js';
 import { extractErrorMessage } from '../../sdk/lib/error-utils.js';
-import { fetchJson, HttpError } from './http.js';
-import { t } from '../../sdk/lib/i18n.js';
+import { fetchJson, HttpError, bodyServerMessage } from './http.js';
+import { t, serverText } from '../../sdk/lib/i18n.js';
 
 /** The "no in-app updater" answer used whenever there is no native host. */
 const ABSENT = /** @type {UpdaterState} */ ({ present: false });
@@ -112,8 +114,10 @@ export async function requestRestart({ force = false } = {}) {
     }
     const body = err.body && typeof err.body === 'object' ? err.body : {};
     if (err.status === 409) {
-      return { status: 'busy', busy: body.busy, message: body.message };
+      // messageText is the prompt as a message, for the viewer's language;
+      // message is its English.
+      return { status: 'busy', busy: body.busy, message: serverText(bodyServerMessage({ message: body.messageText }), body.message) };
     }
-    return { status: 'error', message: body.error || t('Restart failed (HTTP {status})', { status: err.status }) };
+    return { status: 'error', message: serverText(bodyServerMessage(body), body.error) || t('Restart failed (HTTP {status})', { status: err.status }) };
   }
 }

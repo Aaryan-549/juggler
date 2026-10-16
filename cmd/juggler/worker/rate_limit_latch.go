@@ -5,8 +5,9 @@
 package worker
 
 import (
-	"fmt"
 	"time"
+
+	"juggler/cmd/juggler/msg"
 )
 
 // The rate-limit latch: what one thread learns about an account-level usage cap,
@@ -167,25 +168,29 @@ func (w *ConversationWorker) mutateRateLimits(edit func(next map[string]time.Tim
 // conversation that has gone quiet for reasons it never explains, and because
 // the cap is ours to work around, not the user's to obey: sending again lifts it
 // and costs one request to find out.
-func rateLimitReport(providerName string, until, now time.Time, detail string) string {
-	if providerName == "" {
-		providerName = "The provider"
-	}
-	return fmt.Sprintf("%s has reached its usage limit. It resets %s, %s.\nNothing here will call it again until then — send again to try anyway.\n\n%s",
-		providerName, approximateDuration(until.Sub(now)), formatResetTime(until, now), detail)
+func rateLimitReport(providerName string, until, now time.Time, detail string) msg.Message {
+	wait, count := approximateDuration(until.Sub(now))
+	day, date, clock := resetTime(until, now)
+	return msg.New("{hasProvider, select, yes {{provider}} other {The provider}} has reached its usage limit. "+
+		"It resets {wait, select, underMinute {in under a minute} minute {in about a minute} minutes {in about {count} minutes} hours {in about {count} hours} other {in about {count} days}}, "+
+		"{day, select, today {at {clock}} tomorrow {tomorrow at {clock}} other {on {date} at {clock}}}.\n"+
+		"Nothing here will call it again until then — send again to try anyway.\n\n{detail}",
+		"hasProvider", yesNo(providerName != ""), "provider", providerName,
+		"wait", wait, "count", count, "day", day, "date", date, "clock", clock, "detail", detail)
 }
 
-// formatResetTime renders when a cap lifts in the terms of whoever is reading:
-// the clock time, carrying the day only when it is not today's.
-func formatResetTime(until, now time.Time) string {
-	clock := until.Format("15:04")
+// resetTime says when a cap lifts in the terms of whoever is reading: the
+// clock time, with the day — "today", "tomorrow", or "other" and its date —
+// that the report says only when it is not today's.
+func resetTime(until, now time.Time) (day, date, clock string) {
+	clock = until.Format("15:04")
 	switch days := daysBetween(now, until); {
 	case days <= 0:
-		return "at " + clock
+		return "today", "", clock
 	case days == 1:
-		return "tomorrow at " + clock
+		return "tomorrow", "", clock
 	default:
-		return until.Format("on 2 Jan at ") + clock
+		return "other", until.Format("2 Jan"), clock
 	}
 }
 
@@ -202,17 +207,20 @@ func daysBetween(now, until time.Time) int {
 // say. The precise figure is already in the clock time beside it; what this
 // answers is "is this worth waiting for", where four hours and four hours two
 // minutes are the same answer.
-func approximateDuration(d time.Duration) string {
+//
+// It returns the unit the report's wording selects on — "underMinute",
+// "minute", "minutes", "hours" or "days" — and the count of it, 0 for the first two.
+func approximateDuration(d time.Duration) (unit string, count int) {
 	switch {
 	case d < time.Minute:
-		return "in under a minute"
+		return "underMinute", 0
 	case d < 2*time.Minute:
-		return "in about a minute"
+		return "minute", 0
 	case d < 90*time.Minute:
-		return fmt.Sprintf("in about %d minutes", int((d+30*time.Second)/time.Minute))
+		return "minutes", int((d + 30*time.Second) / time.Minute)
 	case d < 36*time.Hour:
-		return fmt.Sprintf("in about %d hours", int((d+30*time.Minute)/time.Hour))
+		return "hours", int((d + 30*time.Minute) / time.Hour)
 	default:
-		return fmt.Sprintf("in about %d days", int((d+12*time.Hour)/(24*time.Hour)))
+		return "days", int((d + 12*time.Hour) / (24 * time.Hour))
 	}
 }

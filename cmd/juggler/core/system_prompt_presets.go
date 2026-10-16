@@ -9,8 +9,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
+	"juggler/cmd/juggler/msg"
 	"juggler/internal/userpaths"
 )
 
@@ -63,10 +65,10 @@ func (s *SystemPromptPresetStore) Load() ([]SystemPromptPreset, string, error) {
 func (s *SystemPromptPresetStore) Create(name, content string) (SystemPromptPreset, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
-		return SystemPromptPreset{}, fmt.Errorf("preset name is required")
+		return SystemPromptPreset{}, msg.NewError("preset name is required")
 	}
 	if strings.TrimSpace(content) == "" {
-		return SystemPromptPreset{}, fmt.Errorf("preset content is required")
+		return SystemPromptPreset{}, msg.NewError("preset content is required")
 	}
 
 	f, err := s.read()
@@ -113,10 +115,10 @@ func (s *SystemPromptPresetStore) Delete(id string) error {
 func (s *SystemPromptPresetStore) Update(id, name, content string) (SystemPromptPreset, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
-		return SystemPromptPreset{}, fmt.Errorf("preset name is required")
+		return SystemPromptPreset{}, msg.NewError("preset name is required")
 	}
 	if strings.TrimSpace(content) == "" {
-		return SystemPromptPreset{}, fmt.Errorf("preset content is required")
+		return SystemPromptPreset{}, msg.NewError("preset content is required")
 	}
 
 	f, err := s.read()
@@ -134,7 +136,7 @@ func (s *SystemPromptPresetStore) Update(id, name, content string) (SystemPrompt
 			return f.Presets[i], nil
 		}
 	}
-	return SystemPromptPreset{}, fmt.Errorf("preset %q not found", id)
+	return SystemPromptPreset{}, msg.NewError("preset {id} not found", "id", strconv.Quote(id))
 }
 
 // SetDefault records which preset id new conversations are seeded from. The id

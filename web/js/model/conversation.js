@@ -3,16 +3,13 @@
 //   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
 
 import ResponseHandler from '../services/response-handler.js';
-import wsService from '../services/websocket.js';
 import providersCache from '../services/providers-cache.js';
 import recentModels from '../services/recent-models.js';
-import { AbortError } from 'juggler/strategy-type';
 import { DEFAULT_TRUNCATION_BUDGET } from 'juggler/context-item';
 import { CHARS_PER_TOKEN } from '../utils/token-estimate.js';
 import ConversationDocument from './conversation-document.js';
 import slashCommandHandler from '../services/slash-command-handler.js';
 import workerManager from '../services/worker-manager.js';
-import toolExecutor from '../services/tool-executor.js';
 import { extractErrorMessage } from '../../sdk/lib/error-utils.js';
 import { isConversationalItemType } from '../../sdk/lib/message.js';
 import MessageThread from './message-thread.js';
@@ -2086,13 +2083,6 @@ class Conversation {
   }
 
   /**
-   * Handle cancellation
-   *     */
-  _handleCancellation() {
-    this._finishProcessing();
-  }
-
-  /**
    * Handle retry notification for this conversation
    * @param {number} attempt - Current retry attempt
    * @param {number} maxRetries - Maximum retries
@@ -2176,95 +2166,9 @@ class Conversation {
       return;
     }
 
-    // Detect cancellation (case-insensitive, various formats)
-    const isCancellation = error === 'Request cancelled by user' ||
-            (typeof error === 'string' && error.toLowerCase().includes('cancel'));
-    if (isCancellation) {
-      this._handleCancellation();
-    } else {
-      this._handleError(error);
-    }
-  }
-
-  /**
-   * Handle shouldContinue request from provider (iteration control callback)
-   * This is called when the backend sends a should_continue_request message,
-   * which happens after each turn in the tool execution loop.
-   * @param {{requestId: string, turnNumber: number, toolCallCount: number}} data - Request data
-   */
-  async handleShouldContinueRequest(data) {
-    const { requestId } = data;
-    // Turns are driven by the Go worker; the viewer applies no per-turn
-    // iteration control, so always continue.
-    wsService.sendShouldContinueResponse(requestId, true, '');
-  }
-
-  /**
-   * Handle tool execution request from claudecode provider.
-   * This is called when the backend sends a tool_use_request message,
-   * which happens when claudecode's MCP handler receives a tools/call.
-   *
-   * Uses ToolExecutor for routing - same code path as workers and strategy loop.
-   * @param {{requestId: string, toolUseId: string, toolName: string, toolInput: {[key: string]: unknown}}} data - Tool request data
-   */
-  async handleToolUseRequest(data) {
-    const { requestId, toolUseId, toolName, toolInput } = data;
-
-    // Ensure spinner is showing during claudecode tool execution
-    if (!this.isProcessing) {
-      this._llmState.start(this.id);
-    }
-    this._llmState.updateStatus(this.id, 'processing_tools');
-
-    try {
-      // Execute via ToolExecutor - handles routing, approval flow internally.
-      // onApproved fires when the user approves so the server can start its execution timeout.
-      const result = await toolExecutor.executeToolCall(
-        { id: toolUseId, name: toolName, input: toolInput || {} },
-        this._responseHandler,
-        this._rootMessageThread,
-        { onApproved: () => wsService.sendToolStarted(requestId) }
-      );
-
-      // Extract content and status from result
-      /** @type {'success'|'error'|'cancelled'} */
-      let resultStatus = 'success';
-      let content = 'Tool executed successfully';
-      let category = '';
-
-      if (result.resultStatus) {
-        resultStatus = /** @type {'success'|'error'|'cancelled'} */ (result.resultStatus);
-      } else if (result.success === false) {
-        resultStatus = 'error';
-      }
-
-      if (result.content) {
-        content = result.content;
-      } else if (!result.success && result.error) {
-        content = /** @type {string} */ (result.error);
-      }
-
-      if (result.category) {
-        category = /** @type {string} */ (result.category);
-      }
-
-      // Send response back to server
-      wsService.sendToolResponse(requestId, content, resultStatus, category);
-    } catch (error) {
-      // AbortError means user cancelled - this vetoes continuation
-      if (error instanceof AbortError) {
-        wsService.sendToolResponse(requestId, '__ABORT__', 'cancelled', '');
-        return;
-      }
-
-      // Send regular error response back to server
-      wsService.sendToolResponse(
-        requestId,
-        extractErrorMessage(error),
-        'error',
-        ''
-      );
-    }
+    // Every error frame is a failure: no producer reports a cancellation
+    // through this path, so the text is never inspected for one.
+    this._handleError(error);
   }
 
   /**
@@ -2514,7 +2418,7 @@ class Conversation {
    */
   addCancellationMessage(reason = 'stop') {
     this.stopProcessing(reason);
-    this._handleCancellation();
+    this._finishProcessing();
   }
 
   // ========================================================================
@@ -2728,10 +2632,10 @@ class Conversation {
     const labelled = named ? 'yes' : 'no';
     if (reason === 'closed') {
       const by = closedBy ? displayConversationName(closedBy) : '';
-      return t("Can't send: the workspace {labelled, select, yes {{named}} other {it}} was finished with{finisher, select, yes { by {closedBy}} other {}}. Use the banner above the transcript to say where this conversation should work.",
+      return t("Can't send: {finisher, select, yes {{closedBy} finished with {labelled, select, yes {the workspace {named}} other {the workspace this conversation works in}}.} other {{labelled, select, yes {the workspace {named}} other {the workspace this conversation works in}} was finished with.}} Use the banner above the transcript to say where this conversation should work.",
         { labelled, named, finisher: by ? 'yes' : 'no', closedBy: by });
     }
-    return t("Can't send: the workspace {labelled, select, yes {{named}} other {it}} is not where it was. Use the banner above the transcript to say where this conversation should work.",
+    return t("Can't send: {labelled, select, yes {the workspace {named}} other {the workspace this conversation works in}} is not where it was. Use the banner above the transcript to say where this conversation should work.",
       { labelled, named });
   }
 

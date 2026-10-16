@@ -112,5 +112,22 @@ export async function runTests() {
     assert(raw.length === 0, `plain English under en-XA: ${JSON.stringify(raw)}`);
   });
 
+  await run('the language name is drawn as text, in the header and in the code class', async () => {
+    const LANG = 'x"><b class="lang-leak">1</b>';
+    const block = document.createElement('code-block');
+    block.setAttribute('language', LANG);
+    block.setAttribute('code', '2');
+    try {
+      document.body.appendChild(block);
+      assert(!block.querySelector('.lang-leak'), 'the language name became markup');
+      assert(block.querySelector('.language')?.textContent === LANG,
+        `the header shows ${JSON.stringify(block.querySelector('.language')?.textContent)}`);
+      assert(block.querySelector('pre code')?.getAttribute('class') === `syntax-highlight language-${LANG}`,
+        `the code class is ${JSON.stringify(block.querySelector('pre code')?.getAttribute('class'))}`);
+    } finally {
+      block.remove();
+    }
+  });
+
   return { passed, failed, errors };
 }

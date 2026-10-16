@@ -251,18 +251,18 @@ export async function storeMcpImages(blocks, { upload, conversationId, signal })
     }
     const mime = typeof rest.mimeType === 'string' ? rest.mimeType : '';
     if (!ATTACHABLE_IMAGE_TYPES.has(mime)) {
-      out.push({ ...rest, note: `not a type the model can be sent (${mime || 'unknown'})` });
+      out.push({ ...rest, note: markUntranslated(`not a type the model can be sent (${mime || 'unknown'})`) });
     } else if (typeof data !== 'string' || !conversationId) {
-      out.push({ ...rest, note: 'nowhere to keep it' });
+      out.push({ ...rest, note: markUntranslated('nowhere to keep it') });
     } else if (Math.floor(data.length * 3 / 4) > MAX_ATTACHED_IMAGE_BYTES) {
-      out.push({ ...rest, note: 'too large to attach' });
+      out.push({ ...rest, note: markUntranslated('too large to attach') });
     } else {
       try {
         const ref = await upload(conversationId, data, mime, signal);
         images.push(ref);
         out.push({ ...rest, attached: ref.id });
       } catch (err) {
-        out.push({ ...rest, note: `could not be stored: ${err instanceof Error ? err.message : String(err)}` });
+        out.push({ ...rest, note: markUntranslated(`could not be stored: ${err instanceof Error ? err.message : String(err)}`) });
       }
     }
   }
@@ -325,19 +325,6 @@ class McpToolContextItem extends ContextItem {
    */
   static getToolDefinitions() {
     return discoveredTools.map(buildToolDefinition);
-  }
-
-  /**
-   * Human display title for the tool-action, e.g. "github: create_issue".
-   * @override
-   * @param {Record<string, unknown>} _toolInput
-   * @param {string} toolName - The (resolved) LLM tool name
-   * @returns {string} Result value
-   */
-  static getToolActionTitle(_toolInput, toolName) {
-    const info = toolByLLMName.get(toolName);
-    if (!info) return toolName;
-    return `${info.server}: ${info.title || info.name}`;
   }
 
   /**
@@ -495,13 +482,13 @@ class McpToolContextItem extends ContextItem {
     switch (b?.type) {
       case 'image': {
         const what = b.mimeType || 'image';
-        if (ref) return `[image: ${what}${ref.width && ref.height ? `, ${ref.width}\u00d7${ref.height}` : ''}, attached below]`;
-        return `[image: ${what}${b.note ? `, not attached: ${b.note}` : ''}]`;
+        if (ref) return markUntranslated(`[image: ${what}${ref.width && ref.height ? `, ${ref.width}\u00d7${ref.height}` : ''}, attached below]`);
+        return markUntranslated(`[image: ${what}${b.note ? `, not attached: ${b.note}` : ''}]`);
       }
-      case 'audio': return `[audio: ${b.mimeType || 'audio'}]`;
-      case 'resource': return `[resource: ${b.uri || ''}]`;
-      case 'resource_link': return `[resource link: ${b.uri || ''}${b.name ? ` (${b.name})` : ''}]`;
-      default: return '[content]';
+      case 'audio': return markUntranslated(`[audio: ${b.mimeType || 'audio'}]`);
+      case 'resource': return markUntranslated(`[resource: ${b.uri || ''}]`);
+      case 'resource_link': return markUntranslated(`[resource link: ${b.uri || ''}${b.name ? ` (${b.name})` : ''}]`);
+      default: return markUntranslated('[content]');
     }
   }
 

@@ -3,7 +3,7 @@
 //   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
 
 import FindController from '../services/find-controller.js';
-import { isMac } from '../services/key-shortcut-manager.js';
+import { isMac, formatBindingLabel } from '../services/key-shortcut-manager.js';
 import { EXPAND_LESS_SVG, EXPAND_MORE_SVG } from '../utils/icons.js';
 import { t } from '../../sdk/lib/i18n.js';
 import { escapeHtml } from '../../sdk/lib/html.js';
@@ -246,17 +246,20 @@ class FindBar {
     const next = escapeHtml(t('Next match'));
     const matchCase = escapeHtml(t('Match case'));
     const wholeWord = escapeHtml(t('Match whole word'));
-    // The key caps are the same glyphs on every platform; only the words around
-    // them are translated.
+    // The keys are named as every other key hint names them on this platform.
+    const mac = isMac();
+    const prevKeys = formatBindingLabel({ key: 'Enter', shift: true }, mac);
+    const nextKeys = formatBindingLabel({ key: 'Enter' }, mac);
+    const closeKey = formatBindingLabel({ key: 'Escape' }, mac);
     el.innerHTML = `
       <input type="text" class="find-bar__input field-input" aria-label="${find}"
         placeholder="${find}" spellcheck="false" autocomplete="off" />
       <span class="find-bar__counter" aria-live="polite"></span>
-      <button type="button" class="find-bar__btn find-bar__prev" aria-label="${prev}" title="${escapeHtml(t('Previous match ({keys})', { keys: '⇧⏎' }))}">${EXPAND_LESS_SVG}</button>
-      <button type="button" class="find-bar__btn find-bar__next" aria-label="${next}" title="${escapeHtml(t('Next match ({keys})', { keys: '⏎' }))}">${EXPAND_MORE_SVG}</button>
+      <button type="button" class="find-bar__btn find-bar__prev" aria-label="${prev}" title="${escapeHtml(t('Previous match ({keys})', { keys: prevKeys }))}">${EXPAND_LESS_SVG}</button>
+      <button type="button" class="find-bar__btn find-bar__next" aria-label="${next}" title="${escapeHtml(t('Next match ({keys})', { keys: nextKeys }))}">${EXPAND_MORE_SVG}</button>
       <button type="button" class="find-bar__btn find-bar__toggle find-bar__case" aria-label="${matchCase}" aria-pressed="false" title="${matchCase}">${escapeHtml(t('Aa', undefined, { context: 'match-case toggle glyph' }))}</button>
       <button type="button" class="find-bar__btn find-bar__toggle find-bar__word" aria-label="${wholeWord}" aria-pressed="false" title="${wholeWord}">${escapeHtml(t('W', undefined, { context: 'whole-word toggle glyph' }))}</button>
-      <button type="button" class="find-bar__btn find-bar__close" aria-label="${escapeHtml(t('Close find'))}" title="${escapeHtml(t('Close ({key})', { key: t('Esc', undefined, { context: 'keyboard key' }) }))}">&#x2715;</button>
+      <button type="button" class="find-bar__btn find-bar__close" aria-label="${escapeHtml(t('Close find'))}" title="${escapeHtml(t('Close ({key})', { key: closeKey }))}">&#x2715;</button>
     `;
 
     const input = /** @type {HTMLInputElement} */ (el.querySelector('.find-bar__input'));

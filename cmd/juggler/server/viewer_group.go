@@ -13,6 +13,7 @@ import (
 
 	"juggler/cmd/juggler/core"
 	"juggler/cmd/juggler/mailbox"
+	"juggler/cmd/juggler/msg"
 	"juggler/cmd/juggler/workspace"
 )
 
@@ -410,9 +411,10 @@ func (b serverBroadcaster) BroadcastConversationFocus(id, from string) {
 // show as a transient toast. It is for background work the user never asked for
 // and cannot see failing — an out-of-band auto-name giving up, say — so it
 // carries no id and demands no response; anything the user must act on belongs
-// in the conversation, not here.
-func (b serverBroadcaster) BroadcastNotice(message string) {
-	b.srv.broadcastToAll(map[string]any{"type": "notice", "message": message})
+// in the conversation, not here. The frame carries the English as `message`
+// and the message itself as `text`, for the client to show translated.
+func (b serverBroadcaster) BroadcastNotice(m msg.Message) {
+	b.srv.broadcastToAll(map[string]any{"type": "notice", "message": m.English(), "text": m})
 }
 
 // BroadcastConversationsReordered publishes a drag-reorder as the full new

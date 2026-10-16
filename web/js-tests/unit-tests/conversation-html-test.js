@@ -16,6 +16,8 @@
  *      images only with `includeFiles`.
  *   4. The dialog that asks: both options start off, it says what is never
  *      included and that nothing is uploaded, and Export saves the page.
+ *   4b. A placeholder name ("Untitled N") is drawn in the UI language in the
+ *      page's title and heading and in the suggested file name.
  *   5. Where it is offered: a tab's right-click menu, beside the Markdown copy,
  *      and `/export`, which asks the host for the dialog.
  * @module unit-tests/conversation-html-test
@@ -27,8 +29,11 @@ import {
   createTestConversation,
   assert
 } from '../utilities/test-helpers.js';
-import { conversationToHtml } from '../../js/utils/conversation-html.js';
+import { conversationToHtml, exportFileName } from '../../js/utils/conversation-html.js';
 import { openConversationExport } from '../../js/components/conversation-export-dialog.js';
+import { displayConversationName } from '../../js/model/conversation-naming.js';
+import { underPseudoLocale } from '../utilities/pseudo-locale.js';
+import { isPseudoLocalized } from '../../sdk/lib/i18n.js';
 import '../../js/components/conversation-bar.js';
 import Session from '../../js/model/session.js';
 import ConversationRegistry from '../../js/model/conversation-registry.js';
@@ -275,6 +280,53 @@ export async function runTests() {
     } finally {
       document.querySelector('.conversation-export-overlay')?.remove();
     }
+  });
+
+  // --- 4b: a placeholder name is shown in the reader's language ---------------
+  // The page and its file are for the user, so a stored "Untitled N" is drawn
+  // as the UI draws it, N kept, in the title, the heading and the file name.
+  await test('placeholder name', async () => {
+    const untitled = { id: conversation.id, name: 'Untitled 3', rootMessageThread: conversation.rootMessageThread };
+    await underPseudoLocale('conversation-html-test', async () => {
+      const doc = parse(await conversationToHtml(untitled, { loadAsset }));
+      const heading = doc.querySelector('h1')?.textContent || '';
+      assert(isPseudoLocalized(heading) && heading.includes('3'), `"Untitled 3" headed the page as ${JSON.stringify(heading)}`);
+      assert(doc.title.startsWith(heading), `the page's title leads with ${JSON.stringify(heading)}, got ${JSON.stringify(doc.title)}`);
+
+      /** @type {string[]} */
+      const names = [];
+      const outcome = openConversationExport(untitled, {
+        save: async (name) => { names.push(name); return null; }, loadAsset,
+      });
+      try {
+        /** @type {HTMLElement|null} */ (document.querySelector('.conversation-export-commit'))?.click();
+        await outcome;
+      } finally {
+        document.querySelector('.conversation-export-overlay')?.remove();
+      }
+      const expected = exportFileName(displayConversationName('Untitled 3'));
+      assert(expected !== 'Untitled-3.html', `the fixture cannot tell the languages apart: ${expected}`);
+      assert(names.length === 1 && names[0] === expected, `suggested file name ${JSON.stringify(names)}, expected ${expected}`);
+    });
+  });
+
+  // --- 4c: a name in any script names the file ---------------------------------
+  await test('file name in any script', async () => {
+    /** @type {Array<[string, string]>} */
+    const cases = [
+      ['日本語の会話 2', '日本語の会話-2.html'],
+      ['Café: notes/1', 'Café-notes-1.html'],
+      ['Привет мир', 'Привет-мир.html'],
+      ['a<b>c|d?"e"', 'a-b-c-d-e.html'],
+      ['...', 'conversation.html'],
+      ['???', 'conversation.html'],
+    ];
+    const wrong = cases
+      .map(([name, want]) => ({ name, want, got: exportFileName(name) }))
+      .filter(({ want, got }) => want !== got);
+    assert(wrong.length === 0, `exportFileName got these wrong: ${JSON.stringify(wrong)}`);
+    const long = exportFileName('😀'.repeat(100));
+    assert(!/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/.test(long), `a long name was cut inside a character: ${JSON.stringify(long.slice(-12))}`);
   });
 
   // --- 5: where it is offered -------------------------------------------------

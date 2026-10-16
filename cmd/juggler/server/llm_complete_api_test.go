@@ -68,11 +68,11 @@ func TestCompleteErrorStatus(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			status, msg := completeErrorStatus(tc.err)
+			status, reply := completeErrorStatus(tc.err)
 			if status != tc.want {
 				t.Fatalf("completeErrorStatus(%v) status = %d, want %d", tc.err, status, tc.want)
 			}
-			if msg == "" {
+			if reply == nil || reply.Error() == "" {
 				t.Fatalf("completeErrorStatus(%v) returned an empty message", tc.err)
 			}
 		})
@@ -80,8 +80,8 @@ func TestCompleteErrorStatus(t *testing.T) {
 
 	// An unclassified failure must keep its own text: that text is the only thing
 	// telling the user a credential died rather than the model being slow.
-	if _, msg := completeErrorStatus(errors.New("provider \"openai\" unavailable: no credential")); msg != "provider \"openai\" unavailable: no credential" {
-		t.Fatalf("an unclassified failure must surface verbatim, got %q", msg)
+	if _, reply := completeErrorStatus(errors.New("provider \"openai\" unavailable: no credential")); reply.Error() != "provider \"openai\" unavailable: no credential" {
+		t.Fatalf("an unclassified failure must surface verbatim, got %q", reply)
 	}
 }
 

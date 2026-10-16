@@ -345,7 +345,6 @@ export async function runTests() {
           shown[`${option.id} description`] = String(option.description);
         }
 
-        shown['cleanup message'] = String((await provider.cleanupPartial({}, {}))?.message);
       }, { '@juggler/core': CORE_TEXT });
 
       const english = Object.entries(shown).filter(([, text]) => !isPseudoLocalized(text));

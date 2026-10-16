@@ -16,7 +16,7 @@
  * - Single source of truth for API contracts
  */
 
-import { extractHttpErrorDetail, withApiToken } from './http.js';
+import { extractHttpErrorDetail, extractHttpErrorParts, withApiToken } from './http.js';
 import { apiUrl } from '../utils/api-url.js';
 
 // ============================================================================
@@ -32,11 +32,22 @@ export class OpsError extends Error {
   /**
    * @param {string} message - Error message
    * @param {number} [status] - HTTP status, when the error came from an HTTP response
-   * @param {{code?: string, detail?: Record<string, unknown>}} [coded] - The op's failure code and its detail, when it gave one
+   * @param {{code?: string, detail?: Record<string, unknown>, serverMessage?: import('./http.js').ServerMessage}} [coded] - The op's
+   *   failure code and its detail, when it gave one, and the server's message for `message`, when it sent one
    */
   constructor(message, status, coded = {}) {
     super(message);
     this.name = 'OpsError';
+    /**
+     * The server's message for this failure, for the UI to show translated with
+     * serverText() (errorText in juggler/ui does it); undefined when the server
+     * sent English alone. `message` stays English: it is what a tool result
+     * tells the model.
+     * @type {import('./http.js').ServerMessage|undefined}
+     */
+    this.serverMessage = coded.serverMessage && typeof coded.serverMessage === 'object'
+      && typeof coded.serverMessage.key === 'string' && coded.serverMessage.key !== ''
+      ? coded.serverMessage : undefined;
     /**
      * The op's stable code for this kind of failure (e.g. `SEARCH_NOT_FOUND`,
      * an edit whose old_str matched nothing), or undefined for a failure with
@@ -149,6 +160,7 @@ function requireParam(params, name) {
  * @property {string} [error] - Error message (present only if success=false)
  * @property {string} [code] - Stable failure code, when the op gave its failure one (see OpsError#code)
  * @property {Record<string, unknown>} [detail] - Values that go with the code (see OpsError#detail)
+ * @property {import('./http.js').ServerMessage} [message] - The error as a message for the UI to translate (see OpsError#serverMessage)
  */
 
 // ============================================================================
@@ -500,7 +512,14 @@ async function callOp(toolId, operation, params, signal, allowedPaths, workspace
 
     // Check HTTP status
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${await extractHttpErrorDetail(response)}`);
+      // A plain Error, not an OpsError: a request the server could not take is
+      // not an op's operational feedback. It carries the server's detail and
+      // message so the UI can show the detail translated (errorText).
+      const { detail, serverMessage } = await extractHttpErrorParts(response);
+      const failure = /** @type {Error & {detail?: string, serverMessage?: unknown}} */ (new Error(`HTTP ${response.status}: ${detail}`));
+      failure.detail = detail;
+      failure.serverMessage = serverMessage;
+      throw failure;
     }
     result = await response.json();
   } catch (err) {
@@ -514,7 +533,9 @@ async function callOp(toolId, operation, params, signal, allowedPaths, workspace
 
   if (!result.success) {
     // All backend errors are operational feedback, not bugs
-    throw new OpsError(result.error || 'Operation failed', undefined, { code: result.code, detail: result.detail });
+    throw new OpsError(result.error || 'Operation failed', undefined, {
+      code: result.code, detail: result.detail, serverMessage: result.error ? result.message : undefined,
+    });
   }
 
   if (!result.data) {
@@ -1337,7 +1358,8 @@ export async function generateText(params, signal) {
   });
 
   if (!response.ok) {
-    throw new OpsError(await extractHttpErrorDetail(response), response.status);
+    const { detail, serverMessage } = await extractHttpErrorParts(response);
+    throw new OpsError(detail, response.status, { serverMessage });
   }
 
   return response.json();

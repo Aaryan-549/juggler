@@ -1,0 +1,295 @@
+//     ▄▄ ▄▄ ▄▄  ▄▄▄▄  ▄▄▄▄ ▄▄    ▄▄▄▄▄ ▄▄▄▄
+//     ██ ██ ██ ██ ▄▄ ██ ▄▄ ██    ██▄▄  ██▄█▄   Copyright (c) 2026 Julian Storer
+//   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
+
+/**
+ * Integration Test: the real app shell under en-XA shows no plain English.
+ *
+ * The lane hosts the whole of index.html in a frame, served by the test server
+ * in the pseudo-locale through `?uiLocale=en-XA` (serveIndex honours it only in
+ * test mode, so the shared `uiLocale` setting every other lane reads is never
+ * touched). The test's own conversation — a turn with tool rows, plus an error
+ * and a notice seeded into its document — is selected in that shell, and each
+ * main surface is checked in turn: header, conversation bar, the conversation
+ * (transcript, composer, footer), the pinboard empty and with a pin, and every
+ * Settings tab.
+ *
+ * Every surface is checked before the test fails, so one run lists everything
+ * still in English rather than the first thing found.
+ * @module integration-tests/app-pseudo-locale-walk-tests
+ */
+
+import { textResponse, toolUseResponse } from '../utilities/integration-test-runner.js';
+import { pollPatiently, whyGivingUp } from '../utilities/test-patience.js';
+import { budgetFor } from '../utilities/test-deadline.js';
+import { plainToYMap } from '../../js/model/item-accessor.js';
+import { createErrorMessage, createNoticeMessage } from '../../sdk/lib/message.js';
+import { serverPath, apiUrl } from '../../js/utils/api-url.js';
+import { fetchJson } from '../../js/services/http.js';
+import { applyPinboardOperations } from '../../js/services/pinboard-operations-api.js';
+import { boardId } from '../../js/utils/view-mode.js';
+import { UNTITLED_NAME_RE } from '../../js/model/conversation-naming.js';
+
+/** Every Settings tab, in strip order (settings-panel.js). */
+const SETTINGS_TABS = [
+  'providers', 'defaults', 'connectivity', 'extensions', 'skills', 'mcp', 'acp',
+  'appearance', 'notifications', 'shortcuts', 'logs', 'updates',
+];
+
+/**
+ * Text that is data, not UI: what the conversation and project hold, which no
+ * catalogue translates.
+ * - `.ppd-path`: the project directory.
+ * - `.user-message-text`: what the user typed; `.markdown`: what the model wrote.
+ * - `.model-name`: the model's own display name.
+ * - `.properties-panel-filepath`: a file's path on disk.
+ * - `#auto-name-instruction-input`: its placeholder is the built-in prompt sent
+ *   to the model, which stays in English whatever the UI language.
+ * - `.plugin-version`, `.plugin-author`: an extension's manifest fields.
+ * - `code`, `pre`: tool arguments, paths and file content.
+ */
+const DATA = '.ppd-path, .user-message-text, .markdown, .model-name, '
+  + '#auto-name-instruction-input, .plugin-version, .plugin-author, .properties-panel-filepath, code, pre';
+
+/**
+ * Whether an element shows data. Besides {@link DATA}, a conversation tab's name
+ * is data — another test's title, or the auto-namer's — unless it is a stored
+ * placeholder ("Untitled N"), the one name that is UI: displayConversationName
+ * translates it, so one still showing in that English shape is a finding.
+ * @param {Element} el
+ * @returns {boolean} True for data.
+ */
+function isData(el) {
+  if (el.closest(DATA)) return true;
+  const name = el.closest('.conversation-tab-name');
+  return !!name && !UNTITLED_NAME_RE.test((name.textContent || '').trim());
+}
+
+/** Inline elements whose text is part of the message around them. */
+const INLINE = new Set(['SPAN', 'CODE', 'A', 'STRONG', 'EM', 'B', 'I', 'KBD']);
+
+/**
+ * Whether a shown string is translated, for a whole-app walk with real data in
+ * it. A translated message carries the en-XA wrapper — `[` … ` ·…·]` — around
+ * whatever data it was given (a path, a name, a date), so the wrapper is the
+ * test, line by line for a tooltip built from several messages. Letter-free text
+ * (a keycap like ↵ or ⌘N, a drag handle ⠿, a count, `@` or `/`) is no message at
+ * all and has nothing to translate.
+ * @param {string} s
+ * @returns {boolean} True when `s` is translated or is not words.
+ */
+function translatedOrSymbol(s) {
+  if (!/\p{L}/u.test(s)) return true;
+  // A key chord (⌘N, ⌥⇧⌘M, F2) names keys, which are labelled on the keyboard
+  // rather than translated.
+  if (/^[⌘⌥⇧⌃]*(?:[A-Z0-9]|F\d{1,2})$/.test(s.trim())) return true;
+  return s.split('\n').map((l) => l.trim()).filter(Boolean)
+    .every((l) => l.startsWith('[') && /\s·+\]$/.test(l));
+}
+
+/**
+ * Every string `root` shows — text judged per element as one string, with an
+ * inline child's text joined to its parent's (so a message split into spans
+ * around a count is read whole), plus aria-label, title and placeholder —
+ * minus the elements `skip` says are data.
+ * @param {Element} root
+ * @param {(el: Element) => boolean} skip
+ * @returns {string[]} The strings.
+ */
+function shownText(root, skip) {
+  /** @type {Map<Element, string>} */
+  const blocks = new Map();
+  const walker = root.ownerDocument.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    const parent = n.parentElement;
+    if (!parent || skip(parent) || parent.closest('script, style')) continue;
+    let block = parent;
+    while (block !== root && block.parentElement && INLINE.has(block.parentElement.tagName)) block = block.parentElement;
+    blocks.set(block, (blocks.get(block) || '') + (n.textContent || ''));
+  }
+  const shown = [...blocks.values()].map((s) => s.trim()).filter(Boolean);
+  for (const node of root.querySelectorAll('[aria-label], [title], [placeholder]')) {
+    if (skip(node)) continue;
+    for (const attr of ['aria-label', 'title', 'placeholder']) {
+      const v = node.getAttribute(attr);
+      if (v) shown.push(v);
+    }
+  }
+  return shown;
+}
+
+/** What the walk is waiting for, for a failure that has to say where it stopped. */
+let stage = 'loading the shell';
+
+/**
+ * What the shell is showing, for a failure that has to say why it stopped.
+ * @returns {string} A line to append, or '' before the shell has a session.
+ */
+let describeShell = () => '';
+
+/**
+ * Wait for `probe` to be truthy within the test's deadline, or throw.
+ * @template T
+ * @param {() => T} probe
+ * @param {string} what - What is awaited, for the failure.
+ * @param {number} [nominalMs]
+ * @returns {Promise<T>} The probe's truthy value.
+ */
+async function until(probe, what, nominalMs = 10000) {
+  stage = what;
+  const got = await pollPatiently(() => {
+    try { return probe(); } catch { return null; }
+  }, { nominalMs: budgetFor(nominalMs), intervalMs: 50 });
+  if (!got) throw new Error(`timed out waiting for ${what} — ${await whyGivingUp()}${describeShell()}`);
+  return /** @type {T} */ (got);
+}
+
+/**
+ * @type {import('../utilities/integration-test-runner.js').IntegrationTestDefinition}
+ */
+export const appPseudoLocaleWalkTest = {
+  name: 'app-pseudo-locale-walk',
+  description: 'The full app shell served under en-XA shows no plain English on its main surfaces',
+  fixture: 'unit-test-fixture',
+  timeoutMs: 90000,
+
+  llmResponses: [
+    toolUseResponse('call_1', 'read', { file_path: 'src/main.go' }, 'Reading.'),
+    toolUseResponse('call_2', 'read', { file_path: 'does-not-exist.txt' }, 'Reading again.'),
+    textResponse('Done.'),
+  ],
+
+  operations: [
+    { type: 'send-message', message: 'Read two files' },
+  ],
+
+  customAssertions: async (conversation) => {
+    // The name the conversation was given by the time its turn has run, quoted in
+    // a failure so a title in the bar can be told from a placeholder.
+    const nameAfterTurn = conversation.name;
+    // Seeded in the wrapper's shape: what an error or a notice says is the test's
+    // own data, and only the UI around it is under test.
+    const rootThread = conversation.rootMessageThread;
+    rootThread.insertAt(rootThread.length, plainToYMap(createErrorMessage({ message: '[Ẽŕŕöŕ ðåţå ···]' })));
+    rootThread.insertAt(rootThread.length, plainToYMap(createNoticeMessage({ summary: '[Ñöţîçé ðåţå ···]', detail: '', source: 'test' })));
+
+    // The board the shell will show is the project's shared one; put it back
+    // as it was found.
+    const board = boardId();
+    const before = await fetchJson(apiUrl(`/session/pinboard?board=${encodeURIComponent(board)}`));
+    const pinsBefore = new Set((before?.pins || []).map((/** @type {any} */ p) => p.id));
+
+    const frame = document.createElement('iframe');
+    frame.style.cssText = 'position:fixed;left:-10000px;top:0;width:1280px;height:800px;border:0';
+    frame.src = serverPath('/') + '?uiLocale=en-XA';
+    document.body.appendChild(frame);
+
+    /** @type {string[]} */
+    const findings = [];
+    /**
+     * @param {Element|null|undefined} root
+     * @param {string} where
+     * @param {{skip?: (el: Element) => boolean, atLeast?: number}} [opts]
+     */
+    const check = (root, where, { skip = isData, atLeast = 1 } = {}) => {
+      if (!root) {
+        findings.push(`${where}: not found`);
+        return;
+      }
+      const shown = shownText(root, skip);
+      if (shown.length < atLeast) findings.push(`${where}: expected at least ${atLeast} strings, found ${shown.length}`);
+      const raw = [...new Set(shown.filter((s) => !translatedOrSymbol(s)))];
+      if (raw.length) findings.push(`plain English under en-XA (${where}): ${JSON.stringify(raw)}`);
+    };
+
+    // Bounded as a whole as well as wait by wait: the shell runs on this lane's
+    // thread, so a walk that stops moving says where rather than outliving the
+    // runner's report.
+    /** @type {any} */
+    let capTimer = null;
+    const cap = new Promise((_, reject) => {
+      capTimer = setTimeout(() => reject(new Error(
+        `the walk stopped at: ${stage} (conversation named ${JSON.stringify(nameAfterTurn)})${describeShell()}\n  findings so far:\n  ${findings.join('\n  ')}`)), budgetFor(60000));
+    });
+    try {
+      await Promise.race([cap, walkShell()]);
+    } finally {
+      clearTimeout(capTimer);
+      describeShell = () => '';
+      frame.remove();
+      const after = await fetchJson(apiUrl(`/session/pinboard?board=${encodeURIComponent(board)}`)).catch(() => null);
+      const added = (after?.pins || []).filter((/** @type {any} */ p) => !pinsBefore.has(p.id));
+      if (added.length) {
+        await applyPinboardOperations(board, added.map((/** @type {any} */ p) => ({ op: 'remove', id: p.id })));
+      }
+    }
+
+    if (findings.length) {
+      throw new Error(`${findings.length} surface(s) show plain English under en-XA (conversation named ${JSON.stringify(nameAfterTurn)}):\n  ${findings.join('\n  ')}`);
+    }
+
+    /** @returns {Promise<void>} Resolves once every surface is checked. */
+    async function walkShell() {
+      const win = /** @type {any} */ (frame.contentWindow);
+      await until(() => frame.contentDocument?.documentElement.getAttribute('data-ui-locale') === 'en-XA',
+        'the shell to be served in en-XA');
+      const session = await until(() => win.jugglerApp?.getSession()?.conversations.get(conversation.id) && win.jugglerApp.getSession(),
+        'the shell to load this conversation', 20000);
+      const doc = /** @type {Document} */ (frame.contentDocument);
+      describeShell = () => {
+        const own = /** @type {any} */ (session.conversations.get(conversation.id));
+        const t = own?.getTabElement?.();
+        const active = doc.querySelector('conversation-tab.active, conversation-tab[active]');
+        return `\n  shell: visible=${session.visibleConversationId} own=${conversation.id}`
+          + ` ownTab=${t ? (t.isConnected ? 'connected' : 'detached') : 'none'}`
+          + ` ownToolRows=${t ? t.querySelectorAll('tool-action-message, tool-group-message').length : '-'}`
+          + ` ownRows=${t ? t.querySelectorAll('#message-list > *').length : '-'}`
+          + ` ownItems=${own?.rootMessageThread?.length ?? '-'}`
+          + ` activeTabConv=${active?.getAttribute?.('data-conversation-id') || active?.conversation?.id || 'none'}`
+          + ` tabs=${doc.querySelectorAll('conversation-tab').length}`
+          + ` ownTabText=${JSON.stringify((t?.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 200))}`;
+      };
+      session.registry.select({ kind: 'conversation', id: conversation.id });
+      const tab = await until(() => {
+        const t = /** @type {any} */ (session.conversations.get(conversation.id))?.getTabElement?.();
+        return t && t.querySelector('tool-action-message, tool-group-message') ? t : null;
+      }, 'the conversation to render its tool rows', 20000);
+      await until(() => !doc.querySelector('[data-loading-overlay="startup"]:not([hidden])')
+        || doc.querySelector('[data-loading-overlay="startup"]')?.classList.contains('hidden')
+        || win.getComputedStyle(doc.querySelector('[data-loading-overlay="startup"]')).display === 'none',
+      'the startup overlay to go', 10000).catch((e) => findings.push(String(e.message)));
+
+      check(doc.querySelector('.app-header'), 'header');
+      check(doc.querySelector('conversation-bar'), 'conversation bar');
+      check(tab, 'conversation (transcript, composer, footer)');
+
+      // Pinboard, empty and then with a pin.
+      /** @type {HTMLElement} */ (doc.querySelector('#pinboard-header-button')).click();
+      const shell = /** @type {HTMLElement} */ (doc.querySelector('pinboard-shell'));
+      await until(() => !shell.hidden, 'the pinboard to open');
+      check(shell, 'pinboard');
+      const pinId = `pin_walk_${Date.now().toString(36)}`;
+      await applyPinboardOperations(board, [{ op: 'add', id: pinId, type: 'git', config: {} }]);
+      await until(() => shell.textContent && shell.querySelector(`[data-pin-id="${pinId}"], .pinboard-tab, .pin-tab`),
+        'the git pin to appear').catch((e) => findings.push(String(e.message)));
+      check(shell, 'pinboard with a git pin');
+
+      // Settings, every tab.
+      /** @type {HTMLElement} */ (doc.querySelector('#settings-button')).click();
+      const panel = /** @type {any} */ (await until(() => doc.querySelector('settings-panel'), 'the settings panel'));
+      // open() adds `loaded` once its first load has settled (settings-panel.js).
+      await until(() => panel.classList.contains('loaded'), 'settings to load', 15000);
+      check(panel.querySelector('.settings-tabs'), 'settings tab strip');
+      for (const id of SETTINGS_TABS) {
+        panel.switchTab(id);
+        const section = panel.querySelector(`#tab-${id}`);
+        await until(() => section && section.textContent.trim(), `settings tab ${id} to render`)
+          .catch((e) => findings.push(String(e.message)));
+        check(section, `settings: ${id}`);
+      }
+      panel.close?.();
+    }
+  },
+};
+
+export const tests = [appPseudoLocaleWalkTest];

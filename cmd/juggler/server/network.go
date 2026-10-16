@@ -404,7 +404,7 @@ func remoteTransportLabel(kind string) string {
 		return "Via reverse proxy"
 	}
 	if spec, ok := findTunnelMode(TunnelMode(kind)); ok {
-		return spec.Title
+		return spec.Title.English()
 	}
 	return kind
 }

@@ -58,7 +58,9 @@ import { getThreadDisplayContent, paintThreadSummary } from './thread-display.js
 import { wrapWithIcon, createErrorArticle } from './icon-message-renderer.js';
 import { badgeForItem, iconOptionsForItem } from './item-badge.js';
 import { textOf, toolSummary } from './conversation-markdown.js';
+import { itemSummaryText } from './item-text.js';
 import { t } from '../../sdk/lib/i18n.js';
+import { displayConversationName } from '../model/conversation-naming.js';
 
 /** Longest a tool's input or output may run in the page before it is cut. */
 const TOOL_SECTION_MAX_CHARS = 20_000;
@@ -142,7 +144,8 @@ export async function conversationToHtml(conversation, options = {}) {
 
   const main = doc.createElement('main');
   main.className = 'export-page';
-  main.appendChild(renderHeader(doc, conversation?.name || '', now));
+  const name = conversation?.name ? displayConversationName(conversation.name) : '';
+  main.appendChild(renderHeader(doc, name, now));
   const list = doc.createElement('div');
   list.className = 'conversation-message-list-inner export-items';
   for (const item of items) {
@@ -156,7 +159,7 @@ export async function conversationToHtml(conversation, options = {}) {
   harden(doc.body);
 
   const appCss = stripRemoteUrls(collectUsedCss(doc));
-  const title = conversation?.name ? `${conversation.name} — Juggler` : 'Conversation — Juggler';
+  const title = `${name || t('Conversation')} — Juggler`; // i18n-ignore: the app's name
   return [
     '<!DOCTYPE html>',
     `<html lang="en" data-theme="${escapeAttr(theme)}">`,
@@ -177,18 +180,17 @@ export async function conversationToHtml(conversation, options = {}) {
 /**
  * A file name for an exported conversation: its name, made safe for any file
  * system, with `.html`.
- * @param {string} name - The conversation's name.
+ * @param {string} name - The conversation's name as shown (`displayConversationName`).
  * @returns {string} The suggested file name.
  */
 export function exportFileName(name) {
-  const stem = String(name || '')
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^\w\s.-]+/g, ' ')
+  const cleaned = String(name || '')
+    .normalize('NFC')
+    .replace(/[^\p{L}\p{M}\p{N}_\s.-]+/gu, ' ')
     .trim()
-    .replace(/\s+/g, '-')
-    .replace(/^[.-]+|[.-]+$/g, '')
-    .slice(0, 80);
+    .replace(/\s+/g, '-');
+  // Cut by character, not UTF-16 unit, so no surrogate pair is split.
+  const stem = Array.from(cleaned).slice(0, 80).join('').replace(/^[.-]+|[.-]+$/g, '');
   return `${stem || 'conversation'}.html`;
 }
 
@@ -467,7 +469,7 @@ function renderThread(item, ctx) {
  * @returns {HTMLElement|null} The row.
  */
 function renderError(item, ctx) {
-  const text = String(plain(itemField(item, 'summary')) || plain(itemField(item, 'message')) || '').trim() || textOf(item);
+  const text = itemSummaryText(item).trim() || String(plain(itemField(item, 'message')) || '').trim() || textOf(item);
   if (!text) return null;
   return fillRow(ctx.doc.createElement('error-message'), createErrorArticle(text));
 }

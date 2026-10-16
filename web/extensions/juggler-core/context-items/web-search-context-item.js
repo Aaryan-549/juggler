@@ -5,7 +5,7 @@
 
 import ContextItem from 'juggler/context-item';
 import { webSearch } from 'juggler/ops';
-import { translator } from 'juggler/i18n';
+import { translator, markUntranslated } from 'juggler/i18n';
 import { parseDuckDuckGoResponse, looksLikeNoResults, filterResults } from './web-search/ddg-parser.js';
 
 const t = translator('@juggler/core');
@@ -73,23 +73,23 @@ class WebSearchContextItem extends ContextItem {
         query: {
           type: 'string',
           minLength: 2,
-          description: 'The search query to use'
+          description: markUntranslated('The search query to use')
         },
         allowed_domains: {
           type: 'array',
           items: { type: 'string' },
-          description: 'Only include search results from these domains'
+          description: markUntranslated('Only include search results from these domains')
         },
         blocked_domains: {
           type: 'array',
           items: { type: 'string' },
-          description: 'Exclude search results from these domains'
+          description: markUntranslated('Exclude search results from these domains')
         }
       },
       required: ['query']
     };
 
-    const description = 'Searches the web using DuckDuckGo (no API key required). Returns up to 10 results with titles, URLs, and descriptions. Supports domain filtering.';
+    const description = markUntranslated('Searches the web using DuckDuckGo (no API key required). Returns up to 10 results with titles, URLs, and descriptions. Supports domain filtering.');
 
     return [
       {
@@ -246,7 +246,7 @@ class WebSearchContextItem extends ContextItem {
     const results = result.results || [];
 
     if (results.length === 0) {
-      return this.successSummary(`No results found for "${query}"`, { icon: '○' });
+      return this.successSummary(markUntranslated(`No results found for "${query}"`), { icon: '○' });
     }
 
     // Format results for LLM - include markdown links

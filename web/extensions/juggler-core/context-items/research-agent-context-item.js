@@ -5,7 +5,7 @@
 
 import SubagentContextItem from './subagents/subagent-item.js';
 import ResearchSubagentStrategyType from './subagents/research-strategy.js';
-import { markForTranslation } from 'juggler/i18n';
+import { markForTranslation, markUntranslated } from 'juggler/i18n';
 
 /**
  * ResearchAgentContextItem - the `Research` sub-agent.
@@ -46,21 +46,21 @@ class ResearchAgentContextItem extends SubagentContextItem {
     strategy: ResearchSubagentStrategyType,
     badge: { color: 'thread', icon: 'icon-search' },
     description:
-      'Answer a question from the web with a sub-agent and get back only the answer. ' +
+      markUntranslated('Answer a question from the web with a sub-agent and get back only the answer. ' +
       'It searches, reads as many pages as it needs, and checks them against the version actually installed in this project; none of those pages enter this conversation.\n' +
       'Use it when the answer takes several sources — API behaviour, what changed between versions, how a library is meant to be used. ' +
-      'For one page whose URL you know, `WebFetch` with a `prompt` is cheaper; for questions about this codebase, use `Explore`.',
+      'For one page whose URL you know, `WebFetch` with a `prompt` is cheaper; for questions about this codebase, use `Explore`.'),
     goalExample: 'Check React 20 changes',
     task:
-      'What to find out, stated in full — including the library, version, or platform it concerns.',
+      markUntranslated('What to find out, stated in full — including the library, version, or platform it concerns.'),
     continues: 'research',
-    lead: 'Answer the following question thoroughly.',
+    lead: markUntranslated('Answer the following question thoroughly.'),
     resultSpec:
-      'the answer, with a source URL for each claim, and a note of anything that differs from ' +
-      'the version installed in this project. Where you found nothing, say so explicitly rather than offering a plausible guess.',
+      markUntranslated('the answer, with a source URL for each claim, and a note of anything that differs from ' +
+      'the version installed in this project. Where you found nothing, say so explicitly rather than offering a plausible guess.'),
     label: markForTranslation('Research'),
     verbs: { pending: markForTranslation('Researching…'), done: markForTranslation('Researched') },
-    fallback: 'Search the web directly with WebSearch and WebFetch.'
+    fallback: markUntranslated('Search the web directly with WebSearch and WebFetch.')
   };
 }
 

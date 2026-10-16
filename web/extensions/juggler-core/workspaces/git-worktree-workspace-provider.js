@@ -1156,7 +1156,7 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
         id: 'land',
         label: t('Fast-forward {repoTarget, select, named {{repo}} other {the repository}} to {branchTarget, select, named {{branch}} other {this branch}}', { repoTarget, repo, branchTarget, branch }),
         keepsWorkspace: true,
-        description: t('Runs git merge --ff-only {branchTarget, select, named {{branch}} other {this branch}} in {repoTarget, select, named {{repo}} other {the repository}}, moving the branch it has checked out to this one. Git refuses it if that branch has diverged. The worktree is untouched.', { repoTarget, repo, branchTarget, branch })
+        description: t("{branchTarget, select, named {Runs git merge --ff-only {branch}} other {Runs git merge --ff-only with this worktree's branch}} in {repoTarget, select, named {{repo}} other {the repository}}, moving the branch it has checked out to this one. Git refuses it if that branch has diverged. The worktree is untouched.", { repoTarget, repo, branchTarget, branch })
       },
       {
         id: 'unbind',
@@ -1363,7 +1363,7 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
     if (uncommitted.length) {
       return {
         done: false,
-        message: t('{count, plural, one {This worktree has an uncommitted change. Commit them first — a fast-forward moves commits, and these would be left behind.} other {This worktree has {count} uncommitted changes. Commit them first — a fast-forward moves commits, and these would be left behind.}}', { count: uncommitted.length })
+        message: t('{count, plural, one {This worktree has an uncommitted change. Commit it first — a fast-forward moves commits, and it would be left behind.} other {This worktree has {count} uncommitted changes. Commit them first — a fast-forward moves commits, and these would be left behind.}}', { count: uncommitted.length })
       };
     }
 
@@ -1608,7 +1608,7 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
   async cleanupPartial(workspace, ctx) {
     const meta = workspace?.meta ?? {};
     if (!meta.repoDir || !meta.treeRel) {
-      return { removed: false, message: t('Nothing was checkpointed, so there is nothing to undo.') };
+      return { removed: false };
     }
 
     const projectPath = ctx.session?.projectPath ?? '';
@@ -1626,9 +1626,7 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
     // and for a tree that will not go, and those are opposite answers to the one
     // question the host has — is there anything left to worry about.
     const left = await this._inRepo(ctx, repoRel, `test -e "${treeRel}"`);
-    return left?.success
-      ? { removed: false, message: t('{dir} is still there and could not be removed.', { dir: String(meta.dir) }) }
-      : { removed: true, message: t('Removed {dir}.', { dir: String(meta.dir) }) };
+    return { removed: !left?.success };
   }
 }
 

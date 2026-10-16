@@ -56,6 +56,7 @@ import { tests as memoryTests } from '../integration-tests/memory-tests.js';
 import { tests as attentionAlertTests } from '../integration-tests/attention-alert-tests.js';
 import { tests as binGuardTests } from '../integration-tests/bin-guard-tests.js';
 import { tests as modelAvailabilityTests } from '../integration-tests/model-availability-tests.js';
+import { tests as appPseudoLocaleWalkTests } from '../integration-tests/app-pseudo-locale-walk-tests.js';
 import { runTests as runContextCacheImpactTests } from '../unit-tests/context-cache-impact-test.js';
 import { runTests as runCacheBaselineAnchorTests } from '../unit-tests/cache-baseline-anchor-test.js';
 import { runTests as codeLinesTests } from '../unit-tests/code-lines-test.js';
@@ -247,6 +248,7 @@ import { runTests as runComposerRestoreMessageTests } from '../unit-tests/compos
 import { apiUrl } from '../../js/utils/api-url.js';
 import { runTests as runPendingMessageRestoreTests } from '../unit-tests/pending-message-restore-test.js';
 import { runTests as runTurnActiveStatusTests } from '../unit-tests/turn-active-status-test.js';
+import { runTests as runConversationErrorTests } from '../unit-tests/conversation-error-test.js';
 import { runTests as runWindowResizeCursorTests } from '../unit-tests/window-resize-cursor-test.js';
 import { runTests as runWindowEdgeResizeTests } from '../unit-tests/window-edge-resize-test.js';
 import { runTests as runScheduledSendTests } from '../unit-tests/scheduled-send-test.js';
@@ -352,8 +354,12 @@ import { runTests as runBinaryViewerTests } from '../unit-tests/binary-viewer-te
 import { runTests as runMediaViewerTests } from '../unit-tests/media-viewer-test.js';
 import { runTests as runSdkFacadeParityTests } from '../unit-tests/sdk-facade-parity-test.js';
 import { runTests as runI18nTests } from '../unit-tests/i18n-test.js';
+import { runTests as runI18nFormatParityTests } from '../unit-tests/i18n-format-parity-test.js';
+import { runTests as runI18nPseudoParityTests } from '../unit-tests/i18n-pseudo-parity-test.js';
 import { runTests as runFormatTimeAgoTests } from '../unit-tests/format-time-ago-test.js';
+import { runTests as runFormatUnitsTests } from '../unit-tests/format-units-test.js';
 import { runTests as runAppearanceTabTests } from '../unit-tests/appearance-tab-test.js';
+import { runTests as runUILocaleReloaderTests } from '../unit-tests/ui-locale-reloader-test.js';
 import { runTests as runNotificationsTabTests } from '../unit-tests/notifications-tab-test.js';
 import { runTests as runSettingsPanelTests } from '../unit-tests/settings-panel-test.js';
 import { runTests as runExtensionCatalogsTests } from '../unit-tests/extension-catalogs-test.js';
@@ -381,7 +387,6 @@ import { runTests as runComposerTests } from '../unit-tests/composer-test.js';
 import { runTests as runCodeBlockTests } from '../unit-tests/code-block-test.js';
 import { runTests as runWindowCaptionControlsTests } from '../unit-tests/window-caption-controls-test.js';
 import { runTests as runUIEventManagerTests } from '../unit-tests/ui-event-manager-test.js';
-import { runTests as runThinkingBlockTests } from '../unit-tests/thinking-block-test.js';
 import { runTests as runPropertiesPanelHelpersTests } from '../unit-tests/properties-panel-helpers-test.js';
 import { runTests as runPropertiesPanelTests } from '../unit-tests/properties-panel-test.js';
 import { runTests as runWorkspaceDialogsTests } from '../unit-tests/workspace-dialogs-test.js';
@@ -494,7 +499,8 @@ const ALL_TESTS = [
   ...memoryTests,
   ...attentionAlertTests,
   ...binGuardTests,
-  ...modelAvailabilityTests
+  ...modelAvailabilityTests,
+  ...appPseudoLocaleWalkTests
 ].map(t => ({ ...t, name: `integration:${t.name}` }));
 
 /**
@@ -614,6 +620,7 @@ const UNIT_TEST_SUITES = [
   { name: 'unit:composer-restore-message', run: runComposerRestoreMessageTests },
   { name: 'unit:pending-message-restore', run: runPendingMessageRestoreTests },
   { name: 'unit:turn-active-status', run: runTurnActiveStatusTests },
+  { name: 'unit:conversation-error', run: runConversationErrorTests },
   { name: 'unit:window-resize-cursor', run: runWindowResizeCursorTests },
   { name: 'unit:window-edge-resize', run: runWindowEdgeResizeTests },
   { name: 'unit:scheduled-send', run: runScheduledSendTests },
@@ -844,8 +851,12 @@ const UNIT_TEST_SUITES = [
   { name: 'unit:media-viewer', run: runMediaViewerTests },
   { name: 'unit:sdk-facade-parity', run: runSdkFacadeParityTests },
   { name: 'unit:i18n', run: runI18nTests },
+  { name: 'unit:i18n-format-parity', run: runI18nFormatParityTests },
+  { name: 'unit:i18n-pseudo-parity', run: runI18nPseudoParityTests },
   { name: 'unit:format-time-ago', run: runFormatTimeAgoTests },
+  { name: 'unit:format-units', run: runFormatUnitsTests },
   { name: 'unit:appearance-tab', run: runAppearanceTabTests },
+  { name: 'unit:ui-locale-reloader', run: runUILocaleReloaderTests },
   { name: 'unit:notifications-tab', run: runNotificationsTabTests },
   { name: 'unit:settings-panel', run: runSettingsPanelTests },
   { name: 'unit:extension-catalogs', run: runExtensionCatalogsTests },
@@ -873,7 +884,6 @@ const UNIT_TEST_SUITES = [
   { name: 'unit:code-block', run: runCodeBlockTests },
   { name: 'unit:window-caption-controls', run: runWindowCaptionControlsTests },
   { name: 'unit:ui-event-manager', run: runUIEventManagerTests },
-  { name: 'unit:thinking-block', run: runThinkingBlockTests },
   { name: 'unit:properties-panel-helpers', run: runPropertiesPanelHelpersTests },
   { name: 'unit:properties-panel', run: runPropertiesPanelTests },
   { name: 'unit:workspace-dialogs', run: runWorkspaceDialogsTests },

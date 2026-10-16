@@ -21,6 +21,8 @@
 
 import { assert } from '../utilities/test-helpers.js';
 import { SHORT_THINKING_TOKENS } from '../../js/components/thinking-message.js';
+import { isPseudoLocalized } from '../../sdk/lib/i18n.js';
+import { underPseudoLocale } from '../utilities/pseudo-locale.js';
 
 /**
  * @typedef {object} TestResult
@@ -132,6 +134,23 @@ export async function runTests(_ctx) {
       assert(!el.querySelector('em, strong'), 'no emphasis may be invented from stray punctuation');
       assert(el.querySelector('article.thinking').textContent.trim() === raw, 'the text arrives as written');
     } finally { el.remove(); }
+  });
+
+  await run('the summary reads "Thinking · N tokens" and is translated under en-XA', async () => {
+    const content = 'x'.repeat(SHORT_THINKING_TOKENS * CHARS + CHARS);
+    const el = mount(content);
+    try {
+      const want = `Thinking · ${SHORT_THINKING_TOKENS + 1} tokens`;
+      const got = el.querySelector('.thinking-summary')?.textContent;
+      assert(got === want, `expected ${JSON.stringify(want)}, got ${JSON.stringify(got)}`);
+    } finally { el.remove(); }
+    await underPseudoLocale('thinking-message-test', () => {
+      const xa = mount(content);
+      try {
+        const got = xa.querySelector('.thinking-summary')?.textContent || '';
+        assert(isPseudoLocalized(got), `the summary under en-XA: ${JSON.stringify(got)}`);
+      } finally { xa.remove(); }
+    });
   });
 
   return { passed, failed, errors };

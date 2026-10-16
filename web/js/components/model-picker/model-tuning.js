@@ -45,7 +45,7 @@ const THINKING_LEVEL_LABELS = {
   low: markForTranslation('Low'),
   medium: markForTranslation('Medium'),
   high: markForTranslation('High'),
-  xhigh: markForTranslation('Xhigh'),
+  xhigh: markForTranslation('Extra high'),
   max: markForTranslation('Max'),
 };
 

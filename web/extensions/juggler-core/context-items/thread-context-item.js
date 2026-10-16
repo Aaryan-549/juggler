@@ -4,6 +4,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import ContextItem from 'juggler/context-item';
+import { markUntranslated } from 'juggler/i18n';
 
 /**
  * ThreadContextItem - UI rendering for the create_thread tool.
@@ -46,25 +47,25 @@ class ThreadContextItem extends ContextItem {
       {
         name: 'create_thread',
         category: 'write',
-        description: 'Run one focused sub-task in an isolated sub-conversation; only its last message returns. The child cannot see this conversation, so `prompt` must be self-contained. `resultSpec` says what the final message must contain; `goal` is only the UI label. Every result opens with the thread\'s session name — pass it back as `session` to continue that thread. One task per thread, never a task list, and never tell it to spawn threads of its own.',
+        description: markUntranslated('Run one focused sub-task in an isolated sub-conversation; only its last message returns. The child cannot see this conversation, so `prompt` must be self-contained. `resultSpec` says what the final message must contain; `goal` is only the UI label. Every result opens with the thread\'s session name — pass it back as `session` to continue that thread. One task per thread, never a task list, and never tell it to spawn threads of its own.'),
         input_schema: {
           type: 'object',
           properties: {
             goal: {
               type: 'string',
-              description: 'Very short, single-line, user-facing label (for example, "Trace auth flow"). No instructions, background, or output requirements here.'
+              description: markUntranslated('Very short, single-line, user-facing label (for example, "Trace auth flow"). No instructions, background, or output requirements here.')
             },
             prompt: {
               type: 'string',
-              description: 'The complete, self-contained task: every relevant fact, path, symbol, decision, and constraint. The required shape of the answer goes in `resultSpec`, not here.'
+              description: markUntranslated('The complete, self-contained task: every relevant fact, path, symbol, decision, and constraint. The required shape of the answer goes in `resultSpec`, not here.')
             },
             resultSpec: {
               type: 'string',
-              description: 'Optional return contract for the child\'s last message: what it must contain and how to structure it (for example, "each match as `file:line — description`"). Do not repeat the task here.'
+              description: markUntranslated('Optional return contract for the child\'s last message: what it must contain and how to structure it (for example, "each match as `file:line — description`"). Do not repeat the task here.')
             },
             session: {
               type: 'string',
-              description: 'Optional session name of a thread you already ran here: your prompt continues that thread, which keeps everything it has read and worked out. Omit it to start a fresh thread.'
+              description: markUntranslated('Optional session name of a thread you already ran here: your prompt continues that thread, which keeps everything it has read and worked out. Omit it to start a fresh thread.')
             }
           },
           required: ['goal', 'prompt']
@@ -83,7 +84,7 @@ class ThreadContextItem extends ContextItem {
       return this.failureSummary(outcome.error || 'Failed to create thread');
     }
 
-    return this.successSummary('Thread completed', { icon: '▼' });
+    return this.successSummary(markUntranslated('Thread completed'), { icon: '▼' });
   }
 }
 

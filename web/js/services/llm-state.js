@@ -3,7 +3,7 @@
 //   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
 
 import { StatusMessageBuilder } from './status-message-builder.js';
-import { t } from '../../sdk/lib/i18n.js';
+import { serverText, t } from '../../sdk/lib/i18n.js';
 
 // The elapsed-time ticker uses requestAnimationFrame in the viewer. The engine
 // worker has no rAF, so fall back to a timer there — it only needs ~1Hz updates.
@@ -797,8 +797,11 @@ class LLMState {
    * @private
    */
   _applyRunFrame(conversationId, key, frame) {
-    const { status, message } = frame;
+    const { status } = frame;
     if (!status) return;
+    // The worker sends a status line's English as `message` and, for words it
+    // can put in a message, the message itself as `text`.
+    const message = serverText(frame.text, frame.message || '');
 
     // Sample output throughput here rather than in updateStatus: this is the
     // one path driven by an actual worker write, so every call is a real

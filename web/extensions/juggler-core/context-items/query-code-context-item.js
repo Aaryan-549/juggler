@@ -9,7 +9,7 @@ import ContextItem from 'juggler/context-item';
 import { runInSandbox } from 'juggler/sandbox';
 import { createLlmDescription } from 'juggler/ui';
 import { uploadAssetBase64 } from 'juggler/ops';
-import { translator } from 'juggler/i18n';
+import { translator, markUntranslated } from 'juggler/i18n';
 import { gitignoreDisabled } from './path-approval.js';
 import { createProgramImages, imagePathLoader, attachedImagesNote, pointImageReadsAtImage } from './code/program-images.js';
 
@@ -60,21 +60,21 @@ class QueryCodeContextItem extends ContextItem {
     return [{
       name: 'query_code',
       category: 'read',
-      description: 'Run JavaScript against a read-only view of the codebase. Collapses many reads, greps and globs into one call — only the value you return, plus anything you print with `console.log`, enters context.',
+      description: markUntranslated('Run JavaScript against a read-only view of the codebase. Collapses many reads, greps and globs into one call — only the value you return, plus anything you print with `console.log`, enters context.'),
       input_schema: {
         type: 'object',
         properties: {
           code: {
             type: 'string',
-            description: 'JavaScript to execute (async/await OK; must return a value). Browser realm, NOT Node: no `process`/`require`/`Buffer`. In-scope bindings:\n- `fs` — read-only fs.promises subset\n- `path` — POSIX path (forward-slash, even on Windows)\n- `grep(pattern, {cwd?, glob?, maxResults?, ignoreCase?})` → [{file, line, content}]\n- `glob(pattern, {cwd?})` → string[]\n- `projectRoot` — absolute root of the tree you are working in (forward-slashed). `import()` any JavaScript/JSON module under it by absolute path (e.g. `${projectRoot}/src/foo.js`) to call its real exports.\n- `await image(path)` — attach a PNG/JPEG/GIF/WebP file to your result, so you see it'
+            description: markUntranslated('JavaScript to execute (async/await OK; must return a value). Browser realm, NOT Node: no `process`/`require`/`Buffer`. In-scope bindings:\n- `fs` — read-only fs.promises subset\n- `path` — POSIX path (forward-slash, even on Windows)\n- `grep(pattern, {cwd?, glob?, maxResults?, ignoreCase?})` → [{file, line, content}]\n- `glob(pattern, {cwd?})` → string[]\n- `projectRoot` — absolute root of the tree you are working in (forward-slashed). `import()` any JavaScript/JSON module under it by absolute path (e.g. `${projectRoot}/src/foo.js`) to call its real exports.\n- `await image(path)` — attach a PNG/JPEG/GIF/WebP file to your result, so you see it')
           },
           description: {
             type: 'string',
-            description: 'Short user-facing description of what this query does.'
+            description: markUntranslated('Short user-facing description of what this query does.')
           },
           timeout: {
             type: 'number',
-            description: 'Optional execution timeout in milliseconds (1000–600000, default 120000).'
+            description: markUntranslated('Optional execution timeout in milliseconds (1000–600000, default 120000).')
           }
         },
         required: ['code']

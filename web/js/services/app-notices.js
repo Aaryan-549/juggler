@@ -4,15 +4,15 @@
 
 /**
  * The viewer bootstrap's own messages to the user: the notice for capability
- * modules a hot reload could not load, and the alert for a conversation the cap
- * will not allow. Kept apart from `app.js`, which boots the whole viewer as it
+ * modules a hot reload could not load, the alert for a conversation the cap
+ * will not allow, and the text of a server's `notice` frame. Kept apart from `app.js`, which boots the whole viewer as it
  * loads, so they can be built and checked on their own.
  * @module services/app-notices
  */
 
 import { showAlert } from '../components/modal-dialog.js';
 import { MAX_CONVERSATIONS, CONVERSATION_LIMIT_MESSAGE } from '../model/session.js';
-import { t, formatNumber } from '../../sdk/lib/i18n.js';
+import { t, formatNumber, serverText } from '../../sdk/lib/i18n.js';
 
 /**
  * The notice text for capability modules that newly failed to load: each
@@ -36,4 +36,16 @@ export function failedModulesMessage(fresh) {
  */
 export function showConversationLimitAlert() {
   return showAlert(t(CONVERSATION_LIMIT_MESSAGE, { max: formatNumber(MAX_CONVERSATIONS) }), t('Too many conversations'));
+}
+
+/**
+ * The text of a server `notice` frame: its `text` message in the UI's
+ * language, or the English `message` the server sent beside it.
+ * @param {{message?: unknown, text?: unknown}|null|undefined} data - The frame
+ * @returns {string} The notice, or '' when the frame carries none
+ */
+export function noticeText(data) {
+  const english = typeof data?.message === 'string' ? data.message : '';
+  if (!english) return '';
+  return serverText(/** @type {{key?: unknown}|undefined} */ (data?.text), english);
 }

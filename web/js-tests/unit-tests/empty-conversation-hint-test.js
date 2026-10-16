@@ -46,6 +46,7 @@ import { createUserMessage } from '../../sdk/lib/message.js';
 import '../../js/components/conversation-tab.js';
 import { setTipsShown } from '../../js/services/tips-manager.js';
 import { setReplySuggestionsEnabledCached } from '../../js/services/reply-suggestions-setting.js';
+import { isolatePrefs } from '../utilities/pref-isolation.js';
 
 /**
  * @returns {Promise<{passed: number, failed: number, errors: string[]}>} Aggregated test results.
@@ -66,6 +67,8 @@ export async function runTests() {
   let conversation = null;
   /** @type {any} */
   let session = null;
+  // Switching tips off and on writes the User-realm tips preference; it stays in this lane.
+  const restorePrefs = isolatePrefs(['juggler-tips']);
 
   try {
     session = await createTestSession();
@@ -348,6 +351,7 @@ export async function runTests() {
         await session.deleteConversation(conversation.id, 'empty-conversation-hint:cleanup');
       } catch { /* cleanup is best-effort; the suite's leak check reports the rest */ }
     }
+    restorePrefs();
   }
 
   return { passed, failed, errors };

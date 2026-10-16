@@ -1093,21 +1093,6 @@ class ContextItem {
   }
 
   /**
-   * Human-readable title for a tool-action in the properties-panel header and
-   * item card. Lets a plugin that drives several distinct operations through
-   * one tool (e.g. the plan tool's submit vs step actions) label each one for
-   * what it does, rather than all sharing the raw tool name. Receives the
-   * parsed tool input and the (lowercased) tool name. Return null to fall back
-   * to the tool name.
-   * @param {Record<string, unknown>} _toolInput - Parsed tool input
-   * @param {string} _toolName - The (lowercased) tool name being rendered
-   * @returns {string|null} Display title, or null to use the tool name
-   */
-  static getToolActionTitle(_toolInput, _toolName) {
-    return null;
-  }
-
-  /**
    * Whether this plugin's result/output is raw terminal output that may carry
    * ANSI escape sequences (SGR colour codes, cursor moves). When true, the
    * properties panel renders the output through the ANSI parser so colours

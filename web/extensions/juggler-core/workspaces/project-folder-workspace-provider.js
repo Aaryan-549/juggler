@@ -236,11 +236,11 @@ class ProjectFolderWorkspaceProvider extends WorkspaceProvider {
 
     const dir = join(project, typed);
     const rel = relativePath(project, dir);
-    if (rel === null) throw new Error(t('That is not on the same drive as the project.'));
     if (rel === '.') {
       throw new Error(t('That is the project itself, which the panel offers above.'));
     }
-    if (rel.startsWith('..')) throw new Error(t('That is outside the project.'));
+    // `join` keeps the project's drive, so `rel` is null only if that ever stops holding.
+    if (rel === null || rel.startsWith('..')) throw new Error(t('That is outside the project.'));
     return { project, rel, dir };
   }
 
@@ -334,7 +334,7 @@ class ProjectFolderWorkspaceProvider extends WorkspaceProvider {
   async cleanupPartial(workspace, ctx) {
     void workspace;
     void ctx;
-    return { removed: true, message: t('Nothing was built for a folder, so nothing is left of it.') };
+    return { removed: true };
   }
 }
 

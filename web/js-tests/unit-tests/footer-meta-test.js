@@ -195,14 +195,12 @@ export async function runTests() {
     /**
      * Record every plain-English string the meter shows.
      * @param {string} where - The state, for the failure.
-     * @param {(s: string) => string} [normalize] - Strips data the fixture could not keep letter-free.
      */
-    const collect = (where, normalize = (s) => s) => {
+    const collect = (where) => {
       const shown = shownStrings(host);
       assert(shown.length >= 2, `expected the count and the aria-label (${where}), found ${shown.length}`);
       for (const s of shown) {
-        const v = normalize(s);
-        if (!DATA.test(v) && !isPseudoLocalized(v)) raw.push(`${where}: ${s}`);
+        if (!DATA.test(s) && !isPseudoLocalized(s)) raw.push(`${where}: ${s}`);
       }
     };
     /**
@@ -239,10 +237,10 @@ export async function runTests() {
       collect('approximate');
 
       // The warning needs over 5000 uncached tokens, so the figures carry a
-      // `k`; each is stripped back to a digit before judging the words.
+      // `k` — a message of its own, translated like the words around it.
       xaPill.setUsage({ total: 7000, cached: 1000 });
       assert(has('.token-new'), 'a large uncached delta draws the warning');
-      collect('cache warn', (s) => s.replace(/\d+(\.\d)?[kM]/g, '0'));
+      collect('cache warn');
 
       xaPill.clear();
       assert(!xaPill.hasAttribute('aria-label') && !xaPill.title && !xaPill.textContent,

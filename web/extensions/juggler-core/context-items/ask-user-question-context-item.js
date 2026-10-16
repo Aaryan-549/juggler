@@ -143,13 +143,13 @@ class AskUserQuestionContextItem extends ContextItem {
       {
         name: 'AskUserQuestion',
         category: 'read',
-        description: 'Ask the user questions to gather preferences, clarify instructions, or get decisions on implementation choices.',
+        description: markUntranslated('Ask the user questions to gather preferences, clarify instructions, or get decisions on implementation choices.'),
         input_schema: {
           type: 'object',
           properties: {
             questions: {
               type: 'array',
-              description: 'Questions to ask the user (1-4 questions)',
+              description: markUntranslated('Questions to ask the user (1-4 questions)'),
               minItems: 1,
               maxItems: 4,
               items: {
@@ -157,15 +157,15 @@ class AskUserQuestionContextItem extends ContextItem {
                 properties: {
                   question: {
                     type: 'string',
-                    description: 'The complete question to ask the user'
+                    description: markUntranslated('The complete question to ask the user')
                   },
                   header: {
                     type: 'string',
-                    description: 'Short label displayed as a chip/tag'
+                    description: markUntranslated('Short label displayed as a chip/tag')
                   },
                   options: {
                     type: 'array',
-                    description: 'The available choices (2-4 options)',
+                    description: markUntranslated('The available choices (2-4 options)'),
                     minItems: 2,
                     maxItems: 4,
                     items: {
@@ -173,11 +173,11 @@ class AskUserQuestionContextItem extends ContextItem {
                       properties: {
                         label: {
                           type: 'string',
-                          description: 'The display text for this option'
+                          description: markUntranslated('The display text for this option')
                         },
                         description: {
                           type: 'string',
-                          description: 'Explanation of what this option means'
+                          description: markUntranslated('Explanation of what this option means')
                         }
                       },
                       required: ['label', 'description']
@@ -185,7 +185,7 @@ class AskUserQuestionContextItem extends ContextItem {
                   },
                   multiSelect: {
                     type: 'boolean',
-                    description: 'Whether to allow multiple selections'
+                    description: markUntranslated('Whether to allow multiple selections')
                   }
                 },
                 required: ['question', 'header', 'options', 'multiSelect']
@@ -458,24 +458,13 @@ class AskUserQuestionContextItem extends ContextItem {
     const questions = input.questions || [];
     if (questions.length === 0) return { skipResultSection: true };
 
-    // Reuse _buildDetailsElement on a fresh instance with answers.
-    // getSummary serialises each answer as "Header: a, b, c" (multi-select
-    // labels joined by ", "). Only multi-select answers are comma-joined lists
-    // worth splitting back; a single-select answer (including a typed custom
-    // one that may itself contain ", ") stays a single string.
-    const multiByHeader = new Map(questions.map((/** @type {Question} */ q) => [q.header, Boolean(q.multiSelect)]));
-    const result = toolAction.get('result');
-    const resultContent = (result?.get ? result.get('content') : result?.content) || '';
+    // The answers come from the structured record execute() returned
+    // (`fullResult.result.answers`), never from the model's "Header: a, b"
+    // text, which a header or answer holding ": " or ", " makes ambiguous.
+    const raw = toolAction.get('result');
+    const result = raw?.toJSON ? raw.toJSON() : (raw || {});
     /** @type {Record<string, string|string[]>} */
-    const answers = {};
-    for (const line of resultContent.split('\n')) {
-      const colonIdx = line.indexOf(': ');
-      if (colonIdx > 0) {
-        const key = line.slice(0, colonIdx);
-        const value = line.slice(colonIdx + 2);
-        answers[key] = (multiByHeader.get(key) && value.includes(', ')) ? value.split(', ') : value;
-      }
-    }
+    const answers = result.fullResult?.result?.answers || {};
     const section = ctx.helpers.labeledSubsection(t('Questions'));
     section.appendChild(this._buildDetailsElement(questions, answers));
     wrapper.appendChild(section);

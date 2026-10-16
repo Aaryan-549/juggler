@@ -4,8 +4,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import PinboardItemType from 'juggler/pinboard-item-type';
-import { translator, markForTranslation, markUntranslated } from 'juggler/i18n';
-import { createElement, createFileActions, createReviewPanel, injectStylesOnce } from 'juggler/ui';
+import { translator, markForTranslation, markUntranslated, serverText } from 'juggler/i18n';
+import { createElement, createFileActions, createReviewPanel, errorText, injectStylesOnce } from 'juggler/ui';
 import { pinEmpty } from '../lib/pin-empty.js';
 import {
   branchPhrase,
@@ -151,12 +151,11 @@ function scopeLabel(review, scope, say) {
   // what it came to. A range is followed by its two commits; a comparison with
   // one commit by that commit, in brackets after the name it was asked by.
   const resolved = uniformResolution(review);
-  // The server's label is its own English. For a preset it is the preset's
-  // description, which has a translation; for an expression it is built from the
-  // expression's revisions, and is shown as the server gave it.
+  // The server's label is its English, and its message the same words for the
+  // screen; a comment keeps the English. A range has no message: its label is
+  // git's notation, shown as the server gave it.
   const named = review.scope?.label || scope;
-  const preset = scopePreset(scope);
-  let label = preset && named === preset.description ? say(preset.description) : named;
+  let label = say === english ? named : serverText(review.scope?.labelMessage, named);
   if (scope === '@branch' && resolved?.baseName) {
     label = say(markForTranslation('Working tree against the merge-base with {base}'), { base: resolved.baseName });
   }
@@ -242,6 +241,7 @@ function toManifest(review, scope) {
     scopeKey: scope === DEFAULT_SCOPE ? '' : scope,
     complete: review.complete === true,
     warnings: review.warnings || [],
+    warningMessages: review.warningMessages,
     groups: repos.map((repo) => ({
       key: repo.path || '',
       name: showNames ? repoLabel(review.root, repo.path) : '',
@@ -518,7 +518,7 @@ class GitPin extends PinboardItemType {
         error = '';
       } catch (e) {
         if (!live || mine !== generation) return;
-        error = e instanceof Error ? e.message : String(e ?? '');
+        error = e instanceof Error ? errorText(e) : String(e ?? '');
       }
       render();
     };

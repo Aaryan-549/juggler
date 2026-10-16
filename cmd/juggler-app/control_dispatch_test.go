@@ -54,7 +54,7 @@ func TestWindowControlRouting(t *testing.T) {
 // shows.
 func TestWindowControlActionTable(t *testing.T) {
 	want := []string{
-		"theme", "title", "folder-dropped", "control", "attention", "zoom",
+		"theme", "title", "locale", "folder-dropped", "control", "attention", "zoom",
 		"drafts-flushed", "pick-directory", "pick-file", "save-file", "updater",
 	}
 	if len(windowActions) != len(want) {

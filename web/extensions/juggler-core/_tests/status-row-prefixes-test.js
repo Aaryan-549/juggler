@@ -31,13 +31,15 @@ import ResearchAgentContextItem from '../context-items/research-agent-context-it
 
 /** juggler-core's English for these rows, standing in for its catalogue. */
 const CORE_TEXT = [
-  'BatchRead', 'BatchGrep', '{count} files...', '{count} searches...',
-  '{count} files completed', '{count} searches completed', 'failed',
+  'BatchRead', 'BatchGrep', '{count, plural, one {{count} file...} other {{count} files...}}',
+  '{count, plural, one {{count} search...} other {{count} searches...}}',
+  '{count, plural, one {{count} file completed} other {{count} files completed}}',
+  '{count, plural, one {{count} search completed} other {{count} searches completed}}', 'failed',
   'Glob', '{count, plural, one {{count} file matching {pattern}} other {{count} files matching {pattern}}}',
   'Script', 'Running…',
   'Grep', '{pattern} in {path}...', '{pattern} in {path}',
-  '{pattern} in {path} ({matchCount} matches in {fileCount} files)',
-  '{pattern} ({matchCount} matches in {fileCount} files)', 'failed in {path}',
+  '{pattern} in {path} ({matchCount, plural, one {{matchCount} match} other {{matchCount} matches}} in {fileCount, plural, one {{fileCount} file} other {{fileCount} files}})',
+  '{pattern} ({matchCount, plural, one {{matchCount} match} other {{matchCount} matches}} in {fileCount, plural, one {{fileCount} file} other {{fileCount} files}})', 'failed in {path}',
   'TaskOutput', 'Reading output of {taskId}...', 'Read output of {taskId}', 'Failed to read task output',
   'TaskStop', 'Stopping {taskId}...', 'Stopped {taskId}', 'Failed to stop task',
   'Web Fetch', 'Fetching {url}...', 'Redirect to: {url}', '{url} (cached)', '{url} (truncated)',
@@ -46,7 +48,7 @@ const CORE_TEXT = [
   'Failed to create conversation',
   'Cancelled', '{prefix}: {error}', 'unknown',
   'Read', 'File not found: {filename}', '{filename} (image)', '{filename} ({width}×{height})',
-  '{filename} ({count} lines)', '{filename} (lines {start}-{end} of {total})',
+  '{filename} ({count, plural, one {{count} line} other {{count} lines}})', '{filename} (lines {start}-{end} of {total})',
   'Web Search', 'Searching for "{query}"...', 'search',
   '{count, plural, one {Found {count} result for "{query}" ({provider})} other {Found {count} results for "{query}" ({provider})}}',
   'Explore', 'Exploring…', 'Explored', 'Research', 'Researching…', 'Researched',

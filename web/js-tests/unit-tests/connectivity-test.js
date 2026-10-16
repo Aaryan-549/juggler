@@ -21,8 +21,9 @@ import { assert } from '../utilities/test-helpers.js';
 import { fetchJson } from '../../js/services/http.js';
 import { apiUrl } from '../../js/utils/api-url.js';
 import {
-  setLocale, registerCatalog, unregisterCatalog, isPseudoLocalized, PSEUDO_LOCALE,
+  setLocale, registerCatalog, unregisterCatalog, isPseudoLocalized, pseudoLocalize, PSEUDO_LOCALE,
 } from '../../sdk/lib/i18n.js';
+import { underPseudoLocale, assertPseudoLocalized } from '../utilities/pseudo-locale.js';
 import '../../js/components/settings-panel.js';
 
 /**
@@ -411,6 +412,53 @@ export async function runTests(_ctx) {
       setLocale(previous);
       unregisterCatalog('connectivity-test');
     }
+  });
+
+  // A WAN mode's own wording comes from the server: the English in `title`,
+  // `description`, … and the message it was rendered from in `titleMessage`,
+  // `descriptionMessage`, …, which the tab translates. The stand-in catalogue
+  // plays the part of the distribution's.
+  await run('under en-XA a WAN mode renders its server messages translated', async () => {
+    const english = {
+      title: 'Stub tunnel',
+      description: 'Connects through the stub transport.',
+      startLabel: 'Start the stub tunnel',
+      relayNote: 'Traffic passes through the stub relay.',
+      unavailableHint: 'Requires the stub helper.',
+    };
+    const message = (/** @type {string} */ key) => ({ key });
+    const stubMode = (/** @type {string} */ id, /** @type {boolean} */ available) => ({
+      mode: id,
+      ...english,
+      available,
+      titleMessage: message(english.title),
+      descriptionMessage: message(english.description),
+      startLabelMessage: message(english.startLabel),
+      relayNoteMessage: message(english.relayNote),
+      unavailableHintMessage: message(english.unavailableHint),
+    });
+    await underPseudoLocale('connectivity-wan-messages', () => {
+      const el = mountWith({
+        lanEnabled: false,
+        lanURLs: [],
+        tunnelEnabled: true,
+        tunnelURL: '',
+        tunnelMode: 'active',
+        tunnelRelay: true,
+        wanModes: [stubMode('idle', true), stubMode('missing', false), stubMode('active', true)],
+      });
+      try {
+        const shown = assertPseudoLocalized(el.querySelector('#connectivity-form'), {
+          skip: '.connectivity-url, .connectivity-client-meta', atLeast: 10,
+        });
+        for (const text of Object.values(english)) {
+          assert(shown.some((s) => s.includes(pseudoLocalize(text))),
+            `expected the mode's "${text}" translated; shown: ${JSON.stringify(shown)}`);
+        }
+      } finally {
+        el.remove();
+      }
+    }, { 'connectivity-wan-stub': Object.values(english) });
   });
 
   return { passed, failed, errors };

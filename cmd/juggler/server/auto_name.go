@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"juggler/cmd/juggler/core"
+	"juggler/cmd/juggler/msg"
 	providerutils "juggler/cmd/juggler/providers/utils"
 	"juggler/cmd/juggler/worker"
 	"juggler/internal/jlog"
@@ -478,7 +479,7 @@ func sleepCtx(ctx context.Context, d time.Duration) bool {
 // still carrying an "Untitled N" name is the one that failed.
 func (s *Server) noticeAutoNameFailed(convID string) {
 	jlog.Debug("auto-name %s: announcing failure to clients", convID)
-	serverBroadcaster{srv: s}.BroadcastNotice("Couldn't auto-name a tab — the model was unavailable. Rename it, or press Auto-name to try again.")
+	serverBroadcaster{srv: s}.BroadcastNotice(msg.New("Couldn't auto-name a tab — the model was unavailable. Rename it, or press Auto-name to try again."))
 }
 
 // sanitizeAutoName turns a raw model reply into a clean, bounded, single-line

@@ -88,9 +88,11 @@ export function isConversationBusy(conv) {
 }
 
 /**
+ * Whether any conversation this realm can see is running a turn, by
+ * {@link isConversationBusy}'s rule.
  * @returns {boolean} True when any local session has a busy conversation
  */
-function anyLocalConversationBusy() {
+export function anyLocalConversationBusy() {
   for (const session of getLiveSessions()) {
     for (const conv of session.conversations?.values?.() || []) {
       if (isConversationBusy(conv)) return true;

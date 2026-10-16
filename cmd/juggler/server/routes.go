@@ -19,6 +19,7 @@ import (
 
 	"github.com/gorilla/mux"
 
+	"juggler/cmd/juggler/msg"
 	"juggler/cmd/juggler/ops"
 	"juggler/cmd/juggler/providers/provider"
 	"juggler/cmd/juggler/server/handlers"
@@ -301,8 +302,8 @@ func (s *Server) setupProjectRoutes() {
 // refuseFixedProject answers a request to open or create a project in place on
 // a server whose project is fixed (see setupProjectRoutes).
 func refuseFixedProject(w http.ResponseWriter, r *http.Request) {
-	handlers.WriteError(w, r, http.StatusConflict,
-		"This session's project folder is fixed. Open another folder as its own session from the sessions page.")
+	handlers.WriteMessageError(w, r, http.StatusConflict,
+		msg.New("This session's project folder is fixed. Open another folder as its own session from the sessions page."))
 }
 
 // setupLogsRoutes registers the read-only /api/logs endpoints that back the
@@ -617,6 +618,7 @@ func (s *Server) setupRoutes() {
 	api.HandleFunc("/settings", s.handleGetSettings).Methods("GET")
 	api.HandleFunc("/settings", s.handlePutSettings).Methods("PUT")
 	api.HandleFunc("/i18n/catalog", s.handleUICatalog).Methods("GET")
+	api.HandleFunc("/i18n/locales", s.handleUILocales).Methods("GET")
 
 	// Serve extension containers straight off disk. ExtensionsAPI owns these
 	// paths; a "" path (e.g. no-project mode) simply registers no route.

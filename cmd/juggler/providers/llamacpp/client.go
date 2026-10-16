@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"juggler/cmd/juggler/msg"
 	"juggler/cmd/juggler/providers/lmstudio"
 	"juggler/cmd/juggler/providers/openaibase"
 	"juggler/cmd/juggler/providers/provider"
@@ -66,7 +67,7 @@ func Register() {
 	openaibase.Register(openaibase.Descriptor{
 		Name:            "llamacpp",
 		DisplayName:     "llama.cpp (local)",
-		Description:     "Runs a model locally via llama-server's OpenAI-compatible API. Start llama-server yourself first (Juggler doesn't launch it); point at a non-default host (LAN, remote workstation, custom port) below, otherwise defaults to http://127.0.0.1:8080. For LM Studio, use the LM Studio provider.",
+		Description:     msg.New("Runs a model locally via llama-server's OpenAI-compatible API. Start llama-server yourself first (Juggler doesn't launch it); point at a non-default host (LAN, remote workstation, custom port) below, otherwise defaults to http://127.0.0.1:8080. For LM Studio, use the LM Studio provider."),
 		AutoDetect:      server.AutoDetect(),
 		DisplayProvider: "llama.cpp",
 		ContextWindowFn: getContextWindowInfo,

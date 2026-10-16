@@ -451,7 +451,7 @@ class TestExecutor {
     // a session-scoped blanket grant would leak into every other lane's
     // shared session metadata and silently auto-approve their pending tools.
     this.conversation.rootMessageThread.addRule('execute', { kind: 'glob', value: '*', scope: 'conversation' });
-    // Auto-approve all actions (needed for claudecode's tool_use_request flow)
+    // Auto-approve all actions
     this.conversation.setAutoApprove(true);
 
     // If a specific strategy was requested in the task definition, set it
@@ -611,16 +611,7 @@ class TestExecutor {
       const messageHandler = async (data) => {
         if (this.conversation && data.conversationId === this.conversation.id) {
           // Route message based on type (same logic as app.js)
-          if (data.type === 'tool_use_request') {
-            // Tool execution request from claudecode provider (executes tools via MCP)
-            await this.conversation.handleToolUseRequest(data);
-          } else if (data.type === 'tool_use_timeout') {
-            // Backend timed out waiting for tool approval - dismiss dialog silently
-            this.conversation.rootMessageThread.resolveApproval(data.toolUseId, 'cancel');
-          } else if (data.type === 'should_continue_request') {
-            // Iteration control callback from provider
-            await this.conversation.handleShouldContinueRequest(data);
-          } else if (data.error) {
+          if (data.error) {
             // Error response
             const errorMsg = typeof data.error === 'string' ? data.error : (data.message || 'Unknown error');
             this.conversation.handleError(errorMsg);

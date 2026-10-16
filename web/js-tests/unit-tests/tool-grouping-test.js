@@ -26,6 +26,7 @@
  */
 
 import { assert, initializeRegistries } from '../utilities/test-helpers.js';
+import { underPseudoLocale } from '../utilities/pseudo-locale.js';
 import {
   buildDisplayItems,
   findGroup,
@@ -260,6 +261,11 @@ export async function runTests() {
       `no count may be separated from its label by a breaking space: "${capped}"`);
     assert(countGroupRows(fold(many)[0].members) === many.length,
       'the badge counts the same rows the summary describes');
+    // "+N more" is a message, not English glued on.
+    await underPseudoLocale('tool-grouping-test', () => {
+      const xa = summarizeGroup(fold(many)[0].members);
+      assert(!/more/.test(xa) && /\[\+4\u00A0[^\]]*\]$/.test(xa), `the overflow under en-XA: "${xa}"`);
+    });
     passed++;
   } catch (e) { failed++; errors.push(`summary: ${msg(e)}`); }
 

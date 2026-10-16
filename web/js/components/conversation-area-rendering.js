@@ -43,6 +43,7 @@ import { isGroupEntry } from '../utils/item-grouping.js';
 import { wrapWithIcon } from '../utils/icon-message-renderer.js';
 import { normalizeAttachments } from '../utils/attachments.js';
 import { readItemData } from '../utils/item-data.js';
+import { itemSummaryText } from '../utils/item-text.js';
 import { renderAssistantContentWrapped, decorateCodeBlocks } from '../../sdk/lib/markdown.js';
 import { stripThinkingTags } from '../utils/content-utils.js';
 import { itemGoal } from '../model/thread-alias.js';
@@ -174,7 +175,7 @@ function ensureQueuedDeleteButton(area, el, itemId) {
     button.type = 'button';
     button.className = 'queued-message-delete-btn icon-btn';
     button.title = t('Remove from queue');
-    button.setAttribute('aria-label', t('Remove queued message'));
+    button.setAttribute('aria-label', t('Remove from queue'));
     button.innerHTML = '<span class="icon-trashcan"></span>';
     button.addEventListener('click', (event) => {
       event.preventDefault();
@@ -376,7 +377,7 @@ function strandedLead(workspace) {
     const closedBy = typeof workspace.meta?.closedBy === 'string' && workspace.meta.closedBy
       ? displayConversationName(workspace.meta.closedBy)
       : '';
-    return t('The workspace {label} was finished with{named, select, yes { by {closedBy}} other {}}. This conversation has nowhere to work until you choose.',
+    return t('{named, select, yes {{closedBy} finished with the workspace {label}.} other {The workspace {label} was finished with.}} This conversation has nowhere to work until you choose.',
       { label, named: closedBy ? 'yes' : 'no', closedBy });
   }
   return workspace.available === false
@@ -925,7 +926,7 @@ function createToolActionElement(message, itemIndex) {
 function createErrorBubble(message, itemIndex) {
   /** @type {Record<string, string>} */
   const attributes = {
-    content: message.get('summary') || message.get('message') || message.get('content') || t('An error occurred')
+    content: itemSummaryText(message) || message.get('message') || t('An error occurred')
   };
   // The worker classifies the failure; the row only reads the verdict. Matching
   // on the error text here instead would put the taxonomy in two places and let
@@ -950,7 +951,7 @@ function createErrorBubble(message, itemIndex) {
  */
 function createNoticeBubble(message, itemIndex) {
   /** @type {Record<string, string>} */
-  const attributes = { 'notice-text': message.get('summary') || '' };
+  const attributes = { 'notice-text': itemSummaryText(message) };
   // A notice whose cause is a correctable setting names it in its data; the
   // row turns that into its one link. See notice-message.js.
   const data = message.get('data');

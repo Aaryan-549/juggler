@@ -16,6 +16,8 @@
 import { assert } from '../utilities/test-helpers.js';
 import { mountSessionsPage, sessionWindowName } from '../../machine/sessions-view.js';
 import { createControlApi, readPageConfig, ControlApiError, TOKEN_HEADER } from '../../machine/control-api.js';
+import { isPseudoLocalized } from '../../sdk/lib/i18n.js';
+import { underPseudoLocale } from '../utilities/pseudo-locale.js';
 
 const NOW = Date.parse('2026-10-14T12:00:00Z');
 
@@ -265,6 +267,56 @@ export async function runTests() {
     } finally {
       m.dispose();
     }
+  });
+
+  await test('a refusal the server sent a message for is read with it', async () => {
+    const message = { key: 'project {path}: give an absolute path, or one starting with ~/', params: { path: 'some/rel' } };
+    const api = createControlApi({
+      token: 't',
+      fetchImpl: async () => /** @type {any} */ ({
+        ok: false,
+        status: 400,
+        statusText: 'Bad Request',
+        text: async () => JSON.stringify({ error: 'project some/rel: give an absolute path, or one starting with ~/', message }),
+      }),
+    });
+    /** @type {any} */
+    let thrown = null;
+    try {
+      await api.openSession('some/rel');
+    } catch (err) {
+      thrown = err;
+    }
+    assert(thrown instanceof ControlApiError && thrown.status === 400, `threw ${thrown}`);
+    assert(thrown.message === 'project some/rel: give an absolute path, or one starting with ~/', `message ${thrown.message}`);
+    assert(thrown.serverMessage?.key === message.key, `serverMessage ${JSON.stringify(thrown.serverMessage)}`);
+  });
+
+  // The page shows a refusal in the viewer's language when the server sent a
+  // message for it; the stand-in catalogue plays the part of the server's.
+  await test('under en-XA a refused open says why in the pseudo-locale', async () => {
+    const template = 'Stand-in refusal for {path}.';
+    const api = stubApi([]);
+    api.onOpen = async () => {
+      // A path with no letters, so the parameter, which is data, cannot read as English.
+      throw new ControlApiError(400, 'Stand-in refusal for 1/2.', { key: template, params: { path: '1/2' } });
+    };
+    await underPseudoLocale('machine-sessions-messages', async () => {
+      const windows = stubWindows();
+      const m = await mount(api, { openWindow: windows.openWindow });
+      try {
+        const input = /** @type {HTMLInputElement} */ (m.root.querySelector('input.ms-launch-input'));
+        input.value = '1/2';
+        /** @type {HTMLFormElement} */ (m.root.querySelector('form.ms-launch')).requestSubmit();
+        await settle();
+        await settle();
+        const shown = m.root.querySelector('.ms-launch-error')?.textContent || '';
+        assert(isPseudoLocalized(shown), `the refusal was not translated: ${JSON.stringify(shown)}`);
+        assert(shown.includes('1/2'), `the refusal lost its path: ${JSON.stringify(shown)}`);
+      } finally {
+        m.dispose();
+      }
+    }, { 'machine-sessions-stub': [template] });
   });
 
   await test('recent projects open, or lead to the session already running them', async () => {

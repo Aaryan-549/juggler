@@ -20,6 +20,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"juggler/cmd/juggler/msg"
 )
 
 // Diff bounds. A diff is read to be looked at, so the ceilings are the size of a
@@ -165,9 +167,25 @@ type DiffRequest struct {
 // root, a directory that is not a repository in it — as distinct from one git
 // could not produce. The first is the asker's to fix and the second is not, so
 // the two are told apart by type.
-type RequestError struct{ msg string }
+// Its text is a msg.Error, which Unwrap returns, so a handler can send the
+// message for the client to show translated.
+type RequestError struct{ err *msg.Error }
 
-func (e *RequestError) Error() string { return e.msg }
+// Error returns the refusal in English.
+func (e *RequestError) Error() string {
+	if e.err == nil {
+		return ""
+	}
+	return e.err.Error()
+}
+
+// Unwrap returns the refusal's message as a *msg.Error.
+func (e *RequestError) Unwrap() error {
+	if e.err == nil {
+		return nil
+	}
+	return e.err
+}
 
 // Diff answers with one file's change within the request's scope. By default
 // that is the whole working-tree change relative to HEAD — index and worktree
@@ -181,11 +199,11 @@ func (e *RequestError) Error() string { return e.msg }
 func Diff(ctx context.Context, root string, req DiffRequest) (FileDiff, error) {
 	repoRel, ok := cleanRepoRelative(req.Repo)
 	if !ok {
-		return FileDiff{}, &RequestError{"Not a path inside the project: repo"}
+		return FileDiff{}, &RequestError{msg.NewError("Not a path inside the project: repo")}
 	}
 	fileRel, ok := cleanRepoRelative(req.Path)
 	if !ok || fileRel == "" {
-		return FileDiff{}, &RequestError{"Not a path inside the repository: path"}
+		return FileDiff{}, &RequestError{msg.NewError("Not a path inside the repository: path")}
 	}
 	asked, err := ParseScope(req.Scope)
 	if err != nil {
@@ -203,11 +221,11 @@ func Diff(ctx context.Context, root string, req DiffRequest) (FileDiff, error) {
 		if ctx.Err() != nil {
 			return FileDiff{}, ctx.Err()
 		}
-		return FileDiff{}, &RequestError{"Not a repository in this project: repo"}
+		return FileDiff{}, &RequestError{msg.NewError("Not a repository in this project: repo")}
 	}
 	abs := filepath.Join(dir, filepath.FromSlash(fileRel))
 	if !fileWithinRepo(abs, dir) {
-		return FileDiff{}, &RequestError{"Not a path inside the repository: path"}
+		return FileDiff{}, &RequestError{msg.NewError("Not a path inside the repository: path")}
 	}
 
 	unified := diffContextFrom(req.Context)

@@ -4,9 +4,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import ContextItem from 'juggler/context-item';
-import keyShortcutManager, { isMac, formatBindingForPlatform } from '../../../js/services/key-shortcut-manager.js';
+import { shortcutTableForPlatform, isMac } from 'juggler/ui';
 import CORPUS from '../corpus.js';
-import { translator } from 'juggler/i18n';
+import { translator, markUntranslated } from 'juggler/i18n';
 
 const t = translator('@juggler/about');
 
@@ -36,16 +36,14 @@ function logLocationFor(platform) {
  */
 function shortcutsMarkdownFor(mac) {
   const lines = [];
-  for (const group of keyShortcutManager.byCategoryForPlatform(mac)) {
+  for (const group of shortcutTableForPlatform(mac)) {
     lines.push(`**${group.category}**`, '');
     for (const def of group.shortcuts) {
       // Aliases are listed too (a command may answer to more than one key), so
       // the manual can name a key that actually works on the asker's surface.
       // Asked for the asker's platform rather than this window's, so a key bound
       // only on the other one is never offered.
-      const combos = keyShortcutManager.getBindings(def.id, mac)
-        .map((binding) => formatBindingForPlatform(binding, mac));
-      lines.push(`- ${combos.join(' or ') || '(unbound)'} — ${def.label}: ${def.description}`);
+      lines.push(`- ${def.keys.join(' or ') || '(unbound)'} — ${def.label}: ${def.description}`);
     }
     lines.push('');
   }
@@ -135,19 +133,19 @@ class AboutJugglerContextItem extends ContextItem {
       properties: {
         question: {
           type: 'string',
-          description: 'Optional: the specific question, recorded for display. '
+          description: markUntranslated('Optional: the specific question, recorded for display. ')
             + 'The full manual is returned regardless.'
         }
       },
       required: []
     };
 
-    const description = 'Returns Juggler\'s own reference manual — what Juggler is, '
+    const description = markUntranslated('Returns Juggler\'s own reference manual — what Juggler is, '
       + 'its tools, strategies, slash-commands, keyboard shortcuts, model providers, '
       + 'configuration and data locations, and extensions — whole, in one call. '
       + 'Call it ONLY when the user asks about Juggler itself (the application, its '
       + 'features, UI, config); NOT for questions about their own code, project, or '
-      + 'general programming.';
+      + 'general programming.');
 
     return [
       {

@@ -5,12 +5,12 @@
 package handlers
 
 import (
-	"fmt"
 	"net/http"
 
 	"github.com/gorilla/mux"
 
 	"juggler/cmd/juggler/core"
+	"juggler/cmd/juggler/msg"
 )
 
 // SystemPromptPresetsAPI serves the user's saved system-prompt presets and the
@@ -33,7 +33,7 @@ func NewSystemPromptPresetsAPI(store *core.SystemPromptPresetStore) *SystemPromp
 func (api *SystemPromptPresetsAPI) HandleGetPresets(w http.ResponseWriter, r *http.Request) {
 	presets, defaultID, err := api.store.Load()
 	if err != nil {
-		WriteError(w, r, http.StatusInternalServerError, fmt.Sprintf("Couldn't load system prompt presets: %v", err))
+		WriteMessageError(w, r, http.StatusInternalServerError, msg.New("Couldn't load system prompt presets: {detail}", "detail", err.Error()))
 		return
 	}
 	WriteJSON(w, r, 0, map[string]any{
@@ -56,7 +56,7 @@ func (api *SystemPromptPresetsAPI) HandleCreatePreset(w http.ResponseWriter, r *
 	}
 	preset, err := api.store.Create(req.Name, req.Content)
 	if err != nil {
-		WriteError(w, r, http.StatusBadRequest, err.Error())
+		WriteErr(w, r, http.StatusBadRequest, err)
 		return
 	}
 	WriteSuccess(w, r, map[string]any{"preset": preset})
@@ -68,7 +68,7 @@ func (api *SystemPromptPresetsAPI) HandleCreatePreset(w http.ResponseWriter, r *
 func (api *SystemPromptPresetsAPI) HandleDeletePreset(w http.ResponseWriter, r *http.Request) {
 	id := mux.Vars(r)["id"]
 	if err := api.store.Delete(id); err != nil {
-		WriteError(w, r, http.StatusInternalServerError, fmt.Sprintf("Couldn't delete preset: %v", err))
+		WriteMessageError(w, r, http.StatusInternalServerError, msg.New("Couldn't delete preset: {detail}", "detail", err.Error()))
 		return
 	}
 	WriteSuccess(w, r, nil)
@@ -89,7 +89,7 @@ func (api *SystemPromptPresetsAPI) HandleUpdatePreset(w http.ResponseWriter, r *
 	}
 	preset, err := api.store.Update(id, req.Name, req.Content)
 	if err != nil {
-		WriteError(w, r, http.StatusBadRequest, err.Error())
+		WriteErr(w, r, http.StatusBadRequest, err)
 		return
 	}
 	WriteSuccess(w, r, map[string]any{"preset": preset})
@@ -107,7 +107,7 @@ func (api *SystemPromptPresetsAPI) HandleSetDefaultPreset(w http.ResponseWriter,
 		return
 	}
 	if err := api.store.SetDefault(req.ID); err != nil {
-		WriteError(w, r, http.StatusInternalServerError, fmt.Sprintf("Couldn't set default preset: %v", err))
+		WriteMessageError(w, r, http.StatusInternalServerError, msg.New("Couldn't set default preset: {detail}", "detail", err.Error()))
 		return
 	}
 	WriteSuccess(w, r, nil)

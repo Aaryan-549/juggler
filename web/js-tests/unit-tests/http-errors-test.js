@@ -17,7 +17,9 @@ import { assert } from '../utilities/test-helpers.js';
 import { underPseudoLocale } from '../utilities/pseudo-locale.js';
 import { isPseudoLocalized, pseudoLocalize } from '../../sdk/lib/i18n.js';
 import { fetchJson, httpErrorText, HttpError } from '../../js/services/http.js';
+import { readFileLoad, OpsError } from '../../js/services/ops-api.js';
 import { applyPinboardOperations } from '../../js/services/pinboard-operations-api.js';
+import * as errorUtils from '../../sdk/lib/error-utils.js';
 
 /**
  * Swap `window.fetch` for `stub` while `fn` runs.
@@ -138,6 +140,62 @@ export async function runTests() {
         assert(err.message === '[Pinboard] Operation failed (HTTP 500)', `got ${JSON.stringify(err.message)}`);
       });
     });
+  });
+
+  // A server error that carries its message: the English stays where a tool
+  // or the model reads it, and every UI reading of it is translated. The
+  // values are digits so that a translated message has no letters left.
+  const bodyMessage = JSON.stringify({ error: 'invalid request body', message: { key: 'invalid request body' } });
+  const opRefusal = JSON.stringify({
+    success: false,
+    error: 'workspace 7 was closed',
+    message: { key: 'workspace {name} was closed', params: { name: '7' } },
+  });
+
+  await run('under en-XA a server message reads translated in the UI and English to tools', async () => {
+    await underPseudoLocale('http-errors-test', async () => {
+      await withFetch(answering(400, bodyMessage), async () => {
+        const err = await rejection(() => fetchJson(url));
+        assert(err instanceof HttpError, `expected an HttpError, got ${String(err)}`);
+        assert(err.message === 'HTTP 400: invalid request body', `the unprefixed message changed: ${JSON.stringify(err.message)}`);
+        assert(err.serverMessage?.key === 'invalid request body', `serverMessage = ${JSON.stringify(err.serverMessage)}`);
+        const shown = httpErrorText(err);
+        assert(isPseudoLocalized(shown), `httpErrorText is plain English: ${JSON.stringify(shown)}`);
+        const text = errorUtils.errorText?.(err);
+        assert(text === `HTTP 400: ${pseudoLocalize('invalid request body')}`, `errorText = ${JSON.stringify(text)}`);
+        const user = errorUtils.extractUserMessage(err);
+        assert(isPseudoLocalized(user), `extractUserMessage is plain English: ${JSON.stringify(user)}`);
+
+        const prefixed = await rejection(() => fetchJson(url, { errorPrefix: prefix }));
+        assert(isPseudoLocalized(prefixed.message), `prefix + server message is plain English: ${JSON.stringify(prefixed.message)}`);
+      });
+      await withFetch(answering(200, opRefusal), async () => {
+        const err = await rejection(() => readFileLoad({ path: 'x.txt' }));
+        assert(err instanceof OpsError, `expected an OpsError, got ${String(err)}`);
+        assert(err.message === 'workspace 7 was closed', `the op's English changed: ${JSON.stringify(err.message)}`);
+        assert(err.serverMessage?.key === 'workspace {name} was closed', `serverMessage = ${JSON.stringify(err.serverMessage)}`);
+        const text = errorUtils.errorText?.(err);
+        assert(isPseudoLocalized(text), `errorText of an op refusal is plain English: ${JSON.stringify(text)}`);
+        assert(isPseudoLocalized(httpErrorText(err)), `httpErrorText of an op refusal is plain English: ${JSON.stringify(httpErrorText(err))}`);
+      });
+    });
+  });
+
+  await run('under en-XA an op the server refused over HTTP reads translated in the UI', async () => {
+    await underPseudoLocale('http-errors-test', async () => {
+      await withFetch(answering(409, JSON.stringify({ success: false, error: 'no project loaded', message: { key: 'no project loaded' } })), async () => {
+        const err = await rejection(() => readFileLoad({ path: 'x.txt' }));
+        assert(err.message === 'HTTP 409: no project loaded', `the English changed: ${JSON.stringify(err.message)}`);
+        const text = errorUtils.errorText(err);
+        assert(text === `HTTP 409: ${pseudoLocalize('no project loaded')}`, `errorText = ${JSON.stringify(text)}`);
+      });
+    });
+  });
+
+  await run('errorText of an error with no server message is extractErrorMessage', async () => {
+    const plain = new Error('HTTP 500: boom');
+    assert(errorUtils.errorText?.(plain) === 'HTTP 500: boom', `got ${JSON.stringify(errorUtils.errorText?.(plain))}`);
+    assert(errorUtils.errorText?.('x') === 'x', 'a string is itself');
   });
 
   return { passed, failed, errors };

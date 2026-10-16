@@ -16,6 +16,7 @@
  */
 
 import { assert } from '../utilities/test-helpers.js';
+import { isolatePrefs } from '../utilities/pref-isolation.js';
 
 /**
  * @typedef {object} TestResult
@@ -39,6 +40,8 @@ export async function runTests(_ctx) {
 
   const priorView = prefs.defaultDiffView();
   const priorContext = prefs.defaultDiffContext();
+  // The cases set the machine-wide defaults; they stay in this lane.
+  const restorePrefs = isolatePrefs(['juggler-diff-view', 'juggler-diff-context']);
 
   /** @type {HTMLElement[]} */
   const mounted = [];
@@ -347,5 +350,6 @@ export async function runTests(_ctx) {
       `asking for more than the patch holds must show what it holds, got ${contextShown(el)}`);
   });
 
+  restorePrefs();
   return { passed, failed, errors };
 }

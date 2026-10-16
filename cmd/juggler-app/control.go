@@ -14,6 +14,8 @@ import (
 	"strconv"
 	"strings"
 
+	"juggler/cmd/juggler/msg"
+
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
@@ -74,6 +76,7 @@ type windowAction func(a *appState, w http.ResponseWriter, r *http.Request, e *w
 var windowActions = map[string]windowAction{
 	"theme":          (*appState).controlTheme,
 	"title":          (*appState).controlTitle,
+	"locale":         (*appState).controlLocale,
 	"folder-dropped": (*appState).controlFolderDropped,
 	"control":        (*appState).controlWindowState,
 	"attention":      (*appState).controlAttention,
@@ -160,14 +163,19 @@ func (a *appState) controlNewWindow(w http.ResponseWriter, r *http.Request, id s
 	// would spawn a local server for a folder that is not here, so the page
 	// is told to switch in place instead.
 	if spec, ok := a.windowSpecOf(id); ok && spec.isURL() && project != "" {
-		writeJSON(w, http.StatusConflict, map[string]string{
-			"error": "This window is connected to a server by URL, so its projects cannot open in a new window. Use Switch to open it here.",
+		writeJSON(w, http.StatusConflict, map[string]any{
+			"error":   urlWindowNewWindowRefusal.English(),
+			"message": urlWindowNewWindowRefusal,
 		})
 		return
 	}
 	a.openWindowForProject(project, opts)
 	w.WriteHeader(http.StatusNoContent)
 }
+
+// urlWindowNewWindowRefusal is why a window on a server by URL cannot open one
+// of that server's projects in a new window (controlNewWindow).
+var urlWindowNewWindowRefusal = msg.New("This window is connected to a server by URL, so its projects cannot open in a new window. Use Switch to open it here.")
 
 // controlOpenURL hands a URL to the system browser. WebKit only auto-routes
 // target="_blank" links to the default browser for external https URLs; a
@@ -241,7 +249,7 @@ func (a *appState) controlTheme(w http.ResponseWriter, r *http.Request, e *winEn
 func (a *appState) controlTitle(w http.ResponseWriter, r *http.Request, e *winEntry) {
 	title := strings.TrimSpace(r.URL.Query().Get("title"))
 	if title == "" {
-		title = "Juggler"
+		title = a.tr(appWindowTitle)
 	}
 	application.InvokeAsync(func() { e.win.SetTitle(title) })
 	a.setWindowProject(e, r.URL.Query().Get("project"))
@@ -345,7 +353,7 @@ func (a *appState) controlDraftsFlushed(w http.ResponseWriter, r *http.Request, 
 // take a file gets the file one there. The title is the caller's, since it is
 // the same sentence the panel above it is already saying.
 func (a *appState) controlPickPath(w http.ResponseWriter, r *http.Request, e *winEntry, action string) {
-	files, title, dir := pickerOptions(action, r.URL.Query().Get("title"), r.URL.Query().Get("dir"), a.pickerDirectory())
+	files, title, dir := pickerOptions(action, r.URL.Query().Get("title"), a.tr(defaultPickerTitle), r.URL.Query().Get("dir"), a.pickerDirectory())
 	dialog := a.app.Dialog.OpenFile().
 		CanChooseDirectories(true).
 		CanChooseFiles(files).
@@ -451,8 +459,9 @@ func saveFileRequest(r *http.Request) (name string, body []byte, status int) {
 // that creates directories — you open a project by making a folder for it. A
 // chooser asked for a file takes either: a file pin and a file context item both
 // accept a directory, so Browse must reach everything the typed path does or it
-// is a lesser way of answering the same question. An untitled request gets the
-// project picker's wording.
+// is a lesser way of answering the same question. An untitled request gets
+// defaultTitle, the project picker's wording (defaultPickerTitle) in the UI
+// language.
 //
 // Where the chooser opens is decided here too, from two candidates. The place
 // this app last picked from wins: a chooser that reopens where you were beats
@@ -466,10 +475,10 @@ func saveFileRequest(r *http.Request) (name string, body []byte, status int) {
 // Either candidate is taken only when it is an absolute path to a directory that
 // exists — a stale or misspelt one is dropped rather than passed on, since a
 // chooser that opens somewhere is better than one that refuses to.
-func pickerOptions(action, rawTitle, rawDir, lastDir string) (files bool, title, dir string) {
+func pickerOptions(action, rawTitle, defaultTitle, rawDir, lastDir string) (files bool, title, dir string) {
 	title = strings.TrimSpace(rawTitle)
 	if title == "" {
-		title = "Open project folder"
+		title = defaultTitle
 	}
 	dir = usableDirectory(lastDir)
 	if dir == "" && action == "pick-file" {
@@ -477,6 +486,9 @@ func pickerOptions(action, rawTitle, rawDir, lastDir string) (files bool, title,
 	}
 	return action == "pick-file", title, dir
 }
+
+// defaultPickerTitle titles a chooser the page asked for without a title.
+var defaultPickerTitle = msg.New("Open project folder")
 
 // usableDirectory returns the path if it is an absolute one naming a directory
 // that is there, and "" otherwise.
@@ -555,8 +567,9 @@ func (a *appState) handleUpdaterRestart(w http.ResponseWriter, r *http.Request) 
 		}
 		if total > 0 {
 			writeJSON(w, http.StatusConflict, map[string]any{
-				"busy":    total,
-				"message": busyMessage(total, "Restarting to update"),
+				"busy":        total,
+				"message":     restartBusyMessage(total).English(),
+				"messageText": restartBusyMessage(total),
 			})
 			return
 		}

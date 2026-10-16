@@ -17,13 +17,14 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"fmt"
 	"io/fs"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+
+	"juggler/cmd/juggler/msg"
 )
 
 // The card's bounds. Its walk is deliberately shallow — a git repo lives at the
@@ -158,14 +159,14 @@ type repoScanLimits struct {
 // list, so the two travel together.
 type repoScan struct {
 	Repos []string
-	Cut   []string
+	Cut   []msg.Message
 }
 
 // cut records a way the search fell short, once. A ceiling met a thousand times
 // is one fact about the search and not a thousand of them.
-func (s *repoScan) cut(reason string) {
+func (s *repoScan) cut(reason msg.Message) {
 	for _, existing := range s.Cut {
-		if existing == reason {
+		if existing.English() == reason.English() {
 			return
 		}
 	}
@@ -189,11 +190,11 @@ func scanRepos(ctx context.Context, root string, limits repoScanLimits) repoScan
 			return nil // unreadable entry — skip it, keep walking
 		}
 		if ctx.Err() != nil {
-			scan.cut("The search for repositories ran out of time")
+			scan.cut(msg.New("The search for repositories ran out of time"))
 			return filepath.SkipAll
 		}
 		if len(scan.Repos) >= limits.maxRepos {
-			scan.cut(fmt.Sprintf("Stopped after finding %d repositories", limits.maxRepos))
+			scan.cut(msg.New("Stopped after finding {count} repositories", "count", limits.maxRepos))
 			return filepath.SkipAll
 		}
 
@@ -219,7 +220,7 @@ func scanRepos(ctx context.Context, root string, limits repoScanLimits) repoScan
 
 		dirs++
 		if limits.maxDirs > 0 && dirs > limits.maxDirs {
-			scan.cut(fmt.Sprintf("Stopped after searching %d directories", limits.maxDirs))
+			scan.cut(msg.New("Stopped after searching {count} directories", "count", limits.maxDirs))
 			return filepath.SkipAll
 		}
 		if limits.prune {

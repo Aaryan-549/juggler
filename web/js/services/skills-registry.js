@@ -22,7 +22,7 @@
  * @module services/skills-registry
  */
 
-import { fetchJson, HttpError } from './http.js';
+import { fetchJson, HttpError, bodyServerMessage } from './http.js';
 import { apiUrl } from '../utils/api-url.js';
 import { t } from '../../sdk/lib/i18n.js';
 
@@ -142,6 +142,7 @@ export async function installSkill(req) {
       const body = err.body && typeof err.body === 'object' ? err.body : {};
       const collision = new Error(body.error || 'A skill with that name already exists');
       /** @type {any} */ (collision).collision = true;
+      /** @type {any} */ (collision).serverMessage = bodyServerMessage(body);
       /** @type {any} */ (collision).existing = body.existing;
       throw collision;
     }

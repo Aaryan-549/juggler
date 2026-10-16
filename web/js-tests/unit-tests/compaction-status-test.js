@@ -18,6 +18,8 @@
 
 import LLMState from '../../js/services/llm-state.js';
 import { assert } from '../utilities/test-helpers.js';
+import { underPseudoLocale } from '../utilities/pseudo-locale.js';
+import { isPseudoLocalized } from '../../sdk/lib/i18n.js';
 
 /**
  * @typedef {object} TestResult
@@ -123,6 +125,43 @@ export async function runTests(_ctx) {
     publish({ status: 'idle' });
     assert(!llmState.isConversationProcessing(convId), 'idle must stop processing so the spinner clears');
   });
+
+  // The worker's status lines travel as messages beside their English, so the
+  // spinner and the composer warning follow the UI language.
+  try {
+    /** @type {string[]} */
+    const shown = [];
+    const xaConv = 'conv-status-xa';
+    const xaState = new LLMState();
+    /** @type {string[]} */
+    const warnings = [];
+    (/** @type {any} */ (xaState))._conversations.set(xaConv, {
+      showWarning: (/** @type {string} */ text) => warnings.push(text),
+      restorePendingMessage: () => {},
+      trySelfHealMissingModel: () => false,
+    });
+    const xaPublish = (/** @type {object} */ state) => (/** @type {any} */ (xaState))._handleProcessingStateChange(xaConv, state);
+    const retrying = 'Connection dropped, retrying ({attempt}/{max}){hasSpent, select, yes { — {spent} so far} other {}}';
+    await underPseudoLocale('compaction-status-test', async () => {
+      xaPublish({ status: 'compacting', message: 'Summarizing conversation', text: { key: 'Summarizing conversation' },
+        threadItemId: 'thread-1', startedAt: Date.now() });
+      shown.push(xaState.getStatusMessage(xaConv).split('\u00A0·')[0]);
+      xaPublish({ status: 'retrying', message: 'Connection dropped, retrying (1/3)',
+        text: { key: retrying, params: { attempt: 1, max: 3, hasSpent: 'no', spent: '' } },
+        threadItemId: 'thread-1', startedAt: Date.now() });
+      shown.push(xaState.getStatusMessage(xaConv).split('\u00A0·')[0]);
+      xaPublish({ status: 'validation-error', message: 'Please select a model before sending a message',
+        text: { key: 'Please select a model before sending a message' }, code: 'no-model', threadItemId: 'thread-1' });
+      shown.push(warnings[0] || '');
+    });
+    xaPublish({ status: 'idle' });
+    const raw = shown.filter((text) => !isPseudoLocalized(text));
+    assert(raw.length === 0, `plain English under en-XA: ${JSON.stringify(raw)}`);
+    passed++;
+  } catch (/** @type {any} */ e) {
+    failed++;
+    errors.push(`en-XA: the worker's status lines are translated: ${e.message}`);
+  }
 
   return { passed, failed, errors };
 }

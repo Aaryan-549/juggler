@@ -81,17 +81,17 @@ class WriteFileContextItem extends EditBase {
       properties: {
         file_path: {
           type: 'string',
-          description: 'The absolute path to the file to write. Must be inside the working directory unless the user explicitly asked for a location outside it.'
+          description: markUntranslated('The absolute path to the file to write. Must be inside the working directory unless the user explicitly asked for a location outside it.')
         },
         content: {
           type: 'string',
-          description: 'The content to write to the file'
+          description: markUntranslated('The content to write to the file')
         }
       },
       required: ['file_path', 'content']
     };
 
-    const description = 'Writes a file to the local filesystem. This will overwrite the existing file if there is one.';
+    const description = markUntranslated('Writes a file to the local filesystem. This will overwrite the existing file if there is one.');
 
     return [
       {

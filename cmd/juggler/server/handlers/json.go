@@ -6,9 +6,11 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"maps"
 	"net/http"
 
+	"juggler/cmd/juggler/msg"
 	"juggler/internal/jlog"
 )
 
@@ -30,18 +32,54 @@ func WriteJSON(w http.ResponseWriter, r *http.Request, status int, v any) {
 	}
 }
 
-// WriteError sends the one JSON error envelope every /api route shares,
-// {"error": msg}, with the given status. The frontend decodes it in a single
-// place (services/http.js reads the "error" field), so a route that invents its
-// own shape — {"success": false, ...}, {"ok": false, ...} — buys nothing: those
-// bodies are only ever produced with a non-2xx status, which fetchJson turns
-// into a thrown HttpError before any caller sees the body.
+// errorBody is the one JSON error envelope every /api route shares:
+// {"error": text, "message": {...}}. Error is always English — other clients,
+// logs and the model read it — and Message, when present, is the same text as
+// a msg.Message the UI renders in the viewer's language with serverText().
+type errorBody struct {
+	Error   string       `json:"error"`
+	Message *msg.Message `json:"message,omitempty"`
+}
+
+// WriteMessageError sends the error envelope for m: its English as the error,
+// and m itself as the message, for the client to show translated. Text the
+// server composes is always a msg.Message; an error goes through WriteErr.
+// There is no writer that takes bare text, so every failure a route reports
+// can reach the UI in the user's language.
+//
+// The frontend decodes the envelope in a single place (services/http.js), so a
+// route that invents its own shape — {"success": false, ...}, {"ok": false,
+// ...} — buys nothing: those bodies are only ever produced with a non-2xx
+// status, which fetchJson turns into a thrown HttpError before any caller sees
+// the body.
 //
 // Routes that serve something other than JSON on success (static assets, file
 // downloads, worker modules, the QR SVG) deliberately keep http.Error: a client
 // fetching a script or an image has no JSON decoder waiting for the failure.
-func WriteError(w http.ResponseWriter, r *http.Request, status int, msg string) {
-	WriteJSON(w, r, status, map[string]string{"error": msg})
+func WriteMessageError(w http.ResponseWriter, r *http.Request, status int, m msg.Message) {
+	WriteJSON(w, r, status, errorBody{Error: m.English(), Message: &m})
+}
+
+// WriteErr sends err as the error envelope: err.Error() as the error, and the
+// message ErrorMessage finds in it, if any. An error whose words came from
+// elsewhere (OS, git, a provider) is sent as its English alone, since no
+// catalogue could hold it.
+func WriteErr(w http.ResponseWriter, r *http.Request, status int, err error) {
+	WriteJSON(w, r, status, errorBody{Error: err.Error(), Message: ErrorMessage(err)})
+}
+
+// ErrorMessage returns the Message of the *msg.Error that err is or wraps, when
+// that message is the whole of err's text; otherwise nil. A msg.Error wrapped
+// with a prefix of fmt.Errorf's ("loading x: %w") is not the whole text, and
+// translating only the part it covers would show the user less than the English
+// says — so such an error is sent as English alone.
+func ErrorMessage(err error) *msg.Message {
+	var me *msg.Error
+	if err == nil || !errors.As(err, &me) || me.Error() != err.Error() {
+		return nil
+	}
+	m := me.Message
+	return &m
 }
 
 // WriteSuccess sends the one JSON success envelope every /api write route
@@ -52,7 +90,7 @@ func WriteError(w http.ResponseWriter, r *http.Request, status int, msg string) 
 // settings document — writes that with WriteJSON instead and carries no flag.
 //
 // The flag is redundant with the status by construction, for the same reason
-// WriteError's shape is: a failure never reaches a caller's body. It exists so
+// the error envelope's is: a failure never reaches a caller's body. It exists so
 // that a client which does look at the body finds one spelling for "done",
 // rather than {"success": true} on one route and {"ok": true} on the next.
 func WriteSuccess(w http.ResponseWriter, r *http.Request, fields map[string]any) {
@@ -76,7 +114,7 @@ func WriteSuccess(w http.ResponseWriter, r *http.Request, fields map[string]any)
 func DecodeJSON[T any](w http.ResponseWriter, r *http.Request) (T, bool) {
 	var v T
 	if err := json.NewDecoder(r.Body).Decode(&v); err != nil {
-		WriteError(w, r, http.StatusBadRequest, "invalid request body")
+		WriteMessageError(w, r, http.StatusBadRequest, msg.New("invalid request body"))
 		// A failed decode can leave v half-populated, so hand back a zero value:
 		// a caller that forgets to check ok cannot then act on partial input.
 		var zero T

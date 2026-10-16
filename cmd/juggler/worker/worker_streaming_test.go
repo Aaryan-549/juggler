@@ -612,8 +612,12 @@ func TestCacheMissLandsInTranscript(t *testing.T) {
 	if !strings.Contains(notices[0].Content, reason) {
 		t.Errorf("notice content dropped the provider's reason: %q", notices[0].Content)
 	}
-	if !strings.Contains(notices[0].Content, cacheMissNoticeLead) {
+	if !strings.Contains(notices[0].Content, "so this turn cost more than it needed to.") {
 		t.Errorf("notice content dropped the plain-English lead: %q", notices[0].Content)
+	}
+	// Both texts ride as messages, the reason a param, for the row to translate.
+	if _, content := assertNoticeMessages(t, notices[0]); content.Params["reason"] != reason {
+		t.Errorf("message params = %v, want the provider's reason", content.Params)
 	}
 }
 
@@ -627,7 +631,7 @@ func TestNoticeItemEmitsNothingToTheLLM(t *testing.T) {
 		Type:    ItemTypeNotice,
 		ItemID:  "NOTICE_1",
 		Summary: "Cache miss",
-		Content: cacheMissNoticeLead + "\n\nReason: diverged",
+		Content: "Claude Code re-read the whole conversation.\n\nReason: diverged",
 		Source:  "claudecode",
 	}
 	if msgs := itemWireMessages(item, []ConversationItem{item}); msgs != nil {

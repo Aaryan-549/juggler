@@ -8,13 +8,14 @@ import (
 	"context"
 
 	"juggler/cmd/juggler/core"
+	"juggler/cmd/juggler/msg"
 	"juggler/internal/jlog"
 )
 
 // noCheapModelNotice is what the user is told when a micro-task finds no cheap
 // model. Information first: what stopped, and where to fix it. The tasks it
 // names are the ones they might have noticed not happening.
-const noCheapModelNotice = "No cheap model is set, so background tasks like naming tabs can't run. Pick one in Settings → Defaults."
+var noCheapModelNotice = msg.New("No cheap model is set, so background tasks like naming tabs can't run. Pick one in Settings → Defaults.")
 
 // cheapModelForTask resolves the cheap model for a micro-task that is about to
 // run, and tells the user once per server run when there isn't one.

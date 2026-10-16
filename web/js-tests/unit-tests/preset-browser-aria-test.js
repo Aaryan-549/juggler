@@ -27,6 +27,7 @@ import { ensureUserPresetsLoaded, getDefaultPresetId } from '../../js/services/s
 import apiService from '../../js/services/api.js';
 import { underPseudoLocale, shownStrings } from '../utilities/pseudo-locale.js';
 import { isPseudoLocalized } from '../../sdk/lib/i18n.js';
+import { budgetFor } from '../utilities/test-deadline.js';
 
 /**
  * A stand-in for the system-prompt context item: the fields the browser reads.
@@ -122,6 +123,7 @@ const CORE_TEXT = [
   '"{name}" is already a preset.', 'Update', 'Save as new…', 'Cancel', 'Save preset',
   'Name this preset:', 'Save system prompt preset',
   "{verb, select, update {Couldn't update preset} other {Couldn't save preset}}", 'OK',
+  "Couldn't delete preset", "Couldn't set default preset",
   'Manage presets', 'Your presets', 'No saved presets yet.', 'Edit', 'Delete',
   'Delete preset "{name}"? This cannot be undone.', 'Delete preset',
 ];
@@ -150,9 +152,14 @@ async function enXACase() {
   reg.getPresetsByCategory = (/** @type {string} */ c) => presets.filter((p) => p.category === c);
   reg.getPreset = (/** @type {string} */ id) => presets.find((p) => p.id === id);
   const api = /** @type {any} */ (apiService);
-  const savedApi = { update: api.updateSystemPromptPreset, save: api.saveSystemPromptPreset };
+  const savedApi = {
+    update: api.updateSystemPromptPreset, save: api.saveSystemPromptPreset,
+    remove: api.deleteSystemPromptPreset, setDefault: api.setDefaultSystemPromptPreset,
+  };
   api.updateSystemPromptPreset = async () => ({ success: false, error: '9' });
   api.saveSystemPromptPreset = async () => ({ success: false, error: '9' });
+  api.deleteSystemPromptPreset = async () => ({ success: false, error: '9' });
+  api.setDefaultSystemPromptPreset = async () => ({ success: false, error: '9' });
   const w = /** @type {any} */ (window);
   const savedDialogs = { showChoice: w.showChoice, showPrompt: w.showPrompt, showConfirm: w.showConfirm };
   /** @type {(kind: string, args: any[]) => any} */
@@ -208,9 +215,15 @@ async function enXACase() {
       const actions = /** @type {HTMLElement[]} */ (Array.from(dropdown.querySelectorAll('.sp-preset-action')));
       assert(actions.length === 2, `expected two footer actions, got ${actions.length}`);
 
+      // Set default → it fails, and says so.
+      reply = () => true;
+      let seen = waitFor('showConfirm');
+      /** @type {HTMLElement} */ (dropdown.querySelector('.sp-preset-setdefault-btn')).click();
+      await seen;
+
       // Save → Update → the update fails.
       reply = (kind, args) => (kind === 'showChoice' ? args[1][0] : true);
-      let seen = waitFor('showConfirm');
+      seen = waitFor('showConfirm');
       actions[0].click();
       await seen;
       // Save → Save as new → named → the save fails.
@@ -229,6 +242,14 @@ async function enXACase() {
       seen = waitFor('showConfirm');
       /** @type {HTMLElement} */ (manage.querySelector('.sp-preset-delete-btn')).click();
       await seen;
+      // The delete confirmed → it fails, and says so: a second notice after the confirmation.
+      reply = () => true;
+      const before = dialogs.length;
+      /** @type {HTMLElement} */ (manage.querySelector('.sp-preset-delete-btn')).click();
+      const end = Date.now() + budgetFor(3000);
+      while (dialogs.length < before + 2 && Date.now() < end) await new Promise((r) => setTimeout(r, 10));
+      assert(dialogs.length === before + 2 && dialogs[before + 1].args[0] === '9',
+        `a failed delete said nothing (${dialogs.slice(before).map((d) => d.kind).join(',')})`);
       closeAllPopups();
 
       // Manage, empty.
@@ -242,7 +263,7 @@ async function enXACase() {
       closeAllPopups();
 
       const kinds = dialogs.map((d) => d.kind).join(',');
-      assert(kinds === 'showChoice,showConfirm,showChoice,showPrompt,showConfirm,showConfirm',
+      assert(kinds === 'showConfirm,showChoice,showConfirm,showChoice,showPrompt,showConfirm,showConfirm,showConfirm,showConfirm',
         `unexpected dialog sequence: ${kinds}`);
       for (const { kind, args } of dialogs) {
         if (kind === 'showChoice') shown.push(args[0], ...args[1], args[2]);
@@ -264,6 +285,8 @@ async function enXACase() {
     Object.assign(reg, savedReg);
     api.updateSystemPromptPreset = savedApi.update;
     api.saveSystemPromptPreset = savedApi.save;
+    api.deleteSystemPromptPreset = savedApi.remove;
+    api.setDefaultSystemPromptPreset = savedApi.setDefault;
     Object.assign(w, savedDialogs);
   }
 }

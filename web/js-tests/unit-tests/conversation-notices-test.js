@@ -83,13 +83,13 @@ const ENGLISH = {
   'stranded, root known': "Can't send: 7 runs on this machine, and this conversation works in /9. Pick a model that runs over the network.",
   'stranded, root unknown': "Can't send: 7 runs on this machine, and this conversation works in another workspace. Pick a model that runs over the network.",
   'workspace unrecorded': "Can't send: there is no record of the workspace this conversation works in." + BANNER,
-  'workspace closed by someone': "Can't send: the workspace 5 was finished with by 6." + BANNER,
-  'workspace closed by a placeholder name': "Can't send: the workspace 5 was finished with by Untitled 3." + BANNER,
+  'workspace closed by someone': "Can't send: 6 finished with the workspace 5." + BANNER,
+  'workspace closed by a placeholder name': "Can't send: Untitled 3 finished with the workspace 5." + BANNER,
   'workspace closed by nobody named': "Can't send: the workspace 5 was finished with." + BANNER,
-  'workspace closed, no label': "Can't send: the workspace it was finished with." + BANNER,
+  'workspace closed, no label': "Can't send: the workspace this conversation works in was finished with." + BANNER,
   'workspace moved, labelled': "Can't send: the workspace 5 is not where it was." + BANNER,
   'workspace moved, by root': "Can't send: the workspace /4 is not where it was." + BANNER,
-  'workspace moved, no label': "Can't send: the workspace it is not where it was." + BANNER,
+  'workspace moved, no label': "Can't send: the workspace this conversation works in is not where it was." + BANNER,
   'worker not ready': 'Still connecting to the engine — try again in a moment.',
   'worker lost after preempt': 'Still connecting to the engine — try again in a moment.',
   'continue, worker not ready': 'Still connecting to the engine — try again in a moment.',
@@ -377,12 +377,8 @@ export async function runTests(_ctx) {
     /** @type {string[]} */
     const problems = [];
     for (const where of Object.keys(ENGLISH)) {
-      let text = texts[where];
+      const text = texts[where];
       if (typeof text !== 'string' || !text) { problems.push(`${where}: nothing drawn`); continue; }
-      if (where.startsWith('window title')) {
-        if (!text.startsWith('Juggler - ')) { problems.push(`${where}: lost its prefix: ${JSON.stringify(text)}`); continue; }
-        text = text.slice('Juggler - '.length);
-      }
       const carried = CARRIES[where];
       if (carried && !text.includes(carried)) problems.push(`${where}: lost ${carried}: ${JSON.stringify(text)}`);
       // The host is data with letters in it once mapped; take it out before judging.
@@ -392,8 +388,11 @@ export async function runTests(_ctx) {
     if (/Untitled/.test(texts['workspace closed by a placeholder name'] || '')) {
       problems.push(`the placeholder name was drawn in English: ${JSON.stringify(texts['workspace closed by a placeholder name'])}`);
     }
-    if (texts['window title, a project'] !== 'Juggler - 2') {
-      problems.push(`window title, a project: got ${JSON.stringify(texts['window title, a project'])}`);
+    // The title is one message, product name and separator included, so a
+    // translation may reorder it; only the project's directory name is fixed.
+    const projectTitle = texts['window title, a project'] || '';
+    if (!isPseudoLocalized(projectTitle.split('2').join('0')) || !projectTitle.includes('2')) {
+      problems.push(`window title, a project: got ${JSON.stringify(projectTitle)}`);
     }
     for (const [where, expected] of Object.entries(RETURNS)) {
       if (returns[where] !== expected) problems.push(`${where} returned ${JSON.stringify(returns[where])}`);

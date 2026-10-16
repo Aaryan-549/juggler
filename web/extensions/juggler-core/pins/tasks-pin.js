@@ -5,7 +5,7 @@
 
 import PinboardItemType from 'juggler/pinboard-item-type';
 import { translator } from 'juggler/i18n';
-import { createElement, extractErrorMessage, injectStylesOnce } from 'juggler/ui';
+import { createElement, errorText, injectStylesOnce } from 'juggler/ui';
 import { reconcileParts, reconcileRows, setText } from '../lib/reconcile.js';
 import { pinEmpty } from '../lib/pin-empty.js';
 
@@ -305,7 +305,7 @@ class TasksPin extends PinboardItemType {
           stopError = '';
         })
         .catch((err) => {
-          stopError = extractErrorMessage(err);
+          stopError = errorText(err);
           render();
         });
     };

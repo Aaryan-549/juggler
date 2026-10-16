@@ -41,7 +41,7 @@ import { underPseudoLocale, shownStrings } from '../utilities/pseudo-locale.js';
 import { isPseudoLocalized } from '../../sdk/lib/i18n.js';
 import FindController from '../../js/services/find-controller.js';
 import findBar, { findPanelFor } from '../../js/components/find-bar.js';
-import keyShortcutManager from '../../js/services/key-shortcut-manager.js';
+import keyShortcutManager, { formatBindingLabel, isMac } from '../../js/services/key-shortcut-manager.js';
 import { expandCollapsibleContaining } from '../../js/utils/collapsible.js';
 // Defines <pinboard-content>, whose getFindTarget() the pinboard fixtures wear.
 // The conversation column and properties panel are already loaded by the page.
@@ -751,6 +751,27 @@ export async function runTests(_ctx) {
       assert(expandCollapsibleContaining(p) === false, 'returns false with no collapsed ancestor');
     } finally {
       root.remove();
+    }
+  });
+
+  await run('the buttons name their keys as every other key hint does, for this platform', async () => {
+    resetBarState();
+    const col = attachColumn('<div class="msg">111</div>');
+    try {
+      findBar.open(col);
+      const mac = isMac();
+      const title = (/** @type {string} */ sel) => col.querySelector(sel)?.getAttribute('title') || '';
+      for (const [sel, binding] of /** @type {Array<[string, any]>} */ ([
+        ['.find-bar__next', { key: 'Enter' }],
+        ['.find-bar__prev', { key: 'Enter', shift: true }],
+        ['.find-bar__close', { key: 'Escape' }],
+      ])) {
+        const keys = formatBindingLabel(binding, mac);
+        assert(title(sel).includes(`(${keys})`), `${sel} title "${title(sel)}" does not name ${keys}`);
+      }
+    } finally {
+      findBar.close();
+      col.remove();
     }
   });
 

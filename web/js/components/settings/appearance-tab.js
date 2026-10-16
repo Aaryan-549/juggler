@@ -16,7 +16,7 @@ import { getUserPref } from '../../services/prefs.js';
 import { areTipsShown, setTipsShown } from '../../services/tips-manager.js';
 import { buildToggleRow } from './notifications-tab.js';
 import {
-  LANGUAGE_PICKER_PREF, UI_LOCALE_CHOICES, chooseUILocale, pageUILocale,
+  LANGUAGE_PICKER_PREF, chooseUILocale, fetchUILocales, pageUILocale, uiLocaleChoices,
 } from '../../services/ui-locale.js';
 
 /**
@@ -29,6 +29,31 @@ const THEME_OPTIONS = [
   { value: MODES.LIGHT, label: markForTranslation('Light') },
   { value: MODES.DARK, label: markForTranslation('Dark') },
 ];
+
+/**
+ * Replace a menu's options and select value. An option with `lang` is a
+ * language named in itself: shown as it is and marked as that language. Any
+ * other label is English source text, translated here.
+ * @param {HTMLSelectElement} select - The menu.
+ * @param {ReadonlyArray<{value: string, label: string, lang?: string}>} options - Its options.
+ * @param {string} value - The selection.
+ * @returns {void}
+ */
+function fillSelect(select, options, value) {
+  select.replaceChildren();
+  for (const opt of options) {
+    const option = document.createElement('option');
+    option.value = opt.value;
+    if (opt.lang) {
+      option.textContent = opt.label;
+      option.lang = opt.lang;
+    } else {
+      option.textContent = t(opt.label);
+    }
+    select.appendChild(option);
+  }
+  select.value = value;
+}
 
 /**
  * Appearance tab: the explicit theme mode, whether new conversations show the
@@ -44,7 +69,9 @@ const THEME_OPTIONS = [
  *
  * The Language row is built always but shown only in dev mode or when the user
  * preference LANGUAGE_PICKER_PREF is set: no language ships yet, and until one
- * does a normal build must not offer a choice (see services/ui-locale.js).
+ * does a normal build must not offer a choice (see services/ui-locale.js). It
+ * offers the languages the server has catalogues for, each named in itself, and
+ * the pseudo-locale in dev mode.
  */
 export class AppearanceTab {
   /**
@@ -113,8 +140,8 @@ export class AppearanceTab {
 
   /**
    * One settings row: a name and description beside a popup menu.
-   * @param {{id: string, name: string, description: string, options: ReadonlyArray<{value: string, label: string}>, value: string}} spec
-   *   The menu id; the row's name and description, already translated; the options, whose English labels are translated here; and the selection.
+   * @param {{id: string, name: string, description: string, options: ReadonlyArray<{value: string, label: string, lang?: string}>, value: string}} spec
+   *   The menu id; the row's name and description, already translated; the options (see fillSelect); and the selection.
    * @returns {{row: HTMLElement, select: HTMLSelectElement}} The row and its menu.
    * @private
    */
@@ -140,13 +167,7 @@ export class AppearanceTab {
     select.className = 'settings-select field-input';
     select.id = id;
     select.setAttribute('aria-label', name);
-    for (const opt of options) {
-      const option = document.createElement('option');
-      option.value = opt.value;
-      option.textContent = t(opt.label);
-      select.appendChild(option);
-    }
-    select.value = value;
+    fillSelect(select, options, value);
     ctrl.appendChild(select);
 
     row.appendChild(info);
@@ -175,8 +196,9 @@ export class AppearanceTab {
 
   /**
    * Build the language row, hidden until it is known to be wanted: dev mode, or
-   * the user preference. Choosing a language saves it and reloads this window
-   * into it.
+   * the user preference. It opens offering English alone and gains the server's
+   * languages once they are known (fetchUILocales). Choosing a language saves it and reloads this window
+   * into it; other windows follow once idle (createUILocaleReloader).
    * @returns {HTMLElement} The row.
    * @private
    */
@@ -184,9 +206,9 @@ export class AppearanceTab {
     const { row, select } = this._buildSelectRow({
       id: 'appearance-language-select',
       name: t('Language'),
-      description: t('The language Juggler is shown in. The window reloads to apply it; '
-        + 'other windows follow the next time they open.'),
-      options: UI_LOCALE_CHOICES,
+      description: t('The language Juggler is shown in. This window reloads to apply it; '
+        + 'other windows switch once they are idle.'),
+      options: uiLocaleChoices([], { current: pageUILocale() }),
       value: pageUILocale(),
     });
     row.id = 'appearance-language-row';
@@ -197,8 +219,14 @@ export class AppearanceTab {
         select.value = pageUILocale();
       });
     });
-    this.languageRowSettled = getUserPref(LANGUAGE_PICKER_PREF, false).then((shown) => {
-      row.hidden = !(isDevMode() || shown === true);
+    this.languageRowSettled = Promise.all([
+      getUserPref(LANGUAGE_PICKER_PREF, false),
+      fetchUILocales(),
+    ]).then(([shown, available]) => {
+      const dev = isDevMode();
+      const current = pageUILocale();
+      fillSelect(select, uiLocaleChoices(available, { pseudo: dev, current }), current);
+      row.hidden = !(dev || shown === true);
     });
     return row;
   }

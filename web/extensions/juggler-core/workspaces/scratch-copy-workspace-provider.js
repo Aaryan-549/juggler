@@ -22,7 +22,7 @@
 import WorkspaceProvider from 'juggler/workspace-provider';
 import { baseName, join } from '../lib/workspace-paths.js';
 import { field, nextFormSequence, showNote } from '../lib/setup-fields.js';
-import { translator } from 'juggler/i18n';
+import { translator, formatList } from 'juggler/i18n';
 
 const t = translator('@juggler/core');
 
@@ -45,13 +45,20 @@ const IGNORE_MARKER = '*\n';
 export const SANDBOXES_REL = '.juggler/sandboxes';
 
 /**
- * A name as a single path segment: what the user typed, minus anything a
- * directory name cannot be.
+ * A name as a single path segment: what the user typed, in any script, minus
+ * anything a directory name or a git ref component cannot be — separators and
+ * punctuation become `-`, a run of dots becomes one, and no segment starts or
+ * ends with a dot or dash or ends in `.lock`. NFC, so the same name typed on
+ * two systems makes the same directory.
  * @param {string} name - What the form collected.
  * @returns {string} A usable segment, or '' when nothing of it survived.
  */
 export function slug(name) {
-  return String(name ?? '').trim().replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^[-.]+|-+$/g, '');
+  return String(name ?? '').normalize('NFC').trim()
+    .replace(/[^\p{L}\p{M}\p{N}._-]+/gu, '-')
+    .replace(/\.{2,}/g, '.')
+    .replace(/(?:\.lock)+$/i, '')
+    .replace(/^[-.]+|[-.]+$/g, '');
 }
 
 /**
@@ -96,7 +103,7 @@ export function sandboxPlaces(baseRoot, name) {
 function refusedFor(name, paths) {
   const shown = paths.slice(0, 3);
   const rest = paths.length - shown.length;
-  const files = shown.join(', ');
+  const files = formatList(shown);
   if (!rest) {
     return t('{name} could not be applied: {files} {count, plural, one {has} other {have}} changed since the copy was taken. Nothing was applied.',
       { name, files, count: paths.length });
@@ -150,7 +157,7 @@ class ScratchCopyWorkspaceProvider extends WorkspaceProvider {
   renderSetup(container, ctx) {
     const id = `scratch-copy-name-${nextFormSequence()}`;
     container.replaceChildren();
-    // i18n-ignore: an example directory name, which slug() keeps only in ASCII
+    // i18n-ignore: an example directory name, not prose
     const { input, note } = field(container, id, 'name', t('Name'), 'risky-idea');
 
     // What the section last reported, when there is any: a provision that was
@@ -682,7 +689,7 @@ class ScratchCopyWorkspaceProvider extends WorkspaceProvider {
     const named = slug(String(meta?.name ?? ''));
     const baseDir = String(meta?.baseDir ?? '');
     if (!named || !baseDir) {
-      return { removed: false, message: t('Nothing was checkpointed, so there is nothing to undo.') };
+      return { removed: false };
     }
 
     // The base workspace's operations where the host has them, because that is
@@ -696,9 +703,7 @@ class ScratchCopyWorkspaceProvider extends WorkspaceProvider {
     // made and for one that will not go, and those are opposite answers to the
     // one question the host has.
     const left = await ops.stat({ path: places.rel });
-    return left?.exists
-      ? { removed: false, message: t('{dir} is still there and could not be removed.', { dir: places.dir }) }
-      : { removed: true, message: t('Removed {dir}.', { dir: places.dir }) };
+    return { removed: !left?.exists };
   }
 }
 

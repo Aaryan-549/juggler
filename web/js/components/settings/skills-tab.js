@@ -12,7 +12,7 @@
 import { escapeHtml } from '../../../sdk/lib/html.js';
 import { t, markForTranslation, htmlSlots, withHtml } from '../../../sdk/lib/i18n.js';
 import { renderMarkdown } from '../../../sdk/lib/markdown.js';
-import { extractErrorMessage } from '../../../sdk/lib/error-utils.js';
+import { errorText } from '../../../sdk/lib/error-utils.js';
 import { formatBytes } from '../../utils/format.js';
 import { CHECK_SVG, GITHUB_ICON_SVG, DROPDOWN_ARROW_SVG, REFRESH_SVG } from '../../utils/icons.js';
 import { markPopupOpen } from '../../utils/popup-manager.js';
@@ -211,7 +211,7 @@ export class SkillsTab {
       this.catalog = catalog;
       this.installed = installed;
     } catch (err) {
-      this.loadError = extractErrorMessage(err);
+      this.loadError = errorText(err);
     } finally {
       this.loading = false;
       this._renderBody();
@@ -232,7 +232,7 @@ export class SkillsTab {
     try {
       this.installed = await fetchSkills();
     } catch (err) {
-      this.loadError = extractErrorMessage(err);
+      this.loadError = errorText(err);
     } finally {
       this.loading = false;
       this._renderBody();
@@ -607,7 +607,7 @@ export class SkillsTab {
         }
         return;
       }
-      await this._alert(extractErrorMessage(err));
+      await this._alert(errorText(err));
       return;
     }
     await this._afterMutation();
@@ -686,7 +686,7 @@ export class SkillsTab {
     try {
       await uninstallSkill(/** @type {any} */ (scope), /** @type {any} */ (source), name);
     } catch (err) {
-      await this._alert(extractErrorMessage(err));
+      await this._alert(errorText(err));
       return;
     }
     await this._afterMutation();
@@ -755,7 +755,7 @@ export class SkillsTab {
       detail = await fetchCatalogEntry(entry.source, entry.path);
     } catch (err) {
       if (this.preview !== entry) return; // switched away while loading
-      drawer.innerHTML = this._previewShell(title, `<div class="skills-empty">${escapeHtml(extractErrorMessage(err))}</div>`, '');
+      drawer.innerHTML = this._previewShell(title, `<div class="skills-empty">${escapeHtml(errorText(err))}</div>`, '');
       return;
     }
     if (this.preview !== entry) return; // switched away while loading
@@ -941,7 +941,7 @@ export class SkillsTab {
             try {
               await restoreDefaultSource(s.id);
             } catch (err) {
-              await this._alert(extractErrorMessage(err));
+              await this._alert(errorText(err));
               return;
             }
             await this._loadAll(true);
@@ -975,7 +975,7 @@ export class SkillsTab {
     try {
       await addSource(url.trim());
     } catch (err) {
-      await this._alert(extractErrorMessage(err));
+      await this._alert(errorText(err));
       return;
     }
     await this._loadAll(true);
@@ -992,7 +992,7 @@ export class SkillsTab {
     try {
       await removeSource(id);
     } catch (err) {
-      await this._alert(extractErrorMessage(err));
+      await this._alert(errorText(err));
       return;
     }
     if (this.activeSource === id) this.activeSource = 'all';

@@ -32,6 +32,7 @@
   "running": "[ŕûññîñĝ ··]",
   "starting": "[šţåŕţîñĝ ···]",
   "stopped": "[šţöþþéð ··]",
+  "thousands, in a compact count\u0004{n}k": "[{n}ķ ·]",
   "tool": "[ţööļ ·]",
   "{description}\n\nArguments:\n\n{arguments}": "[{description}\n\nÅŕĝûɱéñţš:\n\n{arguments} ···]",
   "{label} failed": "[{label} ƒåîļéð ··]",

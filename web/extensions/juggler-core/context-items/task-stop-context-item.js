@@ -5,7 +5,7 @@
 
 import ContextItem from 'juggler/context-item';
 import { shellKill } from 'juggler/ops';
-import { translator } from 'juggler/i18n';
+import { translator, markUntranslated } from 'juggler/i18n';
 
 const t = translator('@juggler/core');
 
@@ -57,13 +57,13 @@ class TaskStopContextItem extends ContextItem {
       {
         name: 'TaskStop',
         category: 'write',
-        description: 'Stop a running background task by id (started by Monitor or by bash with run_in_background). For a monitor, this also ends the stream of events into the conversation.',
+        description: markUntranslated('Stop a running background task by id (started by Monitor or by bash with run_in_background). For a monitor, this also ends the stream of events into the conversation.'),
         input_schema: {
           type: 'object',
           properties: {
             task_id: {
               type: 'string',
-              description: 'The task id returned when the background task was started.'
+              description: markUntranslated('The task id returned when the background task was started.')
             }
           },
           required: ['task_id']
@@ -72,13 +72,13 @@ class TaskStopContextItem extends ContextItem {
       {
         name: 'KillShell',
         category: 'write',
-        description: 'Kill a running background shell (or monitor) by its shell id. Alias of TaskStop.',
+        description: markUntranslated('Kill a running background shell (or monitor) by its shell id. Alias of TaskStop.'),
         input_schema: {
           type: 'object',
           properties: {
             shell_id: {
               type: 'string',
-              description: 'The shell/task id returned when the background task was started.'
+              description: markUntranslated('The shell/task id returned when the background task was started.')
             }
           },
           required: ['shell_id']
@@ -123,9 +123,9 @@ class TaskStopContextItem extends ContextItem {
     }
     const result = /** @type {{shell_id?: string, killed?: boolean, error?: string}} */ (outcome.result);
     if (result.killed) {
-      return this.successSummary(`Stopped task ${result.shell_id || ''}.`);
+      return this.successSummary(markUntranslated(`Stopped task ${result.shell_id || ''}.`));
     }
-    return this.successSummary(`Task ${result.shell_id || ''} was not stopped: ${result.error || 'not running'}.`);
+    return this.successSummary(markUntranslated(`Task ${result.shell_id || ''} was not stopped: ${result.error || 'not running'}.`));
   }
 
   /**

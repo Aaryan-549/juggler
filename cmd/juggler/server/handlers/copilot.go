@@ -28,7 +28,7 @@ func (c *ConfigAPI) HandleCopilotDeviceStart(w http.ResponseWriter, r *http.Requ
 	_ = json.NewDecoder(r.Body).Decode(&req)
 	code, err := core.StartCopilotDeviceLogin(r.Context(), req.Host)
 	if err != nil {
-		WriteError(w, r, http.StatusBadGateway, err.Error())
+		WriteErr(w, r, http.StatusBadGateway, err)
 		return
 	}
 	WriteSuccess(w, r, map[string]any{
@@ -53,7 +53,7 @@ func (c *ConfigAPI) HandleCopilotDevicePoll(w http.ResponseWriter, r *http.Reque
 	}
 	status, err := core.PollCopilotDeviceLogin(r.Context(), req.Host, req.DeviceCode)
 	if err != nil {
-		WriteError(w, r, http.StatusBadGateway, err.Error())
+		WriteErr(w, r, http.StatusBadGateway, err)
 		return
 	}
 	if status == core.CopilotLoginAuthorized {
@@ -68,7 +68,7 @@ func (c *ConfigAPI) HandleCopilotDevicePoll(w http.ResponseWriter, r *http.Reque
 // provider list. It does not disturb an editor-managed login on disk.
 func (c *ConfigAPI) HandleCopilotSignOut(w http.ResponseWriter, r *http.Request) {
 	if err := core.SignOutCopilot(); err != nil {
-		WriteError(w, r, http.StatusInternalServerError, err.Error())
+		WriteErr(w, r, http.StatusInternalServerError, err)
 		return
 	}
 	c.fireCredsChanged()
@@ -94,7 +94,7 @@ func (c *ConfigAPI) HandleCopilotSetHost(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if err := core.SetCopilotHost(req.Host); err != nil {
-		WriteError(w, r, http.StatusBadRequest, err.Error())
+		WriteErr(w, r, http.StatusBadRequest, err)
 		return
 	}
 	c.fireCredsChanged()

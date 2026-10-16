@@ -21,7 +21,7 @@ import wsService from '../services/websocket.js';
 import providersCache from '../services/providers-cache.js';
 import { openSettings } from '../services/settings-launcher.js';
 import { extractUserMessage } from '../../sdk/lib/error-utils.js';
-import { t, htmlSlots, withHtml } from '../../sdk/lib/i18n.js';
+import { t, htmlSlots, withHtml, formatList } from '../../sdk/lib/i18n.js';
 import { escapeHtml } from '../../sdk/lib/html.js';
 import { hasNativeHost, reportFolderDropped } from '../../sdk/lib/window-control.js';
 import { showAlert } from './modal-dialog.js';
@@ -385,7 +385,7 @@ class NoProjectOverlay extends HTMLElement {
     }
 
     host.classList.remove('np-provider--none');
-    const named = names.slice(0, PROVIDERS_NAMED).join(', ');
+    const named = formatList(names.slice(0, PROVIDERS_NAMED));
     const rest = names.length - PROVIDERS_NAMED;
     text.textContent = rest > 0
       ? t('Connected: {named} and {rest, plural, other {# more}}', { named, rest })

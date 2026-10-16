@@ -43,6 +43,7 @@ import contextItemRegistry from '../registries/context-item-registry.js';
 import { hasPendingApprovalInTree, hasUnsettledToolInTree } from '../model/thread-navigation.js';
 import { TOOL_STATES, isProviderStateMessage } from '../../sdk/lib/message.js';
 import { anyThreadLive } from './thread-display.js';
+import { t, formatList } from '../../sdk/lib/i18n.js';
 
 /** Display `type` reported by a group entry (never a document item type). */
 export const GROUP_TYPE = 'tool-group';
@@ -359,9 +360,11 @@ export function summarizeGroup(members) {
   const kinds = [...counts].sort((a, b) => b[1] - a[1]);
   const shown = kinds.slice(0, MAX_SUMMARY_KINDS);
   const parts = shown.map(([label, count]) => `${count}×${NBSP}${label}`);
-  if (kinds.length <= MAX_SUMMARY_KINDS) return parts.join(', ');
-  const hidden = kinds.slice(MAX_SUMMARY_KINDS).reduce((total, [, count]) => total + count, 0);
-  return `${parts.join(', ')}, +${hidden}${NBSP}more`;
+  if (kinds.length > MAX_SUMMARY_KINDS) {
+    const count = kinds.slice(MAX_SUMMARY_KINDS).reduce((total, [, n]) => total + n, 0);
+    parts.push(t('{count, plural, other {+{count}\u00A0more}}', { count }));
+  }
+  return formatList(parts);
 }
 
 /**

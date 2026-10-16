@@ -20,6 +20,7 @@ import (
 
 	"juggler/cmd/juggler/childcontain"
 	"juggler/cmd/juggler/core"
+	"juggler/cmd/juggler/msg"
 	"juggler/cmd/juggler/providers/provider"
 	"juggler/internal/jlog"
 )
@@ -244,7 +245,7 @@ func augmentPathEnv(environ []string, dir string) []string {
 // installed Claude Code as to have it somewhere Juggler can't see, so it says
 // first that this is one provider among several — the row beneath it offers
 // another model as well as settings.
-const claudeNotFoundHint = "Claude Code isn't installed, or Juggler can't find its claude CLI. It's only one way to run Juggler: choose another model, or install it — or set its path — in provider settings."
+var claudeNotFoundHint = msg.New("Claude Code isn't installed, or Juggler can't find its claude CLI. It's only one way to run Juggler: choose another model, or install it — or set its path — in provider settings.")
 
 // claudeNotFoundError is the failure for a spawn that finds no claude CLI: a
 // provider.SetupError, so the worker reports it as user-fixable rather than as
@@ -255,7 +256,7 @@ func claudeNotFoundError() error {
 		Provider: "claudecode",
 		Message: fmt.Sprintf("claude executable not found. Searched $PATH, the login shell, and known install locations (%s). Its path can be set in provider settings, or with %s.",
 			claudeInstallLocationsHint, claudePathEnvVar),
-		Hint: claudeNotFoundHint,
+		Hint: claudeNotFoundHint.English(),
 	}
 }
 

@@ -126,6 +126,9 @@ func TestTruncatedThinkingOnlyTurnIsReportedNotRetried(t *testing.T) {
 	if !strings.Contains(notice.Content, "thinking") {
 		t.Errorf("notice doesn't explain that thinking consumed the budget: %q", notice.Content)
 	}
+	if _, content := assertNoticeMessages(t, notice); content.Params["used"] != float64(1638) {
+		t.Errorf("message params = %v, want the tokens the turn used", content.Params)
+	}
 
 	if n := len(items[ItemTypeThinking]); n != 1 {
 		t.Errorf("got %d thinking items, want 1 (one call, one thinking block)", n)

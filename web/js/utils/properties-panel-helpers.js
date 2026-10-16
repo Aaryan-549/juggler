@@ -420,7 +420,12 @@ registerContextMenuProvider({
   // The nearer of the two wins, so a link is about its own href and a file row
   // about its path. One provider rather than two because resolveMenu takes the
   // first that offers rows, which would leave the answer to module load order.
-  match: (start) => start?.closest('[data-file-path], a[href]') || null,
+  // A <code-block> carrying a path is declined: its own provider (code-block.js)
+  // is the more specific menu for it, and must not depend on load order either.
+  match: (start) => {
+    const subject = start?.closest('[data-file-path], a[href]') || null;
+    return subject && subject.tagName === 'CODE-BLOCK' ? null : subject;
+  },
   build: (subject) => {
     const path = fileMenuPath(subject);
     if (!path) return null;
@@ -439,11 +444,8 @@ registerContextMenuProvider({
         },
       },
     ];
-    // This provider claims anything carrying a path, which includes surfaces
-    // that render content under one — a <code-block> with a data-file-path is
-    // matched by both this and its own provider, and which of the two answers is
-    // decided by module load order. Offering the row here as well as there makes
-    // the selection referenceable whichever one wins.
+    // A row whose path covers rendered content may have a selection in it to
+    // reference.
     const paste = codeReferenceMenuItem({
       path,
       outOfRoot: isAbsolutePath(path),

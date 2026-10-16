@@ -1403,6 +1403,30 @@ export async function runTests(_ctx) {
       }
     });
 
+    await run("a board's text that could not be sent says so on the board", async () => {
+      const Panel = /** @type {any} */ (customElements.get('pinboard-panel'));
+      assert(!!Panel, 'pinboard-panel is not defined');
+      const thread = {
+        threadItemId: null,
+        conversation: { getTabElement: () => null, sendMessage: async () => '42' },
+      };
+      const stand = {
+        _showConversationForBoard: async () => true,
+        _session: { getConversation: () => ({ resolveMessageThread: () => thread, rootMessageThread: thread }) },
+      };
+      const realError = console.error;
+      console.error = () => {};
+      try {
+        pinboardView.setStatus('');
+        await Panel.prototype._composeForBoard.call(stand, { text: '7', conversation: 'c', thread: null });
+        const status = pinboardView.getStatus();
+        assert(status.includes('42'), `the failed send left the board saying ${JSON.stringify(status)}`);
+      } finally {
+        console.error = realError;
+        pinboardView.setStatus('');
+      }
+    });
+
     await run("a failed edit says so and leaves the board alone", async () => {
       const { shell, teardown } = await mountShell([
         { id: 'pin_a', type: 'probe', config: { label: 'alpha' } },
@@ -1488,7 +1512,7 @@ export async function runTests(_ctx) {
           'choosing a row closes the menu');
         assert(actionCalls.thrown === 1, 'an overflow row runs its action');
         const status = shell.querySelector('.pinboard-panel__status');
-        assert(!status.hidden && status.textContent.startsWith("Couldn't copy path."),
+        assert(!status.hidden && status.textContent.startsWith('“Copy path” didn\'t work.'),
           `an action that throws is led into, got "${status.textContent}"`);
         assert(status.textContent.includes('clipboard said no'),
           'and the underlying error survives the lead');

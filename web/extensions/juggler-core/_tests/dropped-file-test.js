@@ -31,7 +31,7 @@ import { underPseudoLocale, shownStrings } from '../../../js-tests/utilities/pse
 import { isPseudoLocalized } from '../../../sdk/lib/i18n.js';
 
 /** juggler-core's English for this plugin, standing in for its catalogue. */
-const CORE_TEXT = ['Dropped File', 'Dropped file', 'Dropped file: {filename}', '(empty)'];
+const CORE_TEXT = ['Dropped file', 'Dropped file: {filename}', '(empty)'];
 
 /**
  * Mount an <composer-box> offscreen and bind its listeners synchronously (render()

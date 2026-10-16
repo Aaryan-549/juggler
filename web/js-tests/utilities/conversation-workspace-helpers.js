@@ -492,7 +492,7 @@ export class FixtureProvider extends WorkspaceProvider {
    */
   async cleanupPartial(workspace, ctx) {
     const dir = workspace.meta?.dir;
-    if (!dir) return { removed: false, message: 'nothing was checkpointed' };
+    if (!dir) return { removed: false };
     // Against the project, because the sweep this runs in is rooted there
     // whatever the row was built from.
     const here = commandPath(ctx?.session?.projectPath ?? '', dir);
@@ -500,7 +500,7 @@ export class FixtureProvider extends WorkspaceProvider {
     // describes, so `meta` routinely names a file that was never created.
     await ctx.ops.shell({ command: `rm -f "${here}/made-here.txt"` }, ctx.signal);
     await ctx.ops.shell({ command: `rm -rf "${here}"` }, ctx.signal);
-    return { removed: true, message: `removed ${dir}` };
+    return { removed: true };
   }
 }
 

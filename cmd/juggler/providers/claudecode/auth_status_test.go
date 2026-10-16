@@ -113,7 +113,7 @@ func TestReadinessRefusesWhenCLIMissing(t *testing.T) {
 		if ready {
 			t.Errorf("state %v: ready = true, want false with no CLI to run", state)
 		}
-		if hint != claudeNotInstalledHint {
+		if hint.Key != claudeNotInstalledHint.Key {
 			t.Errorf("state %v: hint = %q, want the not-installed hint", state, hint)
 		}
 		if *calls != 0 {
@@ -144,7 +144,7 @@ func TestReadinessNeverProbesWhenNotExpired(t *testing.T) {
 		if !ready {
 			t.Errorf("state %v: ready = false, want true — only a failed turn may disable the provider", state)
 		}
-		if hint != "" {
+		if !hint.IsZero() {
 			t.Errorf("state %v: hint = %q, want empty", state, hint)
 		}
 		if *calls != 0 {
@@ -166,7 +166,7 @@ func TestReadinessRefusesWhenProbeConfirmsSignedOut(t *testing.T) {
 	if ready {
 		t.Error("ready = true, want false")
 	}
-	if hint != claudeSignInHint {
+	if hint.Key != claudeSignInHint.Key {
 		t.Errorf("hint = %q, want the sign-in hint", hint)
 	}
 	if got := currentClaudeLoginState(); got != loginExpired {
@@ -187,7 +187,7 @@ func TestReadinessRecoversWhenProbeSaysSignedIn(t *testing.T) {
 	if !ready {
 		t.Error("ready = false, want true after the CLI reports a sign-in")
 	}
-	if hint != "" {
+	if !hint.IsZero() {
 		t.Errorf("hint = %q, want empty", hint)
 	}
 	if got := currentClaudeLoginState(); got != loginUnknown {
@@ -209,7 +209,7 @@ func TestReadinessFailsOpenWhenProbeCannotAnswer(t *testing.T) {
 	if !ready {
 		t.Error("ready = false, want true — an unanswerable probe must not hold the provider down")
 	}
-	if hint != "" {
+	if !hint.IsZero() {
 		t.Errorf("hint = %q, want empty", hint)
 	}
 	if got := currentClaudeLoginState(); got != loginUnknown {
@@ -233,7 +233,7 @@ func TestReadinessThrottlesTheProbe(t *testing.T) {
 		}
 		// The throttled calls must still report the hint, or the status line
 		// would blank out between probes.
-		if hint != claudeSignInHint {
+		if hint.Key != claudeSignInHint.Key {
 			t.Fatalf("call %d: hint = %q, want the sign-in hint", i, hint)
 		}
 	}

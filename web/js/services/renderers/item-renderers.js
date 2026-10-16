@@ -27,6 +27,7 @@ import { stripThinkingTags } from '../../utils/content-utils.js';
 import { formatDuration } from '../../utils/format.js';
 import { badgeForItem } from '../../utils/item-badge.js';
 import { readItemData } from '../../utils/item-data.js';
+import { itemContentText } from '../../utils/item-text.js';
 import { getThreadDisplayContent, getThreadStatus, paintThreadSummary } from '../../utils/thread-display.js';
 import contextItemRegistry from '../../registries/context-item-registry.js';
 import * as panelHelpers from '../../utils/properties-panel-helpers.js';
@@ -188,7 +189,7 @@ export function renderError(host, container, message) {
   }
 
   const body = document.createElement('properties-panel-body');
-  const errorText = message.get('content') || message.get('message') || '';
+  const errorText = itemContentText(message) || message.get('message') || '';
   body.appendChild(panelHelpers.createCopyableText(errorText, 'properties-panel-result error'));
   wrapper.appendChild(body);
   container.appendChild(wrapper);
@@ -211,7 +212,8 @@ export function renderMessage(host, container, message) {
   );
 
   const content = document.createElement('properties-panel-body');
-  const msgContent = message.get('content') || '';
+  // A notice's text may carry the message it was rendered from (item-text.js).
+  const msgContent = msgType === 'notice' ? itemContentText(message) : (message.get('content') || '');
   if (isThinking || msgType === 'assistant') {
     content.classList.add('properties-panel-copyable');
     const copyHeader = document.createElement('div');

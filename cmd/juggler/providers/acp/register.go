@@ -5,6 +5,7 @@
 package acp
 
 import (
+	"juggler/cmd/juggler/msg"
 	"juggler/cmd/juggler/providers/provider"
 )
 
@@ -29,7 +30,7 @@ func Info() provider.ProviderInfo {
 	return provider.ProviderInfo{
 		Name:        providerName,
 		DisplayName: "ACP Agents",
-		Description: "Drives external Agent Client Protocol (ACP) agents over stdio (e.g. Gemini CLI, Zed agents). Add agents in the \"ACP agents\" settings tab; each appears as a model.",
+		Description: msg.New("Drives external Agent Client Protocol (ACP) agents over stdio (e.g. Gemini CLI, Zed agents). Add agents in the \"ACP agents\" settings tab; each appears as a model."),
 		AuthType:    provider.AuthTypeToggle,
 		AutoDetect:  anyAgentConfigured,
 		// ACP agents are black boxes: the protocol carries no context-window or

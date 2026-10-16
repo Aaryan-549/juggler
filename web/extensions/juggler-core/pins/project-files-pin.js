@@ -6,7 +6,7 @@
 import PinboardItemType from 'juggler/pinboard-item-type';
 import { expandDirectory, openPath } from 'juggler/ops';
 import { translator } from 'juggler/i18n';
-import { createElement, createFileActions, extractErrorMessage, injectStylesOnce, pinFile } from 'juggler/ui';
+import { createElement, createFileActions, errorText, injectStylesOnce, pinFile } from 'juggler/ui';
 import { reconcileRows, setText } from '../lib/reconcile.js';
 import { pinEmpty } from '../lib/pin-empty.js';
 
@@ -495,7 +495,7 @@ class ProjectFilesPin extends PinboardItemType {
         // plain-English lead goes above it rather than in place of it.
         settle({
           items: null,
-          error: t("Couldn't read this folder. {error}", { error: extractErrorMessage(err) }),
+          error: t("Couldn't read this folder. {error}", { error: errorText(err) }),
           loading: false,
           slow: false,
           token,
@@ -525,7 +525,7 @@ class ProjectFilesPin extends PinboardItemType {
         await openPath({ path });
         statusText = '';
       } catch (err) {
-        statusText = t("Couldn't open that file. {error}", { error: extractErrorMessage(err) });
+        statusText = t("Couldn't open that file. {error}", { error: errorText(err) });
       }
       render();
     };

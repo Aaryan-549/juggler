@@ -1433,7 +1433,7 @@ export async function runTests(_ctx) {
     const m = await mounted({
       config: { scope: '@staged' },
       manifest: manifestOf([{ path: 'a.js', index: 'M', worktree: '.' }], {
-        scope: { input: '@staged', kind: 'index', label: 'Staged against HEAD' },
+        scope: { input: '@staged', kind: 'index', label: 'Staged against HEAD', labelMessage: { key: 'Staged against {revision}', params: { revision: '5' } } },
       }),
       draft: {
         version: 1, base: 'head', comments: [
@@ -1647,20 +1647,37 @@ export async function runTests(_ctx) {
       // with one commit, two, or none resolved.
       shown.push(await scopeLine(DEFAULT_SCOPE));
       shown.push(await scopeLine(DEFAULT_SCOPE, { workspace: '4' }));
-      shown.push(await scopeLine('@staged', { scope: { input: '@staged', kind: 'index', label: 'Staged against HEAD' } }));
+      shown.push(await scopeLine('@staged', { scope: { input: '@staged', kind: 'index', label: 'Staged against HEAD', labelMessage: { key: 'Staged against {revision}', params: { revision: '5' } } } }));
       shown.push(await scopeLine('@staged',
-        { scope: { input: '@staged', kind: 'index', label: 'Staged against HEAD' }, workspace: '4' }, { base }));
+        { scope: { input: '@staged', kind: 'index', label: 'Staged against HEAD', labelMessage: { key: 'Staged against {revision}', params: { revision: '5' } } }, workspace: '4' }, { base }));
       shown.push(await scopeLine('@branch',
-        { scope: { input: '@branch', kind: 'worktree', label: 'Working tree against the merge-base with the default branch' } },
+        { scope: { input: '@branch', kind: 'worktree', label: 'Working tree against the merge-base with the default branch', labelMessage: { key: 'Working tree against the merge-base with the default branch' } } },
         { base, baseName: '9' }));
       shown.push(await scopeLine('@last',
-        { scope: { input: '@last', kind: 'commits', label: 'Last commit against its parent' }, workspace: '4' },
+        { scope: { input: '@last', kind: 'commits', label: 'Last commit against its parent', labelMessage: { key: 'Last commit against its parent' } }, workspace: '4' },
         { base, target }));
       // An expression's label is the server's own words for it — here a range,
       // which is data: only the words around it are the pin's.
       const range = await scopeLine('1..2', { scope: { input: '1..2', kind: 'commits', label: '1..2' } }, { base, target });
       shown.push(range);
       assert(range.includes('1..2') && range.includes('1234567..7654321'), `the range and its commits are named: ${range}`);
+      // An expression the server put into words sends them as a message too.
+      shown.push(await scopeLine('--merge-base 1', { scope: {
+        input: '--merge-base 1', kind: 'worktree', label: 'Working tree against the merge-base with 1',
+        labelMessage: { key: 'Working tree against the merge-base with {revision}', params: { revision: '1' } },
+      } }, { base }));
+
+      // A warning the server sent with its message.
+      const warned = await mounted({ manifest: manifestOf([file], {
+        complete: false,
+        warnings: ['Couldn\'t compare the project repository: 3'],
+        warningMessages: [{
+          key: 'Couldn\'t compare {where, select, root {the project repository} other {{repo}}}: {detail}',
+          params: { where: 'root', repo: '', detail: '3' },
+        }],
+      }) });
+      shown.push(warned.body.querySelector('.review-panel__warning-list li')?.textContent || '');
+      warned.teardown();
 
       // A repository's details: an upstream it is level with, stashes, a
       // repository with no commits, a detached head, no branch, and a branch
@@ -1723,7 +1740,7 @@ export async function runTests(_ctx) {
       const scoped = await mounted({
         config: { scope: '@staged' },
         manifest: manifestOf([{ path: 'a.js', index: 'M', worktree: '.' }], {
-          scope: { input: '@staged', kind: 'index', label: 'Staged against HEAD' },
+          scope: { input: '@staged', kind: 'index', label: 'Staged against HEAD', labelMessage: { key: 'Staged against {revision}', params: { revision: '5' } } },
           repos: [repo({ files: [{ path: 'a.js', index: 'M', worktree: '.' }], total: 1, base })],
         }),
       });
@@ -1748,7 +1765,7 @@ export async function runTests(_ctx) {
       ...GIT_STATUS_TEXT,
     ] });
 
-    assert(shown.length === 51, `expected every state drawn, got ${shown.length}: ${JSON.stringify(shown)}`);
+    assert(shown.length === 53, `expected every state drawn, got ${shown.length}: ${JSON.stringify(shown)}`);
     const raw = shown.filter((s) => !isPseudoLocalized(s));
     assert(raw.length === 0, `plain English under en-XA: ${JSON.stringify(raw)}`);
     assert(commentLabel === 'Staged against HEAD (1234567)',

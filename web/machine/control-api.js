@@ -55,11 +55,15 @@ export class ControlApiError extends Error {
   /**
    * @param {number} status - HTTP status (0 when the server was unreachable).
    * @param {string} message - What the server said, or why it could not be asked.
+   * @param {{key?: unknown, params?: unknown}|null} [serverMessage] - The
+   *   message the server rendered `message` from, which errorText() shows
+   *   translated; absent when the server sent text alone.
    */
-  constructor(status, message) {
+  constructor(status, message, serverMessage = null) {
     super(message);
     this.name = 'ControlApiError';
     this.status = status;
+    this.serverMessage = serverMessage;
   }
 }
 
@@ -100,16 +104,20 @@ export function createControlApi({ token, fetchImpl = (input, init) => fetch(inp
     }
     const text = await resp.text();
     if (!resp.ok) {
-      // A refused open answers with its record (a spawn that failed); anything
-      // else with plain text.
+      // A refused open answers with its record (a spawn that failed), a route's
+      // refusal with {error, message} — the English and the message it was
+      // rendered from — and a guard with plain text.
       let message = text.trim();
+      /** @type {{key?: unknown, params?: unknown}|null} */
+      let serverMessage = null;
       try {
         const parsed = JSON.parse(text);
         if (parsed && typeof parsed.error === 'string') message = parsed.error;
+        if (parsed && parsed.message && typeof parsed.message === 'object') serverMessage = parsed.message;
       } catch {
         // plain text
       }
-      throw new ControlApiError(resp.status, message || resp.statusText);
+      throw new ControlApiError(resp.status, message || resp.statusText, serverMessage);
     }
     return text ? JSON.parse(text) : null;
   }

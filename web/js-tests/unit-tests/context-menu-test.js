@@ -306,6 +306,12 @@ export async function runTests() {
     const selection = window.getSelection();
     selection?.removeAllRanges();
 
+    // A block carrying a path is the code-block's own: the file-reference
+    // provider declines it, whichever of the two registered first.
+    const owned = resolveMenu(block);
+    tally(check(owned?.subject === block && labelsOf(owned?.items || []).includes('Copy code'),
+      `code-block: a block with a data-file-path gets its own menu (got ${JSON.stringify(labelsOf(owned?.items || []))})`, errors));
+
     const noSelection = labelsOf(resolveMenu(block)?.items || []);
     tally(check(!noSelection.includes(PASTE_REFERENCE_LABEL),
       `code-block: with nothing selected there is nothing to reference (got ${JSON.stringify(noSelection)})`, errors));
@@ -314,12 +320,10 @@ export async function runTests() {
     range.selectNodeContents(block);
     selection?.addRange(range);
 
-    // Which provider answers is module load order — a block carrying a path is
-    // claimed by the file-reference provider as readily as by its own. The row
-    // has to survive either answer, which is why both offer it.
+    // The block's own provider answers, and offers the paste row itself.
     const selected = labelsOf(resolveMenu(block)?.items || []);
     tally(check(selected.includes(PASTE_REFERENCE_LABEL),
-      `code-block: a selection offers the paste row whichever provider claims the block (got ${JSON.stringify(selected)})`, errors));
+      `code-block: a selection offers the paste row (got ${JSON.stringify(selected)})`, errors));
 
     // A selection somewhere else entirely is not this block's content.
     const elsewhere = document.createElement('p');

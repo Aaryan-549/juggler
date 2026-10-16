@@ -316,6 +316,29 @@ export async function runTests(ctx) {
     errors.push(`status normalization: ${e instanceof Error ? e.message : String(e)}`);
   }
 
+  // Test 4b: An initial status outside the schema's enum is coerced to pending;
+  // every status the enum names is kept.
+  try {
+    const conversation = await freshConversation(session);
+    const PlanClass = /** @type {any} */ (contextItemRegistry.getByToolName('plan'));
+    const action = new PlanClass({ id: PlanClass.MANIFEST.id, session, conversation, messageThread: conversation.rootMessageThread });
+    const allowed = ['pending', 'in_progress', 'completed', 'failed', 'skipped'];
+    const invalid = ['done', 'PENDING', 42, null, ''];
+    const out = await action.validate({
+      action: 'submit',
+      title: 'Status validation',
+      items: [...allowed, ...invalid].map((status, i) => ({ content: `Step ${i}`, status }))
+    });
+    assert(out.valid === true, `submit should validate: ${out.error}`);
+    const statuses = out.params.items.map((/** @type {any} */ s) => s.status);
+    assert(JSON.stringify(statuses) === JSON.stringify([...allowed, ...invalid.map(() => 'pending')]),
+      `expected allowed statuses kept and the rest coerced to pending, got ${JSON.stringify(statuses)}`);
+    passed++;
+  } catch (e) {
+    failed++;
+    errors.push(`invalid status coercion: ${e instanceof Error ? e.message : String(e)}`);
+  }
+
   // Test 5: Multiple submit_plan calls show history in context
   try {
     const conversation = await freshConversation(session);
@@ -1082,8 +1105,6 @@ export async function runTests(ctx) {
       assert(!!item, 'no plan item');
       expectPseudo('title', item.getTitle());
       expectPseudo('brief summary', item.getBriefSummary());
-      expectPseudo('tool-action title (submit)', PlanClass.getToolActionTitle({ action: 'submit' }));
-      expectPseudo('tool-action title (step)', PlanClass.getToolActionTitle({ action: 'start_step' }));
 
       const approval = await action.getApprovalConfig({ action: 'submit', title: '3', items: [{ content: '1' }, { content: '2' }] });
       expectPseudo('approval title', approval.title);
@@ -1145,7 +1166,7 @@ export async function runTests(ctx) {
         'Starting step {index}', 'Starting step', 'Completing step {index}', 'Completing step',
         'Failing step {index}', 'Failing step', 'Skipping step {index}', 'Skipping step',
         'Updating step {index}', 'Updating step',
-        'pending', 'in_progress', 'completed', 'failed', 'skipped',
+        'pending', 'in progress', 'completed', 'failed', 'skipped',
         'Action', 'Submit plan', 'start step: Step {index}', 'complete step: Step {index}',
         'fail step: Step {index}', 'skip step: Step {index}',
       ]

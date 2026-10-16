@@ -23,6 +23,8 @@
  */
 
 import { assert } from '../utilities/test-helpers.js';
+import { underPseudoLocale } from '../utilities/pseudo-locale.js';
+import { isPseudoLocalized } from '../../sdk/lib/i18n.js';
 import { WorkerManager } from '../../js/services/worker-manager.js';
 import { ConversationLoader } from '../../js/services/conversation-loader.js';
 import { INBOUND_HANDLERS, routeWorkerMessage } from '../../js/services/worker-manager-inbound.js';
@@ -182,6 +184,36 @@ export async function runTests(_ctx) {
     const outcome = await soon(waiting, 'the failed ready wait');
     assert(outcome instanceof Error, 'the wait must reject, not wait out its timeout');
     assert(outcome.message.includes('no longer has'), `the rejection must carry the worker's words; got: ${outcome.message}`);
+  });
+
+  await run('en-XA: an error before ready that carries a message fails the waiters translated', async () => {
+    const conv = 'conv_inbound_error_xa';
+    const wm = managerWithEntry(conv);
+    const english = 'Couldn\'t open this conversation: the server no longer has it.';
+    const waiting = wm.waitForWorkerReady(conv, 60000).then(() => null, (/** @type {Error} */ e) => e);
+    await underPseudoLocale('worker-inbound-test', async () => {
+      await captureConsole(conv, () => {
+        routeWorkerMessage(wm, conv, /** @type {any} */ ({ type: 'error', message: english, text: { key: english } }));
+      });
+    });
+    const outcome = await soon(waiting, 'the failed ready wait');
+    assert(outcome instanceof Error && isPseudoLocalized(outcome.message),
+      `plain English under en-XA: ${outcome instanceof Error ? outcome.message : String(outcome)}`);
+  });
+
+  await run('en-XA: a validation-error carrying a message warns translated', async () => {
+    const conv = 'conv_inbound_validation_xa';
+    const wm = managerWithEntry(conv);
+    /** @type {string[]} */
+    const warnings = [];
+    const conversation = { showWarning: (/** @type {string} */ text) => warnings.push(text), restorePendingMessage: () => {} };
+    const english = 'Please select a model before sending a message';
+    await underPseudoLocale('worker-inbound-test', async () => {
+      wm._session = { conversations: new Map([[conv, conversation]]) };
+      routeWorkerMessage(wm, conv,
+        /** @type {any} */ ({ type: 'validation-error', message: english, text: { key: english } }));
+    });
+    assert(warnings.length === 1 && isPseudoLocalized(warnings[0]), `plain English under en-XA: ${JSON.stringify(warnings)}`);
   });
 
   await run('create-thread-response settles its request, a cancelled one as an AbortError', async () => {

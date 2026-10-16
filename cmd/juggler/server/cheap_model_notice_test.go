@@ -6,8 +6,10 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -163,5 +165,48 @@ func TestReadingTheSettingDoesNotNudge(t *testing.T) {
 
 	if got := countNotices(t, viewer); got != 0 {
 		t.Fatalf("notices = %d, want 0 — reading the setting must not nudge about it", got)
+	}
+}
+
+// TestNoticeFrameCarriesAMessage: a notice reaches viewers as English and as a
+// message, so a client can show it in the viewer's language.
+func TestNoticeFrameCarriesAMessage(t *testing.T) {
+	registerCheapTestProvider("nohint", "")
+	s, viewer := newCheapNoticeServer(t, unresolvableProviders())
+	if _, ok := s.cheapModelForTask(context.Background(), core.ModelRef{Provider: "nohint", Model: "big"}); ok {
+		t.Fatal("expected no cheap model to resolve")
+	}
+	deadline := time.After(500 * time.Millisecond)
+	for {
+		select {
+		case sent := <-viewer.send:
+			wire, err := json.Marshal(sent.json)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(string(wire), `"type":"notice"`) {
+				continue
+			}
+			want := `"text":{"key":"No cheap model is set, so background tasks like naming tabs can't run. Pick one in Settings → Defaults."}`
+			if !strings.Contains(string(wire), want) || !strings.Contains(string(wire), `"message":"No cheap model is set`) {
+				t.Fatalf("notice frame = %s, want the English message and %s", wire, want)
+			}
+			return
+		case <-deadline:
+			t.Fatal("no notice frame arrived")
+		}
+	}
+}
+
+// TestConversationGoneFrameCarriesAMessage: the error a client gets for a
+// conversation the server no longer has carries a message beside the English.
+func TestConversationGoneFrameCarriesAMessage(t *testing.T) {
+	wire, err := json.Marshal(conversationGoneFrame())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `"text":{"key":"Couldn't open this conversation: the server no longer has it."}`
+	if !strings.Contains(string(wire), want) || !strings.Contains(string(wire), `"type":"error"`) {
+		t.Fatalf("frame = %s, want %s", wire, want)
 	}
 }

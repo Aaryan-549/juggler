@@ -11,6 +11,7 @@
 import { assert } from './test-helpers.js';
 import { fetchJson } from '../../js/services/http.js';
 import { apiUrl } from '../../js/utils/api-url.js';
+import { fetchExtensions } from '../../js/services/extensions.js';
 import {
   setLocale, registerCatalog, unregisterCatalog, isPseudoLocalized, pseudoLocalize, PSEUDO_LOCALE,
 } from '../../sdk/lib/i18n.js';
@@ -19,7 +20,10 @@ import {
  * Run `fn` under en-XA with the core catalogue registered (plus, optionally,
  * catalogues standing in for extensions'), then put the locale back. The core
  * catalogue is fetched through `window.fetch` before `fn` runs, so a test that
- * stubs `fetch` installs the stub inside `fn`.
+ * stubs `fetch` installs the stub inside `fn`. The extension list is fetched
+ * first too, in the current locale: its first fetch registers the extensions'
+ * catalogues, which made under en-XA would replace the stand-ins in
+ * `extensionText`.
  * @param {string} namespace - A namespace of the test's own for the core catalogue.
  * @param {() => Promise<void>|void} fn
  * @param {Record<string, string[]>} [extensionText] - Extension id → English
@@ -27,6 +31,7 @@ import {
  * @returns {Promise<void>}
  */
 export async function underPseudoLocale(namespace, fn, extensionText = {}) {
+  await fetchExtensions();
   const body = await fetchJson(apiUrl(`/i18n/catalog?locale=${PSEUDO_LOCALE}`));
   assert(body && Object.keys(body.messages || {}).length > 0, 'the en-XA catalogue is empty');
   registerCatalog(namespace, PSEUDO_LOCALE, body.messages);

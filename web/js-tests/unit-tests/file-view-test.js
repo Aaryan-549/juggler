@@ -15,6 +15,8 @@
 
 import '../../js/components/file-view.js';
 import { fileSourceFromText } from '../../sdk/file-source.js';
+import { isPseudoLocalized } from '../../sdk/lib/i18n.js';
+import { underPseudoLocale } from '../utilities/pseudo-locale.js';
 
 /**
  * @param {boolean} cond - Assertion condition
@@ -78,6 +80,49 @@ export async function runTests() {
       'suppressing the header must not affect the viewer content', errors));
   } finally {
     withoutPath.remove();
+  }
+
+  const english = await mountView(true);
+  try {
+    const info = english.querySelector('.properties-panel-filepath-info')?.textContent;
+    tally(check(info === '12 B | 3 lines', `the header states size and lines, got ${JSON.stringify(info)}`, errors));
+  } finally {
+    english.remove();
+  }
+
+  // en-XA: the size/lines annotation, the not-found state and the no-path
+  // placeholder are UI text. The path itself is data, so it is a digit.
+  try {
+    await underPseudoLocale('file-view-test', async () => {
+      const found = await mountView(true);
+      try {
+        const info = found.querySelector('.properties-panel-filepath-info')?.textContent || '';
+        tally(check(isPseudoLocalized(info), `size/lines under en-XA: ${JSON.stringify(info)}`, errors));
+      } finally {
+        found.remove();
+      }
+      for (const [where, source] of [['missing', { path: '7', exists: false }], ['no path', { exists: false }]]) {
+        const view = /** @type {any} */ (document.createElement('file-view'));
+        view.showPath = true;
+        view.setSource(source);
+        document.body.appendChild(view);
+        try {
+          await Promise.resolve();
+          // With no path, the header's placeholder is the text under test.
+          const shown = [where === 'no path'
+            ? view.querySelector('.properties-panel-filepath')?.textContent || ''
+            : view.querySelector('.file-content-not-found')?.textContent || ''];
+          for (const s of shown) {
+            tally(check(isPseudoLocalized(s), `${where} under en-XA: ${JSON.stringify(s)}`, errors));
+          }
+        } finally {
+          view.remove();
+        }
+      }
+    });
+  } catch (e) {
+    failed++;
+    errors.push(`en-XA: ${e instanceof Error ? e.message : String(e)}`);
   }
 
   return { passed, failed, errors };

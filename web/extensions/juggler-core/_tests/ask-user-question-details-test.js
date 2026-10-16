@@ -5,12 +5,11 @@
 
 /**
  * The AskUserQuestion properties-panel details view must tick EVERY option the
- * user selected. The only persisted record of the answer is the result string
- * ("Header: a, b, c"), so renderToolActionDetails has to reverse that
- * serialization. For a multiSelect question the value is comma-joined; if it is
- * treated as a single label, no option ticks. This anchors that both
- * multi-select (several ticks) and single-select (one tick) reconstruct
- * correctly.
+ * user selected. It reads the structured answers the action stored
+ * (`fullResult.result.answers`), never the model's "Header: a, b, c" text — a
+ * header or answer holding ": " or ", " makes that text ambiguous. This anchors
+ * that multi-select (several ticks), single-select (one tick) and such
+ * ambiguous headers and answers all render as the user gave them.
  * @module unit-tests/ask-user-question-details
  */
 
@@ -39,13 +38,27 @@ const CORE_TEXT = [
  */
 
 /**
- * Render the details view for a question set + result string and return the
+ * The tool-action `result` the action pipeline stores for these answers: the
+ * model's text (as getSummary writes it) beside the structured record.
+ * @param {Record<string, string|string[]>} answers - Answers keyed by header
+ * @returns {{content: string, fullResult: {result: {answers: Record<string, string|string[]>}}}} The stored result
+ */
+function storedResult(answers) {
+  const item = new AskUserQuestionContextItem(/** @type {any} */ ({
+    id: 'test', session: {}, conversation: {}, messageThread: {}
+  }));
+  const content = String(item.getSummary(/** @type {any} */ ({ success: true, result: { answers } })).summary);
+  return { content, fullResult: { result: { answers } } };
+}
+
+/**
+ * Render the details view for a question set + stored answers and return the
  * set of option labels that rendered in the selected (ticked) state.
  * @param {object[]} questions - Question definitions
- * @param {string} resultContent - The persisted result string
+ * @param {Record<string, string|string[]>} answers - The stored answers
  * @returns {Set<string>} Labels rendered as selected
  */
-function renderSelectedLabels(questions, resultContent) {
+function renderSelectedLabels(questions, answers) {
   // renderToolActionDetails reads only from ctx, never from instance state, so
   // the constructor's required context fields can be inert stubs.
   const item = new AskUserQuestionContextItem(/** @type {any} */ ({
@@ -53,7 +66,7 @@ function renderSelectedLabels(questions, resultContent) {
   }));
   const wrapper = document.createElement('div');
   /** @type {any} */ (item).renderToolActionDetails(wrapper, {
-    toolAction: { get: key => (key === 'result' ? { content: resultContent } : undefined) },
+    toolAction: { get: key => (key === 'result' ? storedResult(answers) : undefined) },
     toolName: 'askuserquestion',
     input: { questions },
     helpers: { labeledSubsection },
@@ -84,17 +97,17 @@ function renderSelectedLabels(questions, resultContent) {
  * Render the details view and return the user's typed custom-answer text for a
  * header (the ticked `.custom-answer` row), or null if none rendered.
  * @param {object[]} questions - Question definitions
- * @param {string} resultContent - The persisted result string
+ * @param {Record<string, string|string[]>} answers - The stored answers
  * @param {string} header - The question header whose custom answer to read
  * @returns {string|null} The custom-answer text, or null if none rendered
  */
-function renderCustomAnswer(questions, resultContent, header) {
+function renderCustomAnswer(questions, answers, header) {
   const item = new AskUserQuestionContextItem(/** @type {any} */ ({
     id: 'test', session: {}, conversation: {}, messageThread: {}
   }));
   const wrapper = document.createElement('div');
   /** @type {any} */ (item).renderToolActionDetails(wrapper, {
-    toolAction: { get: key => (key === 'result' ? { content: resultContent } : undefined) },
+    toolAction: { get: key => (key === 'result' ? storedResult(answers) : undefined) },
     toolName: 'askuserquestion',
     input: { questions },
     helpers: { labeledSubsection },
@@ -194,7 +207,7 @@ export async function runTests() {
   }];
 
   check('multi-select ticks every chosen option', () => {
-    const selected = renderSelectedLabels(multiQuestions, 'Surfaces: Messages, File refs, Code & diffs');
+    const selected = renderSelectedLabels(multiQuestions, { Surfaces: ['Messages', 'File refs', 'Code & diffs'] });
     assert(selected.has('Messages'), 'expected "Messages" ticked');
     assert(selected.has('File refs'), 'expected "File refs" ticked');
     assert(selected.has('Code & diffs'), 'expected "Code & diffs" ticked');
@@ -203,7 +216,7 @@ export async function runTests() {
   });
 
   check('multi-select with a single chosen option ticks just that one', () => {
-    const selected = renderSelectedLabels(multiQuestions, 'Surfaces: File refs');
+    const selected = renderSelectedLabels(multiQuestions, { Surfaces: ['File refs'] });
     assert(selected.size === 1 && selected.has('File refs'),
       `expected only "File refs" ticked, got ${[...selected].join(', ')}`);
   });
@@ -218,9 +231,25 @@ export async function runTests() {
         { label: 'Beta', description: 'b' }
       ]
     }];
-    const selected = renderSelectedLabels(singleQuestions, 'Choice: Beta');
+    const selected = renderSelectedLabels(singleQuestions, { Choice: 'Beta' });
     assert(selected.size === 1 && selected.has('Beta'),
       `expected only "Beta" ticked, got ${[...selected].join(', ')}`);
+  });
+
+  check('a header holding ": " still ticks its chosen options', () => {
+    const colonQuestions = [{
+      question: 'Which scope?',
+      header: 'Scope: files',
+      multiSelect: true,
+      options: [
+        { label: 'src', description: 's' },
+        { label: 'tests, docs', description: 't' },
+        { label: 'none', description: 'n' }
+      ]
+    }];
+    const selected = renderSelectedLabels(colonQuestions, { 'Scope: files': ['src', 'tests, docs'] });
+    assert(selected.size === 2 && selected.has('src') && selected.has('tests, docs'),
+      `expected "src" and "tests, docs" ticked, got ${[...selected].join(' | ')}`);
   });
 
   // --- Draft survives the form rebuild that any re-render performs ---------
@@ -409,13 +438,13 @@ export async function runTests() {
   });
 
   check('details renders a single-select custom answer with literal ", "', () => {
-    const custom = renderCustomAnswer(singleQuestions, 'Choice: a, b and c', 'Choice');
+    const custom = renderCustomAnswer(singleQuestions, { Choice: 'a, b and c' }, 'Choice');
     assert(custom === 'a, b and c',
       `expected the custom answer preserved verbatim, got ${JSON.stringify(custom)}`);
   });
 
   check('details renders no custom-answer row when only a preset was chosen', () => {
-    const custom = renderCustomAnswer(singleQuestions, 'Choice: Beta', 'Choice');
+    const custom = renderCustomAnswer(singleQuestions, { Choice: 'Beta' }, 'Choice');
     assert(custom === null, `expected no custom-answer row, got ${JSON.stringify(custom)}`);
   });
 
@@ -506,7 +535,7 @@ export async function runTests() {
       // Properties panel: picked, unpicked and typed answers.
       const wrapper = document.createElement('div');
       /** @type {any} */ (item).renderToolActionDetails(wrapper, {
-        toolAction: { get: (/** @type {string} */ key) => (key === 'result' ? { content: '2: 3\n6: 7, 9' } : undefined) },
+        toolAction: { get: (/** @type {string} */ key) => (key === 'result' ? storedResult({ 2: '3', 6: ['7', '9'] }) : undefined) },
         toolName: 'askuserquestion',
         input: { questions: qs },
         helpers: { labeledSubsection },

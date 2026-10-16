@@ -9,6 +9,7 @@ import (
 	"net/http"
 
 	"juggler/cmd/juggler/gitview"
+	"juggler/cmd/juggler/msg"
 	"juggler/cmd/juggler/workspace"
 )
 
@@ -69,14 +70,14 @@ func (a *GitStatusAPI) gitTree(r *http.Request) (workspace.Workspace, error) {
 func (a *GitStatusAPI) HandleGitStatus(w http.ResponseWriter, r *http.Request) {
 	tree, err := a.gitTree(r)
 	if err != nil {
-		WriteError(w, r, http.StatusBadRequest, err.Error())
+		WriteErr(w, r, http.StatusBadRequest, err)
 		return
 	}
 	resp := gitStatusResponse{Root: tree.Root(), Workspace: tree.Name(), Repos: []gitview.RepoStatus{}}
 	if tree.Root() != "" {
 		repos, err := tree.GitStatus(r.Context())
 		if err != nil {
-			WriteError(w, r, http.StatusBadGateway, "Couldn't read the status. "+err.Error())
+			WriteMessageError(w, r, http.StatusBadGateway, msg.New("Couldn't read the status. {detail}", "detail", err.Error()))
 			return
 		}
 		resp.Repos = repos
@@ -91,23 +92,23 @@ func (a *GitStatusAPI) HandleGitStatus(w http.ResponseWriter, r *http.Request) {
 func (a *GitStatusAPI) HandleGitReview(w http.ResponseWriter, r *http.Request) {
 	tree, err := a.gitTree(r)
 	if err != nil {
-		WriteError(w, r, http.StatusBadRequest, err.Error())
+		WriteErr(w, r, http.StatusBadRequest, err)
 		return
 	}
 	scope, err := gitview.ParseScope(r.URL.Query().Get("scope"))
 	if err != nil {
-		WriteError(w, r, http.StatusBadRequest, err.Error())
+		WriteErr(w, r, http.StatusBadRequest, err)
 		return
 	}
 	if tree.Root() == "" {
 		// An empty manifest would be a complete review of nothing, which is a
 		// stronger claim than "there is no project open".
-		WriteError(w, r, http.StatusBadRequest, "No project is open")
+		WriteMessageError(w, r, http.StatusBadRequest, msg.New("No project is open"))
 		return
 	}
 	manifest, err := tree.GitReview(r.Context(), scope)
 	if err != nil {
-		WriteError(w, r, http.StatusBadGateway, "Couldn't read the review. "+err.Error())
+		WriteMessageError(w, r, http.StatusBadGateway, msg.New("Couldn't read the review. {detail}", "detail", err.Error()))
 		return
 	}
 	WriteJSON(w, r, 0, gitReviewResponse{Root: tree.Root(), Workspace: tree.Name(), Manifest: manifest})
@@ -121,11 +122,11 @@ func (a *GitStatusAPI) HandleGitReview(w http.ResponseWriter, r *http.Request) {
 func (a *GitStatusAPI) HandleGitDiff(w http.ResponseWriter, r *http.Request) {
 	tree, err := a.gitTree(r)
 	if err != nil {
-		WriteError(w, r, http.StatusBadRequest, err.Error())
+		WriteErr(w, r, http.StatusBadRequest, err)
 		return
 	}
 	if tree.Root() == "" {
-		WriteError(w, r, http.StatusBadRequest, "No project is open")
+		WriteMessageError(w, r, http.StatusBadRequest, msg.New("No project is open"))
 		return
 	}
 	q := r.URL.Query()
@@ -140,9 +141,9 @@ func writeGitDiff(w http.ResponseWriter, r *http.Request, resp gitview.FileDiff,
 	var refused *gitview.RequestError
 	switch {
 	case errors.As(err, &refused):
-		WriteError(w, r, http.StatusBadRequest, refused.Error())
+		WriteErr(w, r, http.StatusBadRequest, refused)
 	case err != nil:
-		WriteError(w, r, http.StatusBadGateway, "Couldn't read the diff. "+err.Error())
+		WriteMessageError(w, r, http.StatusBadGateway, msg.New("Couldn't read the diff. {detail}", "detail", err.Error()))
 	default:
 		WriteJSON(w, r, 0, resp)
 	}

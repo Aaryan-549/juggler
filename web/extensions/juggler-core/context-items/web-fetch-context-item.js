@@ -6,7 +6,7 @@
 import ContextItem from 'juggler/context-item';
 import { webFetch, uploadAssetBase64 } from 'juggler/ops';
 import { formatFileSize } from 'juggler/item-utils';
-import { translator } from 'juggler/i18n';
+import { translator, markUntranslated } from 'juggler/i18n';
 
 const t = translator('@juggler/core');
 
@@ -83,28 +83,28 @@ class WebFetchContextItem extends ContextItem {
         url: {
           type: 'string',
           format: 'uri',
-          description: 'The URL to fetch content from'
+          description: markUntranslated('The URL to fetch content from')
         },
         goal: {
           type: 'string',
-          description: 'Very short, single-line, user-facing label for EXTRACT mode (for example, "Find release date"). Ignored in RAW mode.'
+          description: markUntranslated('Very short, single-line, user-facing label for EXTRACT mode (for example, "Find release date"). Ignored in RAW mode.')
         },
         prompt: {
           type: 'string',
-          description: 'Leave UNSET to read the content (RAW). Set ONLY to ask one question about a large, noisy page you do not want in your context — the answer is a lossy summary, so never set it for a file you mean to read, quote, or work with (.md, .txt, JSON, source).'
+          description: markUntranslated('Leave UNSET to read the content (RAW). Set ONLY to ask one question about a large, noisy page you do not want in your context — the answer is a lossy summary, so never set it for a file you mean to read, quote, or work with (.md, .txt, JSON, source).')
         },
         session: {
           type: 'string',
-          description: 'Optional WebFetch session name returned by an earlier EXTRACT call. Set it to continue that same page-reading session; ignored in RAW mode.'
+          description: markUntranslated('Optional WebFetch session name returned by an earlier EXTRACT call. Set it to continue that same page-reading session; ignored in RAW mode.')
         }
       },
       required: ['url']
     };
 
-    const description = 'Fetch a URL. Two modes, chosen by whether you pass `prompt`:\n' +
+    const description = markUntranslated('Fetch a URL. Two modes, chosen by whether you pass `prompt`:\n' +
       '• RAW (omit `prompt`) — the content itself, verbatim (HTML converted to markdown; .md/.txt/JSON/source as-is). Use whenever you want to read the content.\n' +
       '• EXTRACT (pass `prompt`) — a sub-agent reads the page and returns ONLY a lossy answer to your prompt; the page never enters this conversation. Only for large/noisy pages where you want one specific fact.\n' +
-      'Default to RAW. 15-minute cache.';
+      'Default to RAW. 15-minute cache.');
 
     return [
       {

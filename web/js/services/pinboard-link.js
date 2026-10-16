@@ -48,7 +48,7 @@ import api from './api.js';
 import pinboardStore from './pinboard-store.js';
 import { ownerViewerId, VIEW_PINBOARD } from '../utils/view-mode.js';
 import { hasNativeHost } from '../../sdk/lib/window-control.js';
-import { extractErrorMessage } from '../../sdk/lib/error-utils.js';
+import { errorText } from '../../sdk/lib/error-utils.js';
 import { t } from '../../sdk/lib/i18n.js';
 
 /** The relay envelope's tag, so nothing else's payload is ever mistaken for ours. */
@@ -303,7 +303,7 @@ export const ownerLink = {
     try {
       await pinboardStore.createBoard(board, conversationId, pins);
     } catch (err) {
-      return t("Couldn't detach the board. {error}", { error: extractErrorMessage(err) });
+      return t("Couldn't detach the board. {error}", { error: errorText(err) });
     }
     return this.openBoardWindow(board, pinId, conversationId, frame);
   },
@@ -336,7 +336,7 @@ export const ownerLink = {
         await api.openPinboardWindow(wsService.viewerId, boardId, pinId, conversationId, frame);
       } catch (err) {
         // Already worded for the status line by the request's error prefix.
-        return extractErrorMessage(err) || t("Couldn't open that board.");
+        return errorText(err) || t("Couldn't open that board.");
       }
       return '';
     }

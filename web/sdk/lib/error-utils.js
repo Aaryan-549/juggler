@@ -10,6 +10,8 @@
  * and formatting across plugin execution.
  */
 
+import { serverText } from './i18n.js';
+
 /**
  * @typedef {object} ErrorInfo
  * @property {string} message - Error message
@@ -54,12 +56,38 @@ export function extractErrorMessage(error) {
 }
 
 /**
- * Extract a user-facing error message, stripping technical HTTP prefixes.
+ * The error's text for showing a user: {@link extractErrorMessage}, except
+ * that the part of it the server wrote is translated when the server sent a
+ * message for it — an error's `serverMessage`, which HttpError and OpsError
+ * carry. That part is `detail` when the error has a string one (an
+ * HttpError's, after any "HTTP NNN: " the message leads with), otherwise the
+ * whole message. A message that does not end with that part — one a caller
+ * composed around it — is returned as it is.
+ *
+ * Not for text the model reads: a tool result keeps the English, which is
+ * what extractErrorMessage returns.
+ * @param {unknown} error - Error value
+ * @returns {string} The message, in the UI's language where the server allowed it
+ */
+export function errorText(error) {
+  const english = extractErrorMessage(error);
+  if (!error || typeof error !== 'object') return english;
+  const { serverMessage, detail } = /** @type {{serverMessage?: unknown, detail?: unknown}} */ (error);
+  if (!serverMessage || typeof serverMessage !== 'object') return english;
+  const server = typeof detail === 'string' && detail !== '' ? detail : english;
+  if (!english.endsWith(server)) return english;
+  return english.slice(0, english.length - server.length)
+    + serverText(/** @type {{key?: unknown}} */ (serverMessage), server);
+}
+
+/**
+ * Extract a user-facing error message, stripping technical HTTP prefixes,
+ * with the server's part translated as {@link errorText} does.
  * @param {unknown} error - Error value
  * @returns {string} Human-readable error message without "HTTP NNN: " prefix
  */
 export function extractUserMessage(error) {
-  const msg = extractErrorMessage(error);
+  const msg = errorText(error);
   return msg.replace(/^HTTP \d+:\s*/, '');
 }
 

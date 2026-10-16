@@ -78,8 +78,7 @@ func (a *appState) releaseSettle(e *winEntry) {
 func (a *appState) settleThenClose(e *winEntry) {
 	if !a.closeAllowed(e) {
 		if n := serverBusy(e.serverURL); n > 0 {
-			msg := busyMessage(n, "Closing this window")
-			if !a.confirmDiscard(e.win, "Close window?", msg, "Close anyway") {
+			if !a.confirmDiscard(e.win, closeDialogTitle, closeBusyMessage(n), closeDialogConfirm) {
 				a.releaseSettle(e)
 				return
 			}

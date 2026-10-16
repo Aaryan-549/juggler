@@ -32,7 +32,7 @@ import { presentPopup } from '../utils/popup-surface.js';
 import { applyMenuRoles, attachMenuKeyboard } from '../utils/menu-roles.js';
 import { reviewDraftBoundsError } from '../utils/review-draft.js';
 import { formatReviewMessage } from '../utils/review-message.js';
-import { extractErrorMessage } from '../../sdk/lib/error-utils.js';
+import { extractErrorMessage, errorText } from '../../sdk/lib/error-utils.js';
 import { itemField } from '../../sdk/lib/message.js';
 import { formatDisplayPath } from '../../sdk/lib/context-item-utils.js';
 import { createFileActions } from '../utils/properties-panel-helpers.js';
@@ -1084,8 +1084,9 @@ class PinboardContent extends JugglerElement {
    * @private
    */
   _runAction(action) {
-    // The label is the pin's own, already in the active locale.
-    const lead = t("Couldn't {action}.", { action: `${action.label.charAt(0).toLowerCase()}${action.label.slice(1)}` });
+    // The label is the pin's own, already in the active locale, and is quoted
+    // as it stands: recasing it to fit a sentence is English-only grammar.
+    const lead = t('“{action}” didn\'t work.', { action: action.label });
     /** @param {any} err - What the action threw or rejected with. */
     const failed = (err) => {
       console.error('[Pinboard] Item action failed:', err);
@@ -1843,7 +1844,7 @@ class PinboardContent extends JugglerElement {
       this._tasks = candidates.filter((task) => running.has(task.taskId));
       this._taskError = '';
     } catch (err) {
-      this._taskError = extractErrorMessage(err);
+      this._taskError = errorText(err);
     } finally {
       this._taskProbing = false;
     }

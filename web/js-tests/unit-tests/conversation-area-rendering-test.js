@@ -155,5 +155,58 @@ export async function runTests() {
     });
   });
 
+  // Error and notice items keep their English and, from builds that send one,
+  // the message it was rendered from in `data`. A row is drawn from the message
+  // in the UI language; an item saved before there was one still shows the
+  // English it was stored with. Every value is a digit, so only the template is
+  // under test.
+  await run('en-XA: error and notice rows draw a stored message translated, and old items in their English', async () => {
+    await underPseudoLocale('conversation-area-rendering-test', async () => {
+      /**
+       * Draw one item and return its row.
+       * @param {Record<string, any>} fields
+       * @param {string} tag - The row element it must draw
+       * @returns {Element} The row.
+       */
+      const draw = (fields, tag) => {
+        const list = document.createElement('div');
+        const footer = document.createElement('div');
+        list.appendChild(footer);
+        positionElements({}, list, footer, [item(fields)], new Map());
+        const row = list.querySelector(tag);
+        assert(!!row, `${tag}: the item drew no row`);
+        return /** @type {Element} */ (row);
+      };
+
+      const errorText = 'Thread item 7 not found';
+      const errorMessage = { key: 'Thread item {id} not found', params: { id: '7' } };
+      const newError = draw({ type: MESSAGE_TYPES.ERROR, itemId: 'e2', content: errorText, summary: errorText, data: { message: errorMessage } }, 'error-message');
+      const shown = newError.getAttribute('content') || '';
+      assert(isPseudoLocalized(shown) && shown.includes('7'), `error with a message drew ${JSON.stringify(shown)}, want it translated`);
+
+      const oldError = draw({ type: MESSAGE_TYPES.ERROR, itemId: 'e3', content: errorText, summary: errorText }, 'error-message');
+      assert(oldError.getAttribute('content') === errorText, `error without a message drew ${JSON.stringify(oldError.getAttribute('content'))}, want its stored English`);
+
+      // A summary the worker pulled out of the provider's own JSON is the
+      // provider's text, not the message's: it is shown as stored.
+      const pulled = draw({
+        type: MESSAGE_TYPES.ERROR, itemId: 'e4', content: 'Error processing response: {"message":"7"}', summary: '7',
+        data: { message: { key: 'Error processing response: {detail}', params: { detail: '{"message":"7"}' } } },
+      }, 'error-message');
+      assert(pulled.getAttribute('content') === '7', `provider summary drew ${JSON.stringify(pulled.getAttribute('content'))}, want it as stored`);
+
+      const noticeSummary = 'Folded 4 earlier items into a summary thread. Nothing was discarded.';
+      const newNotice = draw({
+        type: 'notice', itemId: 'n1', summary: noticeSummary, content: '8',
+        data: { summaryMessage: { key: 'Folded {count} earlier items into a summary thread. Nothing was discarded.', params: { count: 4 } } },
+      }, 'notice-message');
+      const noticeShown = newNotice.getAttribute('notice-text') || '';
+      assert(isPseudoLocalized(noticeShown) && noticeShown.includes('4'), `notice with a message drew ${JSON.stringify(noticeShown)}, want it translated`);
+
+      const oldNotice = draw({ type: 'notice', itemId: 'n2', summary: noticeSummary, content: '8' }, 'notice-message');
+      assert(oldNotice.getAttribute('notice-text') === noticeSummary, `notice without a message drew ${JSON.stringify(oldNotice.getAttribute('notice-text'))}, want its stored English`);
+    });
+  });
+
   return { passed, failed, errors };
 }

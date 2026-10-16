@@ -4,10 +4,10 @@
 
 import wsService from '../services/websocket.js';
 import { getUpdaterState, startInstall } from '../services/updater-control.js';
-import { fetchJson } from '../services/http.js';
+import { fetchJson, bodyServerMessage } from '../services/http.js';
 import JugglerElement from './juggler-element.js';
 import { apiUrl } from '../utils/api-url.js';
-import { t } from '../../sdk/lib/i18n.js';
+import { t, serverText } from '../../sdk/lib/i18n.js';
 import { escapeHtml } from '../../sdk/lib/html.js';
 
 /**
@@ -141,7 +141,9 @@ class UpdateButton extends JugglerElement {
       present,
       updaterState,
       pct,
-      error: u.error || null,
+      // The failure in the viewer's language when the app sent it as a message,
+      // else the app's English.
+      error: serverText(bodyServerMessage({ message: u.errorMessage }), u.error) || null,
       errorStage: u.errorStage || null,
       currentVersion: s.currentVersion || '',
       targetVersion,

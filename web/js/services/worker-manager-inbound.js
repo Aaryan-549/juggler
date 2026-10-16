@@ -25,6 +25,7 @@
 import * as protocols from './worker-manager-protocols.js';
 import { bytesToBase64, base64ToBytes } from '../utils/base64.js';
 import { isEngine } from '../../sdk/lib/client-role.js';
+import { serverText } from '../../sdk/lib/i18n.js';
 import { setBootstrapSummarizationPrompt } from '../utils/compaction-utils.js';
 
 /**
@@ -176,7 +177,10 @@ function onError(wm, conversationId, data) {
   // the waiters now so the panel offers Retry, instead of leaving them to
   // time out a minute later on a spinner that was never going to end.
   // After ready, the conversation carries its own errors through Yjs.
-  wm.failPendingReady(conversationId, data.message ? String(data.message) : `Worker error for ${conversationId}`);
+  // A server-built error carries its words as a message too (`text`).
+  wm.failPendingReady(conversationId, data.message
+    ? serverText(data.text, String(data.message))
+    : `Worker error for ${conversationId}`);
 }
 
 /** @type {InboundHandler} */
@@ -188,7 +192,7 @@ function onValidationError(wm, conversationId, data) {
     console.warn(`[WorkerManager] No conversation found for ${conversationId}`);
     return;
   }
-  conversation.showWarning(data.message);
+  conversation.showWarning(serverText(data.text, data.message));
   conversation.restorePendingMessage();
 }
 

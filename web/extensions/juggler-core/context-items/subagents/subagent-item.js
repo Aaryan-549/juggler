@@ -104,13 +104,13 @@ export default class SubagentContextItem extends ContextItem {
       {
         name: tool,
         category: 'read',
-        description: `${description}\nThe task must be self-contained: the sub-agent sees nothing of this conversation.`,
+        description: markUntranslated(`${description}\nThe task must be self-contained: the sub-agent sees nothing of this conversation.`),
         input_schema: {
           type: 'object',
           properties: {
             goal: {
               type: 'string',
-              description: `Very short, single-line, user-facing label (for example, "${goalExample}"). Not the task or the return requirements.`
+              description: markUntranslated(`Very short, single-line, user-facing label (for example, "${goalExample}"). Not the task or the return requirements.`)
             },
             task: {
               type: 'string',
@@ -118,7 +118,7 @@ export default class SubagentContextItem extends ContextItem {
             },
             session: {
               type: 'string',
-              description: `Optional ${tool} session name from an earlier call — continues that same ${continues}; omit it to start fresh.`
+              description: markUntranslated(`Optional ${tool} session name from an earlier call — continues that same ${continues}; omit it to start fresh.`)
             },
             thoroughness: thoroughnessSchema()
           },

@@ -268,7 +268,7 @@ A nested sub-conversation.
 | `content` | string \| undefined | Long form / detail. |
 | `summary` | string \| undefined | Renderer subtitle. |
 | `stack` | string \| undefined | Stack trace. |
-| `data` | JSON \| undefined | Worker-supplied detail: `provider`, `model`, `duration` (ms), and `errorKind`. |
+| `data` | JSON \| undefined | Worker-supplied detail: `provider`, `model`, `duration` (ms), `errorKind`, and `message`. |
 
 `errorKind` is the worker's classification of the failure, and the only thing the
 row keys its extra actions off — matching on the error text in the client would
@@ -277,6 +277,15 @@ put the taxonomy in two places and let them disagree. Two values are acted on:
 Provider settings action; and `setup`, the provider can't run on this machine (a
 CLI it drives isn't installed), so the row offers Choose another model ahead of
 Provider settings.
+
+`message` is the message `content` was rendered from, as `{key, params?, context?}`
+(a Go `msg.Message`, its key the English template), present when Juggler worded
+the error itself; the provider's or the OS's own text rides in it as a param.
+Readers show it with `serverText` and fall back to the stored English, so an item
+saved before there was one reads as it always did (`utils/item-text.js`). An
+error has no message for its `summary`: that is either `content` or the
+provider's own message pulled out of it, which is shown as stored. Neither field
+reaches the model — error items are wire-silent.
 
 The row offers a Retry — delete this error and continue the thread — only while
 the error is the **last** item in its thread, since that is the only position
@@ -297,6 +306,7 @@ reader is rarely looking at the moment it happens.
 | `summary` | string | A one-line explanation, e.g. `Claude Code re-read the whole conversation, so this turn cost more than it needed to.` It is the transcript row's only text — the lozenge beside the warning triangle is a fixed `Warning` — so it has to say why the notice is there, in a sentence that fits a row. |
 | `content` | string | The detail: the same plain-English lead, then the underlying reason or measured values verbatim. Read in the properties panel, not the row. |
 | `source` | string | What reported it (provider or plugin id). |
+| `data` | JSON \| undefined | `message` and `summaryMessage`, the messages `content` and `summary` were rendered from (`{key, params?, context?}`, as on an error), when Juggler worded the notice — a provider-composed notice has neither. Readers show them with `serverText`, falling back to the stored English (`utils/item-text.js`). A notice about an assumed context window also carries `settings` (the field its link opens) and `assumedWindow`. |
 
 Purely for the reader, in two senses that both need holding: the worker's
 `itemWireMessages` has no case for it, so it emits **nothing** to the provider;

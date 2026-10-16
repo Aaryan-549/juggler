@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -16,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"juggler/cmd/juggler/msg"
 	"juggler/cmd/juggler/providers/provider"
 	"juggler/internal/atomicio"
 	"juggler/internal/jlog"
@@ -39,7 +41,31 @@ type ProviderCredential struct {
 	BearerToken string
 	Headers     map[string]string
 	KeySource   KeySource
-	AuthHint    string
+	// AuthHint is the user-facing state of the login, in English.
+	AuthHint string
+	// AuthHintMessage is the message AuthHint was rendered from, for the UI to
+	// show translated; nil when the hint is data (an error's text) that no
+	// catalogue could hold.
+	AuthHintMessage *msg.Message
+}
+
+// withAuthHint returns c with m as its hint.
+func (c ProviderCredential) withAuthHint(m msg.Message) ProviderCredential {
+	c.AuthHint = m.English()
+	c.AuthHintMessage = &m
+	return c
+}
+
+// errorAuthHint is the credential that reports err as its hint: err's text,
+// and its message when err is a *msg.Error whose text is the whole of err's.
+func errorAuthHint(err error) ProviderCredential {
+	c := ProviderCredential{AuthHint: err.Error()}
+	var me *msg.Error
+	if errors.As(err, &me) && me.Error() == err.Error() {
+		m := me.Message
+		c.AuthHintMessage = &m
+	}
+	return c
 }
 
 // CacheKey returns a non-secret identifier suitable for provider-client cache
@@ -535,7 +561,7 @@ func (s *CredentialsStore) GetProviderCredential(providerName string) (ProviderC
 		if !s.IsProviderEnabled(providerName) {
 			return ProviderCredential{}, fmt.Errorf("provider %s is not enabled", providerName)
 		}
-		return ProviderCredential{AuthHint: "Enabled"}, nil
+		return ProviderCredential{}.withAuthHint(msg.New("Enabled")), nil
 
 	case provider.AuthTypeOAuthBearer:
 		if s.IsProviderSwitchedOff(providerName) {
@@ -554,18 +580,14 @@ func (s *CredentialsStore) GetProviderCredential(providerName string) (ProviderC
 			// is otherwise configured (e.g. its base URL is set) — otherwise every
 			// user who never touches it would see a spurious "couldn't load models".
 			if providerInfo.APIKeyOptional && providerInfo.AutoDetect != nil && providerInfo.AutoDetect() {
-				return ProviderCredential{
-					KeySource: KeySourceNone,
-					AuthHint:  "No key required",
-				}, nil
+				return ProviderCredential{KeySource: KeySourceNone}.withAuthHint(msg.New("No key required")), nil
 			}
 			return ProviderCredential{}, fmt.Errorf("no API key configured for provider: %s", providerName)
 		}
 		return ProviderCredential{
 			APIKey:    apiKey,
 			KeySource: s.GetAPIKeySource(providerName),
-			AuthHint:  "API key configured",
-		}, nil
+		}.withAuthHint(msg.New("API key configured")), nil
 
 	default:
 		return ProviderCredential{}, fmt.Errorf("unsupported auth type for provider %s: %s", providerName, providerInfo.EffectiveAuthType())

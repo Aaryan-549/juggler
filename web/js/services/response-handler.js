@@ -139,7 +139,7 @@ class ResponseHandler {
     // Actions use executeAction which adds tool-use/tool-result pairs.
     //
     // For context items: We do NOT add tool-use/tool-result because they are represented by
-    // context-item messages (added by conversation.executeContextItem), not tool-use/result pairs.
+    // context-item messages (added by messageThread.executeContextItem), not tool-use/result pairs.
     // Context items appear in the context panel, not as tool invocations in conversation.
     //
     // For meta tools (drop_context_items): We add tool-use + tool-result pairs
@@ -158,19 +158,22 @@ class ResponseHandler {
         ? result.content
         : extractErrorMessage(result.content) || markUntranslated('Tool executed.');
 
-      // DOCUMENT-DRIVEN FLOW: Worker created the tool-action item.
-      // We just need to update it with the result via completeToolAction.
-      // Check if this result should be included in conversation (tool-action message)
-      // Context items set includeInConversation=false because they're rendered separately by ContextBuilder
+      // DOCUMENT-DRIVEN FLOW: Worker created the tool-action item, and it is
+      // completed here whatever the result says about the conversation — an
+      // uncompleted one stays running until the worker finalises it as
+      // interrupted. includeInConversation decides only its content: false
+      // (context items, which ContextBuilder renders separately) keeps the
+      // brief result text rather than repeating the item's rendered text.
       const shouldIncludeInConversation = result.metadata?.includeInConversation !== false;
 
-      if (!ctxHandled && shouldIncludeInConversation) {
+      if (!ctxHandled) {
         // Update existing tool-action created by worker
         const itemId = result.metadata?.itemId;
 
-        // For context item tools, the result content is the item's rendered text
+        // For context item tools included in the conversation, the result
+        // content is the item's rendered text
         let toolResultContent = content;
-        if (itemId) {
+        if (itemId && shouldIncludeInConversation) {
           const contextItem = messageThread.getContextItem(itemId);
           if (!contextItem) {
             throw new Error(markUntranslated(`Context item ${itemId} not found in message thread after tool result`));
@@ -430,11 +433,10 @@ class ResponseHandler {
    * States: waiting_for_approval → running → completed/cancelled/error
    * @param {{id: string, name: string, input?: unknown}} toolCall - Tool call to execute
    * @param {import('../model/message-thread.js').MessageThread} messageThread - Message thread
-   * @param {{onApproved?: () => void}} [outerOptions] - Callbacks
    * @returns {Promise<ToolExecutionResult>} Standardized result for orchestrator
    */
-  async executeAction(toolCall, messageThread, outerOptions = {}) {
-    return actions.executeAction(this, toolCall, messageThread, outerOptions);
+  async executeAction(toolCall, messageThread) {
+    return actions.executeAction(this, toolCall, messageThread);
   }
 
   /**

@@ -8,14 +8,16 @@
  * Every function here formats through `Intl` in the UI's formatting locale
  * (`formattingLocale()` in sdk/lib/i18n.js): the runtime's own default until a
  * UI language is chosen, so output is what the platform would produce, and the
- * chosen language's conventions after. The compact suffixes (`k`, `M`) and the
- * size units (`KB`, `MB`) are symbols and stay as they are; only the digits,
- * separators and words around them follow the locale.
+ * chosen language's conventions after. The token suffixes (`k`, `M`) and the
+ * size units (`KB`, `MB`) are messages around pre-formatted digits, so a
+ * catalogue can re-word or re-place them; in English they read as the bare
+ * symbols. `formatNumber`'s SI suffixes are the exception and stay symbols.
  */
 
 import {
   t, formatNumber as formatLocaleNumber, formatDate, formatRelativeTime, formattingLocale,
 } from '../../sdk/lib/i18n.js';
+import { SIZE_UNITS, sizeWithUnit } from '../../sdk/lib/unit-messages.js';
 
 /**
  * Plain digits in the formatting locale, without thousands grouping: for a
@@ -55,19 +57,39 @@ export function formatNumber(num, decimals = 1) {
  * @returns {string} The formatted size, or '' for invalid input.
  */
 export function formatBytes(bytes) {
-  if (!Number.isFinite(bytes) || bytes < 0) return '';
-  if (bytes < 1024) return `${digits(bytes)} B`;
-  const units = ['KB', 'MB', 'GB', 'TB'];
+  const size = byteSize(bytes);
+  return size ? sizeWithUnit(size.figure, size.unit) : '';
+}
+
+/**
+ * {@link formatBytes} with the unit always the English symbol: for a size inside
+ * text that is parsed back, or read by the model, rather than only shown.
+ * @param {number} bytes
+ * @returns {string} The formatted size, or '' for invalid input.
+ */
+export function formatBytesUntranslated(bytes) {
+  const size = byteSize(bytes);
+  return size ? `${size.figure} ${size.unit}` : '';
+}
+
+/**
+ * The figure and unit {@link formatBytes} shows for a byte count.
+ * @param {number} bytes
+ * @returns {{figure: string, unit: typeof SIZE_UNITS[number]}|null} Null for invalid input.
+ */
+function byteSize(bytes) {
+  if (!Number.isFinite(bytes) || bytes < 0) return null;
+  if (bytes < 1024) return { figure: digits(bytes), unit: 'B' };
   let val = bytes / 1024;
-  let i = 0;
-  while (val >= 1024 && i < units.length - 1) {
+  let i = 1;
+  while (val >= 1024 && i < SIZE_UNITS.length - 1) {
     val /= 1024;
     i++;
   }
-  const shown = val < 10
+  const figure = val < 10
     ? formatLocaleNumber(val, { useGrouping: false, minimumFractionDigits: 1, maximumFractionDigits: 1 })
     : digits(Math.round(val));
-  return `${shown} ${units[i]}`;
+  return { figure, unit: SIZE_UNITS[i] ?? 'TB' };
 }
 
 /**
@@ -100,8 +122,10 @@ export function formatTimeAgo(ms) {
  */
 export function formatTokens(n) {
   const v = Math.max(0, Number(n) || 0);
-  if (v >= 1000000) return digits(Math.floor(v / 100000) / 10) + 'M';
-  if (v >= 2000) return digits(Math.floor(v / 1000)) + 'k';
+  if (v >= 1000000) {
+    return t('{n}M', { n: digits(Math.floor(v / 100000) / 10) }, { context: 'millions, in a compact count' });
+  }
+  if (v >= 2000) return t('{n}k', { n: digits(Math.floor(v / 1000)) }, { context: 'thousands, in a compact count' });
   return formatLocaleNumber(v);
 }
 

@@ -279,7 +279,7 @@ export class StatusMessageBuilder {
    * @returns {string} Formatted status message
    */
   static buildRetryStatus(data) {
-    return this._withElapsed(t('Retrying attempt\u00A0{attempt}/{maxRetries}',
+    return this._withElapsed(t('Retrying (attempt\u00A0{attempt} of\u00A0{maxRetries})',
       { attempt: formatNumber(data.attempt), maxRetries: formatNumber(data.maxRetries) }), data);
   }
 
