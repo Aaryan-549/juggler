@@ -234,6 +234,9 @@ export async function runTests(_ctx) {
   /**
    * Click a launch toggle (or run any DOM action) and capture the single
    * PUT /api/settings body it issues. Any other fetch (GET) resolves benignly.
+   * A PUT carrying no `connectivity` is a UI preference's batched write from
+   * elsewhere in the realm, landing in this window by chance: it is answered but
+   * not recorded.
    * @param {any} el
    * @param {() => void} doAction
    * @returns {Promise<any>} parsed PUT body
@@ -244,7 +247,8 @@ export async function runTests(_ctx) {
     let body = null;
     window.fetch = /** @type {any} */ (async (url, opts) => {
       if (typeof url === 'string' && url.startsWith('/api/settings') && opts && opts.method === 'PUT') {
-        body = JSON.parse(opts.body);
+        const parsed = JSON.parse(opts.body);
+        if (parsed && 'connectivity' in parsed) body = parsed;
         return /** @type {any} */ ({ ok: true, json: async () => ({}) });
       }
       return /** @type {any} */ ({ ok: true, json: async () => el._tabs.connectivity.connectivity });

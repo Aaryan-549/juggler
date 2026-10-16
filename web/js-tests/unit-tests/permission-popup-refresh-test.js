@@ -236,6 +236,10 @@ export async function runTests(_ctx) {
 
         mt.addRule('execute', { kind: 'glob', value: '2 *', scope: 'conversation' });
         mt.addAllowedPath('/2', { scope: 'conversation' });
+        // An extension's section is part of the popup too. MCP grants default to
+        // session scope, so a sibling lane's can appear here at any moment; this
+        // conversation's own grant makes the section certain rather than chance.
+        mt.addRule('mcp-tool', { kind: 'glob', value: '1/*', scope: 'conversation' });
         el.render();
         assertPseudoLocalized(button(), { where: 'edits on, two commands' });
 
@@ -245,7 +249,7 @@ export async function runTests(_ctx) {
         assert(!!popup, 'popup rendered when opening');
         document.body.appendChild(popup);
         el._menu = { surface: popup, close() {} };
-        for (const id of ['execute', 'write-file', 'search-scope']) {
+        for (const id of ['execute', 'write-file', 'search-scope', 'mcp-tool']) {
           assert(!!popup.querySelector(`.plugin-section-wrapper[data-section-id="${id}"]`), `no ${id} section`);
         }
         // Paths and command patterns are data; the project root's scope label
@@ -299,6 +303,8 @@ export async function runTests(_ctx) {
         'File editing allowed in allowed paths', 'File edits prompt for confirmation',
         'When on, file search tools (grep, glob, tree) skip files matched by .gitignore.',
         'Respecting .gitignore in file searches', 'Searching all files (.gitignore off)',
+      ], '@juggler/mcp': [
+        'MCP tools approved', 'No MCP tools approved', 'All conversations', 'This conversation', 'Delete',
       ] });
     } finally {
       document.querySelectorAll('.permissions-popup').forEach(e => e.remove());

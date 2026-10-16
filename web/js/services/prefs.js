@@ -433,9 +433,12 @@ async function getRealmPref(realm, name, fallback) {
     void setRealmPref(realm, name, device);
     return device;
   }
-  const resolved = resolvePref({ desktop, session: value, device, fallback });
-  if (desktop && resolved !== null && resolved !== undefined) writeMirror(realm, name, resolved);
-  return resolved;
+  // Only a stored value is mirrored. The fallback is the caller's default:
+  // mirrored, the next read would find it on this device with nothing in the
+  // realm, adopt it above as an older build's value and write it up.
+  const known = resolvePref({ desktop, session: value, device });
+  if (desktop && known !== null && known !== undefined) writeMirror(realm, name, known);
+  return known ?? fallback;
 }
 
 /**

@@ -264,6 +264,20 @@ export async function runTests(_ctx) {
       eq(calls.filter((c) => c.method === 'PUT').length, 1, 'and promoted only once');
     });
 
+    // A caller's fallback is its default, not a choice. Cached as one, the next
+    // read would take it for a value an older build left and write it up, so the
+    // default would be pinned in the settings document as though chosen.
+    await run('a fallback is neither cached nor written up, however often it is read', async () => {
+      reset();
+      const name = uniqueName();
+      eq(await getUserPref(name, false), false, 'first read');
+      eq(localStorage.getItem(name), null, 'the fallback was cached');
+      eq(await getUserPref(name, false), false, 'second read');
+      // Past the write queue's delay, so a promotion would have been sent.
+      await new Promise((r) => setTimeout(r, 600));
+      eq(calls.filter((c) => c.method === 'PUT').map((c) => c.body), [], 'writes');
+    });
+
     await run('the realm is asked for once however many preferences want it', async () => {
       reset();
       const [a, b, c] = [uniqueName(), uniqueName(), uniqueName()];

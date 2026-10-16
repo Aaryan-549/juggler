@@ -21,7 +21,7 @@ import { underPseudoLocale, shownStrings } from '../utilities/pseudo-locale.js';
 import { openCommandEditor, openCommandManager } from '../../js/components/command-editor-dialog.js';
 import { buildModelConfig } from '../../js/model/model-config.js';
 import providersCache from '../../js/services/providers-cache.js';
-import { resetUserCommandsCache } from '../../js/services/user-commands.js';
+import { fetchUserCommands, resetUserCommandsCache } from '../../js/services/user-commands.js';
 import slashCommandHandler from '../../js/services/slash-command-handler.js';
 import strategyRegistry from '../../js/registries/strategy-registry.js';
 import { isPseudoLocalized } from '../../sdk/lib/i18n.js';
@@ -391,6 +391,34 @@ export async function runTests(_ctx) {
     assert(body.provider === '' && body.model === '' && body.thinking === '' && body.serviceTier === '',
       `overrides must be cleared with the thread, got ${JSON.stringify(body)}`);
     assert(body.goal === '' && body.strategy === '', `goal/strategy = ${body.goal}/${body.strategy}`);
+  });
+
+  // A save resets the catalog cache and starts a registry rebuild that outlives
+  // it, so a catalog fetch can be in flight across the next reset. Landing after
+  // that reset, it must not cache the list it read before it: the next reader —
+  // the manager — would be served the stale list instead of re-reading.
+  await run('a catalog fetch that straddles a reset does not refill the cache', async () => {
+    const originalFetch = window.fetch;
+    /** @type {(r: Response) => void} */
+    let answerStale = () => {};
+    const list = (/** @type {string[]} */ names) => new window.Response(JSON.stringify(
+      names.map((name) => ({ name, scope: 'project', path: `/${name}`, frontmatter: {}, body: '' }))), {
+      status: 200, headers: { 'Content-Type': 'application/json' },
+    });
+    try {
+      resetUserCommandsCache();
+      window.fetch = /** @type {any} */ (() => new Promise((resolve) => { answerStale = resolve; }));
+      const stale = fetchUserCommands();
+      resetUserCommandsCache();
+      window.fetch = /** @type {any} */ (async () => list(['fresh']));
+      answerStale(list(['stale']));
+      await stale;
+      const names = (await fetchUserCommands()).map((d) => d.name);
+      assert(JSON.stringify(names) === '["fresh"]', `the read after the reset must be fresh, got ${JSON.stringify(names)}`);
+    } finally {
+      window.fetch = originalFetch;
+      resetUserCommandsCache();
+    }
   });
 
   try {

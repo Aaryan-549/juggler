@@ -55,6 +55,14 @@ export const USER_COMMAND_NAME_RE = /^[a-z][a-z0-9-]*$/;
 let cached = null;
 
 /**
+ * Bumped by every {@link resetUserCommandsCache}. A fetch caches its result only
+ * if no reset happened while it was in flight: a registry rebuild's fetch can
+ * straddle the reset a command save makes, and caching what it read from before
+ * the save would serve the next reader the pre-save list.
+ */
+let generation = 0;
+
+/**
  * Fetch the user-command catalog from the backend (cached after first call).
  * @returns {Promise<UserCommandDef[]>} Discovered commands (may include invalid ones with `error`)
  */
@@ -62,13 +70,15 @@ export async function fetchUserCommands() {
   if (cached) {
     return cached;
   }
+  const startedAt = generation;
   const result = await fetchJson(apiUrl('/user-commands'), {
     errorPrefix: '[UserCommands] Failed to fetch user commands',
     fallback: null,
   });
   if (result === null) return [];
-  cached = Array.isArray(result) ? result : [];
-  return cached;
+  const list = Array.isArray(result) ? result : [];
+  if (startedAt === generation) cached = list;
+  return list;
 }
 
 /**
@@ -136,4 +146,5 @@ export async function deleteUserCommand(scope, name) {
  */
 export function resetUserCommandsCache() {
   cached = null;
+  generation++;
 }
