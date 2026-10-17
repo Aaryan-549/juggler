@@ -669,16 +669,21 @@ function firstHtmlTag(text) {
   return '';
 }
 
+/** The CLDR plural categories, in the order messages list them. */
+const PLURAL_ORDER = ['zero', 'one', 'two', 'few', 'many', 'other'];
+
 /**
- * The plural categories of a locale, as Intl.PluralRules has them, or null for
- * a tag it rejects or has no rules for.
+ * The plural categories of a locale, as Intl.PluralRules has them, in
+ * PLURAL_ORDER (the order resolvedOptions() gives differs between Node
+ * releases), or null for a tag it rejects or has no rules for.
  * @param {string} locale
  * @returns {string[]|null}
  */
 function pluralCategories(locale) {
   try {
     if (Intl.PluralRules.supportedLocalesOf([locale]).length === 0) return null;
-    return new Intl.PluralRules(locale).resolvedOptions().pluralCategories;
+    return [...new Intl.PluralRules(locale).resolvedOptions().pluralCategories]
+      .sort((a, b) => PLURAL_ORDER.indexOf(a) - PLURAL_ORDER.indexOf(b));
   } catch {
     return null;
   }

@@ -10,7 +10,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
-	"slices"
 	"strings"
 	"testing"
 )
@@ -175,9 +174,9 @@ process.stdout.write(JSON.stringify(out));`
 
 // The plural categories table is what Node's Intl says: scripts/i18n asks
 // Intl, so the two checks accept the same branches. When Node's CLDR data
-// moves, regenerate the table with JUGGLER_I18N_WRITE_PLURALS=1. The
-// categories are compared as sets: the order resolvedOptions() lists them in
-// differs between Node releases and carries no meaning.
+// moves, regenerate the table with JUGGLER_I18N_WRITE_PLURALS=1. Both sides
+// are compared in pluralOrder: the order resolvedOptions() lists them in
+// differs between Node releases, and messages name them in pluralOrder.
 func TestPluralCategoriesMatchIntl(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
@@ -200,7 +199,7 @@ func TestPluralCategoriesMatchIntl(t *testing.T) {
 	}
 	got := pluralTable()
 	for lang, cats := range want {
-		if !reflect.DeepEqual(slices.Sorted(slices.Values(got[lang])), slices.Sorted(slices.Values(cats))) {
+		if !reflect.DeepEqual(got[lang], inPluralOrder(cats)) {
 			t.Errorf("%s: table has %q, Intl has %q (regenerate: JUGGLER_I18N_WRITE_PLURALS=1)", lang, got[lang], cats)
 		}
 	}

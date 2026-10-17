@@ -8,6 +8,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -75,9 +76,13 @@ func CheckTranslation(source map[string]string, data []byte, locale string) []Tr
 	return out
 }
 
+// pluralOrder is the CLDR plural categories in the order messages list them;
+// scripts/i18n's PLURAL_ORDER is the same list.
+var pluralOrder = []string{"zero", "one", "two", "few", "many", "other"}
+
 // pluralCategoriesFile is the table PluralCategories reads: each two- and
 // three-letter language Node's Intl.PluralRules supports, and its categories
-// in Intl's order. It is generated from Intl, which scripts/i18n asks
+// in pluralOrder. It is generated from Intl, which scripts/i18n asks
 // directly, because golang.org/x/text's plural data is an older CLDR (French
 // has no `many` there); TestPluralCategoriesMatchIntl keeps it current.
 const pluralCategoriesFile = "plural_categories.json"
@@ -94,7 +99,8 @@ var pluralTable = sync.OnceValue(func() map[string][]string {
 })
 
 // PluralCategories is the plural categories of locale, as
-// Intl.PluralRules(locale).resolvedOptions().pluralCategories gives them, or
+// Intl.PluralRules(locale).resolvedOptions().pluralCategories gives them but
+// in pluralOrder, or
 // nil for a tag that is not BCP 47 or a language with no plural rules. A
 // region or script takes its language's categories.
 func PluralCategories(locale string) []string {
@@ -108,8 +114,15 @@ func PluralCategories(locale string) []string {
 	return pluralTable()[strings.ToLower(lang)]
 }
 
+// inPluralOrder is a sorted copy of categories, in pluralOrder.
+func inPluralOrder(categories []string) []string {
+	return slices.SortedFunc(slices.Values(categories), func(x, y string) int {
+		return slices.Index(pluralOrder, x) - slices.Index(pluralOrder, y)
+	})
+}
+
 // serializePluralTable is the text of pluralCategoriesFile for table: one
-// language a line, sorted.
+// language a line, sorted, each language's categories in pluralOrder.
 func serializePluralTable(table map[string][]string) []byte {
 	langs := make([]string, 0, len(table))
 	for lang := range table {
@@ -119,7 +132,7 @@ func serializePluralTable(table map[string][]string) []byte {
 	var b strings.Builder
 	b.WriteString("{\n")
 	for i, lang := range langs {
-		cats, _ := json.Marshal(table[lang])
+		cats, _ := json.Marshal(inPluralOrder(table[lang]))
 		fmt.Fprintf(&b, "  %q: %s", lang, cats)
 		if i < len(langs)-1 {
 			b.WriteString(",")

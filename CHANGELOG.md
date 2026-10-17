@@ -5,12 +5,13 @@ of changes; this project follows semantic versioning.
 
 ## [Unreleased]
 
-- Sub-agent run budget is now settable in Settings → Defaults, and defaults to 1M tokens
 - New run_code tool: a mutating version of query_code, to give full "code mode" features
 - New --allow-host flag serves Juggler behind a reverse proxy such as tailscale serve
-- Git pin reviews any scope: staged, unstaged, branch, last commit, or a git diff range
-- Copy a whole conversation as Markdown from its tab menu or footer
 - Export a conversation as a self-contained HTML page to share, from its tab menu or /export
+- Copy a whole conversation as Markdown from its tab menu or footer
+- Under the hood, refactored the codebase ready for i18n
+- Sub-agent run budget is now settable in Settings → Defaults, and defaults to 1M tokens
+- Git pin reviews any scope: staged, unstaged, branch, last commit, or a git diff range
 - batch_read's properties panel lists files with open, copy, reveal and pin buttons
 - LAN servers answer to local names like `juggler` or `mymac.local`, not just IPs
 - A refused hostname's error names it and gives the `--allow-host` flag that admits it
