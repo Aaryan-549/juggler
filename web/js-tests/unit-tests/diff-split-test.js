@@ -48,11 +48,11 @@ export async function runTests(_ctx) {
 
   /**
    * @param {string} label - Case name
-   * @param {() => void} fn - Case body
+   * @param {() => Promise<void>} fn - Case body
    */
-  const run = (label, fn) => {
+  const run = async (label, fn) => {
     try {
-      fn();
+      await fn();
       passed++;
     } catch (e) {
       failed++;
@@ -99,9 +99,9 @@ export async function runTests(_ctx) {
    * detached element has no width, so everything the first render decided from
    * width decided it from zero.
    * @param {number} width - The box's width, in pixels.
-   * @returns {any} The viewer, drawn and then mounted.
+   * @returns {Promise<any>} The viewer, filled, mounted and drawn.
    */
-  const filledThenMounted = (width) => {
+  const filledThenMounted = async (width) => {
     const host = document.createElement('div');
     host.style.width = `${width}px`;
     host.style.position = 'absolute';
@@ -111,6 +111,7 @@ export async function runTests(_ctx) {
     host.appendChild(el);
     document.body.appendChild(host);
     mounted.push(host);
+    await el.drawn;
     return el;
   };
 
@@ -139,10 +140,11 @@ export async function runTests(_ctx) {
 
   // Two lines becoming three. The first two pair off, and the third has nothing
   // on the old side because nothing there was replaced by it.
-  run('two columns pair a replacement across the row', () => {
+  await run('two columns pair a replacement across the row', async () => {
     prefs.setDefaultDiffView('split');
     const el = mountedViewer(wideEnough);
     el.setDiff('a\nX1\nX2\nb', 'a\nY1\nY2\nY3\nb', '/src/main.js');
+    await el.drawn;
 
     assert(el.dataset.view === 'split', `expected the split layout, got ${el.dataset.view}`);
     const got = pairs(el);
@@ -151,10 +153,11 @@ export async function runTests(_ctx) {
       `rows read:\n  ${got.join('\n  ')}\nwant:\n  ${want.join('\n  ')}`);
   });
 
-  run('a side with no line for a row is not drawn as an empty line', () => {
+  await run('a side with no line for a row is not drawn as an empty line', async () => {
     prefs.setDefaultDiffView('split');
     const el = mountedViewer(wideEnough);
     el.setDiff('a\nX1\nX2\nb', 'a\nY1\nY2\nY3\nb', '/src/main.js');
+    await el.drawn;
 
     const fillers = el.querySelectorAll('.diff-cell-filler');
     assert(fillers.length === 1, `expected one filler, got ${fillers.length}`);
@@ -169,10 +172,11 @@ export async function runTests(_ctx) {
   // An unchanged line is the same line in both files, so it is one row holding
   // itself twice — and both halves carry a number, which is what makes the two
   // gutters read as two files rather than one.
-  run('an unchanged line is shown on both sides', () => {
+  await run('an unchanged line is shown on both sides', async () => {
     prefs.setDefaultDiffView('split');
     const el = mountedViewer(wideEnough);
     el.setDiff('a\nX', 'a\nY', '/src/main.js');
+    await el.drawn;
 
     const first = el.querySelector('.diff-row');
     const cells = first.querySelectorAll('.diff-line.equal');
@@ -182,19 +186,21 @@ export async function runTests(_ctx) {
       `both halves of an unchanged row carry their own line number, got ${numbered.join('/')}`);
   });
 
-  run('a viewer with no room for two columns does not use them', () => {
+  await run('a viewer with no room for two columns does not use them', async () => {
     prefs.setDefaultDiffView('split');
     const narrow = mountedViewer(tooNarrow);
     narrow.setDiff('a\nX', 'a\nY', '/src/main.js');
+    await narrow.drawn;
 
     assert(narrow.dataset.view === 'inline',
       `expected the combined layout in ${tooNarrow}px, got ${narrow.dataset.view}`);
     assert(narrow.querySelector('.diff-row') === null, 'no two-column rows were drawn');
   });
 
-  run('the layout switch is offered where the layout fits', () => {
+  await run('the layout switch is offered where the layout fits', async () => {
     const wide = mountedViewer(wideEnough);
     wide.setDiff('a\nX', 'a\nY', '/src/main.js');
+    await wide.drawn;
     const buttons = wide.querySelectorAll('.diff-view-btn');
     assert(buttons.length === 2, `the switch offers both layouts, got ${buttons.length}`);
     assert([...buttons].every((/** @type {any} */ b) => !b.disabled),
@@ -207,9 +213,10 @@ export async function runTests(_ctx) {
 
   // Nobody clicks a control to be left where they are, so the button already in
   // force is a way back rather than a no-op.
-  run('either button switches the layout, including the one in force', () => {
+  await run('either button switches the layout, including the one in force', async () => {
     const wide = mountedViewer(wideEnough);
     wide.setDiff('a\nX', 'a\nY', '/src/main.js');
+    await wide.drawn;
 
     wide.querySelector('.diff-view-btn[data-view="split"]').click();
     assert(wide.dataset.view === 'split',
@@ -228,9 +235,10 @@ export async function runTests(_ctx) {
   // reader who only ever opens diffs in a narrow panel with no way of learning
   // that the other layout exists, and a control that vanishes is indistinguishable
   // from one that was never built.
-  run('a switch that cannot be used is shown disabled, and says why', () => {
+  await run('a switch that cannot be used is shown disabled, and says why', async () => {
     const narrow = mountedViewer(tooNarrow);
     narrow.setDiff('a\nX', 'a\nY', '/src/main.js');
+    await narrow.drawn;
 
     const buttons = narrow.querySelectorAll('.diff-view-btn');
     assert(buttons.length === 2, `the switch is still there, got ${buttons.length} buttons`);
@@ -246,35 +254,38 @@ export async function runTests(_ctx) {
   // Being filled before being mounted is not an edge case — it is what every
   // host of this component does. A viewer that measured itself at zero width and
   // never looked again offers no layout at all, in a panel with room for both.
-  run('a viewer filled before it is mounted still finds its width', () => {
-    const el = filledThenMounted(wideEnough);
+  await run('a viewer filled before it is mounted still finds its width', async () => {
+    const el = await filledThenMounted(wideEnough);
     assert([...el.querySelectorAll('.diff-view-btn')].every((/** @type {any} */ b) => !b.disabled),
       'a mounted viewer with room for two columns must offer them, however it was filled');
     assert(el.querySelector('.diff-view-switch').getAttribute('title') === null,
       'and must not still be explaining a refusal it is no longer making');
   });
 
-  run('a viewer filled before it is mounted takes the layout it was asked for', () => {
+  await run('a viewer filled before it is mounted takes the layout it was asked for', async () => {
     prefs.setDefaultDiffView('split');
-    const el = filledThenMounted(wideEnough);
+    const el = await filledThenMounted(wideEnough);
     assert(el.dataset.view === 'split',
       `the split preference must survive being applied before there was a width, got ${el.dataset.view}`);
     assert(el.querySelector('.diff-row') !== null, 'and the two-column rows must actually be drawn');
   });
 
-  run('a disabled switch cannot be used even so', () => {
+  await run('a disabled switch cannot be used even so', async () => {
     const narrow = mountedViewer(tooNarrow);
     narrow.setDiff('a\nX', 'a\nY', '/src/main.js');
+    await narrow.drawn;
     narrow.querySelector('.diff-view-btn[data-view="split"]').click();
     assert(narrow.dataset.view === 'inline',
       'clicking a layout there is no room for must not produce it');
   });
 
-  run('a viewer can be set on its own, and then stops following the default', () => {
+  await run('a viewer can be set on its own, and then stops following the default', async () => {
     const own = mountedViewer(wideEnough);
     own.setDiff('a\nX', 'a\nY', '/src/own.js');
+    await own.drawn;
     const following = mountedViewer(wideEnough);
     following.setDiff('a\nX', 'a\nY', '/src/following.js');
+    await following.drawn;
 
     own.setView('split');
     assert(own.dataset.view === 'split', 'the viewer took the layout it was given');
@@ -290,23 +301,27 @@ export async function runTests(_ctx) {
       'a viewer set for itself is not moved by the default, even back onto it');
   });
 
-  run('the context width narrows what a snapshot diff shows', () => {
+  await run('the context width narrows what a snapshot diff shows', async () => {
     const el = mountedViewer(wideEnough);
     const body = Array.from({ length: 21 }, (_, k) => `l${k + 1}`);
     const edited = [...body];
     edited[10] = 'CHANGED';
     el.setDiff(body.join('\n'), edited.join('\n'), '/src/main.js');
+    await el.drawn;
     assert(contextShown(el) === 6, `the default shows three lines each side, got ${contextShown(el)}`);
 
     el.setContextLines(0);
+    await el.drawn;
     assert(contextShown(el) === 0, `at no context, got ${contextShown(el)} unchanged lines`);
     el.setContextLines(prefs.WHOLE_FILE);
+    await el.drawn;
     assert(contextShown(el) === 20, `the whole file is 20 unchanged lines, got ${contextShown(el)}`);
   });
 
-  run('changing the context width says so, for whoever fetched the patch', () => {
+  await run('changing the context width says so, for whoever fetched the patch', async () => {
     const el = mountedViewer(wideEnough);
     el.setDiff('a\nX', 'a\nY', '/src/main.js');
+    await el.drawn;
     /** @type {any[]} */
     const heard = [];
     el.addEventListener('diff-context-change', (/** @type {any} */ e) => heard.push(e.detail));
@@ -321,7 +336,7 @@ export async function runTests(_ctx) {
   // A server patch holds only the lines it was produced with. Narrowing it is
   // exact and immediate; widening it is not this component's to do, and claiming
   // otherwise would draw a width the patch cannot support.
-  run('a server patch can be narrowed here but not widened', () => {
+  await run('a server patch can be narrowed here but not widened', async () => {
     const el = mountedViewer(wideEnough);
     el.setPatch({
       repo: '', path: 'src/main.js', status: 'modified', added: 1, removed: 1,

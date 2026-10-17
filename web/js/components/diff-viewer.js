@@ -2,14 +2,13 @@
 //     ██ ██ ██ ██ ▄▄ ██ ▄▄ ██    ██▄▄  ██▄█▄   Copyright (c) 2026 Julian Storer
 //   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
 
-import { computeDiff, regroupHunks } from '../lib/diff-utils.js';
+import { regroupHunks } from '../lib/diff-utils.js';
+import { cachedSnapshot, requestSnapshot } from '../lib/diff-snapshot-client.js';
 import {
   DIFF_VIEW_PREFS_EVENT, CONTEXT_CHOICES, WHOLE_FILE,
   contextLabel, contextToRender, defaultDiffView, defaultDiffContext,
 } from '../utils/diff-view-prefs.js';
 import { escapeHtml, escapeAttr } from '../../sdk/lib/html.js';
-import { highlightCodeLines } from '../../sdk/lib/syntax-highlight.js';
-import { languageForPath } from '../../sdk/lib/languages.js';
 import { registerContextMenuProvider, codeReferenceMenuItem } from '../services/context-menu-service.js';
 import { copyToClipboard } from '../../sdk/lib/clipboard.js';
 import { isAbsolutePath } from '../utils/code-selection.js';
@@ -20,16 +19,10 @@ import { errorText } from '../../sdk/lib/error-utils.js';
 /** @typedef {import('../lib/diff-types.js').DiffLine} DiffLine */
 /** @typedef {import('../lib/diff-types.js').DiffPatch} DiffPatch */
 /** @typedef {import('../lib/diff-types.js').DiffAnnotation} DiffAnnotation */
-/** @typedef {{source: string[], markup: string[]}} DiffSide */
+/** @typedef {import('../lib/diff-snapshot.js').Snapshot} Snapshot */
+/** @typedef {import('../lib/diff-snapshot.js').SnapshotInput} SnapshotInput */
 /** @typedef {{oldLine: number|null, newLine: number|null, side: 'old'|'new', text: string}} DiffRow */
 /** @typedef {{kind: string, text: string, detail?: string}} DiffNotice */
-
-/**
- * Largest side of a diff that is syntax-highlighted. Both sides are tokenised
- * whole so a hunk sees the file around it, which is linear but not free; past
- * this the diff stays plain rather than stalling the panel it renders into.
- */
-const MAX_HIGHLIGHT_CHARS = 200_000;
 
 /**
  * How wide the viewer must be before it will draw two columns, in rem.
@@ -219,7 +212,8 @@ function hunkLabel(hunk) {
  * where there is not the width for them, however the preference reads.
  *
  * Two inputs feed it and one renderer draws them. `setDiff` takes the whole of
- * each side, as a tool action persists them, and computes the hunks here.
+ * each side, as a tool action persists them, and has the hunks computed by a job
+ * that answers after the call returns, so `drawn` is what a caller awaits.
  * `setPatch` takes a patch the server already produced from git, and draws it
  * exactly as sent: recomputing it client-side would replace what git says the
  * change is with a guess made from two files it never returned.
@@ -242,8 +236,19 @@ class DiffViewer extends HTMLElement {
     this.filePath = '';
     /** @type {number} @private */
     this.startLineNumber = 1;
-    /** @type {{old: DiffSide, new: DiffSide}|null} @private */
-    this.highlighted = null;
+    // The snapshot drawn, and which input (by generation) and context width it
+    // answers; a new input bumps the generation, so an answer for the old one is
+    // recognisably not this one's.
+    /** @type {number} @private */
+    this._generation = 0;
+    /** @type {Snapshot|null} @private */
+    this._snapshot = null;
+    /** @type {{generation: number, context: number}|null} @private */
+    this._snapshotKey = null;
+    /** @type {{generation: number, context: number, cancel: () => void}|null} @private */
+    this._pending = null;
+    /** @type {(() => void)[]} @private */
+    this._drawnWaiters = [];
     /** @type {'snapshot'|'patch'|'loading'|'error'} @private */
     this.mode = 'snapshot';
     /** @type {DiffPatch|null} @private */
@@ -270,7 +275,7 @@ class DiffViewer extends HTMLElement {
     // Whether anything has been drawn yet. A width that changes before a diff has
     // been given is a width nothing was decided from.
     /** @type {boolean} @private */
-    this._drawn = false;
+    this._rendered = false;
     /** @type {ResizeObserver|null} @private */
     this._observer = null;
     /** @private */
@@ -303,15 +308,20 @@ class DiffViewer extends HTMLElement {
     const roomChanged = this._measure();
     if (typeof ResizeObserver !== 'undefined' && !this._observer) {
       this._observer = new ResizeObserver(() => {
-        if (this._measure() && this._drawn) this.render();
+        if (this._measure() && this._rendered) this.render();
       });
       this._observer.observe(this);
     }
     window.addEventListener(DIFF_VIEW_PREFS_EVENT, this._onPrefsChanged);
-    if (roomChanged && this._drawn) this.render();
+    // A snapshot given while detached has had no job yet; mounting is when it
+    // gets one, and the render that asks for it is the one a width change wants.
+    if ((roomChanged && this._rendered) || !this._settled()) this.render();
   }
 
   disconnectedCallback() {
+    // A viewer that has left the document no longer needs its diff. If it comes
+    // back, mounting asks again, and a job that finished meanwhile is cached.
+    this._dropRequest();
     this._observer?.disconnect();
     this._observer = null;
     window.removeEventListener(DIFF_VIEW_PREFS_EVENT, this._onPrefsChanged);
@@ -409,7 +419,13 @@ class DiffViewer extends HTMLElement {
   }
 
   /**
-   * Set diff data and render.
+   * Draw the difference between two whole files.
+   *
+   * Nothing is diffed or highlighted in this call. What it draws at once is the
+   * header and a loading notice, unless the same input has been drawn recently
+   * and its result is cached; the diff itself follows from a job that starts once
+   * the viewer is in a document, and is never started at all for a viewer that
+   * leaves first or is given new input first. `drawn` says when it has arrived.
    * @param {string} oldContent
    * @param {string} newContent
    * @param {string} filePath
@@ -423,6 +439,9 @@ class DiffViewer extends HTMLElement {
     this.newContent = newContent || '';
     this.filePath = filePath || '';
     this.startLineNumber = startLineNumber;
+    this._generation++;
+    this._snapshot = null;
+    this._snapshotKey = null;
     this.render();
   }
 
@@ -488,33 +507,86 @@ class DiffViewer extends HTMLElement {
   }
 
   /**
-   * Tokenise both sides of the diff, once, into per-line markup.
-   *
-   * Highlighting the whole of each side rather than the visible hunks is
-   * deliberate: a hunk is a window into the middle of a file, and a line taken
-   * on its own tokenises wrong — the inside of a block comment reads as code.
-   * The arrays are indexed by `lineNum - startLineNumber`, the numbering
-   * `computeDiff` derives from splitting these same two strings; the source
-   * lines are kept beside the markup so a line is only ever coloured when the
-   * text at that index is provably the line being rendered.
-   *
-   * A server patch is never highlighted: its hunks are snippets, and the lexical
-   * state that decides whether a line is inside a block comment or a multiline
-   * string is in the part of the file the patch left out.
-   * @returns {{old: DiffSide, new: DiffSide}|null} Per-line markup, or null when
-   *   the diff is left plain (unknown file type, or too large to be worth it).
+   * Resolves once what is drawn is the diff for the current input — at once for
+   * a patch, a loading or an error state, and for a snapshot once its job has
+   * answered. A snapshot's job only runs while the viewer is in a document, so
+   * this waits for a detached one to be mounted.
+   * @returns {Promise<void>} Settles when the diff is drawn.
+   */
+  get drawn() {
+    if (this._settled()) return Promise.resolve();
+    return new Promise((resolve) => { this._drawnWaiters.push(resolve); });
+  }
+
+  /**
+   * Whether the snapshot drawn is the one the current input and context ask for.
+   * @returns {boolean} True when nothing is still to come.
    * @private
    */
-  highlightSides() {
-    if (this.mode !== 'snapshot') return null;
-    const language = languageForPath(this.filePath);
-    if (language === 'text') return null;
-    if (this.oldContent.length > MAX_HIGHLIGHT_CHARS) return null;
-    if (this.newContent.length > MAX_HIGHLIGHT_CHARS) return null;
-    return {
-      old: { source: this.oldContent.split('\n'), markup: highlightCodeLines(this.oldContent, language) },
-      new: { source: this.newContent.split('\n'), markup: highlightCodeLines(this.newContent, language) },
+  _settled() {
+    if (this.mode !== 'snapshot') return true;
+    const have = this._snapshotKey;
+    return this._snapshot !== null && have !== null && have.generation === this._generation
+      && have.context === contextToRender(this.effectiveContext());
+  }
+
+  /**
+   * Make sure the snapshot the current input and context ask for is drawn, or on
+   * its way: taken from the cache when it is known, asked for when the viewer is
+   * in a document, and otherwise left until it is. A request for anything else is
+   * cancelled first. Changing only the context keeps the snapshot already drawn
+   * until its replacement arrives, so the reader keeps the diff they had rather
+   * than a notice.
+   *
+   * A server patch is never sent here: it arrives already hunked, and is never
+   * highlighted either — its hunks are snippets, and the lexical state that
+   * decides whether a line is inside a block comment or a multiline string is in
+   * the part of the file the patch left out.
+   * @private
+   */
+  _syncSnapshot() {
+    if (this.mode !== 'snapshot') {
+      this._dropRequest();
+      return;
+    }
+    const generation = this._generation;
+    const context = contextToRender(this.effectiveContext());
+    if (this._settled()) return;
+    const pending = this._pending;
+    if (pending && pending.generation === generation && pending.context === context) return;
+    this._dropRequest();
+
+    /** @type {SnapshotInput} */
+    const input = {
+      oldContent: this.oldContent,
+      newContent: this.newContent,
+      filePath: this.filePath,
+      startLineNumber: this.startLineNumber,
+      contextLines: context,
     };
+    const known = cachedSnapshot(input);
+    if (known) {
+      this._snapshot = known;
+      this._snapshotKey = { generation, context };
+      return;
+    }
+    if (!this.isConnected) return;
+    const cancel = requestSnapshot(input, (result) => {
+      this._pending = null;
+      this._snapshot = result;
+      this._snapshotKey = { generation, context };
+      this.render();
+    });
+    this._pending = { generation, context, cancel };
+  }
+
+  /**
+   * Withdraw the request in flight, if there is one.
+   * @private
+   */
+  _dropRequest() {
+    this._pending?.cancel();
+    this._pending = null;
   }
 
   /**
@@ -552,25 +624,25 @@ class DiffViewer extends HTMLElement {
       return { hunks, notices, added: patch.added, removed: patch.removed, drawable: !patch.binary };
     }
 
-    // A snapshot is diffed here and now, in the only thread there is, so the
-    // line diff refuses a changed region past its own budget rather than stall
-    // the panel. A server patch arrives already hunked and never meets this:
-    // nothing is computed to draw it, however large the file it came from.
-    const hunks = computeDiff(this.oldContent, this.newContent, this.startLineNumber,
-      contextToRender(this.effectiveContext()));
-    if (hunks === null) {
+    // A snapshot is diffed by a job (lib/diff-snapshot-client.js), and until it
+    // answers there is nothing to draw but the shell. The line diff refuses a
+    // changed region past its own budget rather than run without end.
+    const snapshot = this._snapshot;
+    if (!snapshot) {
+      return { hunks: [], notices: [{ kind: 'loading', text: t('Loading…') }], added: 0, removed: 0, drawable: false };
+    }
+    if (snapshot.hunks === null) {
       notices.push({ kind: 'large', text: t(STATUS_NOTICES.large) });
       return { hunks: [], notices, added: 0, removed: 0, drawable: false };
     }
-
-    return { hunks, notices, added: this.countAdded(hunks), removed: this.countRemoved(hunks), drawable: true };
+    return { hunks: snapshot.hunks, notices, added: snapshot.added, removed: snapshot.removed, drawable: true };
   }
 
   /** @private */
   render() {
+    this._syncSnapshot();
     const model = this.viewModel();
     this.indexRows(model.hunks);
-    this.highlighted = this.highlightSides();
 
     const view = this.effectiveView();
     const body = view === 'split'
@@ -600,7 +672,11 @@ class DiffViewer extends HTMLElement {
         </diff-stats>
       </diff-content>
     `;
-    this._drawn = true;
+    this._rendered = true;
+    if (this._settled() && this._drawnWaiters.length > 0) {
+      const waiters = this._drawnWaiters.splice(0);
+      for (const resolve of waiters) resolve();
+    }
   }
 
   /**
@@ -987,41 +1063,7 @@ class DiffViewer extends HTMLElement {
    * @private
    */
   lineMarkup(line) {
-    const sides = this.highlighted;
-    if (sides) {
-      const side = line.type === 'add' ? sides.new : sides.old;
-      const number = line.type === 'add' ? line.newLineNum : line.oldLineNum;
-      const index = (number ?? 0) - this.startLineNumber;
-      // Only take the tokenised line when the text at that index is the line in
-      // hand: an index that has drifted would show the wrong line's content and
-      // look like a diff bug rather than a highlighting one.
-      if (side.source[index] === line.content) return side.markup[index] ?? escapeHtml(line.content);
-    }
-    return escapeHtml(line.content);
-  }
-
-  /**
-   * Count added lines
-   * @param {DiffHunk[]} hunks
-   * @returns {number} The total count of added lines.
-   * @private
-   */
-  countAdded(hunks) {
-    let count = 0;
-    for (const hunk of hunks || []) for (const line of hunk.lines) if (line.type === 'add') count++;
-    return count;
-  }
-
-  /**
-   * Count removed lines
-   * @param {DiffHunk[]} hunks
-   * @returns {number} The total count of removed lines.
-   * @private
-   */
-  countRemoved(hunks) {
-    let count = 0;
-    for (const hunk of hunks || []) for (const line of hunk.lines) if (line.type === 'remove') count++;
-    return count;
+    return line.markup ?? escapeHtml(line.content);
   }
 
   /**

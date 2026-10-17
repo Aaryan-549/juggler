@@ -116,6 +116,7 @@ export async function runTests() {
         const old = Array.from({ length: 2100 }, (_, i) => `${i}1`).join('\n');
         const now = Array.from({ length: 2100 }, (_, i) => `${i}2`).join('\n');
         narrow.setDiff(old, now, '1/2.3');
+        await narrow.drawn;
         assert(narrow.querySelector('diff-notice[data-kind="large"]'), 'expected the too-large notice');
         collect(narrow, 'too large');
 
@@ -150,6 +151,7 @@ export async function runTests() {
         // No path: the fallbacks in the header and the labels.
         const nameless = mount(Math.round(SPLIT_MIN_REM * rem * 1.5), false);
         nameless.setDiff('1\n2', '1\n3', '');
+        await nameless.drawn;
         nameless.setAnnotations([{ id: 'e', side: 'file', body: '8' }]);
         collect(nameless, 'no path');
         anchors(nameless, 'no path');

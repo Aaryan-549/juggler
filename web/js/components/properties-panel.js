@@ -72,6 +72,17 @@ const OUTPUT_ITEM_TYPES = new Set(['assistant', 'thinking', 'tool-action']);
 const REPORTED_OUTPUT_TYPES = new Set(['assistant', 'thinking']);
 
 /**
+ * A `JSON.stringify` replacer that writes a long string as its first 200
+ * characters and its length, which is all a change-detection snapshot reads.
+ * @param {string} _key - The key being written.
+ * @param {unknown} value - Its value.
+ * @returns {unknown} The value, or a bounded stand-in for a long string.
+ */
+function boundedString(_key, value) {
+  return typeof value === 'string' && value.length > 200 ? `${value.slice(0, 200)}…${value.length}` : value;
+}
+
+/**
  * Paint a token count onto a header chip, colouring it by magnitude.
  * @param {HTMLElement} chip - The chip element.
  * @param {number} tokens - The count the colour is chosen from.
@@ -618,7 +629,10 @@ class PropertiesPanel extends HTMLElement {
     if (msgType === 'tool-action') {
       const result = msg.get('result');
       const displayData = msg.get('displayData');
-      const ddJson = displayData ? JSON.stringify(plain(displayData)) : '';
+      // Long strings go in as a prefix and a length: an edit's displayData holds
+      // the whole file twice, and serialising it on every selection only to keep
+      // the first 200 characters is most of what a step through edits costs.
+      const ddJson = displayData ? JSON.stringify(plain(displayData), boundedString) : '';
       return {
         state: msg.get('state'),
         hasResult: result !== null && result !== undefined,

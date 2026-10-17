@@ -40,11 +40,11 @@ export async function runTests(_ctx) {
 
   /**
    * @param {string} label - Case name
-   * @param {() => void} fn - Case body
+   * @param {() => (void|Promise<void>)} fn - Case body
    */
-  const run = (label, fn) => {
+  const run = async (label, fn) => {
     try {
-      fn();
+      await fn();
       passed++;
     } catch (e) {
       failed++;
@@ -141,7 +141,7 @@ export async function runTests(_ctx) {
     return seen;
   };
 
-  run('a server patch is drawn exactly as sent, without a client diff', () => {
+  await run('a server patch is drawn exactly as sent, without a client diff', async () => {
     const el = viewer();
     el.setPatch(patch());
     // The removed and added lines carry identical text: an LCS over the two
@@ -155,7 +155,7 @@ export async function runTests(_ctx) {
     ].join('\n'), `wrong rows:\n${rows(el).join('\n')}`);
   });
 
-  run('a hunk header carries the server range and heading', () => {
+  await run('a hunk header carries the server range and heading', async () => {
     const el = viewer();
     el.setPatch(patch());
     const header = el.querySelector('diff-hunk-header')?.textContent || '';
@@ -163,40 +163,40 @@ export async function runTests(_ctx) {
     assert(header.includes('function boot()'), `the heading was dropped: ${header}`);
   });
 
-  run('the counts come from the server, not from the rows drawn', () => {
+  await run('the counts come from the server, not from the rows drawn', async () => {
     const el = viewer();
     el.setPatch(patch({ added: 320, removed: 44, truncated: true }));
     assert(el.querySelector('.add-count')?.textContent === '+320', 'added count not the server\'s');
     assert(el.querySelector('.remove-count')?.textContent === '-44', 'removed count not the server\'s');
   });
 
-  run('a truncated patch says so', () => {
+  await run('a truncated patch says so', async () => {
     const el = viewer();
     el.setPatch(patch({ truncated: true }));
     assert(/cut short/i.test(notices(el)), `truncation unreported: ${notices(el)}`);
     assert(lines(el).length === 4, 'the part of the patch that did arrive should still draw');
   });
 
-  run('a binary file reports itself and invents no patch', () => {
+  await run('a binary file reports itself and invents no patch', async () => {
     const el = viewer();
     el.setPatch(patch({ binary: true, hunks: [], added: 0, removed: 0 }));
     assert(/binary/i.test(notices(el)), `binary unreported: ${notices(el)}`);
     assert(lines(el).length === 0, 'a binary file must not draw diff lines');
   });
 
-  run('a conflicted file reports itself', () => {
+  await run('a conflicted file reports itself', async () => {
     const el = viewer();
     el.setPatch(patch({ conflicted: true, status: 'conflicted' }));
     assert(/conflict/i.test(notices(el)), `conflict unreported: ${notices(el)}`);
   });
 
-  run('a patch with nothing in it says so', () => {
+  await run('a patch with nothing in it says so', async () => {
     const el = viewer();
     el.setPatch(patch({ status: 'unchanged', hunks: [], added: 0, removed: 0 }));
     assert(el.querySelector('diff-no-changes') !== null, 'expected the no-changes state');
   });
 
-  run('loading and error are states of their own', () => {
+  await run('loading and error are states of their own', async () => {
     const el = viewer();
     el.setPatch(patch());
     el.setLoading();
@@ -206,33 +206,37 @@ export async function runTests(_ctx) {
     assert(notices(el).includes('fatal: bad object HEAD'), 'the underlying error text was dropped');
   });
 
-  run('a tool snapshot with an empty side is a real all-add diff', () => {
-    const added = viewer();
+  await run('a tool snapshot with an empty side is a real all-add diff', async () => {
+    const added = mountedViewer(400).el;
     added.setDiff('', 'one\ntwo\n', '/src/new.js');
+    await added.drawn;
     assert(lines(added).length > 0 && lines(added).every((l) => l.classList.contains('add')),
       'a created file should draw as all additions');
 
-    const removed = viewer();
+    const removed = mountedViewer(400).el;
     removed.setDiff('one\ntwo\n', '', '/src/gone.js');
+    await removed.drawn;
     assert(lines(removed).length > 0 && lines(removed).every((l) => l.classList.contains('remove')),
       'a deleted file should draw as all removals');
   });
 
-  run('both gutters are drawn for a tool snapshot', () => {
-    const el = viewer();
+  await run('both gutters are drawn for a tool snapshot', async () => {
+    const el = mountedViewer(400).el;
     el.setDiff('a\nb\n', 'a\nc\n', '/src/main.js');
+    await el.drawn;
     const row = rows(el);
     assert(row.includes('1|1| |a'), `expected a numbered context line, got ${row.join(' / ')}`);
     assert(row.includes('2||-|b'), `a removal should number only the old side, got ${row.join(' / ')}`);
     assert(row.includes('|2|+|c'), `an addition should number only the new side, got ${row.join(' / ')}`);
   });
 
-  run('a small edit to a big file is diffed, however big the file', () => {
-    const el = viewer();
+  await run('a small edit to a big file is diffed, however big the file', async () => {
+    const el = mountedViewer(400).el;
     const body = Array.from({ length: 4000 }, (_, k) => `const x${k} = ${k};`);
     const edited = [...body];
     edited[2000] = 'const x2000 = CHANGED;';
     el.setDiff(`${body.join('\n')}\n`, `${edited.join('\n')}\n`, '/src/huge.js');
+    await el.drawn;
     assert(notices(el) === '', `a one-line edit needs no notice, got ${notices(el)}`);
     const row = rows(el);
     assert(row.includes('2001||-|const x2000 = 2000;'), `expected the removal, got ${row.join(' / ')}`);
@@ -240,16 +244,17 @@ export async function runTests(_ctx) {
     assert(row.length === 8, `only the change and its context should be drawn, got ${row.length} rows`);
   });
 
-  run('a changed region too large to diff here is refused, not attempted', () => {
-    const el = viewer();
+  await run('a changed region too large to diff here is refused, not attempted', async () => {
+    const el = mountedViewer(400).el;
     const before = Array.from({ length: 2100 }, (_, k) => `was ${k}`).join('\n');
     const after = Array.from({ length: 2100 }, (_, k) => `now ${k}`).join('\n');
     el.setDiff(`${before}\n`, `${after}\n`, '/src/huge.js');
+    await el.drawn;
     assert(/too large/i.test(notices(el)), `expected the size refusal: ${notices(el)}`);
     assert(lines(el).length === 0, 'nothing should be diffed past the budget');
   });
 
-  run('paths, source and comment text are inert', () => {
+  await run('paths, source and comment text are inert', async () => {
     const el = viewer();
     el.setPatch(patch({
       path: '<img src=x onerror=1>.js',
@@ -269,14 +274,14 @@ export async function runTests(_ctx) {
     assert((el.textContent || '').includes('<script>alert(2)</script>'), 'the comment should read back as text');
   });
 
-  run('read-only is the default and offers no comment anchors', () => {
+  await run('read-only is the default and offers no comment anchors', async () => {
     const el = viewer();
     el.setPatch(patch());
     assert(el.readOnly === true, 'a diff viewer should start read-only');
     assert(el.querySelectorAll('.diff-comment-btn').length === 0, 'a read-only diff must not offer anchors');
   });
 
-  run('a tool action draws its diff through the shared renderer', () => {
+  await run('a tool action draws its diff through the shared renderer', async () => {
     // The properties panel owns no renderer of its own: it hands a recorded
     // snapshot to the same element the review panel drives, and takes the
     // read-only default. What it must never grow is the review panel's half —
@@ -288,9 +293,12 @@ export async function runTests(_ctx) {
         : undefined),
     };
     assert(addDiffViewer(wrapper, action, '') === true, 'a recorded snapshot should draw');
+    document.body.appendChild(wrapper);
+    mounted.push(wrapper);
 
     const el = /** @type {any} */ (wrapper.querySelector('diff-viewer'));
     assert(el, `the panel must draw through the shared element:\n${wrapper.innerHTML}`);
+    await el.drawn;
     assert(el.classList.contains('properties-panel-diff'),
       'the panel keeps its own class on the shared element');
     const row = rows(el);
@@ -303,7 +311,7 @@ export async function runTests(_ctx) {
       'a properties panel must never acquire a file rail');
   });
 
-  run('an annotatable diff offers one literal anchor per line', () => {
+  await run('an annotatable diff offers one literal anchor per line', async () => {
     const el = viewer();
     el.readOnly = false;
     el.setPatch(patch());
@@ -316,7 +324,7 @@ export async function runTests(_ctx) {
       `an addition should anchor to the new side, got ${labels.join(' / ')}`);
   });
 
-  run('an anchor asks for a comment on the line it names', () => {
+  await run('an anchor asks for a comment on the line it names', async () => {
     const el = viewer();
     el.readOnly = false;
     el.setPatch(patch());
@@ -330,7 +338,7 @@ export async function runTests(_ctx) {
     assert(first.lines.join('') === 'same();', 'the request should quote the line');
   });
 
-  run('shift extends a request to a range on the same side', () => {
+  await run('shift extends a request to a range on the same side', async () => {
     const el = viewer();
     el.readOnly = false;
     el.setPatch(patch({
@@ -355,7 +363,7 @@ export async function runTests(_ctx) {
     assert(last.lines.join('') === 'a();b();c();', `wrong quote: ${last.lines.join('|')}`);
   });
 
-  run('anchors stay reachable without a pointer', () => {
+  await run('anchors stay reachable without a pointer', async () => {
     const { el } = mountedViewer(600);
     el.readOnly = false;
     el.setPatch(patch());
@@ -370,7 +378,7 @@ export async function runTests(_ctx) {
     assert(document.activeElement === button, 'an anchor must take focus');
   });
 
-  run('a comment renders below its line, outside the code row', () => {
+  await run('a comment renders below its line, outside the code row', async () => {
     const el = viewer();
     el.readOnly = false;
     el.setPatch(patch());
@@ -385,7 +393,7 @@ export async function runTests(_ctx) {
       'the comment should follow the line it is anchored to');
   });
 
-  run('a comment offers edit and delete, and says which it is about', () => {
+  await run('a comment offers edit and delete, and says which it is about', async () => {
     const el = viewer();
     el.readOnly = false;
     el.setPatch(patch());
@@ -398,7 +406,7 @@ export async function runTests(_ctx) {
     assert(deletes.length === 1 && deletes[0].id === 'c1', 'delete did not name its comment');
   });
 
-  run('a comment written against an older revision is set aside, never moved', () => {
+  await run('a comment written against an older revision is set aside, never moved', async () => {
     const el = viewer();
     el.readOnly = false;
     el.setPatch(patch());
@@ -417,7 +425,7 @@ export async function runTests(_ctx) {
     assert(onTheLine.length === 0, 'an outdated comment must never attach to a line');
   });
 
-  run('a comment whose line is no longer in the patch is outdated too', () => {
+  await run('a comment whose line is no longer in the patch is outdated too', async () => {
     const el = viewer();
     el.readOnly = false;
     el.setPatch(patch());
@@ -428,7 +436,7 @@ export async function runTests(_ctx) {
     assert(comment?.closest('diff-file-comments') !== null, 'an unanchorable comment belongs in the file section');
   });
 
-  run('a whole-file comment sits in the file section, unstale', () => {
+  await run('a whole-file comment sits in the file section, unstale', async () => {
     const el = viewer();
     el.readOnly = false;
     el.setPatch(patch());
@@ -438,7 +446,7 @@ export async function runTests(_ctx) {
     assert(!comment.classList.contains('stale'), 'a file comment is not outdated by a new revision');
   });
 
-  run('the comment column is the panel, not the code scroller', () => {
+  await run('the comment column is the panel, not the code scroller', async () => {
     const { host, el } = mountedViewer(320);
     el.readOnly = false;
     el.setPatch(patch({
@@ -463,10 +471,11 @@ export async function runTests(_ctx) {
       'the comment row must stay put while the code scrolls under it');
   });
 
-  run('each input clears what the other left behind', () => {
-    const el = viewer();
+  await run('each input clears what the other left behind', async () => {
+    const el = mountedViewer(400).el;
     el.setPatch(patch({ binary: true, hunks: [], added: 0, removed: 0 }));
     el.setDiff('a\n', 'b\n', '/src/main.js');
+    await el.drawn;
     assert(!/binary/i.test(notices(el)), 'a tool snapshot should not inherit the patch\'s notices');
     assert(rows(el).includes('1||-|a') && rows(el).includes('|1|+|b'),
       `the snapshot should be diffed, got ${rows(el).join(' / ')}`);

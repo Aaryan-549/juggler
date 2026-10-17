@@ -18,11 +18,12 @@
  * Which grammar a file or fence resolves to is `./languages.js`; this module
  * only asks it to canonicalise whatever name it is handed.
  *
- * Thin wrapper over the vendored Prism.js loaded on `window` (see index.html).
- * We read `window.Prism` at call time — never import it — so this module stays
+ * Thin wrapper over the vendored Prism.js loaded as a global (see index.html,
+ * and the diff worker, which loads the same scripts into its own scope). We
+ * read `globalThis.Prism` at call time — never import it — so this module stays
  * side-effect free and safe to load before Prism, and degrades to escaped plain
- * text when Prism or the requested grammar is unavailable (e.g. a worker
- * context, or a language whose component wasn't bundled).
+ * text when Prism or the requested grammar is unavailable (e.g. a worker that
+ * did not load it, or a language whose component wasn't bundled).
  *
  * The tokens Prism emits carry `.token.<type>` classes; `css/vendor/prism-theme.css`
  * colours them, so any element produced here picks up the app theme for free.
@@ -59,7 +60,7 @@ export function highlightCode(code, language) {
   }
 
   /** @type {any} */
-  const Prism = typeof window !== 'undefined' ? (/** @type {any} */ (window)).Prism : undefined;
+  const Prism = (/** @type {any} */ (globalThis)).Prism;
   const grammar = Prism?.languages?.[id];
   if (Prism && grammar) {
     try {

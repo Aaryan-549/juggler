@@ -179,6 +179,7 @@ import { runTests as runUserMessageMarkdownTests } from '../unit-tests/user-mess
 import { runTests as runLanguageCoverageTests } from '../unit-tests/language-coverage-test.js';
 import { runTests as runHighlightLinesTests } from '../unit-tests/highlight-lines-test.js';
 import { runTests as runMarkdownHighlightTests } from '../unit-tests/markdown-highlight-test.js';
+import { runTests as runDiffAsyncTests } from '../unit-tests/diff-async-test.js';
 import { runTests as runDiffHighlightTests } from '../unit-tests/diff-highlight-test.js';
 import { runTests as runDiffReviewTests } from '../unit-tests/diff-review-test.js';
 import { runTests as runDiffSplitTests } from '../unit-tests/diff-split-test.js';
@@ -694,6 +695,7 @@ const UNIT_TEST_SUITES = [
   { name: 'unit:language-coverage', run: runLanguageCoverageTests },
   { name: 'unit:highlight-lines', run: runHighlightLinesTests },
   { name: 'unit:markdown-highlight', run: runMarkdownHighlightTests },
+  { name: 'unit:diff-async', run: runDiffAsyncTests },
   { name: 'unit:diff-highlight', run: runDiffHighlightTests },
   { name: 'unit:diff-review', run: runDiffReviewTests },
   { name: 'unit:diff-split', run: runDiffSplitTests },

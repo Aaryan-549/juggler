@@ -12,7 +12,8 @@
  *   type: 'add'|'remove'|'equal',
  *   content: string,
  *   oldLineNum: number|null,
- *   newLineNum: number|null
+ *   newLineNum: number|null,
+ *   markup?: string
  * }} DiffLine
  */
 
