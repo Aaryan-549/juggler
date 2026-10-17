@@ -25,14 +25,16 @@ import NewConversationCommandType from '../commands/new-conversation-command-typ
 
 /** juggler-core's English for these commands, standing in for its catalogue. */
 const CORE_TEXT = [
-  'Conversation cleared',
-  'Please select a model before compacting', 'Compaction already in progress',
-  'Compaction failed: {error}', 'Nothing to compact',
-  'No session available', 'Duplication failed: {error}',
-  'Please select a model before handing off', 'Handoff failed: {error}',
-  'Handoff failed: continued conversation unavailable', 'Handoff already in progress',
-  'Nothing to hand off — continuing in a fresh conversation',
-  'Failed to create conversation: {error}',
+  'Conversation cleared.',
+  'Pick a model before compacting.', 'Compaction is already in progress.',
+  "Couldn't compact: {error}", 'Nothing to compact yet.',
+  "Can't duplicate: no project is open.", "Couldn't duplicate: {error}",
+  "Can't hand off: no project is open.",
+  'Pick a model before handing off.', "Couldn't hand off: {error}",
+  "Couldn't hand off: the new conversation wasn't created.", 'A handoff is already in progress.',
+  'Nothing to hand off — continuing in a new conversation.',
+  "Can't create a conversation: no project is open.",
+  "Couldn't create the conversation: {error}",
 ];
 
 /**

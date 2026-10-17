@@ -39,7 +39,7 @@ class ClearCommandType extends CommandType {
     await conversation?.session?.seedConversationAutoItems(conversation, mt);
     return {
       handled: true,
-      message: t('Conversation cleared')
+      message: t('Conversation cleared.')
     };
   }
 }

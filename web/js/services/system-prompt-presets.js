@@ -81,7 +81,7 @@ export function getDefaultPresetSeed() {
 export async function saveUserPreset(name, content) {
   const res = await apiService.saveSystemPromptPreset(name, content);
   if (!res || !res.success || !res.preset) {
-    throw new Error(res && res.error ? res.error : t('Failed to save preset'));
+    throw new Error(res && res.error ? res.error : t("Couldn't save preset"));
   }
   await refreshUserPresets();
   return res.preset;
@@ -110,7 +110,7 @@ export async function deleteUserPreset(id) {
 export async function updateUserPreset(id, name, content) {
   const res = await apiService.updateSystemPromptPreset(id, name, content);
   if (!res || !res.success || !res.preset) {
-    throw new Error(res && res.error ? res.error : t('Failed to update preset'));
+    throw new Error(res && res.error ? res.error : t("Couldn't update preset"));
   }
   await refreshUserPresets();
   return res.preset;

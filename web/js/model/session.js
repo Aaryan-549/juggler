@@ -12,11 +12,11 @@ import {
 } from './conversation-naming.js';
 import {
   MAX_MESSAGE_HISTORY,
-  DUPLICATE_WHILE_ACTIVE_NOTICE,
+  HANDOFF_WHILE_ACTIVE_NOTICE,
   MAX_CONVERSATION_NAME_LENGTH
 } from '../utils/constants.js';
 import workerManager from '../services/worker-manager.js';
-import { markForTranslation } from '../../sdk/lib/i18n.js';
+import { markForTranslation, t } from '../../sdk/lib/i18n.js';
 import { isEngine } from '../../sdk/lib/client-role.js';
 import { recordTape } from '../utils/event-tape.js';
 import { isTabReorderEnabled } from '../utils/attention-manager.js';
@@ -1569,7 +1569,7 @@ class Session {
     // callers (/handoff) still opt out via refuseWhileActive and wait for a
     // settled source instead.
     if (refuseWhileActive && source.isTurnActive()) {
-      source.showWarning(DUPLICATE_WHILE_ACTIVE_NOTICE, 5000);
+      source.showWarning(t(HANDOFF_WHILE_ACTIVE_NOTICE), 5000);
       return null;
     }
 

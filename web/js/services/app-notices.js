@@ -24,7 +24,7 @@ export function failedModulesMessage(fresh) {
   const detail = fresh
     .map(({ path, error }) => `${path.split('/').pop() || path} — ${error}`)
     .join('\n');
-  return t('{count, plural, one {Couldn\'t load {detail}} other {Couldn\'t load {count} capability modules\n{detail}}}',
+  return t('{count, plural, one {Couldn\'t load {detail}} other {Couldn\'t load {count} extension modules\n{detail}}}',
     { count: fresh.length, detail });
 }
 

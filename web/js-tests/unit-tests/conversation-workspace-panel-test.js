@@ -602,8 +602,8 @@ export async function runTests() {
         const ids = binned.map((/** @type {any} */ entry) => entry.id);
         assert(ids.includes(owner.id) && ids.includes(peer.id),
           `both are in the bin rather than gone, got ${JSON.stringify(ids)}`);
-        assert(/in the bin/.test(String(finished.message ?? '')),
-          `and the ending says where they went, got ${JSON.stringify(finished.message)}`);
+        assert(!/bin/.test(String(finished.message ?? '')),
+          `which the confirm said before, so the ending does not say it again, got ${JSON.stringify(finished.message)}`);
       } finally {
         session.workspaces = saved;
         // Out of the bin rather than left in it: every lane loads this same

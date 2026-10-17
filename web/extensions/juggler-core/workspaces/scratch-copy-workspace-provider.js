@@ -436,7 +436,7 @@ class ScratchCopyWorkspaceProvider extends WorkspaceProvider {
       {
         id: 'apply',
         label: t('Apply the changes'),
-        description: t('{target, select, project {Copies what changed here back into the project, then removes the copy. Anything the project has changed since is refused by name, and nothing is applied.} other {Copies what changed here back into {tree}, then removes the copy. Anything {tree} has changed since is refused by name, and nothing is applied.}}', { target, tree })
+        description: t('{target, select, project {Copies what changed here back into the project, then removes the copy. Anything the project has changed since is refused by name, and nothing is applied. Conversations here go to the bin, which they can be restored from.} other {Copies what changed here back into {tree}, then removes the copy. Anything {tree} has changed since is refused by name, and nothing is applied. Conversations here go to the bin, which they can be restored from.}}', { target, tree })
       },
       {
         id: 'keep',
@@ -447,7 +447,7 @@ class ScratchCopyWorkspaceProvider extends WorkspaceProvider {
         id: 'apply-anyway',
         label: t('Apply, overwriting'),
         danger: true,
-        description: t('{target, select, project {Copies the changes back even over files the project has changed since. What is in the project is lost.} other {Copies the changes back even over files {tree} has changed since. What is in {tree} is lost.}}', { target, tree })
+        description: t('{target, select, project {Copies the changes back even over files the project has changed since. What is in the project is lost. Conversations here go to the bin, which they can be restored from.} other {Copies the changes back even over files {tree} has changed since. What is in {tree} is lost. Conversations here go to the bin, which they can be restored from.}}', { target, tree })
       },
       {
         id: 'discard',
@@ -475,14 +475,14 @@ class ScratchCopyWorkspaceProvider extends WorkspaceProvider {
     const named = slug(String(meta?.name ?? ''));
     const baseDir = String(meta?.baseDir ?? '');
     if (!named || !baseDir) {
-      return { done: false, message: t('There is no record of what this is a copy of, so it is not ours to finish with.') };
+      return { done: false, message: t("Can't finish with this copy: there's no record of what it was copied from.") };
     }
 
     const places = sandboxPlaces(baseDir, named);
     const ops = ctx.baseOps ?? ctx.ops;
 
     if (actionId === 'keep') {
-      return { done: true, message: t('Left {dir} where it is.', { dir: places.dir }) };
+      return { done: true, message: t('Closed the workspace. {dir} is still on disk.', { dir: places.dir }) };
     }
     if (actionId === 'discard') return this._discard(places, ops, ctx);
     if (actionId === 'apply' || actionId === 'apply-anyway') {

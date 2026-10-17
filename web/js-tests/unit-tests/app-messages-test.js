@@ -78,7 +78,7 @@ export async function runTests(_ctx) {
     const one = failedModulesMessage(ONE);
     assert(one === 'Couldn\'t load 1 — 2', `one module: got ${JSON.stringify(one)}`);
     const two = failedModulesMessage(TWO);
-    assert(two === 'Couldn\'t load 2 capability modules\n1 — 2\n3 — 4', `two modules: got ${JSON.stringify(two)}`);
+    assert(two === 'Couldn\'t load 2 extension modules\n1 — 2\n3 — 4', `two modules: got ${JSON.stringify(two)}`);
     const shown = await captureLimitAlert();
     assert(shown.length === 1, `expected one alert; got ${shown.length}`);
     assert(shown[0].title === 'Too many conversations', `alert title: got ${JSON.stringify(shown[0].title)}`);

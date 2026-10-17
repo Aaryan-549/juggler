@@ -42,7 +42,7 @@ class DuplicateConversationCommandType extends CommandType {
     const sourceConversation = this.messageThread?.conversation;
     const session = sourceConversation?.session;
     if (!session) {
-      return { handled: true, message: t('No session available'), error: true };
+      return { handled: true, message: t("Can't duplicate: no project is open."), error: true };
     }
 
     try {
@@ -58,7 +58,7 @@ class DuplicateConversationCommandType extends CommandType {
     } catch (error) {
       return {
         handled: true,
-        message: t('Duplication failed: {error}', { error: extractErrorMessage(error) }),
+        message: t("Couldn't duplicate: {error}", { error: extractErrorMessage(error) }),
         error: true
       };
     }

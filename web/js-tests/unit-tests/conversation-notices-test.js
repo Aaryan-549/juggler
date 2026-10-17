@@ -60,7 +60,7 @@ function swap(obj, key, value) {
 }
 
 /** The `Can't send: …` tail every workspace refusal ends with. */
-const BANNER = ' Use the banner above the transcript to say where this conversation should work.';
+const BANNER = ' Choose where it should work in the banner above the transcript.';
 
 /**
  * Every message the walk draws, in English, by where it was drawn. Data is
@@ -80,23 +80,23 @@ const ENGLISH = {
   'unavailable without hint: title': 'Model unavailable',
   'unavailable without hint: confirm': 'Go to provider settings',
   'unavailable without hint: cancel': 'Cancel',
-  'stranded, root known': "Can't send: 7 runs on this machine, and this conversation works in /9. Pick a model that runs over the network.",
-  'stranded, root unknown': "Can't send: 7 runs on this machine, and this conversation works in another workspace. Pick a model that runs over the network.",
-  'workspace unrecorded': "Can't send: there is no record of the workspace this conversation works in." + BANNER,
-  'workspace closed by someone': "Can't send: 6 finished with the workspace 5." + BANNER,
-  'workspace closed by a placeholder name': "Can't send: Untitled 3 finished with the workspace 5." + BANNER,
-  'workspace closed by nobody named': "Can't send: the workspace 5 was finished with." + BANNER,
-  'workspace closed, no label': "Can't send: the workspace this conversation works in was finished with." + BANNER,
-  'workspace moved, labelled': "Can't send: the workspace 5 is not where it was." + BANNER,
-  'workspace moved, by root': "Can't send: the workspace /4 is not where it was." + BANNER,
-  'workspace moved, no label': "Can't send: the workspace this conversation works in is not where it was." + BANNER,
+  'stranded, root known': "Can't send: 7 can only work on this computer, but this conversation works in /9. Pick a model that isn't tied to this computer.",
+  'stranded, root unknown': "Can't send: 7 can only work on this computer, but this conversation works in a remote workspace. Pick a model that isn't tied to this computer.",
+  'workspace unrecorded': "Can't send: Juggler has no record of this conversation's workspace." + BANNER,
+  'workspace closed by someone': "Can't send: 6 closed the workspace 5." + BANNER,
+  'workspace closed by a placeholder name': "Can't send: Untitled 3 closed the workspace 5." + BANNER,
+  'workspace closed by nobody named': "Can't send: the workspace 5 was closed." + BANNER,
+  'workspace closed, no label': "Can't send: this conversation's workspace was closed." + BANNER,
+  'workspace moved, labelled': "Can't send: the folder for the workspace 5 can't be found." + BANNER,
+  'workspace moved, by root': "Can't send: the folder for the workspace /4 can't be found." + BANNER,
+  'workspace moved, no label': "Can't send: the folder for this conversation's workspace can't be found." + BANNER,
   'worker not ready': 'Still connecting to the engine — try again in a moment.',
   'worker lost after preempt': 'Still connecting to the engine — try again in a moment.',
   'continue, worker not ready': 'Still connecting to the engine — try again in a moment.',
-  'turn cancelled': 'Cancelled the active turn',
-  'preset save': 'Failed to save preset',
+  'turn cancelled': 'Stopped the turn that was running.',
+  'preset save': "Couldn't save preset",
   'preset delete': "Couldn't delete preset",
-  'preset update': 'Failed to update preset',
+  'preset update': "Couldn't update preset",
   'preset default': "Couldn't set default preset",
   'clipboard insecure': "Couldn't copy: browsers only allow clipboard access on secure (https://) pages, localhost, or the Juggler desktop app — and this page is served over plain http (1.2.3.4:5). Open Juggler in the desktop app, or browse over https/localhost, to copy.",
   'clipboard insecure, no host': "Couldn't copy: browsers only allow clipboard access on secure (https://) pages, localhost, or the Juggler desktop app — and this page is served over plain http (this page). Open Juggler in the desktop app, or browse over https/localhost, to copy.",

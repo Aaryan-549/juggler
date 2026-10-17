@@ -58,7 +58,7 @@ import { displayConversationName } from '../model/conversation-naming.js';
  * its readers draw it.
  * @type {string}
  */
-export const PROVIDER_UNAVAILABLE = markForTranslation('Provider unavailable');
+export const PROVIDER_UNAVAILABLE = markForTranslation("This workspace's provider isn't loaded — its extension may be turned off.");
 
 /**
  * How a workspace is doing, asked of its provider when there is one.
@@ -672,7 +672,6 @@ export async function finishWorkspace(request) {
   // pressed by nobody in particular (see {@link workspaceFinishActor}).
   /** @type {string[]} */
   const stuck = [];
-  let moved = 0;
   const home = workspace.baseWorkspaceId ?? '';
   for (const bound of [...(session?.conversations?.values?.() ?? [])]) {
     if ((bound.workspaceId || '') !== workspace.id) continue;
@@ -680,25 +679,17 @@ export async function finishWorkspace(request) {
     try {
       if (returning) {
         const rebound = await rebindConversation(bound, home);
-        if (rebound.done) moved++;
-        else stuck.push(rebound.message ? t('{name}: {reason}', { name, reason: rebound.message }) : t("{name} couldn't be moved.", { name }));
-      } else if (await session.binConversation(bound.id)) {
-        moved++;
-      } else {
-        stuck.push(t("{name} couldn't be binned.", { name }));
+        if (!rebound.done) stuck.push(rebound.message ? t('{name}: {reason}', { name, reason: rebound.message }) : t("Couldn't move {name}.", { name }));
+      } else if (!(await session.binConversation(bound.id))) {
+        stuck.push(t("Couldn't move {name} to the bin.", { name }));
       }
     } catch (error) {
       stuck.push(t('{name}: {reason}', { name, reason: extractErrorMessage(error) }));
     }
   }
-  // Said by the host because it is the host that does it, and because how many
-  // there were is not something a provider is in a position to know. The
-  // provider's own message says what became of the tree, which is its half.
-  const where = returning ? (home ? 'workspace' : 'project') : 'bin';
-  const wentWithIt = moved === 0
-    ? ''
-    : t('{moved, plural, one {Its conversation is} other {Its {count} conversations are}} {where, select, workspace {back in the workspace it came from} project {back in the project} other {in the bin}}.',
-      { moved, count: moved, where });
+  // Where the conversations went is not said: the confirm the user agreed to
+  // already said it, and the tabs leaving the strip show it. Only a
+  // conversation that did not go is worth a word.
 
   const closed = await patchWorkspace(workspace.id, {
     state: 'closed',
@@ -713,7 +704,7 @@ export async function finishWorkspace(request) {
   // the strip with nowhere to work.
   return {
     done: true,
-    message: [result.message, wentWithIt, ...stuck].filter(Boolean).join(' '),
+    message: [result.message, ...stuck].filter(Boolean).join(' '),
     workspace: closed
   };
 }

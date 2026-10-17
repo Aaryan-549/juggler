@@ -705,8 +705,8 @@ export async function runTests() {
   });
 
   await run('en-XA: what finishing with a workspace says, and why a provision cannot start, are translated', async () => {
-    // The host's half of a finish — where the conversations went, which could
-    // not go, who is mid-turn — reaches the panel's notice as said, and the
+    // The host's half of a finish — which conversations could not go, who is
+    // mid-turn — reaches the panel's notice as said, and the
     // provision throws reach the create dialog's error, so each is checked as
     // said. Every conversation is a stand-in and every write is stubbed: the
     // bin by the stand-in session, the move by a session whose roots make it a
@@ -794,12 +794,6 @@ export async function runTests() {
         said.push({ where: 'project, one moved, one stuck', text: await finish('project', [
           { id: '91', name: '5', fate: 'ok' }, { id: '9', name: '', fate: 'throws' },
         ]) });
-        for (const ending of /** @type {const} */ (['bin', 'home', 'project'])) {
-          said.push({ where: `${ending}, three moved`, text: await finish(ending, [
-            { id: '91', name: '5', fate: 'ok' }, { id: '92', name: '6', fate: 'ok' }, { id: '93', name: '', fate: 'ok' },
-          ]) });
-          said.push({ where: `${ending}, one moved`, text: await finish(ending, [{ id: '91', name: '5', fate: 'ok' }]) });
-        }
         // A turn in flight refuses the finish, naming who is mid-turn.
         said.push({ where: 'busy, one', text: await finish('bin', [{ id: '92', name: 'Untitled 3', fate: 'busy' }]) });
         said.push({ where: 'busy, three', text: await finish('bin', [
@@ -832,17 +826,11 @@ export async function runTests() {
       for (const [k, v] of savedPaths) registry.modulePaths.set(k, v);
     }
 
-    /** @type {Record<string, string>} */
-    const expected = {
-      'bin 1': 'Its conversation is in the bin.',
-      'bin 3': 'Its 3 conversations are in the bin.',
-      'home 1': 'Its conversation is back in the workspace it came from.',
-      'home 3': 'Its 3 conversations are back in the workspace it came from.',
-      'project 1': 'Its conversation is back in the project.',
-      'project 3': 'Its 3 conversations are back in the project.',
-    };
-    const drift = Object.keys(expected).filter((k) => english[k] !== expected[k]);
-    assert(drift.length === 0, `the English changed: ${JSON.stringify(drift.map((k) => [english[k], expected[k]]))}`);
+    // Where they went is the confirm's to say, before the finish: one where
+    // every conversation went says nothing after it.
+    const spoke = Object.entries(english).filter(([, text]) => text !== '');
+    assert(Object.keys(english).length === 6 && spoke.length === 0,
+      `a finish where everything went says nothing, got ${JSON.stringify(english)}`);
 
     const byWhere = Object.fromEntries(said.map(({ where, text }) => [where, text]));
     // The data rides inside the wrapper: names, ids and reasons.
@@ -853,7 +841,7 @@ export async function runTests() {
     assert(byWhere['busy, three']?.includes('7') && byWhere['busy, three'].includes('9'),
       `the mid-turn refusal names them, got ${JSON.stringify(byWhere['busy, three'])}`);
     assert(byWhere['provision, no provider']?.includes('9'), `the throw names the provider, got ${JSON.stringify(byWhere['provision, no provider'])}`);
-    assert(said.length === 13 && said.every(({ text }) => text), `every state said something, got ${JSON.stringify(said)}`);
+    assert(said.length === 7 && said.every(({ text }) => text), `every state said something, got ${JSON.stringify(said)}`);
     const raw = said.filter(({ text }) => !isPseudoLocalized(text));
     assert(raw.length === 0, `plain English under en-XA: ${JSON.stringify(raw)}`);
   });

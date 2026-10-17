@@ -282,7 +282,7 @@ function removeTextFile(composer, entry) {
 export async function uploadAndAdd(composer, file) {
   const convId = composer._conversation?.id;
   if (!convId) {
-    composer.showWarning(t('No active conversation for the attachment.'));
+    composer.showWarning(t("Couldn't attach the image: no conversation is open."));
     return;
   }
   // Placeholder chip while the bytes upload. Carries a local preview URL so

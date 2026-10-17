@@ -362,7 +362,7 @@ export function ensureWorkspaceBanner(area, messageList) {
  * @returns {string} The line, or '' for a binding that is nobody's problem yet.
  */
 function strandedLead(workspace) {
-  if (!workspace) return t('There is no record of the workspace this conversation works in.');
+  if (!workspace) return t("Juggler has no record of this conversation's workspace.");
   if (workspace.state === 'provisioning') return '';
 
   // The label the user gave it, else its root: data either way, drawn as given.
@@ -377,11 +377,11 @@ function strandedLead(workspace) {
     const closedBy = typeof workspace.meta?.closedBy === 'string' && workspace.meta.closedBy
       ? displayConversationName(workspace.meta.closedBy)
       : '';
-    return t('{named, select, yes {{closedBy} finished with the workspace {label}.} other {The workspace {label} was finished with.}} This conversation has nowhere to work until you choose.',
+    return t('{named, select, yes {{closedBy} closed the workspace {label}.} other {The workspace {label} was closed.}} Choose where this conversation should work.',
       { label, named: closedBy ? 'yes' : 'no', closedBy });
   }
   return workspace.available === false
-    ? t('The workspace {label} is not where it was.', { label })
+    ? t("The folder for the workspace {label} can't be found.", { label })
     : '';
 }
 

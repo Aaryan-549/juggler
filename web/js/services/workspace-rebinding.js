@@ -65,7 +65,7 @@ export function whyNotRebind(conversation, workspaceId) {
   }
 
   if (target && !session.workspaceRoot(target)) {
-    return t("Couldn't move the conversation: that workspace can't be worked in.");
+    return t("Couldn't move the conversation: that workspace isn't available.");
   }
 
   return '';

@@ -121,13 +121,14 @@ export const BIN_LARGE_BYTES = 1024 * 1024 * 1024;
  * preempts a live LLM turn by cancelling it first. Surfacing this keeps the
  * cancellation from being silent. Translated where it is shown.
  */
-export const TURN_CANCELLED_NOTICE = markForTranslation('Cancelled the active turn');
+export const TURN_CANCELLED_NOTICE = markForTranslation('Stopped the turn that was running.');
 
 /**
  * Notice shown when a duplication opts out of forking a running source (via
- * refuseWhileActive — currently only /handoff, whose follow-up LLM turn needs a
- * settled source). Plain duplicate/branch fork mid-turn instead: the server
- * snapshots the live doc and the clone loads stopped, so they never show this.
+ * refuseWhileActive — only /handoff, whose follow-up LLM turn needs a settled
+ * source, so it names the handoff). Plain duplicate/branch fork mid-turn
+ * instead: the server snapshots the live doc and the clone loads stopped, so
+ * they never show this. Translated where it is shown.
  */
-export const DUPLICATE_WHILE_ACTIVE_NOTICE =
-  "Can't duplicate while a turn is running — wait for it to finish, or cancel it first.";
+export const HANDOFF_WHILE_ACTIVE_NOTICE =
+  markForTranslation("Can't hand off while a turn is running — wait for it to finish, or stop it first.");

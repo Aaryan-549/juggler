@@ -1169,7 +1169,7 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
         danger: true,
         description: meta.branchCreatedByUs && branch
           ? t('Deletes the worktree and the branch {branch}, with every commit on it. Conversations here go to the bin, which they can be restored from.', { branch })
-          : t('Deletes the worktree and everything in it, committed or not. The branch was not ours to make, so it stays. Conversations here go to the bin, which they can be restored from.')
+          : t("Deletes the worktree and everything in it, committed or not. The branch wasn't made by Juggler, so it stays. Conversations here go to the bin, which they can be restored from.")
       }
     ];
   }
@@ -1191,10 +1191,9 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
     if (actionId === 'unbind') {
       return {
         done: true,
-        // What happened to the tree. Where the conversations that were working
-        // in it have gone is the host's to say — it is the host that moves
-        // them, and how many there were is not a thing a provider knows.
-        message: t('Stopped using {dirTarget, select, named {{dir}} other {the worktree}}. It and {branchTarget, select, named {{branch}} other {its branch}} are still there.', {
+        // What happened to the tree. Where the conversations went, the confirm
+        // said before the user agreed to it.
+        message: t('Closed the workspace. {dirTarget, select, named {{dir}} other {The worktree}} and {branchTarget, select, named {{branch}} other {its branch}} are still on disk.', {
           dirTarget: meta.dir === null || meta.dir === undefined ? 'none' : 'named',
           dir: meta.dir === null || meta.dir === undefined ? '' : String(meta.dir),
           branchTarget: branch ? 'named' : 'none',
@@ -1227,7 +1226,7 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
     if (!message) {
       const conversation = ctx?.conversation;
       if (!conversation?.sendMessage) {
-        return { done: false, message: t('There is no message to commit under, and nobody here to write one.') };
+        return { done: false, message: t('Enter a commit message — there is no conversation here to write one.') };
       }
       // The model reads this, so it stays English whatever the UI language.
       const request = `Commit the work in this worktree${branch ? ` (branch ${branch})` : ''}, with a message describing it.`;
@@ -1237,7 +1236,7 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
         conversation.rootMessageThread,
         { consumeComposer: false }
       );
-      return { done: false, message: t('Asked this conversation to write the commit.') };
+      return { done: false, message: t('The conversation will write the commit message and commit on its next turn.') };
     }
 
     // No identity of ours is passed: this is the user's commit, in the user's
@@ -1250,8 +1249,8 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
       return {
         done: false,
         message: detail
-          ? t('Couldn’t stage the changes.\n\n{detail}', { detail })
-          : t('Couldn’t stage the changes.')
+          ? t("Couldn't stage the changes.\n\n{detail}", { detail })
+          : t("Couldn't stage the changes.")
       };
     }
 
@@ -1262,14 +1261,14 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
       // Not a failure: it is what a second press lands on, and what a tree
       // already committed from a terminal answers. Told as the fact it is.
       if (/nothing to commit/i.test(said)) {
-        return { done: false, message: t('Nothing had changed here, so nothing was committed.') };
+        return { done: false, message: t('Nothing to commit — there are no changes.') };
       }
       const detail = gitSaid(committed);
       return {
         done: false,
         message: detail
-          ? t('Couldn’t make the commit.\n\n{detail}', { detail })
-          : t('Couldn’t make the commit.')
+          ? t("Couldn't make the commit.\n\n{detail}", { detail })
+          : t("Couldn't make the commit.")
       };
     }
     // Never `done`: a commit is not a way of being finished with the place it
@@ -1304,8 +1303,8 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
       return {
         repoRel: '',
         problem: why === 'merge'
-          ? t('{repoTarget, select, named {{repo}} other {The repository}} cannot be reached from {baseTarget, select, named {{base}} other {the base workspace}}, so there is nowhere to merge it into.', params)
-          : t('{repoTarget, select, named {{repo}} other {The repository}} cannot be reached from {baseTarget, select, named {{base}} other {the base workspace}}, so the worktree is not ours to remove from here.', params)
+          ? t("Can't fast-forward: {repoTarget, select, named {{repo}} other {the repository}} can't be reached from {baseTarget, select, named {{base}} other {the base workspace}}.", params)
+          : t("Can't remove the worktree: {repoTarget, select, named {{repo}} other {the repository}} can't be reached from {baseTarget, select, named {{base}} other {the base workspace}}.", params)
       };
     }
     return { repoRel, problem: '' };
@@ -1345,7 +1344,7 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
     const meta = workspace?.meta ?? {};
     const branch = String(meta?.branch ?? '');
     if (!branch) {
-      return { done: false, message: t('There is no record of which branch this worktree is on, so there is nothing to merge.') };
+      return { done: false, message: t("Can't fast-forward: there's no record of which branch this worktree is on.") };
     }
 
     const where = this._repoFromBase(workspace, ctx, 'merge');
@@ -1373,15 +1372,15 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
       return {
         done: false,
         message: detail
-          ? t('Couldn’t ask the repository which branch it has out.\n\n{detail}', { detail })
-          : t('Couldn’t ask the repository which branch it has out.')
+          ? t("Couldn't find out which branch the repository has checked out.\n\n{detail}", { detail })
+          : t("Couldn't find out which branch the repository has checked out.")
       };
     }
     const into = String(head?.stdout ?? '').trim();
     if (!into || into === 'HEAD') {
       return {
         done: false,
-        message: t('{repo} has a detached HEAD, so there is no branch to fast-forward to {branch}.', { repo: baseName(String(meta.repoDir)), branch })
+        message: t("Can't fast-forward: {repo} isn't on a branch (its HEAD is detached).", { repo: baseName(String(meta.repoDir)) })
       };
     }
 
@@ -1391,8 +1390,8 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
       return {
         done: false,
         message: detail
-          ? t('{into} has moved on since this worktree was made, so it cannot be fast-forwarded to {branch}. A merge or a rebase is a job for you and git.\n\n{detail}', { into, branch, detail })
-          : t('{into} has moved on since this worktree was made, so it cannot be fast-forwarded to {branch}. A merge or a rebase is a job for you and git.', { into, branch })
+          ? t("{into} has moved on since this worktree was made, so it can't be fast-forwarded to {branch}. Merge or rebase it yourself.\n\n{detail}", { into, branch, detail })
+          : t("{into} has moved on since this worktree was made, so it can't be fast-forwarded to {branch}. Merge or rebase it yourself.", { into, branch })
       };
     }
     if (/already up to date/i.test(String(merged?.stdout ?? ''))) {
@@ -1430,7 +1429,7 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
     if (!meta.repoDir || !treeRel) {
       return {
         done: false,
-        message: t('There is no record of where this worktree came from, so it is not ours to remove.')
+        message: t("Can't remove the worktree: there's no record of which repository it belongs to.")
       };
     }
 

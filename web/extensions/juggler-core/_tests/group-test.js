@@ -276,8 +276,8 @@ export async function runTests() {
           'neither conversation went to the bin');
         assert((one.workspaceId || '') === '' && (two.workspaceId || '') === '',
           `both are in the project, got ${JSON.stringify([one.workspaceId, two.workspaceId])}`);
-        assert(/back in the project/.test(String(finished.message ?? '')),
-          `and the ending says where they went, got ${JSON.stringify(finished.message)}`);
+        assert(!finished.message,
+          `and the ending says nothing after the confirm that already said it, got ${JSON.stringify(finished.message)}`);
 
         const row = (await listWorkspaces()).find((/** @type {any} */ w) => w.id === workspaceId);
         assert(row?.state === 'closed',
@@ -307,8 +307,8 @@ export async function runTests() {
         const binned = (await session.bin.list()).map((/** @type {any} */ entry) => entry.id);
         assert(binned.includes(inside.id),
           `and is in the bin rather than gone, got ${JSON.stringify(binned)}`);
-        assert(/in the bin/.test(String(finished.message ?? '')),
-          `which the ending says, got ${JSON.stringify(finished.message)}`);
+        assert(!finished.message,
+          `and the ending says nothing after the confirm that already said it, got ${JSON.stringify(finished.message)}`);
       } finally {
         session.workspaces = saved;
         if (inside?.id) await session.bin.deletePermanently(inside.id).catch(() => {});

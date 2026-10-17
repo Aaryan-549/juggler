@@ -40,13 +40,13 @@ class CompactCommandType extends CommandType {
    */
   async execute(_args) {
     if (!this.messageThread?.modelConfig) {
-      return { handled: true, message: t('Please select a model before compacting'), error: true };
+      return { handled: true, message: t('Pick a model before compacting.'), error: true };
     }
 
     const mt = /** @type {import('../../../js/model/message-thread.js').MessageThread} */ (this.messageThread);
 
     if (isCompactionPending(mt.conversationId)) {
-      return { handled: true, message: t('Compaction already in progress'), error: true };
+      return { handled: true, message: t('Compaction is already in progress.'), error: true };
     }
 
     startCompaction(mt.conversationId);
@@ -59,10 +59,10 @@ class CompactCommandType extends CommandType {
       // fold; `error` carries a worker-side failure reason.
       const { folded, error } = await compactConversation(mt.conversationId);
       if (error) {
-        return { handled: true, message: t('Compaction failed: {error}', { error }), error: true };
+        return { handled: true, message: t("Couldn't compact: {error}", { error }), error: true };
       }
       if (!folded) {
-        return { handled: true, message: t('Nothing to compact'), error: true };
+        return { handled: true, message: t('Nothing to compact yet.'), error: true };
       }
 
       return { handled: true };
@@ -70,7 +70,7 @@ class CompactCommandType extends CommandType {
       const { extractErrorMessage: extractErr } = await import('juggler/ui');
       return {
         handled: true,
-        message: t('Compaction failed: {error}', { error: extractErr(error) }),
+        message: t("Couldn't compact: {error}", { error: extractErr(error) }),
         error: true
       };
     } finally {

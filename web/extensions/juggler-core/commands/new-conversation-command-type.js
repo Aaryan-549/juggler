@@ -37,7 +37,7 @@ class NewConversationCommandType extends CommandType {
   async execute(_args) {
     const session = this.messageThread?.conversation?.session;
     if (!session) {
-      return { handled: true, message: t('No session available'), error: true };
+      return { handled: true, message: t("Can't create a conversation: no project is open."), error: true };
     }
 
     try {
@@ -49,7 +49,7 @@ class NewConversationCommandType extends CommandType {
     } catch (error) {
       return {
         handled: true,
-        message: t('Failed to create conversation: {error}', { error: extractErrorMessage(error) }),
+        message: t("Couldn't create the conversation: {error}", { error: extractErrorMessage(error) }),
         error: true
       };
     }

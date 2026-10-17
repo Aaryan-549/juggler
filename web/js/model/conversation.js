@@ -1879,7 +1879,7 @@ class Conversation {
       // The provider's name comes from the server's provider registry: data.
       const root = this.workspaceRoot || '';
       this.showWarning(
-        t("Can't send: {provider} runs on this machine, and this conversation works in {known, select, yes {{root}} other {another workspace}}. Pick a model that runs over the network.",
+        t("Can't send: {provider} can only work on this computer, but this conversation works in {known, select, yes {{root}} other {a remote workspace}}. Pick a model that isn't tied to this computer.",
           { provider: strandedProvider.displayName || strandedProvider.name, known: root ? 'yes' : 'no', root }),
         8000);
       return 'provider cannot reach this workspace';
@@ -2613,15 +2613,15 @@ class Conversation {
    */
   _unusableWorkspaceNotice({ reason, named, closedBy }) {
     if (reason === 'unrecorded') {
-      return t("Can't send: there is no record of the workspace this conversation works in. Use the banner above the transcript to say where this conversation should work.");
+      return t("Can't send: Juggler has no record of this conversation's workspace. Choose where it should work in the banner above the transcript.");
     }
     const labelled = named ? 'yes' : 'no';
     if (reason === 'closed') {
       const by = closedBy ? displayConversationName(closedBy) : '';
-      return t("Can't send: {finisher, select, yes {{closedBy} finished with {labelled, select, yes {the workspace {named}} other {the workspace this conversation works in}}.} other {{labelled, select, yes {the workspace {named}} other {the workspace this conversation works in}} was finished with.}} Use the banner above the transcript to say where this conversation should work.",
+      return t("Can't send: {finisher, select, yes {{closedBy} closed {labelled, select, yes {the workspace {named}} other {this conversation's workspace}}.} other {{labelled, select, yes {the workspace {named}} other {this conversation's workspace}} was closed.}} Choose where it should work in the banner above the transcript.",
         { labelled, named, finisher: by ? 'yes' : 'no', closedBy: by });
     }
-    return t("Can't send: {labelled, select, yes {the workspace {named}} other {the workspace this conversation works in}} is not where it was. Use the banner above the transcript to say where this conversation should work.",
+    return t("Can't send: the folder for {labelled, select, yes {the workspace {named}} other {this conversation's workspace}} can't be found. Choose where it should work in the banner above the transcript.",
       { labelled, named });
   }
 

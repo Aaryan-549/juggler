@@ -139,7 +139,7 @@ export function makeUserCommandClass(def) {
     async execute(args, rest) {
       const text = expandTemplate(def.body || '', args, rest);
       const thread = this.messageThread;
-      if (!thread) return { handled: true, error: true, message: t('No active conversation') };
+      if (!thread) return { handled: true, error: true, message: t('No conversation is open.') };
 
       switch (runMode) {
         case 'draft':

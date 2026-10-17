@@ -79,29 +79,29 @@ const CORE_TEXT = [
   '{target, select, named {The worktree and {branch} stay on disk, ready to be adopted again. Conversations here go to the bin, which they can be restored from.} other {The worktree and its branch stay on disk, ready to be adopted again. Conversations here go to the bin, which they can be restored from.}}',
   'Close the workspace and delete the worktree',
   'Deletes the worktree and the branch {branch}, with every commit on it. Conversations here go to the bin, which they can be restored from.',
-  'Deletes the worktree and everything in it, committed or not. The branch was not ours to make, so it stays. Conversations here go to the bin, which they can be restored from.',
-  'Stopped using {dirTarget, select, named {{dir}} other {the worktree}}. It and {branchTarget, select, named {{branch}} other {its branch}} are still there.',
+  "Deletes the worktree and everything in it, committed or not. The branch wasn't made by Juggler, so it stays. Conversations here go to the bin, which they can be restored from.",
+  "Closed the workspace. {dirTarget, select, named {{dir}} other {The worktree}} and {branchTarget, select, named {{branch}} other {its branch}} are still on disk.",
   '{name} has no action "{actionId}".',
-  'There is no message to commit under, and nobody here to write one.',
-  'Asked this conversation to write the commit.',
-  'Couldn’t stage the changes.',
-  'Couldn’t stage the changes.\n\n{detail}',
-  'Nothing had changed here, so nothing was committed.',
-  'Couldn’t make the commit.',
-  'Couldn’t make the commit.\n\n{detail}',
+  "Enter a commit message — there is no conversation here to write one.",
+  "The conversation will write the commit message and commit on its next turn.",
+  "Couldn't stage the changes.",
+  "Couldn't stage the changes.\n\n{detail}",
+  "Nothing to commit — there are no changes.",
+  "Couldn't make the commit.",
+  "Couldn't make the commit.\n\n{detail}",
   '{target, select, named {Committed on {branch}.} other {Committed on its branch.}}',
-  '{repoTarget, select, named {{repo}} other {The repository}} cannot be reached from {baseTarget, select, named {{base}} other {the base workspace}}, so there is nowhere to merge it into.',
-  '{repoTarget, select, named {{repo}} other {The repository}} cannot be reached from {baseTarget, select, named {{base}} other {the base workspace}}, so the worktree is not ours to remove from here.',
-  'There is no record of which branch this worktree is on, so there is nothing to merge.',
+  "Can't fast-forward: {repoTarget, select, named {{repo}} other {the repository}} can't be reached from {baseTarget, select, named {{base}} other {the base workspace}}.",
+  "Can't remove the worktree: {repoTarget, select, named {{repo}} other {the repository}} can't be reached from {baseTarget, select, named {{base}} other {the base workspace}}.",
+  "Can't fast-forward: there's no record of which branch this worktree is on.",
   '{count, plural, one {This worktree has an uncommitted change. Commit it first — a fast-forward moves commits, and it would be left behind.} other {This worktree has {count} uncommitted changes. Commit them first — a fast-forward moves commits, and these would be left behind.}}',
-  'Couldn’t ask the repository which branch it has out.',
-  'Couldn’t ask the repository which branch it has out.\n\n{detail}',
-  '{repo} has a detached HEAD, so there is no branch to fast-forward to {branch}.',
-  '{into} has moved on since this worktree was made, so it cannot be fast-forwarded to {branch}. A merge or a rebase is a job for you and git.',
-  '{into} has moved on since this worktree was made, so it cannot be fast-forwarded to {branch}. A merge or a rebase is a job for you and git.\n\n{detail}',
+  "Couldn't find out which branch the repository has checked out.",
+  "Couldn't find out which branch the repository has checked out.\n\n{detail}",
+  "Can't fast-forward: {repo} isn't on a branch (its HEAD is detached).",
+  "{into} has moved on since this worktree was made, so it can't be fast-forwarded to {branch}. Merge or rebase it yourself.",
+  "{into} has moved on since this worktree was made, so it can't be fast-forwarded to {branch}. Merge or rebase it yourself.\n\n{detail}",
   '{into} is already up to date with {branch}.',
   'Fast-forwarded {into} to {branch}.',
-  'There is no record of where this worktree came from, so it is not ours to remove.',
+  "Can't remove the worktree: there's no record of which repository it belongs to.",
   '{target, select, branch {Removed {dir} and {branch}.} other {Removed {dir}.}}',
   '{dir} is still there.',
   '{dir} is not a worktree of {repo} any more.',
@@ -718,7 +718,7 @@ export async function runTests() {
       const locked = await commit((command) => (command.startsWith('git add')
         ? { success: false, stdout: 'fatal: Unable to create \'.git/index.lock\': File exists.', exitCode: 128 }
         : { success: true, stdout: '', exitCode: 0 }));
-      assert(locked.done === false && /Couldn’t stage/.test(String(locked.message)),
+      assert(locked.done === false && /Couldn't stage/.test(String(locked.message)),
         `staging refused is said as staging refused, got ${JSON.stringify(locked.message)}`);
       assert(/index\.lock/.test(String(locked.message)),
         `with git's own reason under it rather than in place of it, got ${JSON.stringify(locked.message)}`);
@@ -726,7 +726,7 @@ export async function runTests() {
       const hooked = await commit((command) => (command.startsWith('git commit')
         ? { success: false, stdout: '.husky/pre-commit: 3 problems (3 errors)', exitCode: 1 }
         : { success: true, stdout: '', exitCode: 0 }));
-      assert(/Couldn’t make the commit/.test(String(hooked.message)),
+      assert(/Couldn't make the commit/.test(String(hooked.message)),
         `and a commit refused is said as the commit refusing, which is a different thing to go and fix, got ${JSON.stringify(hooked.message)}`);
       assert(/pre-commit/.test(String(hooked.message)),
         `carrying what the hook printed, got ${JSON.stringify(hooked.message)}`);
@@ -737,7 +737,7 @@ export async function runTests() {
       const idle = await commit((command) => (command.startsWith('git commit')
         ? { success: false, stdout: 'nothing to commit, working tree clean', exitCode: 1 }
         : { success: true, stdout: '', exitCode: 0 }));
-      assert(/nothing/i.test(String(idle.message)) && !/Couldn’t/.test(String(idle.message)),
+      assert(/nothing/i.test(String(idle.message)) && !/Couldn't/.test(String(idle.message)),
         `a tree with nothing in it to commit is told plainly, not reported as a failure, got ${JSON.stringify(idle.message)}`);
 
       // The deadline. A repository whose pre-commit hook runs the linter takes

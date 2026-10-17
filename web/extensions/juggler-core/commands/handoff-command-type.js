@@ -58,13 +58,13 @@ class HandoffCommandType extends CommandType {
     const source = this.messageThread?.conversation;
     const session = source?.session;
     if (!session) {
-      return { handled: true, message: t('No session available'), error: true };
+      return { handled: true, message: t("Can't hand off: no project is open."), error: true };
     }
 
     // The summary is an LLM turn, so the clone needs a model. Fail early with the
     // same guidance /compact gives rather than minting an un-runnable conversation.
     if (!this.messageThread?.modelConfig) {
-      return { handled: true, message: t('Please select a model before handing off'), error: true };
+      return { handled: true, message: t('Pick a model before handing off.'), error: true };
     }
 
     let newId;
@@ -75,7 +75,7 @@ class HandoffCommandType extends CommandType {
       // waits for a settled source rather than forking one mid-turn.
       newId = await session.duplicateConversation(source.id, { nameSuffix: 'continued', refuseWhileActive: true });
     } catch (error) {
-      return { handled: true, message: t('Handoff failed: {error}', { error: extractErrorMessage(error) }), error: true };
+      return { handled: true, message: t("Couldn't hand off: {error}", { error: extractErrorMessage(error) }), error: true };
     }
     if (!newId) {
       // Null clone is duplicateConversation's mid-turn refusal (or a missing
@@ -97,13 +97,13 @@ class HandoffCommandType extends CommandType {
     const clone = session.getConversation(newId);
     const cloneMt = clone?.rootMessageThread;
     if (!cloneMt) {
-      return { handled: true, message: t('Handoff failed: continued conversation unavailable'), error: true };
+      return { handled: true, message: t("Couldn't hand off: the new conversation wasn't created."), error: true };
     }
 
     // Defensive: a fresh clone should never be mid-compaction, but honour the
     // same single-flight guard the compaction path uses.
     if (isCompactionPending(cloneMt.conversationId)) {
-      return { handled: true, message: t('Handoff already in progress'), error: true };
+      return { handled: true, message: t('A handoff is already in progress.'), error: true };
     }
 
     try {
@@ -112,15 +112,15 @@ class HandoffCommandType extends CommandType {
       // finished result into the parked first user message of the continued conversation.
       const { folded, error } = await compactConversation(cloneMt.conversationId, { handoffPromote: true });
       if (error) {
-        return { handled: true, message: t('Handoff failed: {error}', { error }), error: true };
+        return { handled: true, message: t("Couldn't hand off: {error}", { error }), error: true };
       }
       if (!folded) {
         // Empty source — nothing to summarise. Leave the (empty) continued conversation
         // in place for the user to start typing in.
-        return { handled: true, message: t('Nothing to hand off — continuing in a fresh conversation'), error: true };
+        return { handled: true, message: t('Nothing to hand off — continuing in a new conversation.'), error: true };
       }
     } catch (error) {
-      return { handled: true, message: t('Handoff failed: {error}', { error: extractErrorMessage(error) }), error: true };
+      return { handled: true, message: t("Couldn't hand off: {error}", { error: extractErrorMessage(error) }), error: true };
     }
 
     return { handled: true };

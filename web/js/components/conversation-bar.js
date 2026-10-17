@@ -2128,7 +2128,7 @@ class ConversationBar extends JugglerElement {
       const conversation = this._session.getConversation(conversationId);
       if (!conversation) return;
       await copyToClipboard(conversationToMarkdown(conversation));
-      showNotice(t('Conversation copied to clipboard'));
+      showNotice(t('Conversation copied to clipboard.'));
     } catch (error) {
       await showAlert(extractErrorMessage(error), t('Copy Failed'));
     }
