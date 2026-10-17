@@ -204,12 +204,16 @@ export const appPseudoLocaleWalkTest = {
 
     // Bounded as a whole as well as wait by wait: the shell runs on this lane's
     // thread, so a walk that stops moving says where rather than outliving the
-    // runner's report.
+    // runner's report. Under an armed deadline budgetFor() runs to a second past
+    // it, which is after the runner's no-progress report fires, so the cap stops
+    // CAP_MARGIN_MS short of that.
+    const CAP_MARGIN_MS = 6000;
     /** @type {any} */
     let capTimer = null;
     const cap = new Promise((_, reject) => {
       capTimer = setTimeout(() => reject(new Error(
-        `the walk stopped at: ${stage} (conversation named ${JSON.stringify(nameAfterTurn)})${describeShell()}\n  findings so far:\n  ${findings.join('\n  ')}`)), budgetFor(60000));
+        `the walk stopped at: ${stage} (conversation named ${JSON.stringify(nameAfterTurn)})${describeShell()}\n  findings so far:\n  ${findings.join('\n  ')}`)),
+      Math.max(1000, budgetFor(60000) - CAP_MARGIN_MS));
     });
     try {
       await Promise.race([cap, walkShell()]);

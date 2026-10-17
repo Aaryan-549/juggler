@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -149,7 +150,7 @@ func TestDialogsSpeakTheUILanguage(t *testing.T) {
 
 	locked := &lockedProjectError{project: "/7/8", info: &core.InstanceInfo{PID: 9, Host: "127.0.0.1", Port: 6}}
 	for i, m := range locked.adviceMessages() {
-		if text := a.tr(m); !isPseudoLocalized(text, "/7/8/.juggler/juggler.lock", "127.0.0.1") {
+		if text := a.tr(m); !isPseudoLocalized(text, filepath.Join("/7/8", ".juggler", "juggler.lock"), "127.0.0.1") {
 			t.Errorf("locked advice paragraph %d is %q, not translated", i, text)
 		}
 	}

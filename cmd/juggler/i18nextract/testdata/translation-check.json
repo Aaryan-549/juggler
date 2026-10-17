@@ -1,0 +1,286 @@
+{
+  "about": "Translation catalogues and the problems a check finds in them, in the order it reports them. Run by both checkers: i18nextract.CheckTranslation (Go) and translationProblems() in scripts/i18n (Node), through TestTranslationCheckFixture. `translation` is the file's JSON value; `translationText`, when present, is its raw text instead. A null key is a problem with the file as a whole.",
+  "cases": [
+    {
+      "name": "a good catalogue, with untranslated and quoted entries",
+      "locale": "fr",
+      "source": {
+        "Close": "Close",
+        "Delete {name}?": "Delete {name}?",
+        "{count, plural, one {# file} other {# files}}": "{count, plural, one {# file} other {# files}}",
+        "{kind, select, file {Delete the file?} other {Delete the folder?}}": "{kind, select, file {Delete the file?} other {Delete the folder?}}",
+        "verb\u0004Open": "Open",
+        "Read {guide} first.": "Read {guide} first.",
+        "Use '{'braces'}' for {name}": "Use '{'braces'}' for {name}",
+        "Saved": "Saved"
+      },
+      "translation": {
+        "Close": "Fermer",
+        "Delete {name}?": "Supprimer {name} ?",
+        "{count, plural, one {# file} other {# files}}": "{count, plural, =0 {aucun fichier} one {# fichier} many {# de fichiers} other {# fichiers}}",
+        "{kind, select, file {Delete the file?} other {Delete the folder?}}": "{kind, select, file {Supprimer le fichier ?} other {Supprimer le dossier ?}}",
+        "verb\u0004Open": "Ouvrir",
+        "Read {guide} first.": "Lisez d'abord {guide}.",
+        "Use '{'braces'}' for {name}": "Utilisez '{'des accolades'}' pour {name}",
+        "Saved": "",
+        "Removed long ago": ""
+      },
+      "problems": []
+    },
+    {
+      "name": "an empty catalogue",
+      "locale": "de",
+      "source": { "Close": "Close" },
+      "translation": {},
+      "problems": []
+    },
+    {
+      "name": "a file that is not JSON",
+      "locale": "fr",
+      "source": { "Close": "Close" },
+      "translationText": "{ \"Close\": \"Fermer\", }",
+      "problems": [{ "key": null, "kind": "json" }]
+    },
+    {
+      "name": "a file that is not an object",
+      "locale": "fr",
+      "source": { "Close": "Close" },
+      "translation": ["Fermer"],
+      "problems": [{ "key": null, "kind": "not-object" }]
+    },
+    {
+      "name": "a file that is null",
+      "locale": "fr",
+      "source": { "Close": "Close" },
+      "translation": null,
+      "problems": [{ "key": null, "kind": "not-object" }]
+    },
+    {
+      "name": "values that are not strings, in key order",
+      "locale": "fr",
+      "source": { "Open": "Open", "Close": "Close", "Save": "Save" },
+      "translation": { "Open": null, "Close": 1, "Save": { "text": "Enregistrer" } },
+      "problems": [
+        { "key": "Close", "kind": "not-string" },
+        { "key": "Open", "kind": "not-string" },
+        { "key": "Save", "kind": "not-string" }
+      ]
+    },
+    {
+      "name": "a key whose English changed",
+      "locale": "fr",
+      "source": { "Close the window": "Close the window" },
+      "translation": { "Close": "Fermer", "Close the window": "Fermer la fenêtre" },
+      "problems": [{ "key": "Close", "kind": "stale" }]
+    },
+    {
+      "name": "a key under the wrong context",
+      "locale": "fr",
+      "source": { "verb\u0004Open": "Open" },
+      "translation": { "Open": "Ouvrir" },
+      "problems": [{ "key": "Open", "kind": "stale" }]
+    },
+    {
+      "name": "messages that do not parse",
+      "locale": "fr",
+      "source": { "Delete {name}?": "Delete {name}?", "Close": "Close", "Quote": "Quote" },
+      "translation": { "Delete {name}?": "Supprimer {name ?", "Close": "Fermer }", "Quote": "'{ non fermé" },
+      "problems": [
+        { "key": "Close", "kind": "syntax" },
+        { "key": "Delete {name}?", "kind": "syntax" },
+        { "key": "Quote", "kind": "syntax" }
+      ]
+    },
+    {
+      "name": "an unsupported placeholder type",
+      "locale": "fr",
+      "source": { "{n} items": "{n} items" },
+      "translation": { "{n} items": "{n, number} éléments" },
+      "problems": [{ "key": "{n} items", "kind": "syntax" }]
+    },
+    {
+      "name": "a plural or select without other",
+      "locale": "fr",
+      "source": {
+        "{count, plural, one {# file} other {# files}}": "{count, plural, one {# file} other {# files}}",
+        "{kind, select, file {File} other {Folder}}": "{kind, select, file {File} other {Folder}}"
+      },
+      "translation": {
+        "{count, plural, one {# file} other {# files}}": "{count, plural, one {# fichier} many {# fichiers}}",
+        "{kind, select, file {File} other {Folder}}": "{kind, select, file {Fichier} folder {Dossier {x, select, a {} other {}}}}"
+      },
+      "problems": [
+        { "key": "{count, plural, one {# file} other {# files}}", "kind": "no-other" },
+        { "key": "{kind, select, file {File} other {Folder}}", "kind": "no-other" }
+      ]
+    },
+    {
+      "name": "a renamed placeholder",
+      "locale": "fr",
+      "source": { "Delete {name}?": "Delete {name}?" },
+      "translation": { "Delete {name}?": "Supprimer {nom} ?" },
+      "problems": [
+        { "key": "Delete {name}?", "kind": "unknown-argument" },
+        { "key": "Delete {name}?", "kind": "missing-argument" }
+      ]
+    },
+    {
+      "name": "a dropped placeholder, and one only inside a branch",
+      "locale": "fr",
+      "source": {
+        "Moved {count} files to {dir}": "Moved {count} files to {dir}",
+        "{count, plural, one {# file in {dir}} other {# files in {dir}}}": "{count, plural, one {# file in {dir}} other {# files in {dir}}}"
+      },
+      "translation": {
+        "Moved {count} files to {dir}": "Fichiers déplacés vers {dir}",
+        "{count, plural, one {# file in {dir}} other {# files in {dir}}}": "{count, plural, one {un fichier dans {dir}} other {# fichiers ici}}"
+      },
+      "problems": [{ "key": "Moved {count} files to {dir}", "kind": "missing-argument" }]
+    },
+    {
+      "name": "placeholders that changed kind",
+      "locale": "fr",
+      "source": {
+        "{count, plural, one {# file} other {# files}}": "{count, plural, one {# file} other {# files}}",
+        "{kind, select, file {File} other {Folder}}": "{kind, select, file {File} other {Folder}}",
+        "{n} left": "{n} left"
+      },
+      "translation": {
+        "{count, plural, one {# file} other {# files}}": "{count} fichiers",
+        "{kind, select, file {File} other {Folder}}": "{kind, plural, one {Fichier} other {Dossier}}",
+        "{n} left": "{n, plural, one {# restant} other {# restants}}"
+      },
+      "problems": [
+        { "key": "{count, plural, one {# file} other {# files}}", "kind": "argument-kind" },
+        { "key": "{kind, select, file {File} other {Folder}}", "kind": "argument-kind" },
+        { "key": "{n} left", "kind": "argument-kind" }
+      ]
+    },
+    {
+      "name": "a plural that keeps its kind and also prints its value",
+      "locale": "fr",
+      "source": { "{count, plural, one {# file} other {# files}}": "{count, plural, one {# file} other {# files}}" },
+      "translation": { "{count, plural, one {# file} other {# files}}": "{count, plural, one {{count} fichier} other {{count} fichiers}}" },
+      "problems": []
+    },
+    {
+      "name": "a plural category French does not have",
+      "locale": "fr",
+      "source": { "{count, plural, one {# file} other {# files}}": "{count, plural, one {# file} other {# files}}" },
+      "translation": { "{count, plural, one {# file} other {# files}}": "{count, plural, one {# fichier} few {# fichiers} two {# fichiers} other {# fichiers}}" },
+      "problems": [
+        { "key": "{count, plural, one {# file} other {# files}}", "kind": "plural-category" },
+        { "key": "{count, plural, one {# file} other {# files}}", "kind": "plural-category" }
+      ]
+    },
+    {
+      "name": "Japanese has only other; =N is always allowed",
+      "locale": "ja",
+      "source": {
+        "{count, plural, one {# file} other {# files}}": "{count, plural, one {# file} other {# files}}",
+        "{count, plural, =0 {No files} other {# files}}": "{count, plural, =0 {No files} other {# files}}"
+      },
+      "translation": {
+        "{count, plural, one {# file} other {# files}}": "{count, plural, one {#件} other {#件のファイル}}",
+        "{count, plural, =0 {No files} other {# files}}": "{count, plural, =0 {ファイルなし} =1 {1件} other {#件}}"
+      },
+      "problems": [{ "key": "{count, plural, one {# file} other {# files}}", "kind": "plural-category" }]
+    },
+    {
+      "name": "Russian's four categories",
+      "locale": "ru",
+      "source": { "{count, plural, one {# file} other {# files}}": "{count, plural, one {# file} other {# files}}" },
+      "translation": { "{count, plural, one {# file} other {# files}}": "{count, plural, one {# файл} few {# файла} many {# файлов} other {# файла}}" },
+      "problems": []
+    },
+    {
+      "name": "a regional locale takes its language's categories",
+      "locale": "pt-BR",
+      "source": { "{count, plural, one {# file} other {# files}}": "{count, plural, one {# file} other {# files}}" },
+      "translation": { "{count, plural, one {# file} other {# files}}": "{count, plural, one {# arquivo} many {# de arquivos} other {# arquivos}}" },
+      "problems": []
+    },
+    {
+      "name": "a plural nested in a select is checked too",
+      "locale": "de",
+      "source": {
+        "{kind, select, file {{count, plural, one {# file} other {# files}}} other {Folders}}": "{kind, select, file {{count, plural, one {# file} other {# files}}} other {Folders}}"
+      },
+      "translation": {
+        "{kind, select, file {{count, plural, one {# file} other {# files}}} other {Folders}}": "{kind, select, file {{count, plural, one {# Datei} many {# Dateien} other {# Dateien}}} other {Ordner}}"
+      },
+      "problems": [
+        { "key": "{kind, select, file {{count, plural, one {# file} other {# files}}} other {Folders}}", "kind": "plural-category" }
+      ]
+    },
+    {
+      "name": "a select's keys are its own",
+      "locale": "ja",
+      "source": { "{kind, select, one {One} other {Other}}": "{kind, select, one {One} other {Other}}" },
+      "translation": { "{kind, select, one {One} other {Other}}": "{kind, select, one {一つ} other {その他}}" },
+      "problems": []
+    },
+    {
+      "name": "a locale with no plural rules",
+      "locale": "xx",
+      "source": { "{count, plural, one {# file} other {# files}}": "{count, plural, one {# file} other {# files}}" },
+      "translation": { "{count, plural, one {# file} other {# files}}": "{count, plural, few {#} other {#}}" },
+      "problems": [{ "key": null, "kind": "locale" }]
+    },
+    {
+      "name": "markup the English does not have",
+      "locale": "fr",
+      "source": {
+        "Read {guide} first.": "Read {guide} first.",
+        "Line one": "Line one",
+        "Click {here}": "Click {here}"
+      },
+      "translation": {
+        "Read {guide} first.": "Lisez <b>{guide}</b> d'abord.",
+        "Line one": "Ligne<br/>un",
+        "Click {here}": "Cliquez <A HREF=\"x\">{here}</A>"
+      },
+      "problems": [
+        { "key": "Click {here}", "kind": "html" },
+        { "key": "Line one", "kind": "html" },
+        { "key": "Read {guide} first.", "kind": "html" }
+      ]
+    },
+    {
+      "name": "angle brackets that are not markup, and markup the English has",
+      "locale": "fr",
+      "source": {
+        "Add them to <project>/.juggler/mcp.json.": "Add them to <project>/.juggler/mcp.json.",
+        "Usage: /mcp {subcommand} <server>": "Usage: /mcp {subcommand} <server>",
+        "Press <kbd>Enter</kbd>": "Press <kbd>Enter</kbd>",
+        "a < b > c": "a < b > c"
+      },
+      "translation": {
+        "Add them to <project>/.juggler/mcp.json.": "Ajoutez-les à <projet>/.juggler/mcp.json.",
+        "Usage: /mcp {subcommand} <server>": "Utilisation : /mcp {subcommand} <serveur>",
+        "Press <kbd>Enter</kbd>": "Appuyez sur <kbd>Entrée</kbd>",
+        "a < b > c": "a <b > c"
+      },
+      "problems": [{ "key": "a < b > c", "kind": "html" }]
+    },
+    {
+      "name": "every problem one message can have, in order",
+      "locale": "fr",
+      "source": {
+        "{count, plural, one {# file in {dir}} other {# files in {dir}}} ({kind, select, a {A} other {B}})": "{count, plural, one {# file in {dir}} other {# files in {dir}}} ({kind, select, a {A} other {B}})"
+      },
+      "translation": {
+        "{count, plural, one {# file in {dir}} other {# files in {dir}}} ({kind, select, a {A} other {B}})": "{count, plural, two {x} one {# fichier dans <b>{rep}</b>} few {{zed}} other {# fichiers}} ({kind})"
+      },
+      "problems": [
+        { "key": "{count, plural, one {# file in {dir}} other {# files in {dir}}} ({kind, select, a {A} other {B}})", "kind": "unknown-argument" },
+        { "key": "{count, plural, one {# file in {dir}} other {# files in {dir}}} ({kind, select, a {A} other {B}})", "kind": "unknown-argument" },
+        { "key": "{count, plural, one {# file in {dir}} other {# files in {dir}}} ({kind, select, a {A} other {B}})", "kind": "missing-argument" },
+        { "key": "{count, plural, one {# file in {dir}} other {# files in {dir}}} ({kind, select, a {A} other {B}})", "kind": "argument-kind" },
+        { "key": "{count, plural, one {# file in {dir}} other {# files in {dir}}} ({kind, select, a {A} other {B}})", "kind": "plural-category" },
+        { "key": "{count, plural, one {# file in {dir}} other {# files in {dir}}} ({kind, select, a {A} other {B}})", "kind": "plural-category" },
+        { "key": "{count, plural, one {# file in {dir}} other {# files in {dir}}} ({kind, select, a {A} other {B}})", "kind": "html" }
+      ]
+    }
+  ]
+}

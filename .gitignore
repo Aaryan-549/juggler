@@ -91,7 +91,6 @@ tmp/
 
 # Testing
 *.test
-testdata/
 .test/
 tests/benchmarks/results/
 
