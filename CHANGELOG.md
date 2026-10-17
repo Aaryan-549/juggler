@@ -5,6 +5,8 @@ of changes; this project follows semantic versioning.
 
 ## [Unreleased]
 
+## [0.7.7] - 2026-10-17
+
 - New run_code tool: a mutating version of query_code, to give full "code mode" features
 - New --allow-host flag serves Juggler behind a reverse proxy such as tailscale serve
 - Export a conversation as a self-contained HTML page to share, from its tab menu or /export
