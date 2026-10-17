@@ -15,8 +15,9 @@
  *   1. On a plain (fixed-sidebar) bar, the ghost tracks the pointer 1:1.
  *   2. On a transformed (drawer) bar, it tracks the pointer 1:1 too.
  *
- * Both are asserted on the ghost's centre, which the `scale(1.02)` lift leaves
- * where it is. `_startDrag` is called directly: the real pointerdown listener
+ * Both are asserted on the ghost's centre, which the lift (a box grown evenly
+ * round it) leaves where it is. And the ghost carries no transform and no
+ * translucency, either of which makes WebKit draw it as a blurred layer. `_startDrag` is called directly: the real pointerdown listener
  * lives on tabs the bar builds from a session, and the geometry under test
  * needs neither. The drawer's `transform` is applied inline for the same reason
  * sidebar-drawer-test stands its drawer up by hand — the media query that
@@ -72,9 +73,9 @@ function mountBar({ transformed }) {
 }
 
 /**
- * Rects are compared through their centres throughout: the ghost wears a
- * `scale(1.02)` lift, which pushes every edge out by a fraction of the tab's
- * size but leaves the centre exactly where it is.
+ * Rects are compared through their centres throughout: the ghost is lifted by
+ * growing its box, which pushes every edge out by a fraction of the tab's size
+ * but leaves the centre where it is.
  * @param {DOMRect} rect - A rect to take the vertical centre of.
  * @returns {number} Its centre in viewport coordinates.
  */
@@ -155,6 +156,17 @@ export async function runTests() {
       const dx = centreX(ghost) - expectedCentreX;
       assert(Math.abs(dx) <= 1,
         `the ghost must keep the tab's column, not ${dx.toFixed(1)}px off it`);
+      // Nothing on the ghost may give WebKit a reason to draw it as a layer of
+      // its own — a transform or a translucency — because WebKit draws that
+      // layer blurred. It moves by left/top and lifts by a bigger box.
+      const ghostEl = /** @type {HTMLElement} */ (bar.querySelector('.drag-ghost'));
+      const ghostStyle = getComputedStyle(ghostEl);
+      assert(ghostStyle.transform === 'none',
+        `the ghost must not be transformed, but has ${ghostStyle.transform}`);
+      assert(ghostStyle.opacity === '1',
+        `the ghost must be opaque, but has opacity ${ghostStyle.opacity}`);
+      assert(ghost.width > tab.getBoundingClientRect().width,
+        'the ghost must be drawn larger than the tab it lifts');
       passed++;
     } catch (e) {
       failed++;

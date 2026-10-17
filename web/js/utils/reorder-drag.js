@@ -61,6 +61,9 @@
 /** How far a pointer must travel before a press becomes a drag. */
 const DEFAULT_THRESHOLD_PX = 5;
 
+/** How much larger the floating clone is laid out than the item it lifts. */
+const GHOST_LIFT = 1.02;
+
 /** Held presses still waiting or lifted. While any is, the strip's own menu is not a right-click's. */
 let liveHolds = 0;
 
@@ -251,6 +254,9 @@ export function startReorderDrag(event, options) {
   let finished = false;
   /** @type {HTMLElement|null} */
   let ghost = null;
+  /** The clone's resting `left`/`top`, which the pointer's travel is added to. */
+  let ghostLeft = 0;
+  let ghostTop = 0;
   /** @type {number|null} */
   let autoScrollRaf = null;
   let lastClientX = event.clientX;
@@ -323,11 +329,20 @@ export function startReorderDrag(event, options) {
     const clone = /** @type {HTMLElement} */ (item.cloneNode(true));
     clone.classList.add(ghostClass);
     clone.setAttribute('aria-hidden', 'true');
+    // The clone is lifted by laying it out a little larger round the same
+    // centre, and carried by its left/top — never by a transform. A transform
+    // gives WebKit a reason to draw the clone as a compositing layer of its
+    // own, and WebKit draws that layer blurred. With none, the clone paints
+    // into the page like the tab it copies, on whole-pixel edges.
+    const width = Math.round(rect.width * GHOST_LIFT);
+    const height = Math.round(rect.height * GHOST_LIFT);
+    const left = Math.round(rect.left - (width - rect.width) / 2);
+    const top = Math.round(rect.top - (height - rect.height) / 2);
     clone.style.transform = 'none';
     clone.style.left = '0';
     clone.style.top = '0';
-    clone.style.width = `${rect.width}px`;
-    clone.style.height = `${rect.height}px`;
+    clone.style.width = `${width}px`;
+    clone.style.height = `${height}px`;
     try {
       prepareGhost?.(clone);
     } catch (err) {
@@ -335,8 +350,10 @@ export function startReorderDrag(event, options) {
     }
     ghostHost.appendChild(clone);
     const origin = clone.getBoundingClientRect();
-    clone.style.left = `${rect.left - origin.left}px`;
-    clone.style.top = `${rect.top - origin.top}px`;
+    ghostLeft = left - origin.left;
+    ghostTop = top - origin.top;
+    clone.style.left = `${ghostLeft}px`;
+    clone.style.top = `${ghostTop}px`;
     ghost = clone;
     item.classList.add(sourceClass);
     // The clone travels by the pointer's delta from the press, so its middle
@@ -602,7 +619,6 @@ export function startReorderDrag(event, options) {
     lifted = true;
     liftedHolds++;
     begin();
-    if (ghost) ghost.style.transform = 'scale(1.02)';
   };
 
   /** @param {PointerEvent} move - A pointermove. */
@@ -635,9 +651,10 @@ export function startReorderDrag(event, options) {
     lastClientX = move.clientX;
     lastClientY = move.clientY;
     if (ghost) {
-      const tx = axis === 'y' ? 0 : dx;
-      const ty = axis === 'x' ? 0 : dy;
-      ghost.style.transform = `translate(${tx}px, ${ty}px) scale(1.02)`;
+      const tx = axis === 'y' ? 0 : Math.round(dx);
+      const ty = axis === 'x' ? 0 : Math.round(dy);
+      ghost.style.left = `${ghostLeft + tx}px`;
+      ghost.style.top = `${ghostTop + ty}px`;
     }
     recompute(move.clientX, move.clientY);
     maybeStartAutoScroll();

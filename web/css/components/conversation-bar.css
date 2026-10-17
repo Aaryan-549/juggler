@@ -632,16 +632,19 @@ conversation-bar.tab-list-ring:focus-within .conversation-tab.active {
    whole workspace box is dragged by the same gesture through the same utility:
    scoping the detachment to tabs left a box drag cloning a box that stayed
    where it was and never came off the page. Only the dragged element carries
-   these classes, so the tabs drawn inside a box's clone are unaffected. */
+   these classes, so the tabs drawn inside a box's clone are unaffected.
+
+   Opaque, untransformed and unhinted: a translucency, a transform or a
+   `will-change` makes WebKit draw the ghost as a layer of its own, and it draws
+   that layer blurred. utils/reorder-drag.js carries it by left/top and lifts it
+   by a larger box. */
 conversation-bar .drag-ghost {
     position: fixed;
     margin: 0;
     z-index: var(--z-dropdown);
-    opacity: 0.95;
     box-shadow: 0 0.25rem 1rem rgb(0 0 0 / 30%);
     cursor: grabbing;
     pointer-events: none;
-    will-change: transform;
 }
 
 conversation-bar .drag-source {

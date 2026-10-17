@@ -121,7 +121,7 @@ layer-inversion tokens/theme-dark.css > base/elements.css 6
 layer-inversion base/elements.css > components/model-picker.css 3
 layer-inversion layout/app-header.css > components/approvals.css 5
 layer-inversion layout/app-header.css > patterns/spinner.css 5
-layer-inversion layout/app-shell.css > components/conversation-bar.css 4
+layer-inversion layout/app-shell.css > components/conversation-bar.css 3
 layer-inversion layout/app-shell.css > components/popup-sheet.css 5
 layer-inversion patterns/markdown.css > components/popup-sheet.css 5
 layer-inversion patterns/menus.css > components/conversation-bar.css 5

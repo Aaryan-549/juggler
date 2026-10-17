@@ -257,16 +257,16 @@ pinboard-tabbar {
    invisible placeholder, and the rest slide into the order the drop would
    produce — so the strip shows the answer rather than a marker predicting it.
    The clone is parked on the tabbar rather than in the list, so it is not one
-   of the tabs being measured around it. */
+   of the tabs being measured around it. The clone is opaque and untransformed, so
+   WebKit paints it into the page rather than as a blurred layer of its own
+   (see the conversation-bar ghost). */
 .pinboard-tab.drag-ghost {
     position: fixed;
     z-index: var(--z-dropdown);
     margin: 0;
-    opacity: 0.95;
     box-shadow: 0 0.25rem 1rem var(--overlay-dark-25);
     cursor: grabbing;
     pointer-events: none;
-    will-change: transform;
 }
 
 /* The bin is hover-revealed, and a clone is never hovered. */
