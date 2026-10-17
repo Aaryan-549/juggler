@@ -333,8 +333,9 @@ func (cd *ConversationDocument) insertMessage(index int, messages ...Conversatio
 		}
 		cd.ensureItems().Insert(ycrdt.Number(index), ymaps)
 
-		// yarr is now live after insertion — insert nested items one by one to
-		// avoid the PrelimContent reversal in YArray.Integrate.
+		// yarr is now live after insertion, so nested items go in at explicit
+		// indices; a Push before integration inserts at 0 (see
+		// conversationItemToYMap).
 		for _, p := range pending {
 			var nested []ConversationItem
 			if err := json.Unmarshal(p.items, &nested); err == nil {
@@ -407,7 +408,7 @@ func (cd *ConversationDocument) FoldPrefixIntoSummaryIfUnchanged(arr *ycrdt.YArr
 	}
 	ycrdtMu.Lock()
 	defer ycrdtMu.Unlock()
-	if !cd.foldFingerprintUnchangedLocked(arr, start, count, promptID, expectedFingerprint) {
+	if _, ok := cd.foldFingerprintUnchangedLocked(arr, start, count, promptID, expectedFingerprint); !ok {
 		return false
 	}
 	cd.doc.Transact(func(_ *ycrdt.Transaction) {
@@ -418,17 +419,62 @@ func (cd *ConversationDocument) FoldPrefixIntoSummaryIfUnchanged(arr *ycrdt.YArr
 
 // foldFingerprintUnchangedLocked reports whether arr still matches
 // expectedFingerprint (the canonical source the reducer consumed) and start/count
-// still address a valid prefix. Callers MUST hold ycrdtMu, so the recheck and the
-// subsequent splice form one atomic critical section. Shared by the untracked
+// still address a valid prefix, and returns arr's items as read for the check.
+// Callers MUST hold ycrdtMu, so the recheck and the subsequent splice form one
+// atomic critical section. Shared by the untracked
 // (FoldPrefixIntoSummaryIfUnchanged) and tracked (foldPrefixIntoSummaryTracked)
 // fold paths.
-func (cd *ConversationDocument) foldFingerprintUnchangedLocked(arr *ycrdt.YArray, start, count int, promptID, expectedFingerprint string) bool {
+func (cd *ConversationDocument) foldFingerprintUnchangedLocked(arr *ycrdt.YArray, start, count int, promptID, expectedFingerprint string) ([]ConversationItem, bool) {
 	current := cd.getItemsFromArrayLocked(arr)
 	records, err := canonicalCompactionRecords(current, promptID)
 	if err != nil || compactionSourceFingerprint(records) != expectedFingerprint {
-		return false
+		return nil, false
 	}
-	return start >= 0 && start+count <= len(current)
+	return current, start >= 0 && start+count <= len(current)
+}
+
+// refoldFromLive rebuilds summary's nested copy of the folded range, and its
+// FoldedRuns, from current: the array as read in the hold that splices it.
+//
+// The fingerprint only holds the range's wire form steady, and a thread's wire
+// form is its call and result, never its transcript. So a message sent into an
+// idle sub-thread inside the range while the reducer ran leaves the fingerprint
+// unmoved, and a nested copy built before the reduce would replace that thread
+// with one that never received it. The summary still stands — it was made from
+// exactly the wire form that is there now — so the fold commits, carrying the
+// live items. keep is spliceSummaryIntoPrefix's: indices left in the array, not
+// folded. The summary's own nested prompt item, its last, is kept as built.
+// Reports false when summary's nested items do not end in its prompt item.
+func refoldFromLive(summary ConversationItem, current []ConversationItem, start, count int, keep []int) (ConversationItem, bool) {
+	var built []ConversationItem
+	if err := json.Unmarshal(summary.Items, &built); err != nil || len(built) == 0 {
+		return summary, false
+	}
+	prompt := built[len(built)-1]
+	if prompt.ItemID != summary.CompactionPromptItemID {
+		return summary, false
+	}
+	kept := make(map[int]bool, len(keep))
+	for _, i := range keep {
+		kept[i] = true
+	}
+	folded := make([]ConversationItem, 0, count)
+	for i := start; i < start+count; i++ {
+		if !kept[i] {
+			folded = append(folded, current[i])
+		}
+	}
+	nested := make([]ConversationItem, 0, len(folded)+1)
+	for _, it := range folded {
+		nested = append(nested, condenseForRefold(it))
+	}
+	nestedJSON, err := json.Marshal(append(nested, prompt))
+	if err != nil {
+		return summary, false
+	}
+	summary.Items = nestedJSON
+	summary.FoldedRuns = foldedRunsIn(folded)
+	return summary, true
 }
 
 // spliceSummaryIntoPrefix replaces count items at start with the single summary

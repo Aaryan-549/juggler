@@ -406,7 +406,11 @@ func (r *run) cancelPendingEntry(e pendingEntrySnapshot) {
 	}
 
 	if r.pendingThreadOwnsActiveWork(e.threadItemID) {
-		switch r.loadState() {
+		// The state of the run handleCancel would stop, not this one's: the scan
+		// runs on the run loop, whose ambient turn reads Idle while the request's
+		// thread streams on a goroutine of its own.
+		target, _ := r.cancelTarget()
+		switch target.loadState() {
 		case StateProcessing:
 			// finishStrategyRun settles the active run and finalizeCancellation
 			// completes cleanup. A later scan publishes the pending result.

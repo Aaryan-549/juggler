@@ -257,7 +257,11 @@ func conversationItemToYMap(item ConversationItem) *ycrdt.YMap {
 	ymap := ycrdt.NewYMap(entries)
 
 	if nestedItems != nil {
-		yarr := ycrdt.NewYArray()
+		// One Push of the whole transcript. yarr is not in the document yet, and
+		// Push on such an array inserts at its integrated length, which stays 0
+		// until it is — so pushing item by item would store the transcript
+		// reversed.
+		children := make(ycrdt.ArrayAny, 0, len(nestedItems))
 		for _, rawItem := range nestedItems {
 			if itemMap, ok := rawItem.(map[string]any); ok {
 				itemData, err := json.Marshal(itemMap)
@@ -268,9 +272,11 @@ func conversationItemToYMap(item ConversationItem) *ycrdt.YMap {
 				if err := json.Unmarshal(itemData, &nestedItem); err != nil {
 					continue
 				}
-				yarr.Push(ycrdt.ArrayAny{conversationItemToYMap(nestedItem)})
+				children = append(children, conversationItemToYMap(nestedItem))
 			}
 		}
+		yarr := ycrdt.NewYArray()
+		yarr.Push(children)
 		ymap.Set("items", yarr)
 	}
 

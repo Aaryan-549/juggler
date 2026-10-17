@@ -461,6 +461,45 @@ func TestCancelDuringADispatchedTurnUnblocksIt(t *testing.T) {
 	}
 }
 
+// TestCancellingAPendingRequestStopsItsLiveTurn cancels a claimed createThread
+// whose thread is streaming on its own goroutine. The scan that sees the cancel
+// runs on the run loop, whose ambient turn reads Idle throughout, so the cancel
+// has to find the live run through the registry to stop it. A cancel that only
+// stamped the request and the run record would leave the turn spending.
+func TestCancellingAPendingRequestStopsItsLiveTurn(t *testing.T) {
+	mc := newMsgChan()
+	w := startTurningWorker(t, mc)
+
+	threadItemID := insertReadOnlyChild(w, "Cancel me", "start")
+	awaitLiveRun(t, w)
+	if w.sched.runOn(threadItemID) == nil {
+		t.Fatalf("the live run is not on the requested thread %q", threadItemID)
+	}
+
+	pushCancelledClaimedCreateThread(t, w, "r-live", threadItemID)
+	// Any items change drives the scan; signal it the way the observer does, so
+	// the scan runs on the run loop rather than on this goroutine.
+	select {
+	case w.docChangeChan <- struct{}{}:
+	default:
+	}
+
+	// Nothing releases the paused response, so only the cancel can retire it.
+	awaitNoLiveRun(t, w)
+
+	deadline := time.After(5 * time.Second)
+	for findEntryStatus(w, "r-live") != "cancelled" {
+		select {
+		case <-deadline:
+			t.Fatalf("request status = %q, want cancelled", findEntryStatus(w, "r-live"))
+		case <-time.After(5 * time.Millisecond):
+		}
+	}
+	if w.hasActiveRun() {
+		t.Fatal("the cancelled request's turn left a claim behind")
+	}
+}
+
 // TestAPausedMockOutlivingItsTurnReadsNoTurnState pins the rule live_runs.go
 // states and mock_llm.go has to keep: a run's thread field is plain memory the
 // turn goroutine owns, so anything running elsewhere carries its own copy, taken

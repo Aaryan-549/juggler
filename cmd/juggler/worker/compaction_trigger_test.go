@@ -1103,6 +1103,56 @@ func TestContextRecoveryAbortsWhenSourceChanges(t *testing.T) {
 	}
 }
 
+// TestContextRecoveryKeepsANestedSendMadeMidReduce sends into an idle sub-thread
+// inside the folded prefix while the reducer runs. A thread's wire form is its
+// call and result, so the fingerprint is unmoved and the fold commits — and the
+// sub-thread it nests must be the live one, carrying that message, not the copy
+// read before the reduce began.
+func TestContextRecoveryKeepsANestedSendMadeMidReduce(t *testing.T) {
+	w := NewConversationWorker("test-conv", "user:test")
+	defer w.doc.Destroy()
+	w.currentRun().storeState(StateProcessing)
+	w.doc.SetMetadata("defaultModelConfig", map[string]any{"provider": "test", "model": "test"})
+	w.doc.InsertMessage(0, recoveryTestItems()...)
+	pinned := &ModelConfig{Provider: "test", Model: "test"}
+
+	// A finished sub-thread between old-1 and old-2, deep inside what folds.
+	root := w.doc.ensureItems()
+	subItems := w.doc.InsertThreadIntoArray(root, 2, "Sub work")
+	subID := w.doc.GetItems()[2].ItemID
+	w.doc.InsertMessageIntoArray(subItems, 0, ConversationItem{Type: ItemTypeUser, ItemID: "sub-first", Content: "first ask"})
+	w.doc.SetThreadField(subID, "result", "sub-thread finished")
+
+	calls, stub := newRecoveryStub(t, pinned)
+	sent := false
+	w.llmCallFunc = func(ctx context.Context, raw json.RawMessage, onChunk func(StreamChunk)) (*LLMResponse, error) {
+		if !sent {
+			sent = true
+			w.doc.InsertMessageIntoArray(w.doc.GetThreadItemsArray(subID), w.doc.GetThreadItemsLength(subID),
+				ConversationItem{Type: ItemTypeUser, ItemID: "sent-meanwhile", Content: "a follow-up"})
+		}
+		return stub(ctx, raw, onChunk)
+	}
+
+	result, err := w.ownedRun(t).compactToFit(recoveryLimitErr(), pinned)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if *calls < 2 || result.FoldedItems == 0 {
+		t.Fatalf("calls=%d folded=%d, want a committed fold", *calls, result.FoldedItems)
+	}
+	if got := w.doc.GetItems()[0]; !got.BoundedCompaction {
+		t.Fatalf("items[0] = %+v, want the compaction summary", got)
+	}
+	var ids []string
+	for _, it := range w.doc.GetThreadItems(subID) {
+		ids = append(ids, it.ItemID)
+	}
+	if strings.Join(ids, ",") != "sub-first,sent-meanwhile" {
+		t.Fatalf("folded sub-thread items = %v, want [sub-first sent-meanwhile]", ids)
+	}
+}
+
 func TestContextRecoveryTerminalWhenNewestItemAloneExceeds(t *testing.T) {
 	w := NewConversationWorker("test-conv", "user:test")
 	defer w.doc.Destroy()

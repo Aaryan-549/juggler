@@ -699,7 +699,9 @@ func (r *run) foldConversationForCompaction(handoffPromote bool) (string, bool, 
 // instead of the fold lingering as an un-undoable item while the rest of the
 // conversation undoes around it. Returns false without mutating when the source
 // changed under the recheck, or when the thread threadItemID ("" is the root) has
-// gone; the array is found in the same hold as the splice. keep is
+// gone; the array is found in the same hold as the splice. The summary's nested
+// copy of the range is rebuilt from that same read (refoldFromLive), so a folded
+// sub-thread lands as it stands, not as it stood before the reduce. keep is
 // spliceSummaryIntoPrefix's: indices inside the range left in place rather than
 // folded.
 func (w *ConversationWorker) foldPrefixIntoSummaryTracked(threadItemID string, start, count int, keep []int, summary ConversationItem, promptID, expectedFingerprint string) bool {
@@ -709,7 +711,14 @@ func (w *ConversationWorker) foldPrefixIntoSummaryTracked(threadItemID string, s
 	ycrdtMu.Lock()
 	defer ycrdtMu.Unlock()
 	arr := w.doc.threadItemsArrayLocked(threadItemID)
-	if arr == nil || !w.doc.foldFingerprintUnchangedLocked(arr, start, count, promptID, expectedFingerprint) {
+	if arr == nil {
+		return false
+	}
+	current, ok := w.doc.foldFingerprintUnchangedLocked(arr, start, count, promptID, expectedFingerprint)
+	if !ok {
+		return false
+	}
+	if summary, ok = refoldFromLive(summary, current, start, count, keep); !ok {
 		return false
 	}
 	// Bind the UndoManager to the current items array before capturing, so a

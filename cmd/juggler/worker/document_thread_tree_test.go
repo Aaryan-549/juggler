@@ -5,6 +5,8 @@
 package worker
 
 import (
+	"encoding/json"
+	"strings"
 	"testing"
 
 	ycrdt "github.com/skyterra/y-crdt"
@@ -177,5 +179,33 @@ func TestResolveModelConfigThinkingOverrideWins(t *testing.T) {
 	w.doc.SetThreadField(t2, "modelConfig", map[string]any{"provider": "prov-C", "model": "model-C"})
 	if got := w.doc.ResolveEffectiveModelConfig(t2); got == nil || got.Thinking != "" {
 		t.Fatalf("override without thinking must not inherit default thinking, got %+v", got)
+	}
+}
+
+// TestNestedThreadKeepsItsOrderAtEveryDepth inserts a thread whose transcript
+// holds a thread of its own — what every fold that swallows a sub-thread or a
+// prior summary writes — and reads both transcripts back. y-crdt's Push on an
+// array not yet in the document inserts at its integrated length, which is 0,
+// so pushing a transcript one item at a time stores it reversed.
+func TestNestedThreadKeepsItsOrderAtEveryDepth(t *testing.T) {
+	w := NewConversationWorker("test-conv", "user:test")
+	defer w.doc.Destroy()
+	transcript, _ := json.Marshal([]ConversationItem{
+		{Type: ItemTypeUser, ItemID: "a", Content: "a"},
+		{Type: ItemTypeUser, ItemID: "b", Content: "b"},
+		{Type: ItemTypeUser, ItemID: "c", Content: "c"},
+	})
+	inner := ConversationItem{Type: ItemTypeThread, ItemID: "inner", Goal: "inner", Items: transcript}
+	outerItems, _ := json.Marshal([]ConversationItem{inner, {Type: ItemTypeUser, ItemID: "after", Content: "after"}})
+	w.doc.InsertMessage(0, ConversationItem{Type: ItemTypeThread, ItemID: "outer", Goal: "outer", Items: outerItems})
+
+	for id, want := range map[string]string{"outer": "inner,after", "inner": "a,b,c"} {
+		var ids []string
+		for _, it := range w.doc.GetThreadItems(id) {
+			ids = append(ids, it.ItemID)
+		}
+		if got := strings.Join(ids, ","); got != want {
+			t.Errorf("%s transcript = %s, want %s", id, got, want)
+		}
 	}
 }

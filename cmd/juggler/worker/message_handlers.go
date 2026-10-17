@@ -677,19 +677,25 @@ func (r *run) abortTurn(threadID string) {
 	}
 }
 
-func (r *run) handleCancel(reason cancelReason) {
-	// The run this cancel applies to. A turn executes on a goroutine of its own,
-	// so the run handling this message is never the one streaming; the live-run
-	// registry is what names it. With nothing live — between turns, or a pickup
-	// posted to the loop but not yet started — this run is its own target.
-	target := r
-	threadID := r.getProcessingThreadItemID()
+// cancelTarget resolves the run a cancel applies to, and the thread it was
+// resolved from. A turn executes on a goroutine of its own, so the run handling
+// a cancel is never the one streaming; the live-run registry is what names it.
+// With nothing live — between turns, or a pickup posted to the loop but not yet
+// started — this run is its own target.
+func (r *run) cancelTarget() (target *run, threadID string) {
+	target = r
+	threadID = r.getProcessingThreadItemID()
 	if threadID == "" {
 		threadID = r.t.thread.itemID
 	}
 	if live := r.sched.runOn(threadID); live != nil {
 		target = r.runFor(live.t)
 	}
+	return target, threadID
+}
+
+func (r *run) handleCancel(reason cancelReason) {
+	target, threadID := r.cancelTarget()
 	target.logCancel(reason)
 
 	// The thread this cancel applies to. A cancel frame carries no thread of its
