@@ -596,8 +596,11 @@ Cards are **viewer-only** — they touch the DOM and never run in the engine, so
 unlike the other capability types there is no worker twin to think about.
 
 Implement `mount(contentEl, session)` and return a teardown function. Optionally
-override `hasContent()` (return `false` to drop the card from the rail when there
-is nothing to show) and `onEnabled()` (run when the user un-hides the card).
+override `hasContent(session)` (return `false` to drop the card from the rail when
+there is nothing to show), `watchContent(session, onChange)` (call `onChange` when
+that answer may have changed — the rail never polls, so a card that comes and goes
+with the conversation needs it to come back) and `onEnabled()` (run when the user
+un-hides the card).
 
 ```javascript
 import InfoCardType from 'juggler/info-card-type';

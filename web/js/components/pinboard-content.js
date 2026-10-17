@@ -47,6 +47,7 @@ import { isPinboardView } from '../utils/view-mode.js';
 import { capabilityLabel } from '../utils/capability-label.js';
 import { t } from '../../sdk/lib/i18n.js';
 import { displayConversationName } from '../model/conversation-naming.js';
+import { findNearestContextItem } from '../services/nearest-context-item.js';
 
 /** @typedef {import('../services/pinboard-store.js').Pin} Pin */
 /** @typedef {import('juggler/pinboard-item-type').PinActiveContext} PinActiveContext */
@@ -1441,36 +1442,6 @@ class PinboardContent extends JugglerElement {
   }
 
   /**
-   * The threads to look in for a context item, nearest first: the thread being
-   * read, then each ancestor, ending at the root — which owns no thread item of
-   * its own and is therefore null.
-   *
-   * This is the ownership order the columns themselves show. A plan made inside a
-   * sub-thread belongs to that sub-thread and to nothing above it, so looking
-   * upwards finds the nearest one that exists rather than aggregating several
-   * threads' plans into a claim no thread is making.
-   * @param {any} conversation - The conversation being read.
-   * @param {string|null} threadItemId - The focused thread, null for the root.
-   * @returns {(string|null)[]} Thread ids nearest-first, always ending with null.
-   * @private
-   */
-  _ancestry(conversation, threadItemId) {
-    /** @type {(string|null)[]} */
-    const chain = [];
-    const seen = new Set();
-    let id = threadItemId;
-    // A malformed tree must not spin here; the guard costs one Set.
-    while (id && !seen.has(id)) {
-      seen.add(id);
-      chain.push(id);
-      const parent = conversation.findParentContainer?.(id);
-      id = parent ? parent.get('itemId') : null;
-    }
-    chain.push(null);
-    return chain;
-  }
-
-  /**
    * What to call a thread: the name its own column header shows, and the
    * conversation's title for the root.
    * @param {any} conversation - The conversation being read.
@@ -1508,33 +1479,27 @@ class PinboardContent extends JugglerElement {
     if (!conversation) return null;
 
     const focused = from === undefined ? (this._active?.thread?.id ?? null) : from;
-    for (const threadId of this._ancestry(conversation, focused)) {
-      let item = null;
-      let itemId = null;
-      try {
-        // resolveMessageThread throws for an id that is not a thread item, which
-        // a stale snapshot can easily hold.
-        const thread = conversation.resolveMessageThread(threadId);
-        item = thread?.contextItems?.find((/** @type {{type: string}} */ ci) => ci.type === type);
-        if (item) itemId = writingRowId(thread, type);
-      } catch {
-        continue;
-      }
-      if (!item) continue;
-      return {
-        id: item.id,
-        type: item.type,
-        // A copy, so a pin cannot write through it into the conversation.
-        data: cloneData(item.data),
-        source: {
-          threadId,
-          label: this._threadLabel(conversation, threadId),
-          inherited: threadId !== focused,
-          itemId,
-        },
-      };
+    const found = findNearestContextItem(conversation, type, focused);
+    if (!found) return null;
+    const { item, thread, threadId } = found;
+    let itemId = null;
+    try {
+      itemId = writingRowId(thread, type);
+    } catch {
+      itemId = null;
     }
-    return null;
+    return {
+      id: item.id,
+      type: item.type,
+      // A copy, so a pin cannot write through it into the conversation.
+      data: cloneData(item.data),
+      source: {
+        threadId,
+        label: this._threadLabel(conversation, threadId),
+        inherited: threadId !== focused,
+        itemId,
+      },
+    };
   }
 
   /**

@@ -23,14 +23,11 @@ import keyShortcutManager from '../services/key-shortcut-manager.js';
 import JugglerElement from './juggler-element.js';
 import { handleEscapeKey } from '../services/escape-behaviour.js';
 import { ColumnBuilder, asArea, asPanel } from './column-builder.js';
+import { THREAD_FOCUS_CHANGED } from '../services/nearest-context-item.js';
 
-/**
- * Fired on `document` when the thread the user is reading changes, carrying
- * `{threadItemId}` (null for a root column). Column selection lives in the tab
- * and not in session state, so this is the only notice a surface outside the
- * conversation gets that the focused thread has moved.
- */
-export const THREAD_FOCUS_CHANGED = 'juggler:thread-focus-changed';
+// Dispatched from here, defined beside the other questions about the reader's
+// thread so a surface can follow it without importing this component.
+export { THREAD_FOCUS_CHANGED };
 
 /**
  * How much of the column it moved past a column-level scroll leaves showing, in

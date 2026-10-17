@@ -54,8 +54,8 @@ export const REQUIRED_INFO_CARD_MANIFEST_FIELDS = [...REQUIRED_MANIFEST_FIELDS, 
  * 1. Import and extend InfoCardType: `import InfoCardType from 'juggler/info-card-type';`
  * 2. Define a static MANIFEST with the required fields (id, name, version,
  *    description, eyebrow).
- * 3. Implement `mount(contentEl, session)`; optionally override `hasContent()`
- *    and `onEnabled()`.
+ * 3. Implement `mount(contentEl, session)`; optionally override `hasContent()`,
+ *    `watchContent()` and `onEnabled()`.
  *
  * ```javascript
  * import InfoCardType from 'juggler/info-card-type';
@@ -124,10 +124,32 @@ class InfoCardType {
   /**
    * Whether the card has anything to show right now. Override to drop the card
    * from the rail when it has nothing to say. Defaults to always-renderable.
+   *
+   * The rail asks on its own occasions — a resize, a card hidden or shown —
+   * and never polls. A card whose answer changes with the conversation also
+   * implements {@link InfoCardType#watchContent}, or a card absent at startup
+   * would stay absent.
+   * @param {import('../js/model/session.js').default} [session] - The owning conversation session.
    * @returns {boolean} True if the card should be mounted.
    */
-  hasContent() {
+  hasContent(session) {
+    void session;
     return true;
+  }
+
+  /**
+   * Follow whatever decides {@link InfoCardType#hasContent}, and call
+   * `onChange` when its answer may have changed; the rail then asks again. Runs
+   * whether or not the card is mounted — that is its point — for as long as the
+   * card is enabled and the rail has this session. Optional: the default
+   * watches nothing.
+   * @param {import('../js/model/session.js').default|undefined} session - The owning conversation session.
+   * @param {() => void} onChange - Ask the rail to re-ask.
+   * @returns {(() => void)|void} Optional teardown that stops watching.
+   */
+  watchContent(session, onChange) {
+    void session;
+    void onChange;
   }
 
   /**

@@ -53,10 +53,16 @@ export {
   addFilePath,
   createFileActions,
   pinFile,
+  pinSource,
+  canPinSource,
   showPin,
   createShowPinControl,
   addDiffViewer,
 } from '../js/utils/properties-panel-helpers.js';
+
+// The reader's place: the nearest context item of a type from the thread they
+// are in (what the Plan and Todo pins show), and word when they change thread
+export { findReaderContextItem, onReaderThreadChange } from '../js/services/nearest-context-item.js';
 
 // The shared diff renderer, for a host drawing a patch or a pair of snapshots
 export { createDiffViewer } from '../js/components/diff-viewer.js';

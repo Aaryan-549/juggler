@@ -40,6 +40,7 @@ import { ownerLink, satelliteLink, canLinkBoards, onLinkAvailability, frameHintO
 import { isPinboardView, boardConversationId, ownerViewerId } from '../utils/view-mode.js';
 import { dragGuard } from '../utils/drag-guard.js';
 import { displayConversationName } from '../model/conversation-naming.js';
+import { focusedThreadItemId } from '../services/nearest-context-item.js';
 import './pinboard-tabbar.js';
 import './pinboard-content.js';
 
@@ -56,16 +57,6 @@ const POPOUT_ICON_PATH = 'M120-120v-320h80v184l504-504H520v-80h320v320h-80v-184L
 function baseName(path) {
   const parts = path.split(/[/\\]/).filter(Boolean);
   return parts.length ? /** @type {string} */ (parts[parts.length - 1]) : path;
-}
-
-/**
- * The thread the viewer is looking at in the visible conversation. A root column
- * has no thread item of its own, which is what null means here.
- * @returns {string|null} The focused thread item's id, or null for the root.
- */
-function focusedThreadId() {
-  const tab = /** @type {any} */ (document.querySelector('conversation-tab.active'));
-  return tab?.getFocusedThreadItemId?.() ?? null;
 }
 
 /**
@@ -841,7 +832,7 @@ class PinboardPanel extends JugglerElement {
     return {
       project,
       conversation: conversation ? { id: conversation.id, title: titleOf(conversation) } : null,
-      thread: conversation ? { id: focusedThreadId() } : null,
+      thread: conversation ? { id: focusedThreadItemId() } : null,
     };
   }
 

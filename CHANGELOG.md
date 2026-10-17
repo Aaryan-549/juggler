@@ -9,6 +9,7 @@ of changes; this project follows semantic versioning.
 - New --allow-host flag serves Juggler behind a reverse proxy such as tailscale serve
 - Export a conversation as a self-contained HTML page to share, from its tab menu or /export
 - Copy a whole conversation as Markdown from its tab menu or footer
+- New sidebar progress card shows plan and todo progress; click to open in the Pinboard
 - Under the hood, refactored the codebase ready for i18n
 - Sub-agent run budget is now settable in Settings → Defaults, and defaults to 1M tokens
 - Git pin reviews any scope: staged, unstaged, branch, last commit, or a git diff range

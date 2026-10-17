@@ -196,6 +196,77 @@ export async function runTests(_ctx) {
       }
     });
 
+    await run('a card that comes and goes is re-asked when it says its answer changed', () => {
+      // The rail never polls, and a card with nothing to show is never mounted —
+      // so without watchContent a card hidden at startup could never appear.
+      let showing = false;
+      /** @type {(() => void)|null} */
+      let notify = null;
+      let watching = 0;
+      /** @type {any[]} */
+      const sessions = [];
+      infoCardRegistry.reset();
+      infoCardRegistry.registerClass(class ComesAndGoesCard extends InfoCardType {
+        static MANIFEST = {
+          id: 'test-rail-comes-and-goes',
+          name: 'Comes and goes',
+          version: '1.0.0',
+          description: 'Stand-in card with content only sometimes.',
+          eyebrow: 'STUB',
+          priority: 100,
+        };
+
+        /**
+         * @param {any} session - The rail's session.
+         * @returns {boolean} Whether there is anything to show.
+         */
+        hasContent(session) {
+          sessions.push(session);
+          return showing;
+        }
+
+        /**
+         * @param {any} _session - The rail's session.
+         * @param {() => void} onChange - Ask the rail to re-ask.
+         * @returns {() => void} Stop watching.
+         */
+        watchContent(_session, onChange) {
+          watching++;
+          notify = onChange;
+          return () => { watching--; notify = null; };
+        }
+
+        /**
+         * @param {HTMLElement} contentEl - The content region.
+         * @returns {() => void} Teardown.
+         */
+        mount(contentEl) {
+          contentEl.style.height = `${CARD_CONTENT_PX}px`;
+          return () => {};
+        }
+      });
+      const col = mountColumn({ height: 600, tabs: 1 });
+      try {
+        const session = { id: 'stand-in session' };
+        col.rail.setSession(session);
+        assert(col.cards().length === 0, 'nothing to show, so nothing mounted');
+        assert(watching === 1, `the rail watches the unmounted card, got ${watching} watches`);
+        assert(sessions.at(-1) === session, 'and asks it about the rail\u2019s own session');
+
+        showing = true;
+        /** @type {any} */ (notify)?.();
+        assert(col.cards().length === 1, `the card appears when it says so, got ${col.cards().length}`);
+
+        showing = false;
+        /** @type {any} */ (notify)?.();
+        assert(col.cards().length === 0, `and goes again, got ${col.cards().length}`);
+        assert(watching === 1, `one watch throughout, got ${watching}`);
+      } finally {
+        col.teardown();
+      }
+      assert(watching === 0, `leaving the page stops the watch, got ${watching}`);
+    });
+
     await run('en-XA: a card\u2019s eyebrow is translated in the catalogue of the extension that ships it', async () => {
       // A stand-in extension id, so only the card's own catalogue can supply it.
       const extensionId = '@test/info-rail-eyebrow';

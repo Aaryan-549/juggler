@@ -41,6 +41,8 @@
  *
  * Nothing polls the rail. A dropped card is torn down, so a periodic re-fit would
  * rebuild — and remount, and refetch — every card that doesn't fit, once per tick.
+ * A card that comes and goes with the conversation says so instead, through its
+ * `watchContent`, which the rail keeps for every enabled card mounted or not.
  *
  * Not an ARIA live region — rotating tip text would spam a screen reader.
  * @module components/info-rail
@@ -123,6 +125,13 @@ class InfoRail extends JugglerElement {
      * @type {ResizeObserver|null} @private
      */
     this._resizeObserver = null;
+    /**
+     * Each enabled card's `watchContent` teardown, for this rail's session. A
+     * card with nothing to show is never mounted, so this — not the mount — is
+     * how a card that comes and goes with the conversation gets back in.
+     * @type {Map<InfoCardProvider, () => void>} @private
+     */
+    this._watches = new Map();
   }
 
   connectedCallback() {
@@ -165,6 +174,7 @@ class InfoRail extends JugglerElement {
   disconnectedCallback() {
     super.disconnectedCallback();
     this._teardownAll();
+    this._stopWatches();
   }
 
   /**
@@ -176,7 +186,43 @@ class InfoRail extends JugglerElement {
     if (this._session === session) return;
     this._session = session;
     this._teardownAll();
+    // A watch follows the session it was handed, so a new session needs new ones.
+    this._stopWatches();
     this._reconcile();
+  }
+
+  /**
+   * Watch every enabled card that offers to say when its `hasContent` answer
+   * may have changed, and stop watching the ones no longer enabled. Keyed by
+   * instance, so a reloaded extension's new card is watched afresh.
+   * @param {InfoCardProvider[]} enabled - The cards not hidden by the user.
+   * @private
+   */
+  _syncWatches(enabled) {
+    const wanted = new Set(enabled);
+    for (const [provider, stop] of this._watches) {
+      if (wanted.has(provider)) continue;
+      this._watches.delete(provider);
+      try { stop(); } catch { /* card cleanup is best-effort */ }
+    }
+    for (const provider of enabled) {
+      if (this._watches.has(provider) || typeof provider.watchContent !== 'function') continue;
+      let stop;
+      try {
+        stop = provider.watchContent(this._session, () => this._reconcile());
+      } catch {
+        stop = undefined;
+      }
+      this._watches.set(provider, typeof stop === 'function' ? stop : () => {});
+    }
+  }
+
+  /** @private */
+  _stopWatches() {
+    for (const stop of this._watches.values()) {
+      try { stop(); } catch { /* card cleanup is best-effort */ }
+    }
+    this._watches.clear();
   }
 
   /** @private */
@@ -278,6 +324,7 @@ class InfoRail extends JugglerElement {
       // it is the rail itself under test (see __allowInfoRailInTests).
       if (/** @type {any} */ (window).JUGGLER_TEST_MODE && !allowedInTests) {
         this._teardownAll();
+        this._stopWatches();
         this.removeAttribute('data-clipped');
         this.hidden = true;
         return;
@@ -287,8 +334,10 @@ class InfoRail extends JugglerElement {
       // The count limit, applied before anything is built: providers() is already
       // sorted by descending priority, so this keeps the cards worth the room and
       // the rest are never mounted at all. Geometry then trims what's left.
-      const eligible = providers()
-        .filter((p) => !isHidden(p.id) && (typeof p.hasContent !== 'function' || p.hasContent()))
+      const enabled = providers().filter((p) => !isHidden(p.id));
+      this._syncWatches(enabled);
+      const eligible = enabled
+        .filter((p) => typeof p.hasContent !== 'function' || p.hasContent(this._session))
         .slice(0, MAX_CARDS);
       // The one-time "spread the word" ask is built in rather than a plugin, and
       // only takes a slot the extension cards leave free.

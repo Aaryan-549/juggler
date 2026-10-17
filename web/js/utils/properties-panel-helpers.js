@@ -269,10 +269,19 @@ function fileSource(path, isDirectory = false) {
  * @param {import('juggler/pinboard-item-type').PinSource} source - What to pin.
  * @returns {Promise<boolean>} True when something enabled took it.
  */
-async function pinSource(source) {
-  if (!source?.kind) return false;
-  if (!pinboardView.canPin(source)) return false;
+export async function pinSource(source) {
+  if (!canPinSource(source)) return false;
   return !!(await pinboardView.addSource(source));
+}
+
+/**
+ * Whether anything enabled would take this source — for a surface deciding
+ * whether to offer to pin it at all.
+ * @param {import('juggler/pinboard-item-type').PinSource} source - What would be pinned.
+ * @returns {boolean} True when {@link pinSource} would put something on the board.
+ */
+export function canPinSource(source) {
+  return !!source?.kind && pinboardView.canPin(source);
 }
 
 /**
