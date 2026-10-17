@@ -35,6 +35,7 @@ import ConversationBin from './conversation-bin.js';
 import { statusHoldsTurn } from './processing-status.js';
 import ConversationSyncReducer from './conversation-sync-reducer.js';
 import ConversationRegistry from './conversation-registry.js';
+import ProjectSwitchController from './project-switch-controller.js';
 import { seedCreationDefaults, seedConversationAutoItems as seedAutoItems } from './conversation-seeder.js';
 
 /**
@@ -424,6 +425,20 @@ class Session {
       setAutoNaming: (id, active) => this.setAutoNaming(id, active),
       get bin() { return session.bin; }
     });
+
+    /**
+     * What this realm does when the server switches project at runtime: a
+     * viewer reloads, the persistent engine repoints its root, releases the
+     * old project's conversations and reseeds the new one's session state.
+     * @type {ProjectSwitchController}
+     */
+    this.projectSwitch = new ProjectSwitchController({
+      projectPath: () => this.projectPath,
+      setProjectPath: (path) => { this.projectPath = path; },
+      registry: () => this.registry,
+      fetchManifest: () => this._apiService.getSession(),
+      adoptManifest: (data) => this._applyManifestState(data, { notify: true })
+    });
   }
 
   /**
@@ -770,7 +785,7 @@ class Session {
     if (ws) {
       this._socketSubscriptions = [
         ws.on('file-change', (changes) => this._onFileChange(changes)),
-        ws.on('project-changed', (data) => this._onProjectChanged(data)),
+        ws.on('project-changed', (data) => this.projectSwitch.projectChanged(data)),
         ws.on('providers-update', (providers) => this._onProvidersUpdate(providers)),
         ws.on('workspaces-changed', (data) => this._onWorkspacesChanged(data))
       ];
@@ -805,30 +820,6 @@ class Session {
         }
       }
     }
-  }
-
-  /**
-   * `project-changed`: the server changed its loaded project, so every
-   * connected client must repopulate session state from the new one.
-   * @param {unknown} data - {projectPath}
-   * @private
-   */
-  _onProjectChanged(data) {
-    // The engine is persistent across a runtime project switch and, unlike
-    // viewers, never reloads (it has no page to reload). It must still
-    // repoint its project root: otherwise the query_code sandbox keeps
-    // exposing the PREVIOUS project's root to the model, which then reads /
-    // globs the old tree while the header bar shows the new project.
-    if (isEngine()) {
-      // Fire-and-forget: the reseed it kicks off guards its own failures,
-      // and the websocket callback must not block on a session refetch.
-      void this._applyEngineProjectRoot(/** @type {{projectPath?: string}} */ (data)?.projectPath);
-      return;
-    }
-    // Viewers: hard reload — the worker manager, conversation tabs, context
-    // items, and Yjs documents are all keyed off the old project's state and
-    // need the teardown/rebuild a fresh page load performs anyway.
-    if (typeof window !== 'undefined') window.location.reload();
   }
 
   /**
@@ -957,65 +948,6 @@ class Session {
   }
 
   /**
-   * Repoint the engine's project root after a runtime project switch.
-   *
-   * The engine host captures its project root once at boot (Node: the
-   * JUGGLER_PROJECT_ROOT env var; webview: the sandbox HTML template) and,
-   * being persistent across SwitchProject, never reloads to pick up a new one.
-   * This updates both `session.projectPath` and the live
-   * `globalThis.__jugglerProjectRoot` that the query_code sandbox delegates fall
-   * back to per run (a tool names its conversation's own root, so the global is
-   * what answers a caller with none), so a switched project stops leaking the
-   * previous root to the model. No-op-safe for viewers (they hard-reload
-   * instead); only the engine realm calls this.
-   *
-   * The path is repointed synchronously (callers and the sandbox read it
-   * immediately); the rest of the project-scoped state a viewer gets free from
-   * its reload is reseeded asynchronously — see
-   * {@link _reseedProjectScopedState}, whose promise is returned so callers
-   * that care can await the full switch.
-   * @param {string} [newPath] - The switched-to project root ("" = no project)
-   * @returns {Promise<void>} Resolves once the project-scoped state is reseeded
-   */
-  _applyEngineProjectRoot(newPath) {
-    this.projectPath = newPath || '';
-    /** @type {any} */ (globalThis).__jugglerProjectRoot =
-      toSandboxRoot(this.projectPath);
-    workerManager.setProjectPath(this.projectPath);
-    this._releaseProjectScopedConversations();
-    return this._reseedProjectScopedState();
-  }
-
-  /**
-   * Release the previous project's conversations from the engine on a switch.
-   *
-   * Conversations are project-bound (transcript folder, Yjs doc, context
-   * items), and the server already dropped them as part of the switch
-   * (`conversationCache.CloseAllConversations`). A viewer sheds them by
-   * reloading; the persistent engine would otherwise hold every doc it had
-   * touched for the rest of the process, and judge their parked approvals
-   * against the NEXT project's permission rules.
-   *
-   * Only client-side bookkeeping is torn down: `workerManager.terminateAll`
-   * clears local worker tracking without killing the server-lifetime workers,
-   * which deliberately outlive a switch. If one of those is still live and
-   * syncs again, the ordinary auto-load path rebuilds the conversation against
-   * the loaded project — the authority for what exists.
-   * @private
-   */
-  _releaseProjectScopedConversations() {
-    workerManager.terminateAll();
-    for (const conv of this.registry.conversations.values()) {
-      try {
-        conv.destroy?.();
-      } catch (err) {
-        console.error('[Session] Failed to release a conversation on project switch:', err);
-      }
-    }
-    this.registry.reset();
-  }
-
-  /**
    * Adopt the session-level state a manifest (`GET /api/session`) carries:
    * platform, home, message history and metadata. The one reader of those
    * fields, shared by the first load, the post-project-switch reseed and every
@@ -1047,59 +979,6 @@ class Session {
         metadata,
         remote: true
       });
-    }
-  }
-
-  /**
-   * Re-read the project-scoped session state after a project switch — the work
-   * a viewer gets for free by hard-reloading into a fresh `_doLoad`.
-   *
-   * `session.metadata` is where session-scoped permission rules
-   * (`sessionPermissionRules`) and folder grants (`sessionAllowedPaths`) live,
-   * and it belongs to ONE project's `session.json`. The engine is persistent
-   * across a switch, so without this it keeps serving the previous project's
-   * rules while `projectPath` already names the new one — the two halves
-   * `isPermitted` reads disagree. A command matching a standing rule of the
-   * switched-to project is then wrongly parked for approval, and the suggestion
-   * engine offers to add the very rule the user already has; conversely the old
-   * project's folder grants would still authorise commands here.
-   *
-   * Metadata is REPLACED, not patched: a switch means a different session.json,
-   * so a key absent from the new project must disappear rather than linger.
-   * A switch that lands while this is in flight wins — the late response is
-   * dropped rather than reinstating the project we just left.
-   * @returns {Promise<void>} Resolves once metadata/history are reseeded
-   * @private
-   */
-  async _reseedProjectScopedState() {
-    const requestedFor = this.projectPath;
-    /** @type {SessionData|null} */
-    let data = null;
-    try {
-      data = await this._apiService.getSession();
-    } catch (error) {
-      console.error('[Session] Failed to reload session state after a project switch:', error);
-      return;
-    }
-    if (this.projectPath !== requestedFor) return;
-
-    this._applyManifestState(data, { notify: true });
-
-    // The switch already released the previous project's conversations, so this
-    // covers the race window between that and the metadata landing: a worker
-    // that syncs in between auto-loads a conversation which evaluates its
-    // approvals against the outgoing rules. Re-judge them against the loaded
-    // project's, so a command covered by a standing rule here stops waiting on
-    // an approval it never needed.
-    for (const conversation of this.conversations.values()) {
-      try {
-        approvePermittedPendingApprovals(conversation, {
-          allowViewer: true,
-          itemTypes: ['execute', 'write-file']
-        });
-      } catch (err) {
-        console.error('[Session] permission re-check failed after a project switch:', err);
-      }
     }
   }
 
@@ -1553,7 +1432,7 @@ class Session {
         // Seed the live project root the query_code sandbox delegates read.
         // The engine's boot-time root (env / sandbox template) is authoritative
         // until this point; keeping the global in step here means a later
-        // project switch (_applyEngineProjectRoot) is the only thing that moves
+        // project switch (ProjectSwitchController.apply) is the only thing that moves
         // it, and the sandbox never lags the loaded project.
         if (isEngine()) {
           /** @type {any} */ (globalThis).__jugglerProjectRoot =

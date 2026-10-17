@@ -13,9 +13,10 @@
  * after a switch: the model saw e.g. "/home/crem/tmp/codex" while the header bar
  * showed "/home/crem/dev/tmp/lc0-eval".
  *
- * The fix routes `project-changed` through `_applyEngineProjectRoot(newPath)` in
- * the engine realm, which repoints both `session.projectPath` and the live
- * `globalThis.__jugglerProjectRoot` the sandbox delegates read per run.
+ * The fix routes `project-changed` through the session's project-switch
+ * controller (`session.projectSwitch`), whose `apply(newPath)` repoints both
+ * `session.projectPath` and the live `globalThis.__jugglerProjectRoot` the
+ * sandbox delegates read per run.
  *
  * The root was only half of it. `session.metadata` — where session-scoped
  * permission rules and folder grants live — belongs to ONE project's
@@ -41,7 +42,7 @@ const RUN_RULE = { id: 'r_run_glob', itemType: 'execute', kind: 'glob', value: '
 
 /**
  * Snapshot the project-scoped session state a switch tears down, swapping in
- * disposable stand-ins so driving `_applyEngineProjectRoot` in a test never
+ * disposable stand-ins so driving `projectSwitch.apply` in a test never
  * destroys the harness's own conversations, worker config or metadata.
  * @param {any} session - The test session
  * @param {Record<string, any>} [sessionData] - What the stubbed `GET /api/session` returns
@@ -111,7 +112,7 @@ async function switchProject(session, { before, after, conversations = new Map()
     g.JUGGLER_ENGINE = true;
     session.metadata = before;
     for (const [id, conv] of conversations) session.registry.insert(id, conv, 'test');
-    await session._applyEngineProjectRoot(NEW_PROJECT);
+    await session.projectSwitch.apply(NEW_PROJECT);
   } catch (e) {
     restore();
     throw e;
@@ -173,7 +174,7 @@ export async function runTests() {
     const hadRoot = Object.prototype.hasOwnProperty.call(g, '__jugglerProjectRoot');
     const savedRoot = g.__jugglerProjectRoot;
     const savedPath = session.projectPath;
-    const savedApply = session._applyEngineProjectRoot;
+    const savedServices = session._services;
     const unguard = guardSwitchSideEffects(session);
     try {
       // Present as the engine realm so isEngine() picks the persistent-engine
@@ -185,24 +186,39 @@ export async function runTests() {
       // session path and the live root the query_code sandbox exposes. This
       // runs FIRST — in the unfixed build the method is absent and throws here,
       // so the reload-capable handler exercised below is never reached.
-      await session._applyEngineProjectRoot(newPath);
+      await session.projectSwitch.apply(newPath);
       assert(session.projectPath === newPath, 'session.projectPath repointed to the new project');
       assert(g.__jugglerProjectRoot === newPath, 'live sandbox projectRoot repointed to the new project');
 
-      // Wiring: the project-changed handler must route the engine realm through
-      // _applyEngineProjectRoot (rather than ignoring the new path as before).
+      // Wiring: the socket's project-changed must reach the controller, and the
+      // controller must route the engine realm through apply (never the viewer's
+      // reload). Driven from the socket subscription setServices takes, so the
+      // whole path from the broadcast to the switch is the one under test.
+      /** @type {Map<string, Function>} */
+      const handlers = new Map();
+      const fakeWs = {
+        on: (/** @type {string} */ type, /** @type {Function} */ fn) => {
+          handlers.set(type, fn);
+          return () => { handlers.delete(type); };
+        }
+      };
       let routedWith = null;
-      session._applyEngineProjectRoot = (/** @type {string} */ p) => { routedWith = p; };
+      const controller = session.projectSwitch;
+      const realApply = controller.apply;
+      controller.apply = (/** @type {string} */ p) => { routedWith = p; return Promise.resolve(); };
       try {
-        session._onProjectChanged({ projectPath: newPath });
+        session.setServices({ ...savedServices, wsService: fakeWs });
+        const onProjectChanged = handlers.get('project-changed');
+        assert(typeof onProjectChanged === 'function', 'setServices subscribes to project-changed');
+        onProjectChanged?.({ projectPath: newPath });
       } finally {
-        session._applyEngineProjectRoot = savedApply;
+        controller.apply = realApply;
+        session.setServices(savedServices);
       }
-      assert(routedWith === newPath, 'project-changed routes the engine realm to _applyEngineProjectRoot');
+      assert(routedWith === newPath, 'project-changed routes the engine realm to projectSwitch.apply');
     } finally {
       unguard();
       session.projectPath = savedPath;
-      session._applyEngineProjectRoot = savedApply;
       if (hadEngine) g.JUGGLER_ENGINE = savedEngine; else delete g.JUGGLER_ENGINE;
       if (hadRoot) g.__jugglerProjectRoot = savedRoot; else delete g.__jugglerProjectRoot;
     }
@@ -219,7 +235,7 @@ export async function runTests() {
       // it as a prefix from backend results that are always forward-slashed. A
       // native Windows root ("C:\...") would match nothing, so the model would
       // get absolute paths back from a `{cwd: projectRoot}` glob.
-      await session._applyEngineProjectRoot('C:\\Users\\crem\\dev\\lc0-eval');
+      await session.projectSwitch.apply('C:\\Users\\crem\\dev\\lc0-eval');
       assert(
         g.__jugglerProjectRoot === 'C:/Users/crem/dev/lc0-eval',
         'live sandbox projectRoot is POSIX-style'
