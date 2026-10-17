@@ -7,6 +7,8 @@ of changes; this project follows semantic versioning.
 
 - Cancelling or deleting a sub-agent beside running siblings now stops its model calls
 - Double-tapping the composer's ⋮ or / button no longer opens two menus
+- A window whose server dies now restarts it instead of reconnecting forever
+- Slow startups, like logging in with apps reopening, no longer shut the server down
 
 ## [0.7.7] - 2026-10-17
 

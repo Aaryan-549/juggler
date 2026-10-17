@@ -29,6 +29,30 @@ import (
 // startup window or a watchdog re-exec, since the engine otherwise stays up).
 const engineConnectTimeout = 30 * time.Second
 
+// engineStartupTimeout bounds how long a freshly started engine host has to
+// connect before the server gives up on it and exits. It is measured in minutes
+// rather than in the seconds an engine usually takes, because the slow case is
+// a busy machine rather than a broken one: at login, with every app reopening
+// at once, the server's own loop stalls for seconds at a time and the engine
+// has been seen to take past 30s. Giving up is for an engine that cannot come
+// up at all, and all a longer budget costs that one is the extra wait. A
+// variable so tests can shrink it.
+var engineStartupTimeout = 2 * time.Minute
+
+// engineReloadAfter is how long into startup an engine that has not connected
+// is reloaded, once, in case its first load has wedged rather than merely
+// slowed. The node host cannot reload in place, so for it this is where the
+// server gives up (nodeHost.Recover). A variable so tests can shrink it.
+var engineReloadAfter = engineConnectTimeout
+
+// engineServer is what startEngineHost needs of the server.
+type engineServer interface {
+	GetAddr() string
+	WaitForEngineConnected(timeout time.Duration) bool
+	SetEngineReadyGate(gate server.EngineReadyGate)
+	SetEngineRecovery(fn server.EngineRecovery)
+}
+
 // engineURL is the engine page served at addr.
 func engineURL(addr string) string { return "http://" + addr + "/engine" }
 
@@ -192,9 +216,10 @@ func (h *webviewHost) Stop() {}
 // to come up — a broken GL stack, a WebKit crash, a wedged compositor, a node
 // crash — the server can never do useful work, yet without this it would sit
 // alive forever (holding its port and instance lock) as an invisible zombie. So
-// when the engine doesn't connect within the timeout we call requestQuit to tear
-// the process down: a headless server whose host failed must die, not linger.
-func startEngineHost(host engineHost, srv *server.Server, requestQuit func()) {
+// an engine that hasn't connected after engineReloadAfter is loaded again, and
+// one still not connected at engineStartupTimeout gets requestQuit to tear the
+// process down: a headless server whose host failed must die, not linger.
+func startEngineHost(host engineHost, srv engineServer, requestQuit func()) {
 	start := time.Now()
 	jlog.Info("[engine] START — bringing up %s host", host.Describe())
 	if err := host.Start(srv.GetAddr()); err != nil {
@@ -202,8 +227,16 @@ func startEngineHost(host engineHost, srv *server.Server, requestQuit func()) {
 		requestQuit()
 		return
 	}
+	reloadAfter, budget := engineReloadAfter, engineStartupTimeout
 	go func() {
-		if srv.WaitForEngineConnected(engineConnectTimeout) {
+		connected := srv.WaitForEngineConnected(reloadAfter)
+		if !connected {
+			jlog.Info("[engine] the %s host has not connected after %v; loading it again (giving up at %v)",
+				host.Describe(), reloadAfter, budget)
+			host.Recover()
+			connected = srv.WaitForEngineConnected(budget - time.Since(start))
+		}
+		if connected {
 			jlog.Info("[engine] connected in %v", time.Since(start).Round(time.Millisecond))
 			return
 		}
@@ -214,7 +247,7 @@ func startEngineHost(host engineHost, srv *server.Server, requestQuit func()) {
 		// headless server whose host failed can't linger as a useless zombie
 		// holding its port.
 		jlog.Error("[engine] %s", engineUnavailableMessage(
-			fmt.Sprintf("the hidden engine %s did not initialise within %v", host.Describe(), engineConnectTimeout)))
+			fmt.Sprintf("the hidden engine %s did not initialise within %v", host.Describe(), budget)))
 		requestQuit()
 	}()
 	srv.SetEngineReadyGate(func() bool { return srv.WaitForEngineConnected(engineConnectTimeout) })

@@ -47,9 +47,9 @@ const orphanDrainTimeout = 3 * time.Second
 // reusing an already-running server when one holds the project's instance lock
 // and answers a health probe (so a second "open this project" attaches to the
 // live server instead of starting a duplicate), else spawning a fresh headless
-// server. The returned *exec.Cmd is non-nil only when we spawned it (the caller
-// owns stopping it); a reused server returns nil.
-func discoverOrSpawnServer(project string) (string, *exec.Cmd, error) {
+// server. The returned *serverProc is non-nil only when we spawned it (the
+// caller owns stopping it); a reused server returns nil.
+func discoverOrSpawnServer(project string) (string, *serverProc, error) {
 	if abs := expandProject(project); abs != "" {
 		if locked, info, _ := core.CheckProjectLocked(abs); locked {
 			switch core.ClassifyRunningInstance(info, abs) {
@@ -121,9 +121,16 @@ func serverBinPath() (string, error) {
 // from the JUGGLER_ADDR= line the server prints on startup (it may differ from
 // the configured port when findAvailablePort had to move past a busy one).
 //
-// The returned *exec.Cmd is the live child; the caller is responsible for
-// stopping it (stopServer) when no window views it any more.
-func spawnServer(project string) (string, *exec.Cmd, error) {
+// The returned *serverProc is the live child; the caller is responsible for
+// stopping it (serverProc.stop) when no window views it any more.
+func spawnServer(project string) (string, *serverProc, error) {
+	return spawnServerOn(project, "")
+}
+
+// spawnServerOn is spawnServer asking for a particular port, or the configured
+// one when port is empty. The server moves past a port that is taken, so the
+// address it reports is still the one to believe.
+func spawnServerOn(project, port string) (string, *serverProc, error) {
 	bin, err := serverBinPath()
 	if err != nil {
 		return "", nil, err
@@ -138,6 +145,9 @@ func spawnServer(project string) (string, *exec.Cmd, error) {
 		"--log-file", logpaths.ServerLogPath(project)}
 	if project != "" {
 		args = append(args, "--project", project)
+	}
+	if port != "" {
+		args = append(args, "--port", port)
 	}
 	// bin comes from serverBinPath (JUGGLER_SERVER_BIN override, sibling binary,
 	// or PATH lookup) and args are fixed flags plus a filesystem path passed as
@@ -159,16 +169,30 @@ func spawnServer(project string) (string, *exec.Cmd, error) {
 		cmd.Stderr = os.Stderr
 	}
 	hideServerConsole(cmd) // Windows: no console window for the spawned server
-	stdout, err := cmd.StdoutPipe()
+	// A pipe of our own rather than StdoutPipe, because the server is waited on
+	// for its whole life (serverProc) while this end is still being read, and
+	// StdoutPipe's reader may not outlive a Wait.
+	stdout, stdoutW, err := os.Pipe()
 	if err != nil {
 		return "", nil, fmt.Errorf("server stdout pipe: %w", err)
 	}
+	cmd.Stdout = stdoutW
 	if err := cmd.Start(); err != nil {
+		_ = stdout.Close()
+		_ = stdoutW.Close()
 		return "", nil, fmt.Errorf("start server: %w", err)
 	}
+	_ = stdoutW.Close() // the child holds its own copy
+	proc := newServerProc(cmd, project)
 
+	// Read stdout until it closes, which is when the server exits: after the
+	// address, so the server never blocks on a full pipe; before it, so a server
+	// that exits without one is reported at once rather than at the timeout.
 	addrCh := make(chan string, 1)
+	eof := make(chan struct{})
 	go func() {
+		defer close(eof)
+		defer stdout.Close()
 		sc := bufio.NewScanner(stdout)
 		for sc.Scan() {
 			line := sc.Text()
@@ -181,36 +205,27 @@ func spawnServer(project string) (string, *exec.Cmd, error) {
 		}
 	}()
 
+	timeout := time.After(serverStartTimeout)
 	select {
 	case addr := <-addrCh:
-		return addr, cmd, nil
-	case <-time.After(serverStartTimeout):
-		_ = cmd.Process.Kill()
-		return "", nil, fmt.Errorf("server did not report its address within %s", serverStartTimeout)
+		proc.addr = addr
+		return addr, proc, nil
+	case <-eof:
+		// The reader sends the address before it closes eof, so one that was
+		// printed is already waiting here.
+		select {
+		case addr := <-addrCh:
+			proc.addr = addr
+			return addr, proc, nil
+		default:
+		}
+		select {
+		case <-proc.exited:
+			return "", nil, fmt.Errorf("server exited (%s) before reporting its address", proc.cmd.ProcessState)
+		case <-timeout:
+		}
+	case <-timeout:
 	}
-}
-
-// stopServer asks a spawned server to exit (the clean-close path: a window
-// closed, or the app is quitting). It tries a graceful interrupt first, then
-// force-kills once serverStopGrace elapses. On Windows, where Signal(os.Interrupt)
-// to another process is unsupported and returns an error, it force-kills
-// immediately rather than waiting out a grace period for a signal that was never
-// delivered. The crash/hard-kill path is covered separately by the server's own
-// --exit-with-parent watchdog (waitParentExit), not by this function.
-func stopServer(cmd *exec.Cmd) {
-	if cmd == nil || cmd.Process == nil {
-		return
-	}
-	if err := cmd.Process.Signal(os.Interrupt); err != nil {
-		_ = cmd.Process.Kill()
-		_, _ = cmd.Process.Wait()
-		return
-	}
-	done := make(chan struct{})
-	go func() { _, _ = cmd.Process.Wait(); close(done) }()
-	select {
-	case <-done:
-	case <-time.After(serverStopGrace):
-		_ = cmd.Process.Kill()
-	}
+	_ = cmd.Process.Kill()
+	return "", nil, fmt.Errorf("server did not report its address within %s", serverStartTimeout)
 }

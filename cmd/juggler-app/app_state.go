@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -202,7 +201,7 @@ type winEntry struct {
 // doesn't kill it while another window still shares it.
 type regState struct {
 	windows map[string]*winEntry
-	servers map[string]*exec.Cmd // url -> spawned server we own (and must stop)
+	servers map[string]*serverProc // url -> spawned server we own (and must stop)
 
 	// lastTheme is the most recent page-reported theme across all windows. It
 	// seeds the native background colour of the next window built without an
@@ -256,6 +255,10 @@ type appState struct {
 	regOps chan func(*regState)
 	ids    chan string
 
+	// spawnServerOn starts a replacement server (see restartServer); nil means
+	// the real spawnServerOn. A test seam.
+	spawnServerOn func(project, port string) (string, *serverProc, error)
+
 	// locale is the shell's UI language and catalogue (see locale.go).
 	locale atomic.Pointer[appLocale]
 	// menuBar is the application menu, and menuLabels every item in it whose
@@ -283,7 +286,7 @@ func newAppState(devMode int) *appState {
 		// Seed lastTheme from the persisted last-used theme so the very first
 		// window built this launch (before any page has reported) paints its bare
 		// frame to match instead of flashing the dark default (see workspace.go).
-		st := &regState{windows: map[string]*winEntry{}, servers: map[string]*exec.Cmd{}, lastTheme: a.workspace.loadLastTheme(), lastZoom: a.workspace.loadLastZoom()}
+		st := &regState{windows: map[string]*winEntry{}, servers: map[string]*serverProc{}, lastTheme: a.workspace.loadLastTheme(), lastZoom: a.workspace.loadLastZoom()}
 		for op := range a.regOps {
 			op(st)
 		}
@@ -1107,7 +1110,7 @@ func (a *appState) buildLockedProjectWindow(spec windowSpec, message, inheritedT
 // main thread, after it (dynamic windows). serverProc is the server this app
 // spawned for the window, or nil for a shared/remote server. Show it with
 // showWindow once the app has launched.
-func (a *appState) buildWindow(spec windowSpec, serverURL string, serverProc *exec.Cmd, saved core.WindowState, hasSaved bool, opts windowOpts) *winEntry {
+func (a *appState) buildWindow(spec windowSpec, serverURL string, serverProc *serverProc, saved core.WindowState, hasSaved bool, opts windowOpts) *winEntry {
 	id := <-a.ids
 	nativeCtl := fmt.Sprintf("http://127.0.0.1:%d/win/%s", a.ctlPort, id)
 
@@ -1268,14 +1271,8 @@ func (a *appState) buildWindow(spec windowSpec, serverURL string, serverProc *ex
 		stopSave:      make(chan struct{}),
 		currentTheme:  startupTheme,
 	}
-	a.reg(func(st *regState) {
-		st.windows[id] = e
-		if serverProc != nil {
-			if _, ok := st.servers[serverURL]; !ok {
-				st.servers[serverURL] = serverProc
-			}
-		}
-	})
+	a.reg(func(st *regState) { st.windows[id] = e })
+	a.adoptServer(serverURL, serverProc)
 	// The open set changed — remember it so a standalone launch restores it.
 	a.persistWorkspace()
 
@@ -1475,7 +1472,7 @@ func (a *appState) handleWindowClosed(e *winEntry) {
 	}
 	close(e.stopSave)
 
-	var orphanServer *exec.Cmd
+	var orphanServer *serverProc
 	remaining := -1
 	// The boards this window opened, which go with it.
 	var boards []*winEntry
@@ -1502,7 +1499,7 @@ func (a *appState) handleWindowClosed(e *winEntry) {
 		application.InvokeAsync(func() { win.Close() })
 	}
 	if orphanServer != nil {
-		go stopServer(orphanServer)
+		go orphanServer.stop()
 	}
 	// Persist the shrunken set (so a closed window doesn't reappear next launch).
 	// When this was the last window the set is now empty; persistWorkspace skips
@@ -1704,7 +1701,7 @@ func winNum(id string) int {
 func (a *appState) stopAllServers() {
 	a.reg(func(st *regState) {
 		for url, proc := range st.servers {
-			stopServer(proc)
+			proc.stop()
 			delete(st.servers, url)
 		}
 	})
@@ -1717,9 +1714,7 @@ func (a *appState) stopAllServers() {
 func (a *appState) signalAllServers() {
 	a.reg(func(st *regState) {
 		for _, proc := range st.servers {
-			if proc != nil && proc.Process != nil {
-				_ = proc.Process.Signal(os.Interrupt)
-			}
+			proc.interrupt()
 		}
 	})
 }

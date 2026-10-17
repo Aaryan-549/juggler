@@ -5,7 +5,6 @@
 package main
 
 import (
-	"os/exec"
 	"sync"
 	"testing"
 )
@@ -47,7 +46,7 @@ func registerWindowOn(a *appState, id, serverURL string) *winEntry {
 // ownServer records serverURL as one this app spawned, and so one a close or a
 // quit stops.
 func ownServer(a *appState, serverURL string) {
-	a.reg(func(st *regState) { st.servers[serverURL] = &exec.Cmd{} })
+	a.reg(func(st *regState) { st.servers[serverURL] = &serverProc{} })
 }
 
 // A window onto a server the app did not start — a headless instance, a terminal

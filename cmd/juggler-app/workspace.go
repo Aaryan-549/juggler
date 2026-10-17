@@ -7,7 +7,6 @@ package main
 import (
 	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
 
 	"juggler/internal/userpaths"
@@ -44,7 +43,7 @@ func (s windowSpec) entry() workspaceEntry {
 // resolve turns a spec into a connectable server URL. A project spec
 // discovers/spawns a local server (caller owns the returned proc); a URL spec
 // just normalises the URL (proc nil — we don't own remote servers).
-func (s windowSpec) resolve() (string, *exec.Cmd, error) {
+func (s windowSpec) resolve() (string, *serverProc, error) {
 	if s.isURL() {
 		return normalizeURL(s.url), nil, nil
 	}
