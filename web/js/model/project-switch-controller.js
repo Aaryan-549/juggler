@@ -40,7 +40,7 @@ import { approvePermittedPendingApprovals } from './conversation-tool-actions.js
  * @property {(path: string) => void} setProjectPath - Record a new project root on the session
  * @property {() => import('./conversation-registry.js').default} registry - The session's open conversations
  * @property {() => Promise<import('./session.js').SessionData>} fetchManifest - `GET /api/session` for the loaded project
- * @property {(data: import('./session.js').SessionData) => void} adoptManifest - Adopt a manifest's session-level state as a remote change (`Session._applyManifestState`)
+ * @property {(data: import('./session.js').SessionData) => void} adoptManifest - Adopt a manifest's session-level state as a remote change (`SessionPersistence.adoptManifest`)
  */
 
 export default class ProjectSwitchController {
@@ -129,7 +129,7 @@ export default class ProjectSwitchController {
 
   /**
    * Re-read the project-scoped session state after a project switch — the work
-   * a viewer gets for free by hard-reloading into a fresh `Session._doLoad`.
+   * a viewer gets for free by hard-reloading into a fresh `SessionPersistence.load`.
    *
    * `session.metadata` is where session-scoped permission rules
    * (`sessionPermissionRules`) and folder grants (`sessionAllowedPaths`) live,

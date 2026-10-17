@@ -5,7 +5,7 @@
 /**
  * What a session refresh is entitled to change.
  *
- * Session.refreshFromServer rebuilds the conversation map from the manifest,
+ * SessionPersistence.refreshFromServer rebuilds the conversation map from the manifest,
  * and the rebuild spans several awaits: the GET, then a worker load for every
  * conversation this realm doesn't hold yet. The map is shared, and a restore
  * arriving on the websocket writes its stub into it during exactly that window.
@@ -105,7 +105,7 @@ export async function runTests(_ctx) {
         session.conversations.set(arrivalId, stub);
       });
 
-      await session.refreshFromServer();
+      await session.persistence.refreshFromServer();
 
       assert(session.conversations.has(arrivalId),
         'a conversation that arrived during the refresh was dropped by it — a restore racing a refresh loses the tab it just brought back');
@@ -141,7 +141,7 @@ export async function runTests(_ctx) {
       );
       session.conversations.set(live.id, stub);
 
-      await session.refreshFromServer();
+      await session.persistence.refreshFromServer();
       await until(() => session.conversations.get(live.id)?.loadState === 'loaded',
         'the refresh left an unloaded stub parked — it listed the conversation and hydrated nothing');
 

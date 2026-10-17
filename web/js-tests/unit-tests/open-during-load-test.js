@@ -84,7 +84,7 @@ export async function runTests(_ctx) {
     wm.resyncReadyConversations = () => { resyncs++; };
     wm.reinitPendingConversations = () => { reinits++; };
     cm._refreshes = () => refreshes;
-    cm._fakeSession = { refreshFromServer: async () => { refreshes++; } };
+    cm._fakeSession = { persistence: { refreshFromServer: async () => { refreshes++; } } };
     return {
       cm,
       refreshes: () => refreshes,
@@ -165,7 +165,7 @@ export async function runTests(_ctx) {
   await run('a reconnect whose refresh throws is reported, not left to reject', async () => {
     const { cm, restore } = manager();
     try {
-      cm._session = { refreshFromServer: async () => { throw new Error('manifest went missing'); } };
+      cm._session = { persistence: { refreshFromServer: async () => { throw new Error('manifest went missing'); } } };
       cm._sessionLoaded = true;
       // The handler is a socket listener: nobody is awaiting it, so a rejection
       // here is an unhandled one.

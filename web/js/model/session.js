@@ -2,7 +2,6 @@
 //     ██ ██ ██ ██ ▄▄ ██ ▄▄ ██    ██▄▄  ██▄█▄   Copyright (c) 2026 Julian Storer
 //   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
 
-import contextItemRegistry from '../registries/context-item-registry.js';
 import Conversation from './conversation.js';
 import {
   UNTITLED_BASE,
@@ -12,22 +11,16 @@ import {
   PROVISIONAL_NAME_KEY
 } from './conversation-naming.js';
 import {
-  SAVE_DEBOUNCE_MS,
   MAX_MESSAGE_HISTORY,
   DUPLICATE_WHILE_ACTIVE_NOTICE,
   MAX_CONVERSATION_NAME_LENGTH
 } from '../utils/constants.js';
-import { normalizeAttachments } from '../utils/attachments.js';
 import workerManager from '../services/worker-manager.js';
-import ConversationLoadQueue from '../services/conversation-load-queue.js';
-import { extractErrorMessage } from '../../sdk/lib/error-utils.js';
 import { markForTranslation } from '../../sdk/lib/i18n.js';
 import { isEngine } from '../../sdk/lib/client-role.js';
-import { toSandboxRoot } from '../../sdk/lib/sandbox-runner.js';
 import { recordTape } from '../utils/event-tape.js';
 import { reportFault } from '../utils/fault-report.js';
 import { isTabReorderEnabled } from '../utils/attention-manager.js';
-import { setupWorkerCallbacks, setupViewerWorkerCallbacks } from './session-worker-callbacks.js';
 import { approvePermittedPendingApprovals } from './conversation-tool-actions.js';
 import { isWorkspaceUsable, patchWorkspace, reorderWorkspaces } from '../services/workspaces.js';
 import { placeForNewConversation, placementForNewConversation, takesTheHead } from '../services/workspace-provisioning.js';
@@ -36,6 +29,7 @@ import { statusHoldsTurn } from './processing-status.js';
 import ConversationSyncReducer from './conversation-sync-reducer.js';
 import ConversationRegistry from './conversation-registry.js';
 import ProjectSwitchController from './project-switch-controller.js';
+import SessionPersistence, { normalizeHistoryEntry } from './session-persistence.js';
 import { seedCreationDefaults, seedConversationAutoItems as seedAutoItems } from './conversation-seeder.js';
 
 /**
@@ -172,27 +166,6 @@ const RENAME_ERROR_CODES = new Map(/** @type {const} */ ([
 export const MAX_CONVERSATIONS = 32;
 
 /**
- * Coerce one persisted history entry into a {@link HistoryMessage}. Tolerates
- * the legacy shape (a bare string, from before history stored attachments) by
- * wrapping it as `{content, attachments: []}`, and defends against a
- * malformed/null entry by degrading to an empty message. Attachments are run
- * through {@link normalizeAttachments} so they are always plain AssetRefs.
- * @param {unknown} entry - A raw entry from the persisted messageHistory array.
- * @returns {HistoryMessage} The normalized entry.
- */
-export function normalizeHistoryEntry(entry) {
-  if (typeof entry === 'string') return { content: entry, attachments: [] };
-  if (entry && typeof entry === 'object') {
-    const e = /** @type {{content?: unknown, attachments?: unknown}} */ (entry);
-    return {
-      content: typeof e.content === 'string' ? e.content : '',
-      attachments: normalizeAttachments(e.attachments)
-    };
-  }
-  return { content: '', attachments: [] };
-}
-
-/**
  * User-facing message shown when a creation path is blocked by the cap, in
  * English with a `{max}` placeholder for {@link MAX_CONVERSATIONS}. Translated
  * where it is drawn (`services/app-notices.js`), keeping modal UI out of the
@@ -257,7 +230,7 @@ class Session {
      *
      * So the map is not the whole of what this client knows: an id in here was
      * removed deliberately, and a manifest that still lists it is stale rather
-     * than newer. {@link Session#refreshFromServer} is the only reader.
+     * than newer. {@link SessionPersistence#refreshFromServer} is the only reader.
      * @type {Set<string>}
      * @private
      */
@@ -356,36 +329,7 @@ class Session {
      */
     this._socketSubscriptions = [];
 
-    /**
-     * Debounce timer for auto-save
-     * @type {number|null}
-     * @private
-     */
-    this._saveTimer = null;
-
-    /**
-     * Whether session is currently loading
-     * @type {boolean}
-     * @private
-     */
-    this._loading = false;
-
-    /**
-     * Promise for in-flight load operation
-     * Used to prevent duplicate loads and ensure synchronization
-     * @type {Promise<void>|null}
-     * @private
-     */
-    this._loadPromise = null;
-
-    /**
-     * Whether worker manager has been initialized
-     * @type {boolean}
-     * @private
-     */
-    this._workerManagerInitialized = false;
-
-    /** @type {ConversationLoadQueue|null} @private */
+    /** @type {import('../services/conversation-load-queue.js').default|null} @private */
     this._loadQueue = null;
 
     /**
@@ -437,7 +381,33 @@ class Session {
       setProjectPath: (path) => { this.projectPath = path; },
       registry: () => this.registry,
       fetchManifest: () => this._apiService.getSession(),
-      adoptManifest: (data) => this._applyManifestState(data, { notify: true })
+      adoptManifest: (data) => this.persistence.adoptManifest(data, { notify: true })
+    });
+
+    /**
+     * The load from and the save to the server: the manifest read, the
+     * refresh another view asks for, and the debounced save of session-level
+     * state. Each host entry is read at call time, so a test that replaces the
+     * registry, the API service or the load queue replaces it here too.
+     * @type {SessionPersistence}
+     */
+    this.persistence = new SessionPersistence({
+      session: () => this,
+      state: () => this,
+      api: () => this._apiService,
+      registry: () => this.registry,
+      bin: () => this.bin,
+      services: () => this.getServices(),
+      removedPendingConfirm: () => this._removedPendingConfirm,
+      loadQueue: () => this._loadQueue,
+      setLoadQueue: (queue) => { this._loadQueue = queue; },
+      notify: (type, data) => this._notify(type, data),
+      requestLoad: (id) => this._requestConversationLoad(id),
+      switchTo: (id) => this.switchConversation(id),
+      foldArrivals: (settled, arrivals) => this._foldArrivals(settled, arrivals),
+      createInitialConversation: () => this._createInitialConversation(),
+      visibleConversation: () => this.getVisibleConversation(),
+      seedAutoItems: (conversation) => this.seedConversationAutoItems(conversation)
     });
   }
 
@@ -948,41 +918,6 @@ class Session {
   }
 
   /**
-   * Adopt the session-level state a manifest (`GET /api/session`) carries:
-   * platform, home, message history and metadata. The one reader of those
-   * fields, shared by the first load, the post-project-switch reseed and every
-   * refresh, so all three agree on what an absent field means.
-   *
-   * The manifest is the authority, so absent means EMPTY, not "keep what we
-   * had": the server omits `metadata` when the map is empty (`omitempty` on
-   * core.Session) and sends `messageHistory: null` when there is none, so a
-   * reader that kept its old value on absence would hold stale state after
-   * another viewer cleared it. Platform and home are facts about the machine
-   * and are only overwritten by a value.
-   * @param {SessionData} data - The manifest
-   * @param {{notify: boolean}} opts - notify: announce the metadata to
-   *   subscribers as a remote change (false only for the first load, which has
-   *   no prior state to change from)
-   * @private
-   */
-  _applyManifestState(data, { notify }) {
-    if (data.platform) this.platform = data.platform;
-    if (data.home) this.home = data.home;
-    this.messageHistory = Array.isArray(data.messageHistory)
-      ? data.messageHistory.map(normalizeHistoryEntry)
-      : [];
-    const metadata = data.metadata || {};
-    this.metadata = metadata;
-    if (notify) {
-      this._notify('session:metadata-changed', {
-        keys: Object.keys(metadata),
-        metadata,
-        remote: true
-      });
-    }
-  }
-
-  /**
    * Whether a conversation is mid-turn (LLM busy ANYWHERE in it), read straight
    * from its processingState Yjs metadata — the top-level projection, which
    * reports a non-idle status while any of its threads holds a run.
@@ -1298,15 +1233,14 @@ class Session {
     if (typeof this._apiService.patchSessionMetadata === 'function') {
       await this._apiService.patchSessionMetadata(patch);
     } else {
-      await this.saveImmediately();
+      await this.persistence.saveImmediately();
     }
   }
-
 
   /**
    * Ask for a conversation to be hydrated, by whichever route this session has.
    *
-   * The load queue is built by {@link Session#_doLoad} from the server's
+   * The load queue is built by {@link SessionPersistence#load} from the server's
    * conversationOrder, so a session that opened with no conversations has none.
    * It can still acquire unhydrated stubs afterwards — a restore, or another
    * viewer's create — and those show a spinner until something asks for the
@@ -1377,230 +1311,6 @@ class Session {
   }
 
   /**
-   * Load session from backend
-   * Uses promise-based synchronization to prevent race conditions
-   * @async
-   * @returns {Promise<void>}
-   */
-  async load() {
-    // If already loading, wait for the in-flight load to complete
-    if (this._loading && this._loadPromise) {
-      console.log('[Session] Load already in progress, waiting for completion');
-      return await this._loadPromise;
-    }
-
-    this._loading = true;
-    this._loadPromise = this._doLoad();
-
-    try {
-      await this._loadPromise;
-    } finally {
-      this._loading = false;
-      this._loadPromise = null;
-    }
-  }
-
-  /**
-   * Internal implementation of session loading
-   * @async
-   * @returns {Promise<void>}
-   * @private
-   */
-  async _doLoad() {
-    try {
-      // Ensure the context item registry is initialized — Session needs it to
-      // create context items and handle actions.
-      // @ts-ignore - BaseRegistry has isInitialized() and init() methods
-      if (contextItemRegistry && !contextItemRegistry.isInitialized()) {
-        // @ts-ignore - BaseRegistry has init() method
-        await contextItemRegistry.init();
-      }
-
-      const data = await this._apiService.getSession();
-
-      // Populate session-level state BEFORE initialising the worker manager and
-      // registering approval callbacks. Session-scoped permission rules
-      // (sessionPermissionRules in metadata) and the project root (projectPath)
-      // are read by isPermitted → getRulesFor → getSessionRules the moment the
-      // engine can receive approval requests from workers. If these fields are
-      // still at their constructor defaults ({}/undefined) when the first
-      // evaluate-tool arrives, every session-scoped auto-approve rule is
-      // invisible — the command is wrongly flagged for approval, and the
-      // suggestion engine offers to add the very rule the user already has.
-      if (data.projectPath) {
-        this.projectPath = data.projectPath;
-        // Seed the live project root the query_code sandbox delegates read.
-        // The engine's boot-time root (env / sandbox template) is authoritative
-        // until this point; keeping the global in step here means a later
-        // project switch (ProjectSwitchController.apply) is the only thing that moves
-        // it, and the sandbox never lags the loaded project.
-        if (isEngine()) {
-          /** @type {any} */ (globalThis).__jugglerProjectRoot =
-            toSandboxRoot(data.projectPath);
-        }
-      }
-      // The workspace table belongs in this block for the same reason as the
-      // project root, and is the more dangerous of the two to leave late: it is
-      // what a conversation's binding resolves against, and an unresolved
-      // binding means the work goes to the project instead of the tree it was
-      // meant for. Every edit after this arrives as a workspaces-changed
-      // broadcast; this is the one that sets the table up.
-      this.workspaces = Array.isArray(data.workspaces) ? data.workspaces : [];
-      this.projectHostsLocalProviders = typeof data.projectHostsLocalProviders === 'boolean'
-        ? data.projectHostsLocalProviders
-        : undefined;
-      this._applyManifestState(data, { notify: false });
-
-      // Initialize worker manager with session config (Pass session for conversation access)
-      if (!this._workerManagerInitialized) {
-        workerManager.init({
-          projectPath: data.projectPath || '',
-          // globalThis.location works in both the window (Location) and the
-          // engine worker (WorkerLocation); window.* would throw off-thread and
-          // abort session load, leaving the worker engine unable to execute tools.
-          apiBaseUrl: globalThis.location.origin
-        }, this);
-
-        // Set up callbacks for worker requests, by role. Context rendering and
-        // tool definitions belong to the engine — a viewer holding those
-        // callbacks answers the worker's broadcast requests as well, and the
-        // turn then runs on whichever realm's replica replied first. A viewer
-        // handles approvals and nothing else.
-        if (isEngine()) {
-          setupWorkerCallbacks(this);
-        } else {
-          setupViewerWorkerCallbacks(this);
-        }
-
-        this._workerManagerInitialized = true;
-      }
-
-      // Create stub Conversation instances synchronously so the tab bar
-      // renders immediately. session.load() resolves the moment stubs exist
-      // — no Yjs hydration is awaited here. Only the visible conv is queued
-      // to load (panel shows a spinner overlay until done); other tabs stay
-      // 'unloaded' until the user clicks them, at which point
-      // switchConversation -> loadQueue.prioritize kicks off their hydration.
-      if (data.conversationOrder && data.conversationOrder.length > 0) {
-        if (this._loadQueue) {
-          this._loadQueue.destroy();
-          this._loadQueue = null;
-        }
-
-        this.registry.clear('_doLoad');
-
-        // Conversation names live on the on-disk folder name (parsed by the
-        // backend on every GET /api/session) — no client-side title cache.
-        const names = /** @type {Record<string, string>} */ (
-          (data && /** @type {any} */(data).conversationNames) || {}
-        );
-        this.registry.adoptNames(names);
-        this.bin.adopt(/** @type {any} */ (data));
-
-        const services = this.getServices();
-        if (!services) {
-          throw new Error('Cannot load session: services not set (call setServices first)');
-        }
-
-        // The engine has no UI and stays fully dormant — it skips stub creation
-        // so the loader's autoLoad can pull in convs on demand
-        // when a yjs-sync arrives from a worker the user has activated. Creating
-        // unloaded stubs here would route yjs-sync to a doc whose outbound sync
-        // was never activated, silently swallowing the engine's tool-state
-        // writes and hanging tool execution.
-        if (!isEngine()) {
-          for (const convId of data.conversationOrder) {
-            const stub = new Conversation(
-              convId,
-              names[convId] || UNTITLED_BASE,
-              this,
-              services,
-              { skipBuiltInContextItems: true, loadState: 'unloaded' }
-            );
-            this.registry.insert(convId, stub, '_doLoad-stub');
-          }
-
-          if (data.activeConversationId && this.registry.has(data.activeConversationId)) {
-            recordTape('session-mut', data.activeConversationId, { op: 'visible', from: '_doLoad-active' });
-            this.registry.select({ kind: 'conversation', id: data.activeConversationId });
-          } else {
-            const firstId = this.registry.ids()[0];
-            recordTape('session-mut', firstId ?? null, { op: 'visible', from: '_doLoad-first' });
-            this.registry.select(firstId ? { kind: 'conversation', id: firstId } : null);
-          }
-
-          this._loadQueue = new ConversationLoadQueue({
-            session: this,
-            loader: workerManager.loader,
-            concurrency: 3
-          });
-
-          if (this.loadedConversationId) {
-            this._loadQueue.prioritize(this.loadedConversationId);
-          }
-
-          // Background-load the remaining conversations at low priority so
-          // tab-level state (running/awaiting-approval indicators) is visible
-          // for every conversation on reload, not just the active one. The visible
-          // conversation was prioritised above so it still loads first;
-          // others trickle in at the queue's concurrency limit.
-          const backgroundIds = data.conversationOrder.filter(
-            (id) => id !== this.loadedConversationId
-          );
-          if (backgroundIds.length) {
-            this._loadQueue.enqueueAll(backgroundIds);
-          }
-        }
-      } else if (data.projectPath) {
-        // Real project with no conversations yet — seed the initial "Main"
-        // conversation so the user lands on a usable tab.
-        await this._createInitialConversation();
-      }
-      // No-project mode (empty projectPath): seed nothing. The
-      // <no-project-overlay> shows the project picker, and the initial
-      // conversation is created once the user opens a real project — the
-      // server's project-changed broadcast triggers a full page reload, which
-      // re-runs this path with a populated projectPath. Seeding here would
-      // build a phantom tab in an ephemeral temp dir whose writes the backend
-      // silently discards; worse, createConversation awaits a worker Yjs sync,
-      // so a flaky/absent worker connection would hang the whole load and
-      // strand the UI with no picker and nowhere to type.
-
-      // Refresh all context items to get fresh content (data from storage is stale)
-      this._refreshAllContextItems();
-
-      this._notify('session:loaded', this);
-
-      // Auto-detect AI assistant files on first load (only once per session).
-      // Runs after session:loaded so listeners have updated the visible conversation.
-      //
-      // Skipped for a conversation still waiting to be told where it works:
-      // seeding it here would put the project's assistant files into a
-      // conversation that has not chosen a tree yet, and its own initialisation
-      // seeds the right ones anyway.
-      if (!this.metadata.hasScannedAIFiles) {
-        const conversation = this.getVisibleConversation();
-        if (conversation && !conversation.awaitingSetup) {
-          this.seedConversationAutoItems(conversation)
-            .then(() => {
-              this.metadata.hasScannedAIFiles = true;
-            });
-        } else {
-          this.metadata.hasScannedAIFiles = true;
-        }
-      }
-
-    } catch (error) {
-      // Log error with message and stack for debugging
-      console.error('[Session] Failed to load:', extractErrorMessage(error));
-      if (error instanceof Error && error.stack) {
-        console.error('[Session] Stack trace:', error.stack);
-      }
-      throw error;
-    }
-  }
-
-  /**
    * Create the initial conversation for an empty session. Delegates to
    * createConversation() so naming ("Untitled N"), default-model seeding, on-disk
    * rename and order persistence all go through the single code path —
@@ -1615,87 +1325,13 @@ class Session {
   }
 
   /**
-   * Refresh all context items to get fresh content
-   *
-   * Called after session load to ensure context items have current data,
-   * not stale data from when the session was last saved.
-   * @private
-   */
-  _refreshAllContextItems() {
-    const allItems = Array.from(this.conversations.values()).flatMap(conv => conv.rootMessageThread.contextItems);
-
-    for (const item of allItems) {
-      if (typeof /** @type {any} */ (item).onSessionReload === 'function') {
-        /** @type {any} */ (item).onSessionReload();
-      }
-    }
-  }
-
-  /**
-   * Save session to backend immediately (no debounce)
-   * Use this for critical operations like switching conversations
-   * @async
-   * @returns {Promise<void>}
-   */
-  async saveImmediately() {
-
-    // Clear any pending debounced save
-    if (this._saveTimer) {
-      clearTimeout(this._saveTimer);
-      this._saveTimer = null;
-    }
-
-    // The engine has no UI and doesn't carry the full session manifest in
-    // memory (it skips stub creation in _doLoad and only auto-loads convs
-    // it actually receives yjs-syncs for). A save from here would propose
-    // conversationOrder=[just the auto-loaded conv] and clobber the disk's
-    // full order. Session-level state is the viewer's responsibility.
-    if (isEngine()) {
-      return;
-    }
-
-    try {
-      // Only session-level state travels here. Each conversation's content is
-      // saved by its own worker; names live on the on-disk folder name; and
-      // conversation order is owned by POST /api/conversations and POST
-      // /api/session/conversations/reorder.
-      await this._apiService.updateSession(
-        this.loadedConversationId ?? null,
-        this.messageHistory,
-        this.metadata
-      );
-
-      this._notify('session:saved', this);
-      this._notifyOtherViews();
-
-    } catch (error) {
-      console.error('[Session] Failed to save:', error);
-      this._notify('session:save-error', error);
-    }
-  }
-
-  /**
-   * Save session to backend (full save - session-level state only)
-   *
-   * Use this for session-level changes: new conversation, delete conversation,
-   * metadata changes, conversation order, etc.
-   *
-   * Note: Conversation content is saved by workers via workerManager notifications.
-   *
-   * Debounced to avoid excessive API calls.
-   * @async
+   * Save session-level state to the backend, debounced
+   * ({@link SessionPersistence#save}). The call extensions make after changing
+   * session metadata; conversation content is saved by each worker.
    * @returns {Promise<void>}
    */
   async save() {
-    // Clear existing timer
-    if (this._saveTimer) {
-      clearTimeout(this._saveTimer);
-    }
-
-    // Debounce: wait before saving to avoid excessive API calls
-    this._saveTimer = setTimeout(async () => {
-      await this.saveImmediately();
-    }, SAVE_DEBOUNCE_MS);
+    this.persistence.save();
   }
 
   /**
@@ -1781,7 +1417,7 @@ class Session {
       // resolves, the name question is permanently answered — no "Untitled"
       // stage, no follow-up rename.
       // Where it goes travels with the create. The server keeps the order and
-      // broadcasts it, and refreshFromServer re-slots the map into what it
+      // broadcasts it, and the persistence's refreshFromServer re-slots the map into what it
       // sent — so a placement the server was not told about is undone by its
       // own echo a moment later, and lost entirely by the next launch.
       const { where: place, after } = placementForNewConversation(this, workspaceId);
@@ -1827,7 +1463,6 @@ class Session {
 
     return conversation.id;
   }
-
 
   /**
    * Initialise a conversation: bind it to its workspace, run every seed that
@@ -2070,7 +1705,7 @@ class Session {
    * new_conversation tool would carry any busy conversation the engine has
    * loaded down to the slot of whichever one it loaded first. The order is the
    * viewers' to write, as
-   * the rest of session state is (see saveImmediately).
+   * the rest of session state is (see SessionPersistence#saveImmediately).
    * @private
    */
   _persistOrder(label, moved = '') {
@@ -2241,7 +1876,7 @@ class Session {
   /**
    * Put the conversations that turned up mid-refresh back into the order.
    *
-   * Two paths can insert while `refreshFromServer` is awaiting its loads — a
+   * Two paths can insert while {@link SessionPersistence#refreshFromServer} is awaiting its loads — a
    * create and a restore — and the order it was rebuilding knows nothing about
    * either. Each arrival goes where it would have gone had it arrived at any
    * other moment: {@link placeForNewConversation}'s answer, which is the head of
@@ -2501,135 +2136,6 @@ class Session {
   }
 
   /**
-   * Re-sync session state from the server.
-   * Called when another view notifies us of a session change.
-   * @returns {Promise<void>}
-   */
-  async refreshFromServer() {
-    // Taken before the GET, because the GET is already part of the window: only
-    // ids held when the refresh began can be judged against the manifest it
-    // returns. Anything that arrives after this line is newer than what was
-    // read, and this rebuild has no opinion about it.
-    const knownAtEntry = new Set(this.registry.ids());
-
-    // The map alone would have this rebuild undo removals still in flight: an id
-    // this client has binned is absent from the map and present in a manifest
-    // read before the bin landed, which is indistinguishable from a conversation
-    // another viewer has just created. Tombstones tell the two apart.
-    //
-    // Both ends of the window are checked, because a removal can be confirmed at
-    // any point during a refresh. This snapshot catches one tombstoned before
-    // the GET went out and retired before its reply came back; the live set,
-    // read at the point of use below, catches one tombstoned while the GET was
-    // in flight. Neither check subsumes the other.
-    const tombstonedAtEntry = new Set(this._removedPendingConfirm);
-
-    const data = await this._apiService.getSession();
-    if (!data.conversationOrder) return;
-
-    const serverOrder = data.conversationOrder;
-    /** @type {Map<string, import('./conversation.js').default>} */
-    const reordered = new Map();
-
-    // Folder names on disk are the source of truth, but a conversation this
-    // refresh is about to remove keeps its last known name until it is gone
-    // (ConversationRegistry#mergeNames).
-    const names = /** @type {Record<string, string>} */ (
-      (data && /** @type {any} */(data).conversationNames) || {}
-    );
-    this.registry.mergeNames(names);
-    this.bin.adopt(/** @type {any} */ (data));
-    this._applyManifestState(data, { notify: true });
-
-    // The manifest, not the rebuild's own success, says what still exists:
-    // judging by `reordered` would destroy a conversation the server still
-    // lists whose load merely failed.
-    const serverIds = new Set(serverOrder);
-
-    // Preserve existing conversations in the server's order
-    /** @type {import('./conversation.js').default[]} */
-    const newlyLoaded = [];
-    for (const id of serverOrder) {
-      const existing = this.registry.get(id);
-      if (existing) {
-        reordered.set(id, existing);
-        // A stub nothing is hydrating stays on the spinner until the user
-        // clicks it. The manifest just said the conversation is real, so ask.
-        if (existing.loadState === 'unloaded') this._requestConversationLoad(id);
-        continue;
-      }
-      // Listed by the server, gone from the map, and removed on purpose: this
-      // client binned or deleted it and the request has not settled. The
-      // manifest predates the removal rather than outranking it, so leave it
-      // out — the rebuild below then drops it from the order too.
-      if (tombstonedAtEntry.has(id) || this._removedPendingConfirm.has(id)) continue;
-
-      // New conversation from another view (or restored locally) — load
-      // it and announce via 'conversation:created' below so conversation-bar
-      // creates the <conversation-tab> host element.
-      try {
-        const conv = await workerManager.loader.loadExisting(id, this);
-        reordered.set(id, conv);
-        newlyLoaded.push(conv);
-      } catch (error) {
-        console.error(`[Session] Failed to load new conversation ${id}:`, error);
-      }
-    }
-
-    // Destroy conversations that were deleted in the other view
-    for (const [id, conv] of this.registry.conversations) {
-      if (serverIds.has(id) || !knownAtEntry.has(id)) continue;
-      await workerManager.loader.destroy(conv);
-    }
-
-    // Fold in whatever arrived while the loads above were awaiting.
-    const arrivals = Array.from(this.registry.conversations)
-      .filter(([id]) => !reordered.has(id) && !knownAtEntry.has(id));
-
-    // Through the registry like every other change to the list, so what the
-    // manifest took away is taped and leaves the most-recently-used list.
-    this.registry.replace(this._foldArrivals(reordered, arrivals), 'refreshFromServer');
-
-    // Announce each newly-loaded conv so subscribers (notably the
-    // conversation-bar) build the inner <conversation-tab> host element.
-    for (const conv of newlyLoaded) {
-      this._notify('conversation:created', conv);
-    }
-
-    // If visible conversation was deleted, switch to first.
-    // Use switchConversation() so the load queue is prioritized.
-    if (this.loadedConversationId && !this.registry.has(this.loadedConversationId)) {
-      const firstId = this.registry.ids()[0];
-      if (firstId !== undefined) {
-        this.switchConversation(firstId);
-      }
-    }
-
-    this._notify('conversation:reordered', {});
-  }
-
-  /**
-   * Notify other views that session-level state has changed, so they re-read it.
-   *
-   * For session-level metadata only — messageHistory, metadata flags, the
-   * visible conversation — which is exactly what PUT /session writes, and its
-   * only caller is the save that issues that PUT. A conversation-list mutation
-   * must NOT travel this way: it is announced by the server's own
-   * `conversations-changed` broadcast, which names the conversation and the op,
-   * and which every client applies idempotently.
-   *
-   * The distinction is not cosmetic. This lands as `session-changed`, whose
-   * only handling is a full {@link Session#refreshFromServer} — a manifest read
-   * that the server may answer ahead of a write still queued behind it. Used to
-   * announce a removal, it invites a reply that still lists the conversation,
-   * and the refresh loads back what the removal just took out.
-   * @private
-   */
-  _notifyOtherViews() {
-    this._services?.wsService?.sendSessionChanged?.();
-  }
-
-  /**
    * Switch to a different conversation
    * @param {string} conversationId - Conversation ID to switch to
    * @returns {boolean} Whether switch succeeded
@@ -2711,7 +2217,6 @@ class Session {
     return true;
   }
 
-
   /**
    * Get session state as plain object
    * @returns {{projectPath: string, conversations: object[], activeConversationId: string | null, messageHistory: HistoryMessage[]}} Session state
@@ -2735,10 +2240,7 @@ class Session {
     if (this._destroyed) return;
     this._destroyed = true;
 
-    if (this._saveTimer) {
-      clearTimeout(this._saveTimer);
-      this._saveTimer = null;
-    }
+    this.persistence.cancelPendingSave();
 
     if (this._autoNaming) {
       for (const timer of this._autoNaming.values()) clearTimeout(timer);

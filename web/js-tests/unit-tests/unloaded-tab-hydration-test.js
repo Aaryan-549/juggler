@@ -5,7 +5,7 @@
 /**
  * Selecting an unhydrated tab hydrates it, with or without a load queue.
  *
- * The load queue is built by Session._doLoad from the conversationOrder the
+ * The load queue is built by SessionPersistence.load from the conversationOrder the
  * server returned, so a session that opened with no conversations has none. It
  * can still acquire unhydrated stubs afterwards — from a restore, or from
  * another viewer's create — and those reach the user as a tab that shows a

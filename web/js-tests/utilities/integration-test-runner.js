@@ -999,7 +999,7 @@ export async function runIntegrationTest(testDef, ctx) {
 
     // Delete server-side conversations BEFORE tearing down the harness.
     // teardown() destroys the session and detaches services; doing the
-    // deletes after that race-loses against a fresh session.load() in
+    // deletes after that race-loses against a fresh session.persistence.load() in
     // the next test.
     //
     // Critical: delete ONLY the conversations THIS test created — in the

@@ -111,7 +111,7 @@ async function _runTests() {
   session.conversations.delete(conversation.id);
 
   // Reload session (simulates page reload)
-  await session.load();
+  await session.persistence.load();
   await session.ensureConversationLoaded(conversation.id);
 
   // Get the conversation back

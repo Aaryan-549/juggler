@@ -232,7 +232,7 @@ class ConnectionManager {
     if (isEngine()) return;
     workerManager.reinitPendingConversations();
     try {
-      await session.refreshFromServer();
+      await session.persistence.refreshFromServer();
     } catch (error) {
       console.error('[ConnectionManager] Couldn\'t refresh the session after reconnect:', extractErrorMessage(error));
     }
@@ -330,7 +330,7 @@ class ConnectionManager {
     // in a loop, with the user unable to reach the picker.
     let loadError = null;
     try {
-      await this._session.load();
+      await this._session.persistence.load();
     } catch (error) {
       const errorMessage = extractErrorMessage(error);
       // Don't strand the UI on a failed load. Fall through to wire the

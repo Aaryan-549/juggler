@@ -12,7 +12,7 @@ import { t } from '../../sdk/lib/i18n.js';
 
 /**
  * The full session payload returned by GET /api/session. Mirrors the shape
- * Session._doLoad consumes — id/projectPath/platform/home/providerInfo/
+ * SessionPersistence.load consumes — id/projectPath/platform/home/providerInfo/
  * conversationOrder/activeConversationId/messageHistory/metadata — so the
  * concrete APIService is assignable to the Session constructor's structural
  * ApiService type (they share this getSession return).

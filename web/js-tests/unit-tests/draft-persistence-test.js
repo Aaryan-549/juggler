@@ -91,7 +91,7 @@ export async function runTests(_ctx) {
   // Destroy + reload (simulates quit/restart).
   await workerManager.loader.destroy(conversation);
   session.conversations.delete(convId);
-  await session.load();
+  await session.persistence.load();
   // Deterministically wait for the reloaded conversation's doc to load from
   // disk (mirrors context-item-persistence) rather than racing a fixed delay.
   await session.ensureConversationLoaded(convId);

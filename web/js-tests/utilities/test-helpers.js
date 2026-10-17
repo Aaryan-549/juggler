@@ -138,7 +138,7 @@ function createMockWebSocketService() {
  *
  * A lane page is never reloaded between the tests of a suite, so a Session
  * left alive is left alive for the rest of the lane's life — and it is not
- * cheap company. Session.load() builds a stub Conversation, and in time a
+ * cheap company. Its load (SessionPersistence.load) builds a stub Conversation, and in time a
  * hydrated Yjs doc, for EVERY conversation in the pool's shared project, so
  * one undestroyed Session retains a document per sibling lane's work, not
  * just its own. Across a suite run that is the difference between a lane
@@ -281,7 +281,7 @@ export async function createTestSession() {
   session.setServices(services);
 
   // Load session data from backend
-  await session.load();
+  await session.persistence.load();
 
   // Record the size of the shared project this load saw, so a failure later in
   // the lane can report the trajectory as well as the size at the failure.
@@ -337,7 +337,7 @@ export async function createTestConversation(session) {
  * delete it from the shared project.
  *
  * A conversation kept until the suite-end sweep is not free company. Every lane
- * in the pool loads the SAME project, and Session.load() builds a stub — and in
+ * in the pool loads the SAME project, and SessionPersistence.load builds a stub — and in
  * time a hydrated Yjs doc — for every conversation in it. A suite that creates
  * one per case and holds them all therefore raises what every sibling lane's
  * load costs, for as long as it runs. A case that is finished with its

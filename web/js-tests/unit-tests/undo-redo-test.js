@@ -422,7 +422,7 @@ async function testUndoHistoryPersistence(session) {
   // Destroy and reload
   await workerManager.loader.destroy(conv1);
   session.conversations.delete(conv1.id);
-  await session.load();
+  await session.persistence.load();
   await session.ensureConversationLoaded(conv1.id);
 
   const conv2 = session.conversations.get(conv1.id);

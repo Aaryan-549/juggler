@@ -42,7 +42,7 @@ export async function runTests() {
   // `showAlert(...)` modal — which only resolves on a user click and so
   // never resolves headless, hanging the test until the 90s suite deadline.
   // The shared fixture session accumulates conv_*.yjs across the whole iframe
-  // pool, so under load `session.load()` can come up already at the cap. Two
+  // pool, so under load `session.persistence.load()` can come up already at the cap. Two
   // defences below: (1) stub the modal so it can NEVER block — a residual one
   // fails the test fast instead of hanging; (2) make room before creating so
   // the real new-tab scenario actually runs. Restored in `finally`.
@@ -140,7 +140,7 @@ export async function runTests() {
     // finishing, so poll briefly rather than fail on the first look.
     const makeRoomDeadline = Date.now() + 10000;
     while (session.conversations.size >= MAX_CONVERSATIONS - 1) {
-      await session.load();
+      await session.persistence.load();
       for (const id of Array.from(session.conversations.keys())) {
         if (session.conversations.size < MAX_CONVERSATIONS - 1) break;
         if (unclaimedConversationIds([id]).length === 1) {

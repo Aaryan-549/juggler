@@ -348,7 +348,7 @@ export class ConversationLoader {
         throw new Error('Cannot load conversation: services not set');
       }
 
-      // 2. Reuse the stub created by Session._doLoad if present — replacing it
+      // 2. Reuse the stub created by SessionPersistence.load if present — replacing it
       // would break tab-element bindings and tab-bar references. Auto-load
       // and other direct callers fall through to create a fresh one.
       let conversation = session.conversations.get(conversationId);
@@ -371,7 +371,7 @@ export class ConversationLoader {
         loadFromDisk: true  // Backend will load from disk and send metadata
       };
       // A worker entry outlives the Conversation object that owns the
-      // document. Session._doLoad replaces every conversation with a fresh,
+      // document. SessionPersistence.load replaces every conversation with a fresh,
       // EMPTY one but leaves the manager's entries alone, so spawnWorker's
       // "already exists" short-circuit would skip the init — and an init is
       // the only thing that asks the worker for state. Re-attach explicitly:

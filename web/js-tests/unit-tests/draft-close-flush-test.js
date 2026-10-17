@@ -115,7 +115,7 @@ export async function runTests() {
 
     await workerManager.loader.destroy(conversation);
     session.conversations.delete(convId);
-    await session.load();
+    await session.persistence.load();
     await session.ensureConversationLoaded(convId);
 
     const reloaded = session.conversations.get(convId);

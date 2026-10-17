@@ -65,7 +65,7 @@ export async function runTests(_ctx) {
 
   // Reload session (simulates page reload)
   logger.info('[conversation-name-persistence-test] Reloading session from backend');
-  await session.load();
+  await session.persistence.load();
 
   // Get the reloaded conversation
   const reloadedConv = session.conversations.get(convId);

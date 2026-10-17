@@ -22,7 +22,7 @@
 
 import { assert, trackTestSession } from '../utilities/test-helpers.js';
 import ConnectionManager from '../../js/services/connection-manager.js';
-import Session from '../../js/model/session.js';
+import SessionPersistence from '../../js/model/session-persistence.js';
 import { HttpError } from '../../js/services/http.js';
 import { underPseudoLocale } from '../utilities/pseudo-locale.js';
 import { isPseudoLocalized } from '../../sdk/lib/i18n.js';
@@ -35,13 +35,13 @@ import { isPseudoLocalized } from '../../sdk/lib/i18n.js';
  */
 
 /**
- * Run the real `_loadSession` against a Session whose load throws `thrown`,
+ * Run the real `_loadSession` against a session whose load throws `thrown`,
  * and report what the manager did about it.
- * @param {unknown} thrown - What `Session.load()` throws
+ * @param {unknown} thrown - What `SessionPersistence.load()` throws
  * @returns {Promise<{alerts: string[], alertTitles: string[], readyError: unknown, loaded: boolean}>} The alerts raised (messages and titles), the readiness rejection, and whether the session was marked loaded
  */
 async function failLoadWith(thrown) {
-  const proto = /** @type {any} */ (Session.prototype);
+  const proto = /** @type {any} */ (SessionPersistence.prototype);
   const origLoad = proto.load;
   const win = /** @type {any} */ (window);
   const origAlert = win.showAlert;

@@ -193,7 +193,7 @@ function serverOrderForCreate(existing, id, placement) {
 
 /**
  * Re-slot a session's conversations into a server-sent order — the pass in
- * `Session#refreshFromServer` that a `session-changed` broadcast triggers, and
+ * `SessionPersistence#refreshFromServer` that a `session-changed` broadcast triggers, and
  * which has the last word over anything the client placed itself.
  * @param {any} session - The session to re-slot.
  * @param {string[]} order - The server's order.

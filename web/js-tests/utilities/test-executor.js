@@ -356,8 +356,8 @@ class TestExecutor {
     }
 
     // Load the session
-    console.warn(`[ESSENTIAL] [Test] About to call session.load()`);
-    await this.session.load();
+    console.warn(`[ESSENTIAL] [Test] About to call session.persistence.load()`);
+    await this.session.persistence.load();
 
     logger.debug(`Session loaded`);
   }
@@ -393,7 +393,7 @@ class TestExecutor {
     this.session.setServices(services);
 
     // Connect WebSocket BEFORE loading session
-    // Session.load() spawns workers which send messages via WebSocket
+    // session.persistence.load() spawns workers which send messages via WebSocket
     const wsServiceModule = await import('../../js/services/websocket.js');
     const wsService = wsServiceModule.default;
     console.warn(`[ESSENTIAL] [Test] WebSocket isConnected=${wsService.isConnected()}`);
@@ -412,7 +412,7 @@ class TestExecutor {
     });
 
     // Load session data
-    await this.session.load();
+    await this.session.persistence.load();
 
     logger.debug(`Session created`);
   }

@@ -13,7 +13,7 @@
  *      sub-thread is parked on approval — not just when the root thread is.
  *
  * Test 4 drives `_refreshTabStatus` directly with a stubbed conversation/tab —
- * no session.load(), worker spawn, or /api/providers fetch. Those heavyweight
+ * no session.persistence.load(), worker spawn, or /api/providers fetch. Those heavyweight
  * paths are load-sensitive (O(n²) session.load, per-mount network) and would
  * make this assertion flaky under the full iframe pool; the behaviour under
  * test is purely "does _refreshTabStatus run the recursive predicate over the

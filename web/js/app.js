@@ -386,7 +386,7 @@ class JugglerApp {
             }
           });
           // Use saveImmediately to bypass debounce on page close
-          session.saveImmediately();
+          session.persistence.saveImmediately();
         }
       });
     }
@@ -771,7 +771,7 @@ class JugglerApp {
    * @private
    */
   _handleSessionChanged(session) {
-    session.refreshFromServer();
+    session.persistence.refreshFromServer();
   }
 
   /**

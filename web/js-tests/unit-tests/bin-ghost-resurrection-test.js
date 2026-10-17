@@ -8,7 +8,7 @@
  * Binning removes the conversation locally and then tells the server. That
  * leaves a window in which the client has dropped it and the server has not yet
  * moved the folder — and a manifest read taken inside that window still lists
- * it. `Session.refreshFromServer` treats any id the manifest lists and the map
+ * it. `SessionPersistence.refreshFromServer` treats any id the manifest lists and the map
  * lacks as a conversation another viewer just created, loads it, and announces
  * it as `conversation:created`. The tab the user just threw away comes back.
  *
@@ -46,7 +46,7 @@ function refreshInsideBin(session) {
   wrapper.binConversation = async (/** @type {string} */ id) => {
     // Before the POST, so the conversation is still on disk and the manifest
     // still lists it — exactly what a read drained ahead of the bin write sees.
-    await session.refreshFromServer();
+    await session.persistence.refreshFromServer();
     return real.binConversation(id);
   };
   session._apiService = wrapper;

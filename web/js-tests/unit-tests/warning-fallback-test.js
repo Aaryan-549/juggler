@@ -16,7 +16,7 @@
  * what made `visible warnings: []` unreadable.
  *
  * The conversations here carry only what `showWarning` reads. Building a real
- * one costs a `session.load()`, a worker spawn and a `/api/providers` fetch,
+ * one costs a `session.persistence.load()`, a worker spawn and a `/api/providers` fetch,
  * all load-sensitive under the iframe pool and none of them on this path.
  * @module unit-tests/warning-fallback-test
  */

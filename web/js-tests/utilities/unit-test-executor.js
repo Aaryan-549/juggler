@@ -156,7 +156,7 @@ class UnitTestExecutor {
     this.session.setServices(services);
 
     // CRITICAL: Connect WebSocket BEFORE loading session
-    // session.load() spawns workers which send messages via WebSocket
+    // session.persistence.load() spawns workers which send messages via WebSocket
     const wsServiceModule = await import('../../js/services/websocket.js');
     const wsService = wsServiceModule.default;
     if (!wsService.isConnected()) {
@@ -171,7 +171,7 @@ class UnitTestExecutor {
       }
     });
 
-    await this.session.load();
+    await this.session.persistence.load();
 
     logger.debug(`Session created`);
   }

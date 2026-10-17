@@ -19,7 +19,8 @@
  * @module unit-tests/message-history-test
  */
 
-import Session, { normalizeHistoryEntry } from '../../js/model/session.js';
+import Session from '../../js/model/session.js';
+import { normalizeHistoryEntry } from '../../js/model/session-persistence.js';
 import { initializeRegistries, assert } from '../utilities/test-helpers.js';
 import '../../js/components/composer.js';
 

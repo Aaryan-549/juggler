@@ -4,7 +4,7 @@
 
 /**
  * How a session manifest's session-level fields — metadata and message
- * history — are adopted by `Session.refreshFromServer`.
+ * history — are adopted by `SessionPersistence.refreshFromServer`.
  *
  * The manifest is the authority, and the server leaves an empty value out
  * rather than sending it: `metadata` is `omitempty` on core.Session, and an
@@ -79,7 +79,7 @@ export async function runTests(_ctx) {
       conversationNames: {},
       messageHistory: null
     });
-    await session.refreshFromServer();
+    await session.persistence.refreshFromServer();
     assert(Object.keys(session.metadata).length === 0,
       `metadata another viewer cleared survived the refresh: ${JSON.stringify(session.metadata)}`);
     assert(session.messageHistory.length === 0,
@@ -95,7 +95,7 @@ export async function runTests(_ctx) {
       metadata: { freshFlag: 1 },
       messageHistory: ['a bare legacy entry']
     });
-    await session.refreshFromServer();
+    await session.persistence.refreshFromServer();
     assert(session.metadata.freshFlag === 1 && !('staleFlag' in session.metadata),
       `metadata is ${JSON.stringify(session.metadata)}`);
     assert(session.messageHistory.length === 1 && session.messageHistory[0].content === 'a bare legacy entry',

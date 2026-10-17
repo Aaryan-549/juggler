@@ -5,7 +5,7 @@
 /**
  * Concurrency-limited orchestrator for lazy conversation hydration.
  *
- * Stubs are created by Session._doLoad before any id lands here; the queue
+ * Stubs are created by SessionPersistence.load before any id lands here; the queue
  * decides *when* to call workerManager.loader.loadExisting(). The conv's
  * loadState transitions through 'loading' → 'loaded' (or 'error') and the
  * session emits 'conversation:loadstate-changed' so listeners (tab bar,

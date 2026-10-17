@@ -206,7 +206,7 @@ export async function runTests() {
       session.conversations.set(kept, stub(kept));
       session.conversations.set(dropped, stub(dropped));
 
-      await session.refreshFromServer();
+      await session.persistence.refreshFromServer();
 
       assert([...session.conversations.keys()].join() === kept,
         `the refresh drops what the server no longer lists — got ${[...session.conversations.keys()].join()}`);
