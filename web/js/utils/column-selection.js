@@ -114,6 +114,28 @@ class ColumnSelectionState {
   }
 
   /**
+   * Apply a column's `item-selected` event: select the item, or clear the column
+   * when there is none. Only the user's own selection counts as manual
+   * interaction or moves the keyboard target onto this column. An
+   * auto-selection landing in a column the user isn't in (a child column
+   * picking up an arriving tool action) leaves the arrow keys where they were.
+   * @param {number} columnIndex - The column the event came from.
+   * @param {string|null} itemId - The selected item, or null to clear.
+   * @param {SelectionOrigin} origin - Who made the selection.
+   * @returns {boolean} Whether the keyboard target moved to another column.
+   */
+  applySelection(columnIndex, itemId, origin) {
+    const prevActiveColumn = this.activeColumnIndex;
+    if (!itemId) {
+      this.clearSelection(columnIndex);
+    } else {
+      if (origin === 'user') this.markManualInteraction();
+      this.selectItem(columnIndex, itemId, { focus: origin === 'user' });
+    }
+    return this.activeColumnIndex !== prevActiveColumn;
+  }
+
+  /**
    * Open the transaction-detail panel beside the properties column at
    * `columnIndex`, and move focus onto it so the existing
    * scroll-to-active-column rule (clampActiveIndex + _scrollToActiveColumn)
@@ -440,5 +462,55 @@ class ColumnSelectionState {
   }
 }
 
-export { ColumnSelectionState };
+/** @typedef {'user'|'auto'} SelectionOrigin */
+
+/**
+ * @typedef {object} SelectionFollowUps
+ * @property {boolean} scrollColumns - Scroll the column row to the active column.
+ * @property {boolean} revealDetails - Page the row to the selected item's child column.
+ * @property {boolean} engageApproval - Give the selected item's approval widget the keyboard.
+ */
+
+/**
+ * What a selection asks of the columns beyond the selection itself. A pure
+ * decision, so every rule is testable without a laid-out (or painting) tab.
+ *
+ * - **scrollColumns.** Moving the selection does not move the columns. The
+ *   horizontal scroll is the user's (they set it by dragging), and an arrow key
+ *   walking a column's items is asking for nothing to its left or right, so
+ *   re-anchoring the row on every keypress only throws that choice away. A
+ *   selection of the user's that lands the keyboard in a DIFFERENT column
+ *   (clicking into one that is partly off-screen) IS a request to see that
+ *   column.
+ * - **revealDetails.** On a narrow viewport the columns are full-width and
+ *   paged, so the child column that just appeared for a tapped item sits
+ *   off-screen to the right. Revealing it shows the user the detail they
+ *   selected. Prose (user/assistant messages) is exempt, since a tap there is
+ *   reading rather than a request to scroll away (see isItemRevealable), and so
+ *   is a tap on a control inside the tile, which is an action on the item: both
+ *   arrive with `revealable` false. It is a pointer gesture: ↑/↓ walking a
+ *   column is not asking for the column beside it, and a reveal per keypress
+ *   would page the row away from the list being walked.
+ * - **engageApproval.** Rule 16: an approval the model's progress auto-selected
+ *   takes the keyboard, so Enter acts on it. Whether a draft in the message box
+ *   holds it off is judged later, by the engage itself, on the tick it runs.
+ * @param {object} s - The selection, after it was applied.
+ * @param {SelectionOrigin} s.origin - Who made it.
+ * @param {string|null} s.itemId - The selected item, or null for a clear.
+ * @param {boolean} s.revealable - Whether the item asks for its child column when tapped.
+ * @param {boolean} s.enteredAnotherColumn - Whether the keyboard target changed column.
+ * @param {boolean} s.keyboard - Whether keyboard navigation made it.
+ * @param {boolean} s.paged - Whether the columns are full-width pages (narrow viewport).
+ * @returns {SelectionFollowUps} What the tab should do next.
+ */
+function selectionFollowUps({ origin, itemId, revealable, enteredAnotherColumn, keyboard, paged }) {
+  const byUser = origin === 'user';
+  return {
+    scrollColumns: byUser && enteredAnotherColumn,
+    revealDetails: byUser && !keyboard && !!itemId && revealable && paged,
+    engageApproval: origin === 'auto' && !!itemId,
+  };
+}
+
+export { ColumnSelectionState, selectionFollowUps };
 export { AUTO_SELECT_COOLDOWN_MS };

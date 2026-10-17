@@ -10,8 +10,8 @@
  * box mid-sentence and the next Enter answers a question the user never read —
  * the one focus theft with a destructive outcome rather than an annoying one.
  *
- * The draft exception is enforced in {@link _engageSelectedApproval}, the shared
- * choke point, because there are two ways an approval reaches it: the
+ * The draft exception is enforced in {@link _engageApproval}, the shared choke
+ * point, because there are two ways an approval reaches it: the
  * _onItemSelected auto-engage, and the Rule 2b hand-off driven from
  * conversation:changed. The second sees arriving approvals too, so guarding
  * only the first leaves the keyboard stealable — which is exactly the hole this

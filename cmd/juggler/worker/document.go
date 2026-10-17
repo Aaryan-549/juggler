@@ -634,14 +634,16 @@ func (cd *ConversationDocument) InsertThread(index int, goal string) *ycrdt.YArr
 	defer ycrdtMu.Unlock()
 	var nestedItems *ycrdt.YArray
 	cd.doc.Transact(func(_ *ycrdt.Transaction) {
-		nestedItems = cd.insertThreadCore(cd.ensureItems(), index, goal)
+		_, nestedItems = cd.insertThreadCore(cd.ensureItems(), index, goal)
 	}, cd.txOrigin())
 	return nestedItems
 }
 
 // insertThreadCore inserts a thread Y.Map with a nested items Y.Array into arr at index.
-// Must be called within an active Yjs transaction. Returns the nested Y.Array.
-func (cd *ConversationDocument) insertThreadCore(arr *ycrdt.YArray, index int, goal string) *ycrdt.YArray {
+// Must be called within an active Yjs transaction. Returns the thread's Y.Map
+// and its nested Y.Array, so a caller stamping the thread holds the map it
+// inserted rather than finding it again by index.
+func (cd *ConversationDocument) insertThreadCore(arr *ycrdt.YArray, index int, goal string) (*ycrdt.YMap, *ycrdt.YArray) {
 	item := ConversationItem{
 		Type:   ItemTypeThread,
 		ItemID: generateItemID(),
@@ -651,7 +653,7 @@ func (cd *ConversationDocument) insertThreadCore(arr *ycrdt.YArray, index int, g
 	yarr := ycrdt.NewYArray()
 	ymap.Set("items", yarr)
 	arr.Insert(ycrdt.Number(index), ycrdt.ArrayAny{ymap})
-	return yarr
+	return ymap, yarr
 }
 
 // InsertThreadIntoArray inserts a thread item with a nested items Y.Array into a given Y.Array.
@@ -661,7 +663,7 @@ func (cd *ConversationDocument) InsertThreadIntoArray(arr *ycrdt.YArray, index i
 	defer ycrdtMu.Unlock()
 	var nestedItems *ycrdt.YArray
 	cd.doc.Transact(func(_ *ycrdt.Transaction) {
-		nestedItems = cd.insertThreadCore(arr, index, goal)
+		_, nestedItems = cd.insertThreadCore(arr, index, goal)
 	}, cd.txOrigin())
 	return nestedItems
 }

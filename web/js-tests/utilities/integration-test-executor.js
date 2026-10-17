@@ -339,6 +339,7 @@ import { runTests as runThinkingChipTests } from '../unit-tests/thinking-chip-te
 import { runTests as runServiceTierControlTests } from '../unit-tests/service-tier-control-test.js';
 import { runTests as runServiceTierChipTests } from '../unit-tests/service-tier-chip-test.js';
 import { runTests as runTransactionPanelTests } from '../unit-tests/transaction-panel-test.js';
+import { runTests as runItemSelectionFollowUpsTests } from '../unit-tests/item-selection-follow-ups-test.js';
 import { runTests as runModelSelectorHudTests } from '../unit-tests/model-selector-hud-test.js';
 import { runTests as runModelPickerTests } from '../unit-tests/model-picker-test.js';
 import { runTests as runCustomProvidersTests } from '../unit-tests/custom-providers-test.js';
@@ -563,6 +564,7 @@ const UNIT_TEST_SUITES = [
   { name: 'unit:service-tier-control', run: runServiceTierControlTests },
   { name: 'unit:service-tier-chip', run: runServiceTierChipTests },
   { name: 'unit:transaction-panel', run: runTransactionPanelTests },
+  { name: 'unit:item-selection-follow-ups', run: runItemSelectionFollowUpsTests },
   { name: 'unit:model-selector-hud', run: runModelSelectorHudTests },
   { name: 'unit:model-picker', run: runModelPickerTests },
   { name: 'unit:custom-providers', run: runCustomProvidersTests },

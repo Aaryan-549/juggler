@@ -8,8 +8,6 @@ import (
 	"fmt"
 	"strings"
 	"time"
-
-	ycrdt "github.com/skyterra/y-crdt"
 )
 
 // Sessions.
@@ -358,49 +356,29 @@ func receiptItem(canonicalItemID, goal, sessionName, runItemID string) Conversat
 // an earlier alias still shows a result shaped by an older one. That is the
 // header describing the session as it stands, which is what a header is for —
 // while each item keeps its own short label in RunGoal.
+//
+// One undo unit, as a creation is: the header update, the alias item and the
+// appended message collapse into a single group. It fails, writing nothing, when
+// the session or the calling thread has left the document.
 func (r *run) resumeSession(threadItemID string, spec threadSpec, call toolSpawn) error {
-	nested := r.doc.GetThreadItemsArray(threadItemID)
-	if nested == nil {
-		return fmt.Errorf("session thread %s not found", threadItemID)
+	res := threadResume{
+		ThreadID:       threadItemID,
+		CallerThreadID: r.t.thread.itemID,
+		Goal:           spec.Goal,
+		ResultSpec:     spec.ResultSpec,
+		Invocation:     invocationMessage(spec, call),
 	}
-
-	// One undo unit, as a creation is: the header update, the alias item and the
-	// appended message collapse into a single group. A resume that left an orphan
-	// alias, or a message no parent item answers for, is a broken document.
-	r.tracker.StopCapturing()
-	mergeFrom := r.tracker.UndoStackLen()
-
-	var goal, sessionName string
-	ycrdtMu.Lock()
-	if m := findThreadYMap(r.doc.getItems(), threadItemID); m != nil {
-		goal, _ = m.Get("goal").(string)
-		resultSpec, _ := m.Get("resultSpec").(string)
-		sessionName, _ = m.Get("sessionName").(string)
-		if (spec.Goal != "" && spec.Goal != goal) || (spec.ResultSpec != "" && spec.ResultSpec != resultSpec) {
-			r.doc.transactTracked(func(_ *ycrdt.Transaction) {
-				if spec.Goal != "" && spec.Goal != goal {
-					m.Set("goal", spec.Goal)
-					goal = spec.Goal
-				}
-				if spec.ResultSpec != "" && spec.ResultSpec != resultSpec {
-					m.Set("resultSpec", spec.ResultSpec)
-				}
-			})
-		}
-	}
-	ycrdtMu.Unlock()
-
 	// The alias goes in first, at the end of the calling thread — where the turn
 	// making this call stands — so it is in the document before the run it stands
 	// for can settle.
 	if call.ToolUseID != "" {
-		target := r.getTargetItemsYArray()
-		r.tracker.AppendMessageIntoArray(target, aliasItem(threadItemID, goal, sessionName, call))
+		res.Alias = func(goal, sessionName string) ConversationItem {
+			return aliasItem(threadItemID, goal, sessionName, call)
+		}
 	}
-
-	r.tracker.AppendMessageIntoArray(nested, invocationMessage(spec, call))
-	r.tracker.MergeFromIndex(mergeFrom)
-	r.tracker.StopCapturing()
+	if err := r.tracker.ResumeThread(res); err != nil {
+		return err
+	}
 
 	r.log.Info("[worker] resumed session %s (thread %s)", call.SessionName, threadItemID)
 	return nil

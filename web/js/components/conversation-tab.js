@@ -6,13 +6,14 @@
  * @typedef {import('../model/conversation.js').default} Conversation
  * @typedef {import('../utils/column-selection.js').ColumnChainEntry} ColumnChainEntry
  * @typedef {import('./conversation-area.js').default} ConversationArea
+ * @typedef {import('./action-confirmation.js').default} ActionConfirmation
  */
 
 import { isThreadMessage } from '../../sdk/lib/message.js';
 import { t } from '../../sdk/lib/i18n.js';
 import { escapeHtml } from '../../sdk/lib/html.js';
 import { findFirstPendingApprovalId } from '../model/thread-navigation.js';
-import { ColumnSelectionState } from '../utils/column-selection.js';
+import { ColumnSelectionState, selectionFollowUps } from '../utils/column-selection.js';
 import { rootFontSizePx, columnScrollDelta } from '../utils/column-resize.js';
 import { isToolGroupingEnabled, TOOL_GROUPING_EVENT } from '../utils/tool-grouping-pref.js';
 import { buildDisplayItems, isGroupId, groupMemberIndices } from '../utils/item-grouping.js';
@@ -949,17 +950,29 @@ class ConversationTab extends JugglerElement {
    * @private
    */
   _engageSelectedApproval({ force = false } = {}) {
+    this._engageApproval(() => {
+      for (const col of this._columns) {
+        const confirmation = /** @type {ActionConfirmation|null|undefined} */ (
+          asArea(col)?.getSelectedElement()?.querySelector('action-confirmation'));
+        if (confirmation) return confirmation;
+      }
+      return null;
+    }, { force });
+  }
+
+  /**
+   * Engage the approval widget `find` returns, on the next frame, unless the
+   * message box holds a draft. Every approval engage goes through here, so this
+   * is the one place Rule 16's draft exception is applied.
+   * @param {() => ActionConfirmation|null} find - Locates the widget. Called on
+   *   the deferred tick, because a rebuild in between can recreate it.
+   * @param {{force?: boolean}} [opts] - `force` engages regardless of a draft.
+   * @private
+   */
+  _engageApproval(find, { force = false } = {}) {
     const run = () => {
       if (!force && this._composerHoldsDraft()) return;
-      for (const col of this._columns) {
-        const selected = asArea(col)?.getSelectedElement();
-        if (!selected) continue;
-        const confirmation = selected.querySelector('action-confirmation');
-        if (confirmation) {
-          confirmation.engage();
-          return;
-        }
-      }
+      find()?.engage();
     };
     if (typeof requestAnimationFrame === 'function') requestAnimationFrame(run);
     else run();
@@ -1544,7 +1557,11 @@ class ConversationTab extends JugglerElement {
   }
 
   /**
-   * Handle unified item selection in any column
+   * Handle unified item selection in any column. The selection is applied by
+   * ColumnSelectionState; what it asks of the columns afterwards (scroll the
+   * row, reveal the child column, engage an approval) is decided by
+   * selectionFollowUps, where each rule is documented. This only reads the
+   * event and the viewport, and carries the decisions out.
    * @param {CustomEvent} e
    * @private
    */
@@ -1561,63 +1578,27 @@ class ConversationTab extends JugglerElement {
     // Repeat-click on an already-selected item: the selection is unchanged, so
     // there's nothing to rebuild. It's a deliberate "show me more" gesture —
     // reveal the item's details column if it's drifted mostly off-screen (the
-    // same intent the narrow-viewport tap below expresses for a fresh tap).
+    // same intent a narrow-viewport tap expresses for a fresh tap).
     if (reveal) {
       this._revealDetailsColumn(columnIndex);
       return;
     }
 
-    const prevActiveColumn = this._selection.activeColumnIndex;
+    const enteredAnotherColumn = this._selection.applySelection(columnIndex, itemId, origin);
+    const next = selectionFollowUps({
+      origin,
+      itemId,
+      revealable: !!revealable,
+      enteredAnotherColumn,
+      keyboard: this._isKeyboardNavigating,
+      paged: window.matchMedia?.(SHEET_QUERY).matches ?? false,
+    });
 
-    if (!itemId) {
-      this._selection.clearSelection(columnIndex);
-    } else {
-      if (origin === 'user') {
-        this._selection.markManualInteraction();
-      }
-      // Only the user's own selection moves the keyboard target onto this
-      // column: an auto-selection landing in a column the user isn't in (a
-      // child column picking up an arriving tool action) leaves the arrow keys
-      // where they were.
-      this._selection.selectItem(columnIndex, itemId, { focus: origin === 'user' });
-    }
-
-    // Moving the selection does not move the columns. The horizontal scroll is
-    // the user's — they set it by dragging — and an arrow key walking this
-    // column's items is asking for nothing to its left or right, so re-anchoring
-    // the row on every keypress only throws that choice away. A selection that
-    // lands the keyboard in a DIFFERENT column (clicking into one that is partly
-    // off-screen) IS a request to see that column, so that case still scrolls.
-    const enteredAnotherColumn = this._selection.activeColumnIndex !== prevActiveColumn;
-    this._rebuildColumns(origin === 'user' && enteredAnotherColumn);
-
-    // On a narrow viewport the columns are full-width and paged, so the child
-    // column that just appeared for the tapped item sits off-screen to the
-    // right. Reveal it so the user sees the detail they selected. Prose
-    // (user/assistant messages) is exempt — a tap there is reading, not a
-    // request to scroll away to a child column (see isItemRevealable) — as is
-    // a tap on a control inside the tile, which is an action on the item.
-    //
-    // This is a pointer gesture. ↑/↓ walking this column's items is not asking
-    // for the column beside it, and on a narrow viewport a reveal per keypress
-    // would page the row away from the list being walked — so the keyboard
-    // keeps the horizontal position, on every viewport, as it does above.
-    if (origin === 'user' && !this._isKeyboardNavigating
-      && itemId && revealable && window.matchMedia?.(SHEET_QUERY).matches) {
-      this._revealDetailsColumn(columnIndex);
-    }
-
-    // Rule 16: auto-engage approval widget when LLM auto-selects an approval item —
-    // unless the message box is holding a draft (see _composerHoldsDraft). Judged
-    // on the deferred tick, the only moment that decides anything, so a draft
-    // typed while the frame was pending still counts.
-    if (origin === 'auto' && itemId && column) {
-      requestAnimationFrame(() => {
-        if (this._composerHoldsDraft()) return;
-        const el = /** @type {import('./action-confirmation.js').default|null} */ (
-          column.querySelector(`[message-id="${itemId}"] action-confirmation`));
-        if (el) el.engage();
-      });
+    this._rebuildColumns(next.scrollColumns);
+    if (next.revealDetails) this._revealDetailsColumn(columnIndex);
+    if (next.engageApproval && column) {
+      this._engageApproval(() => /** @type {ActionConfirmation|null} */ (
+        column.querySelector(`[message-id="${itemId}"] action-confirmation`)));
     }
   }
 

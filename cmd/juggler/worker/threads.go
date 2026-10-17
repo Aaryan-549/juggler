@@ -136,7 +136,7 @@ func (r *run) spawnThread(spec threadSpec, call toolSpawn) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return r.insertThread(spec, call, parent, "llmCreated"), nil
+	return r.insertThread(spec, call, parent, "llmCreated")
 }
 
 // dispatchThread opens a thread nobody's turn asked for (see the comment above
@@ -172,7 +172,10 @@ func (r *run) dispatchThread(spec threadSpec) (string, error) {
 		r.fireAutoName(spec.Prompt, mc.Provider, mc.Model, mc.Thinking, false)
 	}
 
-	threadItemID := r.insertThread(spec, toolSpawn{}, parent, "strategyCreated")
+	threadItemID, err := r.insertThread(spec, toolSpawn{}, parent, "strategyCreated")
+	if err != nil {
+		return "", err
+	}
 	r.requestLLM(threadItemID)
 	r.requestReconcile()
 	return threadItemID, nil
@@ -193,22 +196,15 @@ func (r *run) creationParent(parentThreadItemID string, fallback threadContext) 
 
 // insertThread writes a new thread into parent and returns its itemId: the
 // container, its stamped fields, the seeded context and the invocation message,
-// as one undo unit. createdBy is the flag that says which entry point opened it
-// ("llmCreated" or "strategyCreated"). It decides nothing; both entry points
-// have already done that.
-func (r *run) insertThread(spec threadSpec, call toolSpawn, parent threadContext, createdBy string) string {
+// as one undo unit, so one undo removes the whole child (no orphaned seeds or
+// seed prompt left behind). createdBy is the flag that says which entry point
+// opened it ("llmCreated" or "strategyCreated"). It decides nothing; both entry
+// points have already done that. It fails when parent has left the document
+// since it was resolved.
+func (r *run) insertThread(spec threadSpec, call toolSpawn, parent threadContext, createdBy string) (string, error) {
 	if spec.Goal == "" {
 		spec.Goal = "Thread"
 	}
-
-	// A thread creation is one undo unit: the thread container, its stamped
-	// fields, the cloned seed context, and the seed prompt all collapse into a
-	// single group so one undo removes the whole child (no orphaned seeds or seed
-	// prompt left behind). Close the prior capture window and snapshot the stack
-	// height; every tracked write below lands at or after this index, and
-	// MergeFromIndex folds them together once creation completes.
-	r.tracker.StopCapturing()
-	createMergeFrom := r.tracker.UndoStackLen()
 
 	// Whether this creation appends an invocation message to carry the run
 	// record. It normally does — every tool-driven creation supplies a prompt —
@@ -218,23 +214,12 @@ func (r *run) insertThread(spec threadSpec, call toolSpawn, parent threadContext
 	// describe the single invocation they always did.
 	stampsInvocation := !spec.IsContinuation && spec.Prompt != ""
 
-	// Create thread item with nested Y.Array (in the parent's array). Use the
-	// tracker (authorID origin) so the insertion is tracked by the UndoManager and
-	// can be undone independently.
-	targetArr := r.itemsArrayIn(parent)
-	insertIdx := r.itemsLengthIn(parent)
-	nestedItems := r.tracker.InsertThreadIntoArray(targetArr, insertIdx, spec.Goal)
-
-	// Get the thread's itemId and store tool_use coordinates (for LLM-created
-	// threads) on the thread Y.Map.
-	var threadItemID string
-	var threadYMap *ycrdt.YMap
-	ycrdtMu.Lock()
-	raw := targetArr.Get(ycrdt.Number(insertIdx))
-	if m, ok := raw.(*ycrdt.YMap); ok {
-		threadYMap = m
-		threadItemID, _ = m.Get("itemId").(string)
-		r.doc.transactTracked(func(_ *ycrdt.Transaction) {
+	creation := threadCreation{
+		ParentThreadID: parent.itemID,
+		Goal:           spec.Goal,
+		// Continuations already carry their seeds.
+		Seed: !spec.IsContinuation,
+		Stamp: func(m *ycrdt.YMap) {
 			if spec.ResultSpec != "" {
 				m.Set("resultSpec", spec.ResultSpec)
 			}
@@ -260,50 +245,40 @@ func (r *run) insertThread(spec threadSpec, call toolSpawn, parent threadContext
 			if call.ReadOnly {
 				m.Set("readOnly", true)
 			}
-			if call.ToolUseID != "" {
-				if stampsInvocation {
-					// The run selector: this item is the parent's view of the run
-					// the invocation message below starts. A later call into the
-					// same session appends its own alias item carrying its own
-					// selector, so each parent item answers for one run and the
-					// wire emits each call's pair where the call was made.
-					m.Set("runToolUseId", call.ToolUseID)
-					m.Set("runToolName", call.ToolName)
-					if call.RunGoal != "" {
-						m.Set("runGoal", call.RunGoal)
-					}
-					if input := structuredToolInput(call.ToolInput); input != nil {
-						m.Set("runToolInput", input)
-					}
-				} else {
-					// No invocation message to select: the coordinates live on the
-					// thread itself and describe the single invocation they always
-					// did.
-					m.Set("toolUseId", call.ToolUseID)
-					m.Set("toolName", call.ToolName)
-					if input := structuredToolInput(call.ToolInput); input != nil {
-						m.Set("toolInput", input)
-					}
-				}
+			if call.ToolUseID == "" {
+				return
 			}
-		})
+			if stampsInvocation {
+				// The run selector: this item is the parent's view of the run
+				// the invocation message starts. A later call into the same
+				// session appends its own alias item carrying its own selector,
+				// so each parent item answers for one run and the wire emits
+				// each call's pair where the call was made.
+				m.Set("runToolUseId", call.ToolUseID)
+				m.Set("runToolName", call.ToolName)
+				if call.RunGoal != "" {
+					m.Set("runGoal", call.RunGoal)
+				}
+				if input := structuredToolInput(call.ToolInput); input != nil {
+					m.Set("runToolInput", input)
+				}
+				return
+			}
+			// No invocation message to select: the coordinates live on the
+			// thread itself and describe the single invocation they always did.
+			m.Set("toolUseId", call.ToolUseID)
+			m.Set("toolName", call.ToolName)
+			if input := structuredToolInput(call.ToolInput); input != nil {
+				m.Set("toolInput", input)
+			}
+		},
 	}
-	ycrdtMu.Unlock()
 
-	// Seed the new thread's starting context by cloning the parent's standing
-	// items (system prompt, agents files, memory) into the head of the child's
-	// array, each with a fresh id. targetArr is the parent array (root array
-	// when creating at root scope). Continuations already carry their seeds.
-	if !spec.IsContinuation {
-		r.tracker.SeedThreadFromParent(targetArr, nestedItems, threadYMap)
-	}
-
-	// Insert the invocation message into the child thread's items array, AFTER
-	// the seeds so the starting context reads top-to-bottom and stays the leading
-	// run at this depth. When a resultSpec is set, append it as an explicit
-	// return contract at the point of action (the child's own first message):
-	// the run's last message is what the caller receives, so the contract is a
-	// contract on that message.
+	// The invocation message goes into the child AFTER the seeds, so the starting
+	// context reads top-to-bottom and stays the leading run at this depth. When a
+	// resultSpec is set, it is appended as an explicit return contract at the
+	// point of action (the child's own first message): the run's last message is
+	// what the caller receives, so the contract is a contract on that message.
 	//
 	// The tool-use coordinates ride on THIS message rather than the thread Y.Map,
 	// so the pairing belongs to the run this message starts rather than to the
@@ -311,16 +286,11 @@ func (r *run) insertThread(spec threadSpec, call toolSpawn, parent threadContext
 	// each invocation appending its own stamped message (resumeSession appends
 	// the identical shape).
 	if stampsInvocation {
-		r.tracker.AppendMessageIntoArray(nestedItems, invocationMessage(spec, call))
+		invocation := invocationMessage(spec, call)
+		creation.Invocation = &invocation
 	}
 
-	// Collapse the container insert, field stamps, seeds, and seed prompt into one
-	// undo group, then close it so any subsequent dispatch or turn content forms
-	// its own separate groups.
-	r.tracker.MergeFromIndex(createMergeFrom)
-	r.tracker.StopCapturing()
-
-	return threadItemID
+	return r.tracker.CreateThread(creation)
 }
 
 // promoteThreadSpawnCapable stamps canSpawnThreads=true on the thread a human

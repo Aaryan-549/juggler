@@ -6,6 +6,7 @@ package worker
 
 import (
 	"encoding/json"
+	"fmt"
 	"sort"
 
 	ycrdt "github.com/skyterra/y-crdt"
@@ -347,21 +348,149 @@ func (t *OperationTracker) PromotePending(threadItemID string) []ConversationIte
 	return pending
 }
 
-// SeedThreadFromParent clones the parent's starting-context items into the head
-// of a freshly created child thread's array under the tracked (authorID) origin,
-// so the seeded context is captured as part of the create-thread undo group
-// (callers collapse the whole creation into one group via MergeFromIndex). No
-// StopCapturing: the seed attaches to the surrounding creation group rather than
-// forming its own. No-op when the parent has no seed items (an empty transaction
-// records no undo entry). threadYMap is the child's container, marked seeded
-// alongside the clone so an undo of the creation reverses both.
-func (t *OperationTracker) SeedThreadFromParent(parentArr, childArr *ycrdt.YArray, threadYMap *ycrdt.YMap) {
+// threadCreation is everything CreateThread writes for one new thread.
+type threadCreation struct {
+	// ParentThreadID names the thread the new one is created in; "" is the root.
+	ParentThreadID string
+	Goal           string
+	// Stamp sets the new thread's own fields. It runs inside a tracked
+	// transaction on the thread's Y.Map, and must only write to it.
+	Stamp func(m *ycrdt.YMap)
+	// Seed clones the parent's standing context (system prompt, agents files,
+	// memory) into the head of the child, each with a fresh id.
+	Seed bool
+	// Invocation, when set, is appended to the child after the seeds, so the
+	// starting context reads top-to-bottom ahead of the message that starts the
+	// run.
+	Invocation *ConversationItem
+}
+
+// CreateThread appends a thread to the end of its parent and writes all of it —
+// the container, its stamped fields, the seeded context and the invocation
+// message — as one undo group, returning the new thread's itemId. It fails, and
+// writes nothing, when the parent is no longer in the document.
+//
+// The whole creation is one ycrdtMu hold. Threads are opened from a turn's own
+// goroutine while the run loop applies viewer syncs, so a creation spread over
+// several holds could aim its later writes at an array a viewer had deleted in
+// between, or at whatever item had slid into the new thread's index.
+//
+// The undo boundaries are those of the separate calls this replaces: the
+// insert starts a group, the seeds join it, and MergeFromIndex folds anything
+// that started a group of its own back into the one creation.
+func (t *OperationTracker) CreateThread(c threadCreation) (string, error) {
 	ycrdtMu.Lock()
 	defer ycrdtMu.Unlock()
-	t.ensureUndoManager()
+	parent := t.doc.getItems()
+	if c.ParentThreadID != "" {
+		parent = findThreadItemsArray(parent, c.ParentThreadID)
+	}
+	if parent == nil {
+		return "", fmt.Errorf("thread item %q not found", c.ParentThreadID)
+	}
+
+	t.stopCapturingLocked()
+	mergeFrom := t.undoStackLenLocked()
+
+	t.ensureUndoManager().StopCapturing()
+	var threadYMap *ycrdt.YMap
+	var nested *ycrdt.YArray
 	ycrdt.Transact(t.doc.doc, func(_ *ycrdt.Transaction) {
-		t.doc.seedThreadFromParentInTx(parentArr, childArr, threadYMap)
+		threadYMap, nested = t.doc.insertThreadCore(parent, int(parent.GetLength()), c.Goal)
 	}, t.doc.authorID, true)
+	threadItemID, _ := threadYMap.Get("itemId").(string)
+
+	if c.Stamp != nil {
+		t.doc.transactTracked(func(_ *ycrdt.Transaction) { c.Stamp(threadYMap) })
+	}
+	if c.Seed {
+		ycrdt.Transact(t.doc.doc, func(_ *ycrdt.Transaction) {
+			t.doc.seedThreadFromParentInTx(parent, nested, threadYMap)
+		}, t.doc.authorID, true)
+	}
+	if c.Invocation != nil {
+		t.appendMessageIntoArrayLocked(nested, *c.Invocation)
+	}
+
+	t.mergeFromIndexLocked(mergeFrom)
+	t.stopCapturingLocked()
+	return threadItemID, nil
+}
+
+// threadResume is everything ResumeThread writes when a session is invoked
+// again.
+type threadResume struct {
+	// ThreadID is the session's thread.
+	ThreadID string
+	// CallerThreadID names the thread making the call; "" is the root.
+	CallerThreadID string
+	// Goal and ResultSpec replace the thread's own when set and different.
+	Goal       string
+	ResultSpec string
+	// Alias, when set, builds the caller's alias item from the session's goal
+	// and handle as they stand after the update above.
+	Alias func(goal, sessionName string) ConversationItem
+	// Invocation is appended to the end of the session's transcript.
+	Invocation ConversationItem
+}
+
+// ResumeThread writes a session's next invocation — the header update, the
+// caller's alias item and the appended message — as one undo group. It fails,
+// and writes nothing, when either the session or its caller is no longer in the
+// document: an alias with no thread behind it, or a message starting a run no
+// caller is waiting for, is a broken document.
+//
+// One ycrdtMu hold, for the reason CreateThread gives.
+func (t *OperationTracker) ResumeThread(res threadResume) error {
+	ycrdtMu.Lock()
+	defer ycrdtMu.Unlock()
+	root := t.doc.getItems()
+	threadYMap := findThreadYMap(root, res.ThreadID)
+	var nested *ycrdt.YArray
+	if threadYMap != nil {
+		nested, _ = threadYMap.Get("items").(*ycrdt.YArray)
+	}
+	if nested == nil {
+		return fmt.Errorf("session thread %s not found", res.ThreadID)
+	}
+	caller := root
+	if res.CallerThreadID != "" {
+		caller = findThreadItemsArray(root, res.CallerThreadID)
+	}
+	if caller == nil {
+		return fmt.Errorf("calling thread %s not found", res.CallerThreadID)
+	}
+
+	t.stopCapturingLocked()
+	mergeFrom := t.undoStackLenLocked()
+
+	goal, _ := threadYMap.Get("goal").(string)
+	resultSpec, _ := threadYMap.Get("resultSpec").(string)
+	sessionName, _ := threadYMap.Get("sessionName").(string)
+	setGoal := res.Goal != "" && res.Goal != goal
+	setResultSpec := res.ResultSpec != "" && res.ResultSpec != resultSpec
+	if setGoal || setResultSpec {
+		t.doc.transactTracked(func(_ *ycrdt.Transaction) {
+			if setGoal {
+				threadYMap.Set("goal", res.Goal)
+			}
+			if setResultSpec {
+				threadYMap.Set("resultSpec", res.ResultSpec)
+			}
+		})
+		if setGoal {
+			goal = res.Goal
+		}
+	}
+
+	if res.Alias != nil {
+		t.appendMessageIntoArrayLocked(caller, res.Alias(goal, sessionName))
+	}
+	t.appendMessageIntoArrayLocked(nested, res.Invocation)
+
+	t.mergeFromIndexLocked(mergeFrom)
+	t.stopCapturingLocked()
+	return nil
 }
 
 // DeleteMessages deletes messages at the given indices (need not be sorted).
@@ -396,21 +525,6 @@ func (t *OperationTracker) ReplaceMessage(index int, message ConversationItem) e
 		err = t.doc.replaceMessage(index, message)
 	}, t.doc.authorID, true)
 	return err
-}
-
-// InsertThreadIntoArray inserts a thread item with a nested items Y.Array into arr at index.
-// Uses authorID as the transaction origin so the insertion is tracked by the UndoManager,
-// matching the browser's behaviour when a user or the AI creates a subthread.
-// Starts a new undo group so the insertion is independently undoable.
-func (t *OperationTracker) InsertThreadIntoArray(arr *ycrdt.YArray, index int, goal string) *ycrdt.YArray {
-	ycrdtMu.Lock()
-	defer ycrdtMu.Unlock()
-	t.ensureUndoManager().StopCapturing()
-	var nestedItems *ycrdt.YArray
-	ycrdt.Transact(t.doc.doc, func(_ *ycrdt.Transaction) {
-		nestedItems = t.doc.insertThreadCore(arr, index, goal)
-	}, t.doc.authorID, true)
-	return nestedItems
 }
 
 // DeleteThreadItem deletes the item at index from a thread's nested items array.
@@ -538,6 +652,11 @@ func (t *OperationTracker) stopCapturingLocked() {
 func (t *OperationTracker) UndoStackLen() int {
 	ycrdtMu.Lock()
 	defer ycrdtMu.Unlock()
+	return t.undoStackLenLocked()
+}
+
+// undoStackLenLocked is UndoStackLen for a caller already holding ycrdtMu.
+func (t *OperationTracker) undoStackLenLocked() int {
 	if t.undoManager == nil {
 		return 0
 	}
@@ -557,6 +676,11 @@ func (t *OperationTracker) UndoStackLen() int {
 func (t *OperationTracker) MergeFromIndex(startIdx int) {
 	ycrdtMu.Lock()
 	defer ycrdtMu.Unlock()
+	t.mergeFromIndexLocked(startIdx)
+}
+
+// mergeFromIndexLocked is MergeFromIndex for a caller already holding ycrdtMu.
+func (t *OperationTracker) mergeFromIndexLocked(startIdx int) {
 	if t.undoManager == nil {
 		return
 	}
