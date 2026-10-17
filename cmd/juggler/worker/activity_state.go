@@ -347,6 +347,15 @@ func (w *ConversationWorker) patchProcessingStateIf(
 ) bool {
 	ycrdtMu.Lock()
 	defer ycrdtMu.Unlock()
+	return w.patchProcessingStateIfLocked(cond, mutate)
+}
+
+// patchProcessingStateIfLocked is patchProcessingStateIf for a caller already
+// holding ycrdtMu.
+func (w *ConversationWorker) patchProcessingStateIfLocked(
+	cond func(existing map[string]any) bool,
+	mutate func(updated map[string]any),
+) bool {
 	var applied bool
 	w.doc.transactTracked(func(_ *ycrdt.Transaction) {
 		raw := w.doc.metadata.Get("processingState")
@@ -388,12 +397,12 @@ func (w *ConversationWorker) replaceProcessingState(
 	w.doc.setMetadata("processingState", stateMap)
 }
 
-// patchProcessingState applies mutate to a shallow copy of the doc's
+// patchProcessingStateLocked applies mutate to a shallow copy of the doc's
 // processingState map inside a single transaction and writes it back. No-op when
 // processingState is absent — the plain field-level updates below never create
-// fresh state, only edit an existing busy frame.
-func (w *ConversationWorker) patchProcessingState(mutate func(map[string]any)) {
-	w.patchProcessingStateIf(func(existing map[string]any) bool { return existing != nil }, mutate)
+// fresh state, only edit an existing busy frame. Caller MUST hold ycrdtMu.
+func (w *ConversationWorker) patchProcessingStateLocked(mutate func(map[string]any)) {
+	w.patchProcessingStateIfLocked(func(existing map[string]any) bool { return existing != nil }, mutate)
 }
 
 // reconcileProcessingStateOnLoad resets the doc-native claim to idle after a load

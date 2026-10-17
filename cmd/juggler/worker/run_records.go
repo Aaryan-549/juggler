@@ -713,15 +713,17 @@ func openRunMessagesLocked(nested *ycrdt.YArray) []*ycrdt.YMap {
 // through the one gesture that has no message to append. Every earlier record
 // stays exactly as it was read.
 //
+// A run already open in the thread is joined instead: no marker is appended.
+// That check and the append share one hold (AppendRunStarterToThread).
+//
 // No-op at the root, which has no run records at all.
 func (r *run) openThreadContinuationRun(dest threadContext) {
 	if dest.itemID == "" {
 		return
 	}
-	if runSettled, hasRuns := runSettlement(r.itemsIn(dest)); hasRuns && !runSettled {
-		return // a run is already open — this Continue joins it
-	}
-	r.appendMessageTo(dest, continuationMarker())
+	marker := []ConversationItem{continuationMarker()}
+	r.stampTxnID(marker)
+	r.tracker.AppendRunStarterToThread(dest.itemID, marker[0])
 }
 
 // lastSettlingItem returns the item that decides how a run ended: the last one

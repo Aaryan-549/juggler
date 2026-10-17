@@ -81,6 +81,12 @@ func (w *ConversationWorker) hasActiveRun() bool {
 func (w *ConversationWorker) subtreeHasActiveRun(threadItemID string) bool {
 	ycrdtMu.Lock()
 	defer ycrdtMu.Unlock()
+	return w.subtreeHasActiveRunLocked(threadItemID)
+}
+
+// subtreeHasActiveRunLocked is subtreeHasActiveRun for a caller already holding
+// ycrdtMu.
+func (w *ConversationWorker) subtreeHasActiveRunLocked(threadItemID string) bool {
 	for _, raw := range runsView(w.readProcessingStateLocked()) {
 		entry, ok := raw.(map[string]any)
 		if !ok || entryActivity(entry) == ActivityNone {

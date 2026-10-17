@@ -18,7 +18,8 @@
  * - A permission control moved to another parent (the composer re-parents it
  *   when the pointer type changes) must keep listening to its thread, which it
  *   stays bound to across the move. So must a strategy selector, which observes
- *   the conversation's metadata, the thread's items and its container.
+ *   the conversation's metadata, the thread's items and its container, and
+ *   hears a registry reload once wherever it is — and not at all once removed.
  * - A conversation tab moved or put back keeps its conversation's session and
  *   status feeds, which it takes when handed the conversation rather than on
  *   connect.
@@ -32,6 +33,7 @@
 
 import wsService from '../../js/services/websocket.js';
 import connectionStatus from '../../js/services/connection-status.js';
+import { REGISTRIES_RELOADED } from '../../js/registries/reload-registries.js';
 import '../../js/components/tool-action-message.js';
 import '../../js/components/path-input.js';
 import '../../js/components/permission-controls.js';
@@ -243,6 +245,13 @@ export async function runTests() {
       if (opts?.rebaseline) rebaselines++;
     };
     selector._recomputeImpact = () => {};
+    let reloads = 0;
+    selector.loadStrategies = () => { reloads++; };
+    const heardReload = () => {
+      const before = reloads;
+      document.dispatchEvent(new CustomEvent(REGISTRIES_RELOADED));
+      return reloads - before;
+    };
     column.appendChild(selector);
     selector.setMessageThread(thread);
     const settle = () => new Promise((r) => queueMicrotask(() => r(undefined)));
@@ -258,13 +267,19 @@ export async function runTests() {
       // A rebaseline captures the staged strategy as already cached, clearing a
       // cache-bust caution the user has not acted on yet.
       if (rebaselines !== bound) throw new Error(`a move rebaselined the cache-bust caution ${rebaselines - bound} time(s)`);
+      let heard = heardReload();
+      if (heard !== 1) throw new Error(`after a move a registry reload reached it ${heard} time(s), want 1`);
       selector.remove();
       await settle();
       if (thread.metadata.size !== 0 || yarray.observers.size !== 0 || containerObservers.size !== 0) {
         throw new Error(`after removal it holds ${held()}, want none`);
       }
+      heard = heardReload();
+      if (heard !== 0) throw new Error(`after removal a registry reload reached it ${heard} time(s), want none`);
       elsewhere.appendChild(selector);
       if (!holdsOneOfEach()) throw new Error(`reinserted after a removal it holds ${held()}, want 1 of each`);
+      heard = heardReload();
+      if (heard !== 1) throw new Error(`reinserted after a removal a registry reload reached it ${heard} time(s), want 1`);
       selector.remove();
       await settle();
       passed++;

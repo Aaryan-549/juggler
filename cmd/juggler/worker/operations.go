@@ -293,6 +293,25 @@ func (t *OperationTracker) AppendMessageToThread(threadItemID string, messages .
 	return true
 }
 
+// AppendRunStarterToThread appends starter to the thread threadItemID unless a
+// run is already open there, reporting whether it wrote. The thread is found,
+// its trailing run read, and the starter appended in one hold: a send into the
+// thread opens a run of its own, and one landing between a separate check and
+// the append would leave two open records where the run has one.
+func (t *OperationTracker) AppendRunStarterToThread(threadItemID string, starter ConversationItem) bool {
+	ycrdtMu.Lock()
+	defer ycrdtMu.Unlock()
+	arr := findThreadItemsArray(t.doc.getItems(), threadItemID)
+	if arr == nil {
+		return false
+	}
+	if settled, hasRuns := runSettlementLocked(arr); hasRuns && !settled {
+		return false
+	}
+	t.appendMessageIntoArrayLocked(arr, starter)
+	return true
+}
+
 // appendMessageIntoArrayLocked adds messages to the end of a nested thread
 // items Y.Array under the tracked (authorID) origin, so sub-thread turn content
 // is captured by the UndoManager exactly like root content. Grouping mirrors

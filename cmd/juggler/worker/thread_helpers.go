@@ -416,13 +416,14 @@ func docNumberToInt64(v any) (int64, bool) {
 //   - state==running: a re-run resets the tool to approved (a fresh execution the
 //     reducer owns), so a stale finalize can never clobber it and re-open the
 //     restart loop that motivated single-writer cancellation.
-//   - epoch match: when the caller passes a non-zero execution epoch, the tool is
-//     finalized ONLY if the doc's epochField still carries that exact epoch. This
-//     closes the ABA window where a re-run re-claimed the SAME toolUseId to a fresh
-//     running (new generation) between the report and its processing — the
-//     mismatched epoch means the running execution is a different, innocent one, so
-//     it is left untouched. An epoch of 0 (unknown) falls back to the state==running
-//     guard alone.
+//   - epoch match: the tool is finalized ONLY if the doc's epochField still
+//     carries exactly the epoch the caller observed. This closes the ABA window
+//     where a re-run re-claimed the SAME toolUseId to a fresh running (new
+//     generation) between the observation and the finalize — the mismatched epoch
+//     means the running execution is a different, innocent one, so it is left
+//     untouched. An absent stamp reads as 0, and 0 is an observation like any
+//     other: every claim stamps an epoch of at least 1 (claimRunning), so a caller
+//     that saw no stamp must not finalize a tool that has since been given one.
 //
 // epochField names the doc generation stamp the caller observed: "runningEpoch"
 // (the tool-execution-report rule — a true per-incarnation generation, immune to
@@ -458,14 +459,11 @@ func (w *ConversationWorker) finalizeStuckRunningToolOnField(toolUseID, epochFie
 		}
 		// Epoch guard: only finalize the exact execution the caller observed. A
 		// mismatch means a re-run re-claimed this id to a fresh running — leave it.
-		// Skipped when epoch is 0 (caller didn't know it) or the doc carries no
-		// numeric stamp, falling back to the state==running guard alone. The doc
-		// stamp round-trips as int/int64/float64 depending on its write path, so it
-		// is coerced before the compare.
-		if epoch != 0 {
-			if de, ok := docNumberToInt64(m.Get(epochField)); ok && de != int64(epoch) {
-				return true
-			}
+		// A missing or non-numeric stamp reads as 0. The doc stamp round-trips as
+		// int/int64/float64 depending on its write path, so it is coerced before
+		// the compare.
+		if de, _ := docNumberToInt64(m.Get(epochField)); de != int64(epoch) {
+			return true
 		}
 		// Capture the execution generation under the lock so the belt cancel below
 		// aborts exactly this incarnation, not a re-run that re-claims the id.

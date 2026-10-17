@@ -2,6 +2,7 @@
 //     ██ ██ ██ ██ ▄▄ ██ ▄▄ ██    ██▄▄  ██▄█▄   Copyright (c) 2026 Julian Storer
 //   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
 
+import JugglerElement from './juggler-element.js';
 import strategyRegistry from '../registries/strategy-registry.js';
 import { REGISTRIES_RELOADED } from '../registries/reload-registries.js';
 import { presentInlineMenu } from '../utils/popup-surface.js';
@@ -24,7 +25,7 @@ import { escapeHtml } from '../../sdk/lib/html.js';
  * @property {import('juggler/strategy-type').StrategyManifest} manifest - Strategy manifest
  */
 
-class StrategySelector extends HTMLElement {
+class StrategySelector extends JugglerElement {
   constructor() {
     super();
     /** @type {import('../model/message-thread.js').default|null} @private */
@@ -70,8 +71,6 @@ class StrategySelector extends HTMLElement {
      * @type {import('../utils/popup-surface.js').InlineMenu|null} @private
      */
     this._menu = null;
-    /** @type {(() => void)|null} @private */
-    this._boundRegistriesReloaded = null;
     /**
      * Metadata observer on the bound thread's conversation, so a REMOTE strategy
      * switch repaints the button on its own — without waiting for a
@@ -177,10 +176,7 @@ class StrategySelector extends HTMLElement {
   }
 
   disconnectedCallback() {
-    if (this._boundRegistriesReloaded) {
-      document.removeEventListener(REGISTRIES_RELOADED, this._boundRegistriesReloaded);
-      this._boundRegistriesReloaded = null;
-    }
+    super.disconnectedCallback();
     // Tear down the open dropdown (surface, scrim, observer, dismissal wiring)
     // and the thread observers — but a MOVE is not a removal. The composer
     // re-parents this element when the pointer type changes, and each move
@@ -593,14 +589,13 @@ class StrategySelector extends HTMLElement {
     // Refresh the menu when strategies are enabled/disabled (catalog toggle
     // or plugin hot reload). The registry is the source of truth; reload from
     // it and re-render so the dropdown reflects the new set of strategies.
-    this._boundRegistriesReloaded = () => {
+    this.onDocument(REGISTRIES_RELOADED, () => {
       this.loadStrategies();
       this.render();
       // A plugin toggle can change the available tool set, so the cached tool
       // signature that heads the prefix fingerprint may differ now — refresh it.
       this._refreshCacheInputs();
-    };
-    document.addEventListener(REGISTRIES_RELOADED, this._boundRegistriesReloaded);
+    });
   }
 
   /** @private */

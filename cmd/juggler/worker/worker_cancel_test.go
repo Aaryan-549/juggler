@@ -245,6 +245,28 @@ func TestFinalizeStuckRunningTool_EpochGuard(t *testing.T) {
 	}
 }
 
+// TestFinalizeStuckRunningTool_UnstampedEpochIsAGeneration covers a caller that
+// observed the tool with no generation stamp at all: 0 is what it saw, not "don't
+// know". A claim since then stamps an epoch (claimRunning starts at 1), so a doc
+// now carrying one is a different execution and must be left running.
+func TestFinalizeStuckRunningTool_UnstampedEpochIsAGeneration(t *testing.T) {
+	w := NewConversationWorker("test-conv", "user:test")
+	defer w.doc.Destroy()
+
+	w.doc.InsertMessage(0, ConversationItem{
+		Type: ItemTypeToolAction, ItemID: "ta-0", ToolUseID: "tu-0", ToolName: "bash", State: StateRunning,
+	})
+	// The re-claim that landed between the caller's observation and its finalize.
+	w.doc.UpdateToolActionFieldsRecursive("tu-0", map[string]any{"runningEpoch": 1.0})
+
+	if w.finalizeStuckRunningToolOnField("tu-0", "runningEpoch", 0, "unstamped") {
+		t.Error("a finalize that saw no epoch must not clobber an execution that has since been stamped")
+	}
+	if it, _ := findToolItem(w.doc.GetItems(), "tu-0"); it.State != StateRunning {
+		t.Errorf("tu-0 must still be running, got %q", it.State)
+	}
+}
+
 // TestCancelParksWhenToolExecuting verifies the executing-must-park rule AND
 // that the cancel preserves the warm session: when the user cancels while a turn
 // parked in awaiting_llm has a genuinely executing tool (not merely awaiting

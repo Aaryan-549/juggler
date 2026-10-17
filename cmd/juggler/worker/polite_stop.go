@@ -93,6 +93,14 @@ func (w *ConversationWorker) hasPoliteStops() bool {
 // mailbox. A rewrite that changes nothing publishes nothing, which is what makes
 // an unpause of an unpaused conversation a true no-op rather than a doc write.
 func (w *ConversationWorker) mutatePoliteStops(edit func(next map[string]bool)) {
+	if w.storePoliteStops(edit) {
+		w.publishPoliteStops()
+	}
+}
+
+// storePoliteStops is the copy-on-write half of mutatePoliteStops, reporting
+// whether the set changed. The caller publishes.
+func (w *ConversationWorker) storePoliteStops(edit func(next map[string]bool)) bool {
 	cur := w.politeStopMarks()
 	next := make(map[string]bool, len(cur)+1)
 	for id := range cur {
@@ -100,10 +108,10 @@ func (w *ConversationWorker) mutatePoliteStops(edit func(next map[string]bool)) 
 	}
 	edit(next)
 	if sameMarks(cur, next) {
-		return
+		return false
 	}
 	w.politeStops.Store(&next)
-	w.publishPoliteStops()
+	return true
 }
 
 // sameMarks reports whether two mark sets stand over the same threads.
@@ -234,15 +242,31 @@ func (cd *ConversationDocument) markCoversLocked(markThreadID, threadItemID stri
 // it speaks for the conversation: a strategy loop driven with no document claim
 // (the direct-call tests) is still work a pause should catch.
 func (w *ConversationWorker) handlePause(threadItemID string) {
-	running := w.subtreeHasActiveRun(threadItemID)
-	if !running && threadItemID == "" {
-		running = w.anyRunState() != StateIdle
+	live := threadItemID == "" && w.anyRunState() != StateIdle
+	if w.markPoliteStopIfRunning(threadItemID, live) {
+		w.nudgePoliteStop()
 	}
-	if !running {
-		return
+}
+
+// markPoliteStopIfRunning places a mark over threadItemID when something under
+// it holds a claim (or live says a loop is running with none), and reports
+// whether it did. The claim check, the mark and its projection share one hold:
+// claims are released by status frames from turn goroutines, and every frame
+// rebuilds the pause projection under ycrdtMu, so a frame either lands first and
+// the pause sees an idle subtree and marks nothing, or lands after and reports
+// the mark it now covers. Checked in a hold of its own, the last claim could be
+// released in between, leaving a mark on an idle thread — exactly what the
+// running check exists to refuse.
+func (w *ConversationWorker) markPoliteStopIfRunning(threadItemID string, live bool) bool {
+	ycrdtMu.Lock()
+	defer ycrdtMu.Unlock()
+	if !live && !w.subtreeHasActiveRunLocked(threadItemID) {
+		return false
 	}
-	w.markPoliteStop(threadItemID)
-	w.nudgePoliteStop()
+	if w.storePoliteStops(func(next map[string]bool) { next[threadItemID] = true }) {
+		w.publishPoliteStopsLocked()
+	}
+	return true
 }
 
 // handleUnpause lifts the pause covering threadItemID so its work carries on to
@@ -283,7 +307,15 @@ func (w *ConversationWorker) nudgePoliteStop() {
 // processingState at all (a worker that has never run), which is also a
 // conversation no pause can stand on.
 func (w *ConversationWorker) publishPoliteStops() {
-	w.patchProcessingState(func(state map[string]any) {
+	ycrdtMu.Lock()
+	defer ycrdtMu.Unlock()
+	w.publishPoliteStopsLocked()
+}
+
+// publishPoliteStopsLocked is publishPoliteStops for a caller already holding
+// ycrdtMu.
+func (w *ConversationWorker) publishPoliteStopsLocked() {
+	w.patchProcessingStateLocked(func(state map[string]any) {
 		runs := copyRuns(state)
 		w.refreshPoliteStopsLocked(state, runs)
 		storeRuns(state, runs)

@@ -3,6 +3,7 @@
 //   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
 
 
+import JugglerElement from './juggler-element.js';
 import { presentInlineMenu } from '../utils/popup-surface.js';
 import { escapeHtml } from '../../sdk/lib/html.js';
 import { t } from '../../sdk/lib/i18n.js';
@@ -38,7 +39,7 @@ const CHECK_ICON = withClass(CHECK_SVG, 'shell-lock-icon');
  * Visibility is gated by the current strategy's `showsApprovalControls`
  * manifest property.
  */
-class PermissionControls extends HTMLElement {
+class PermissionControls extends JugglerElement {
   constructor() {
     super();
     /** @type {import('../model/message-thread.js').MessageThread|null} @private */
@@ -55,10 +56,12 @@ class PermissionControls extends HTMLElement {
      * @type {import('../utils/popup-surface.js').InlineMenu|null} @private
      */
     this._menu = null;
-    /** @type {((event: any) => void)|null} @private */
-    this.metadataObserver = null;
-    /** @type {(() => void)|null} @private */
-    this.sessionUnsubscribe = null;
+    /**
+     * Drops the bound thread's metadata observer and session subscription, or
+     * null when not listening.
+     * @type {(() => void)|null} @private
+     */
+    this._unlisten = null;
     /** @type {string} @private - For inline allowed-path editing */
     this.editingPath = '';
     /** @type {boolean} @private */
@@ -83,14 +86,13 @@ class PermissionControls extends HTMLElement {
    */
   connectedCallback() {
     this._listen();
+    this.addCleanup(() => {
+      this._menu?.close();
+      this._menu = null;
+      this._stopListening();
+      this._disposeActiveSections();
+    });
     this.render();
-  }
-
-  disconnectedCallback() {
-    this._menu?.close();
-    this._menu = null;
-    this._stopListening();
-    this._disposeActiveSections();
   }
 
   /**
@@ -118,8 +120,10 @@ class PermissionControls extends HTMLElement {
    */
   _listen() {
     const messageThread = this.messageThread;
-    if (!messageThread || this.metadataObserver) return;
-    this.metadataObserver = (event) => {
+    if (!messageThread || this._unlisten) return;
+    const conversation = messageThread.conversation;
+    /** @param {any} event */
+    const metadataObserver = (event) => {
       // Strategy change can flip showsApprovalControls visibility,
       // so it needs a full render (button + maybe-hidden popup).
       if (event.keysChanged.has('currentStrategyId')) {
@@ -148,8 +152,8 @@ class PermissionControls extends HTMLElement {
         }
       }
     };
-    messageThread.conversation.observeMetadata(this.metadataObserver);
-    const unsub = messageThread.conversation.session?.subscribe?.((evt) => {
+    conversation.observeMetadata(metadataObserver);
+    const unsub = conversation.session?.subscribe?.((evt) => {
       if (evt.type !== 'session:metadata-changed') return;
       const keys = evt.data?.keys || [];
       if (!keys.includes('sessionPermissionRules') && !keys.includes('sessionAllowedPaths')) return;
@@ -159,19 +163,16 @@ class PermissionControls extends HTMLElement {
         else this._renderAllowedPaths();
       }
     });
-    this.sessionUnsubscribe = typeof unsub === 'function' ? /** @type {() => void} */ (unsub) : null;
+    this._unlisten = () => {
+      conversation.unobserveMetadata(metadataObserver);
+      if (typeof unsub === 'function') unsub();
+    };
   }
 
   /** @private */
   _stopListening() {
-    if (this.metadataObserver && this.messageThread) {
-      this.messageThread.conversation.unobserveMetadata(this.metadataObserver);
-    }
-    this.metadataObserver = null;
-    if (this.sessionUnsubscribe) {
-      this.sessionUnsubscribe();
-      this.sessionUnsubscribe = null;
-    }
+    this._unlisten?.();
+    this._unlisten = null;
   }
 
   /**

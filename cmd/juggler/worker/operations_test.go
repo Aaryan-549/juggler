@@ -48,6 +48,42 @@ func TestItemInsertDeleteUndo(t *testing.T) {
 	doc.Destroy()
 }
 
+// TestAppendRunStarterToThreadJoinsAnOpenRun pins the decide-and-append: a run
+// starter goes in only when the thread's trailing run has settled (or it has
+// none), and nowhere when the thread has gone.
+func TestAppendRunStarterToThreadJoinsAnOpenRun(t *testing.T) {
+	doc := NewConversationDocument("test-conv", "user:test")
+	defer doc.Destroy()
+	tracker := NewOperationTracker(doc)
+	doc.InsertThread(0, "child")
+	threadID := doc.GetItems()[0].ItemID
+
+	tracker.AppendMessageToThread(threadID, ConversationItem{
+		Type: ItemTypeUser, ItemID: "run-1", Content: "go", RunToolUseID: "tu-1",
+	})
+	if tracker.AppendRunStarterToThread(threadID, continuationMarker()) {
+		t.Error("a starter must join the open run, not append beside it")
+	}
+	if n := len(doc.GetThreadItems(threadID)); n != 1 {
+		t.Fatalf("thread holds %d items after a declined starter, want 1", n)
+	}
+
+	if err := doc.UpdateItemByIDInThread(threadID, "run-1", "runStatus", runStatusRest); err != nil {
+		t.Fatal(err)
+	}
+	if !tracker.AppendRunStarterToThread(threadID, continuationMarker()) {
+		t.Error("a settled run must take a starter for the next one")
+	}
+	items := doc.GetThreadItems(threadID)
+	if len(items) != 2 || !items[1].Continuation {
+		t.Errorf("thread items after the starter: %+v", items)
+	}
+
+	if tracker.AppendRunStarterToThread("gone", continuationMarker()) {
+		t.Error("a thread that has gone takes nothing")
+	}
+}
+
 // TestUndoRedoCycle tests rapid undo/redo cycles work correctly.
 func TestUndoRedoCycle(t *testing.T) {
 	doc := NewConversationDocument("test-conv", "user:test")
