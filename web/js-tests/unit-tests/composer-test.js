@@ -284,5 +284,69 @@ export async function runTests() {
     }
   });
 
+  // The commands menu and the actions sheet await before presenting, so a
+  // second tap can land, or the box can leave the document, inside that gap.
+  // Each presentation is a <body>-level surface with dismissal wiring of its
+  // own, released only through the box's single cleanup handle — a second
+  // presentation overwrites the first's handle, and one made after the box left
+  // has no disconnect to release it.
+  for (const [label, open, close, selector] of /** @type {Array<[string, string, string, string]>} */ ([
+    ['commands menu', '_openCommandsMenu', '_closeCommandsMenu', '#commands-menu'],
+    ['actions sheet', '_openActionsSheet', '_closeActionsSheet', '#actions-sheet'],
+  ])) {
+    await run(`a double tap on the ${label} presents it once, and closing it leaves nothing behind`, async () => {
+      const { box, container } = mountComposer();
+      try {
+        await Promise.all([box[open](), box[open]()]);
+        const shown = document.querySelectorAll(selector).length;
+        assert(shown === 1, `two overlapping opens presented ${shown} surfaces, want 1`);
+        box[close]();
+        const left = document.querySelectorAll(selector).length;
+        assert(left === 0, `closing left ${left} surface(s) in the document`);
+      } finally {
+        box[close]();
+        document.querySelectorAll(selector).forEach((el) => el.remove());
+        container.remove();
+      }
+    });
+
+    await run(`opening the ${label} presents nothing when the box detaches mid-open`, async () => {
+      const { box, container } = mountComposer();
+      try {
+        const pending = box[open]();
+        container.remove();
+        await pending;
+        const stray = document.querySelectorAll(selector).length;
+        assert(stray === 0, `a detached box presented ${stray} surface(s) on <body>`);
+      } finally {
+        box[close]();
+        document.querySelectorAll(selector).forEach((el) => el.remove());
+        container.remove();
+      }
+    });
+
+    await run(`the ${label} opens on the first tap after the box is detached and reattached`, async () => {
+      const { box, container } = mountComposer();
+      try {
+        await box[open]();
+        container.remove();
+        document.body.appendChild(container);
+        /** @type {Promise<void>|null} */
+        let opening = null;
+        const realOpen = box[open];
+        box[open] = () => (opening = realOpen.call(box));
+        box[open === '_openCommandsMenu' ? '_toggleCommandsMenu' : '_toggleActionsSheet']();
+        box[open] = realOpen;
+        assert(opening !== null, 'the first tap after a reattach closed a stale open flag instead of opening');
+        await opening;
+        assert(!!document.querySelector(selector), 'the first tap after a reattach presented nothing');
+      } finally {
+        box[close]();
+        document.querySelectorAll(selector).forEach((el) => el.remove());
+        container.remove();
+      }
+    });
+  }
+
   return { passed, failed, errors };
 }

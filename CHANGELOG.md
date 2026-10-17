@@ -6,6 +6,7 @@ of changes; this project follows semantic versioning.
 ## [Unreleased]
 
 - Cancelling or deleting a sub-agent beside running siblings now stops its model calls
+- Double-tapping the composer's ⋮ or / button no longer opens two menus
 
 ## [0.7.7] - 2026-10-17
 

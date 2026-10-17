@@ -162,10 +162,18 @@ class StrategySelector extends HTMLElement {
     this._containerObserver = null;
   }
 
+  /**
+   * Listening follows the document, the binding does not: a selector removed
+   * and later inserted again is still bound to the same thread, and picks its
+   * observers back up here — re-reading the thread as it does, since a strategy
+   * switch while it was detached reached no observer. (A move keeps its
+   * observers throughout; see disconnectedCallback.)
+   */
   connectedCallback() {
     this.loadStrategies();
     this.render();
     this.setupListeners();
+    if (this._messageThread) this.setMessageThread(this._messageThread);
   }
 
   disconnectedCallback() {
@@ -173,17 +181,18 @@ class StrategySelector extends HTMLElement {
       document.removeEventListener(REGISTRIES_RELOADED, this._boundRegistriesReloaded);
       this._boundRegistriesReloaded = null;
     }
-    this._bindMetadataObserver(null);
-    this._bindItemsObserver(null);
-    this._bindContainerObserver(null);
-    // Tear down the open dropdown (surface, scrim, observer, dismissal wiring) —
-    // but a MOVE is not a removal. The touch actions sheet relocates this element
-    // into the sheet and back out again, and each move disconnects it, so closing
-    // here directly would destroy a menu the user just opened. Deferring one
-    // microtask outlasts the synchronous re-insertion: still detached by then
-    // means genuinely gone.
+    // Tear down the open dropdown (surface, scrim, observer, dismissal wiring)
+    // and the thread observers — but a MOVE is not a removal. The composer
+    // re-parents this element when the pointer type changes, and each move
+    // disconnects it, so tearing down here directly would destroy a menu the
+    // user just opened, and rebinding would rebaseline the cache-bust caution
+    // and clear one that was pending. Deferring one microtask outlasts the
+    // synchronous re-insertion: still detached by then means genuinely gone.
     queueMicrotask(() => {
       if (this.isConnected) return;
+      this._bindMetadataObserver(null);
+      this._bindItemsObserver(null);
+      this._bindContainerObserver(null);
       this._menu?.close();
       this._menu = null;
     });

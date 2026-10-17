@@ -17,13 +17,15 @@
  *   its own, and nothing would ever close it.
  * - A permission control moved to another parent (the composer re-parents it
  *   when the pointer type changes) must keep listening to its thread, which it
- *   stays bound to across the move.
+ *   stays bound to across the move. So must a strategy selector, which observes
+ *   the conversation's metadata, the thread's items and its container.
  * @module unit-tests/component-teardown
  */
 
 import '../../js/components/tool-action-message.js';
 import '../../js/components/path-input.js';
 import '../../js/components/permission-controls.js';
+import '../../js/components/strategy-selector.js';
 
 /**
  * @typedef {object} TestResult
@@ -186,6 +188,56 @@ export async function runTests() {
       elsewhere.remove();
     }
   } catch (e) { failed++; errors.push(`permission-controls re-parented: ${e.message}`); }
+
+  try {
+    const thread = countingThread();
+    const yarray = countingYArray();
+    const containerObservers = new Set();
+    Object.assign(thread, {
+      yarray,
+      threadItemId: 'teardown-thread',
+      currentStrategyId: 'default',
+      container: {
+        observe: (/** @type {Function} */ fn) => { containerObservers.add(fn); },
+        unobserve: (/** @type {Function} */ fn) => { containerObservers.delete(fn); },
+      },
+    });
+    const selector = /** @type {any} */ (document.createElement('strategy-selector'));
+    let rebaselines = 0;
+    selector.render = () => {};
+    selector._refreshCacheInputs = async (/** @type {{rebaseline?: boolean}} */ opts) => {
+      if (opts?.rebaseline) rebaselines++;
+    };
+    selector._recomputeImpact = () => {};
+    column.appendChild(selector);
+    selector.setMessageThread(thread);
+    const settle = () => new Promise((r) => queueMicrotask(() => r(undefined)));
+    const elsewhere = document.createElement('div');
+    document.body.appendChild(elsewhere);
+    try {
+      const held = () => `${thread.metadata.size} metadata, ${yarray.observers.size} items and ${containerObservers.size} container observer(s)`;
+      const holdsOneOfEach = () => thread.metadata.size === 1 && yarray.observers.size === 1 && containerObservers.size === 1;
+      const bound = rebaselines;
+      elsewhere.appendChild(selector);
+      await settle();
+      if (!holdsOneOfEach()) throw new Error(`after a move it holds ${held()}, want 1 of each`);
+      // A rebaseline captures the staged strategy as already cached, clearing a
+      // cache-bust caution the user has not acted on yet.
+      if (rebaselines !== bound) throw new Error(`a move rebaselined the cache-bust caution ${rebaselines - bound} time(s)`);
+      selector.remove();
+      await settle();
+      if (thread.metadata.size !== 0 || yarray.observers.size !== 0 || containerObservers.size !== 0) {
+        throw new Error(`after removal it holds ${held()}, want none`);
+      }
+      elsewhere.appendChild(selector);
+      if (!holdsOneOfEach()) throw new Error(`reinserted after a removal it holds ${held()}, want 1 of each`);
+      selector.remove();
+      await settle();
+      passed++;
+    } finally {
+      elsewhere.remove();
+    }
+  } catch (e) { failed++; errors.push(`strategy-selector re-parented: ${e.message}`); }
 
   column.remove();
   return { passed, failed, errors };

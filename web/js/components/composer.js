@@ -317,18 +317,13 @@ class Composer extends HTMLElement {
     // Drop a queued height measurement: it would resolve against a detached box
     // and measure nothing.
     this._cancelScheduledAutoResize();
-    // Tear down an open commands menu (surface, scrim, observer, dismissal).
-    if (this._popupCleanup) {
-      this._popupCleanup();
-      this._popupCleanup = null;
-    }
-    // Tear down an open skill picker likewise.
+    // Tear down an open commands menu, skill picker and actions sheet (surface,
+    // scrim, observer, dismissal) through their close paths, which also clear
+    // the open flags — a flag left set would make the first tap after a
+    // reattach close a popup that is not there.
+    this._closeCommandsMenu();
     this._closeSkillMenu();
-    // Tear down an open actions sheet likewise.
-    if (this._actionsSheetCleanup) {
-      this._actionsSheetCleanup();
-      this._actionsSheetCleanup = null;
-    }
+    this._closeActionsSheet();
     // Tear down an open delay picker.
     if (this._schedulePickerCleanup) {
       this._schedulePickerCleanup();
@@ -2301,6 +2296,9 @@ class Composer extends HTMLElement {
    */
   async _openCommandsMenu() {
     await slashCommandHandler.init();
+    // The command list is awaited, so the box may have detached meanwhile
+    // (nothing would then release the popup), or a second click may have opened it.
+    if (!this.isConnected || this._commandsMenuOpen) return;
     this._createCommandsMenu();
 
     if (!this._commandsMenu) return;
@@ -2480,6 +2478,9 @@ class Composer extends HTMLElement {
     } catch {
       skills = [];
     }
+    // Both lists are awaited, so the box may have detached meanwhile (nothing
+    // would then release the sheet), or a second tap may have opened it.
+    if (!this.isConnected || this._actionsSheetOpen) return;
     const skillRows = (Array.isArray(skills) ? skills : [])
       .slice()
       .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
