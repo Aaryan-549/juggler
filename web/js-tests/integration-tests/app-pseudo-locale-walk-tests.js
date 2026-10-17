@@ -83,10 +83,12 @@ function translatedOrSymbol(s) {
   if (!/\p{L}/u.test(s)) return true;
   // A key chord's key (N, F2) is labelled on the keyboard rather than
   // translated. On macOS the modifiers are glyphs (⌘N, ⌥⇧⌘M); elsewhere they are
-  // words joined by `+`, each one a message ([Çţŕļ ·]+N).
+  // words joined by `+`, each one a message ([Çţŕļ ·]+N) — and the `+` key
+  // itself makes the chord end in `++`.
   const key = /^(?:[A-Z0-9]|F\d{1,2}|\P{L}+)$/u;
-  if (/^[⌘⌥⇧⌃]*(?:[A-Z0-9]|F\d{1,2})$/.test(s.trim())) return true;
-  const parts = s.trim().split('+');
+  const chord = s.trim();
+  if (/^[⌘⌥⇧⌃]*(?:[A-Z0-9]|F\d{1,2})$/.test(chord)) return true;
+  const parts = chord.endsWith('++') ? [...chord.slice(0, -2).split('+'), '+'] : chord.split('+');
   if (parts.length > 1 && parts.every((p) => key.test(p) || isTranslatedLine(p))) return true;
   return s.split('\n').map((l) => l.trim()).filter(Boolean).every(isTranslatedLine);
 }
@@ -204,8 +206,10 @@ export const appPseudoLocaleWalkTest = {
       [`${pseudoLocalize('Ctrl')}+${pseudoLocalize('Shift')}+N`]: true,
       [`${pseudoLocalize('Ctrl')}+${pseudoLocalize('Enter')}`]: true,
       [`${pseudoLocalize('Ctrl')}+F2`]: true,
+      [`${pseudoLocalize('Ctrl')}++`]: true,
       '⌥⇧⌘M': true,
       'Ctrl+N': false,
+      'Ctrl++': false,
       [`${pseudoLocalize('Ctrl')}+Enter`]: false,
     };
     for (const [chord, ok] of Object.entries(chords)) {
@@ -268,17 +272,21 @@ export const appPseudoLocaleWalkTest = {
       describeShell = () => {
         const own = /** @type {any} */ (session.conversations.get(conversation.id));
         const t = own?.getTabElement?.();
-        const active = doc.querySelector('conversation-tab.active, conversation-tab[active]');
+        const active = /** @type {any} */ (doc.querySelector('conversation-tab.active'));
         return `\n  shell: visible=${session.visibleConversationId} own=${conversation.id}`
           + ` ownTab=${t ? (t.isConnected ? 'connected' : 'detached') : 'none'}`
           + ` ownToolRows=${t ? t.querySelectorAll('tool-action-message, tool-group-message').length : '-'}`
           + ` ownRows=${t ? t.querySelectorAll('#message-list > *').length : '-'}`
           + ` ownItems=${own?.rootMessageThread?.length ?? '-'}`
-          + ` activeTabConv=${active?.getAttribute?.('data-conversation-id') || active?.conversation?.id || 'none'}`
+          + ` activeTabConv=${active?.getConversation?.()?.id || 'none'}`
           + ` tabs=${doc.querySelectorAll('conversation-tab').length}`
           + ` ownTabText=${JSON.stringify((t?.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 200))}`;
       };
-      session.registry.select({ kind: 'conversation', id: conversation.id });
+      // The shell opens on the project's stored active conversation, which another
+      // lane may have moved. Only a switch announces itself to the bar and shows
+      // the tab; a bare registry.select() would mark ours visible behind a tab that
+      // stays hidden and unrendered.
+      session.switchConversation(conversation.id);
       const tab = await until(() => {
         const t = /** @type {any} */ (session.conversations.get(conversation.id))?.getTabElement?.();
         return t && t.querySelector('tool-action-message, tool-group-message') ? t : null;
