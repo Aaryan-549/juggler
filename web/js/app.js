@@ -42,6 +42,7 @@ import { initViewportFit } from './utils/viewport-fit.js';
 import { reportDraftsFlushed } from '../sdk/lib/window-control.js';
 import { installLinkGuard } from './services/link-guard.js';
 import { installSelectionContainment } from './services/selection-containment.js';
+import { installFocusModality } from './services/focus-modality.js';
 import { isPinboardView } from './utils/view-mode.js';
 import { isAnyPopupOpen } from './utils/popup-manager.js';
 import { createUILocaleReloader, reportUILocale } from './services/ui-locale.js';
@@ -343,6 +344,11 @@ class JugglerApp {
     // chrome selects nothing, and one begun in a column stays in that column.
     // See services/selection-containment.js.
     installSelectionContainment(document);
+
+    // Show the focus ring only to someone using the keyboard: WebKit shows it
+    // on the app's own focus() calls until a click first focuses a text field.
+    // See services/focus-modality.js.
+    installFocusModality(document);
 
     if (!isPinboardView()) {
       document.addEventListener('duplicate-conversation', () => {

@@ -117,6 +117,14 @@ input:where(:focus), textarea:where(:focus) {
     outline-offset: var(--focus-ring-offset);
 }
 
+/* Until a key is pressed, and again after every click, the ring is nothing —
+   wherever it is drawn from. WebKit matches :focus-visible on a script's
+   focus() until a click has focused something, which a click on a button never
+   does on macOS; services/focus-modality.js keeps the record it gets wrong. */
+:root[data-input-modality="pointer"] {
+    --focus-ring: none;
+}
+
 /* `pre` and `code` live in patterns/code.css, with the rest of the code-block
    geometry: several unrelated components host one, and each has to be able to
    override the box. */

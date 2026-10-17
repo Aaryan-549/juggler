@@ -203,6 +203,7 @@ import { runTests as runWarningTextTests } from '../unit-tests/warning-text-test
 import { runTests as runSurfacesTests } from '../unit-tests/surfaces-test.js';
 import { runTests as runLabelStylesTests } from '../unit-tests/label-styles-test.js';
 import { runTests as runFocusRingsTests } from '../unit-tests/focus-rings-test.js';
+import { runTests as runFocusModalityTests } from '../unit-tests/focus-modality-test.js';
 import { runTests as runThemeToggleTests } from '../unit-tests/theme-toggle-test.js';
 import { runTests as runToolNameResolutionTests } from '../unit-tests/tool-name-resolution-test.js';
 import { runTests as runNewTabUxTests } from '../unit-tests/new-tab-ux-test.js';
@@ -723,6 +724,7 @@ const UNIT_TEST_SUITES = [
   { name: 'unit:surfaces', run: runSurfacesTests },
   { name: 'unit:label-styles', run: runLabelStylesTests },
   { name: 'unit:focus-rings', run: runFocusRingsTests },
+  { name: 'unit:focus-modality', run: runFocusModalityTests },
   // Exclusive: it repaints data-theme and stubs matchMedia for the length of a
   // case, both of which are document-wide.
   { name: 'unit:theme-toggle', run: runThemeToggleTests, needsExclusiveRun: true },

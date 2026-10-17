@@ -28,6 +28,7 @@
  */
 
 import keyShortcutManager from './key-shortcut-manager.js';
+import { isKeyboardFocus } from './focus-modality.js';
 
 /** ms a pointer must rest on an element before the tooltip appears. */
 const SHOW_DELAY = 900;
@@ -200,7 +201,7 @@ class TooltipManager {
     const anchor = this._resolveAnchor(e.target);
     if (!anchor || anchor === this._anchor) return;
     // Only for keyboard focus; mouse/programmatic focus shouldn't pop a tooltip.
-    if (anchor.matches && !anchor.matches(':focus-visible')) return;
+    if (!isKeyboardFocus(anchor)) return;
     this._begin(anchor);
   };
 
