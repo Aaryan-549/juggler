@@ -205,8 +205,8 @@ export async function runTests() {
         box._messageThread = { getContextItems: () => [new SkillStandIn()] };
 
         // The commands menu.
-        await box._openCommandsMenu();
-        const commands = box._commandsMenu;
+        await box._commandsPopup.open();
+        const commands = box._commandsPopup.surface;
         try {
           assert(!!commands, 'the commands menu did not open');
           shown.push(['commands menu label', commands.getAttribute('aria-label') || '']);
@@ -214,14 +214,14 @@ export async function runTests() {
           collect('commands menu', commands, data);
           userTextAsGiven(commands, 'commands menu');
         } finally {
-          box._closeCommandsMenu();
+          box._commandsPopup.close();
         }
 
         // The skill menu, empty and with a skill.
         for (const list of [[], [{ name: '5', description: '6' }]]) {
           skills = list;
-          await box._openSkillMenu();
-          const menu = box._skillMenu;
+          await box._skillPopup.open();
+          const menu = box._skillPopup.surface;
           const where = `skill menu (${list.length} skills)`;
           try {
             assert(!!menu, `${where} did not open`);
@@ -232,13 +232,13 @@ export async function runTests() {
               assert(desc === '6', `${where}: a skill's description is shown as written: ${desc}`);
             }
           } finally {
-            box._closeSkillMenu();
+            box._skillPopup.close();
           }
         }
 
         // The actions sheet, every section (skills present, so both lists draw).
-        await box._openActionsSheet();
-        const sheet = box._actionsSheet;
+        await box._actionsPopup.open();
+        const sheet = box._actionsPopup.surface;
         try {
           assert(!!sheet, 'the actions sheet did not open');
           assert(sheet.querySelectorAll('details').length === 2, 'the actions sheet drew fewer than two sections');
@@ -246,7 +246,7 @@ export async function runTests() {
           collect('actions sheet', sheet, data);
           userTextAsGiven(sheet, 'actions sheet');
         } finally {
-          box._closeActionsSheet();
+          box._actionsPopup.close();
         }
 
         const raw = shown.filter(([, s]) => !isPseudoLocalized(s));
@@ -265,7 +265,7 @@ export async function runTests() {
     let busy = true;
     box._conversation = { isTurnActive: () => busy };
     try {
-      await box._openActionsSheet();
+      await box._actionsPopup.open();
       const row = /** @type {HTMLElement|null} */ (document.querySelector('#actions-sheet [data-action="new-thread"]'));
       assert(!!row, 'the actions sheet has no New Thread row');
       assert(row.getAttribute('aria-disabled') === 'true' && row.classList.contains('disabled'),
@@ -278,7 +278,7 @@ export async function runTests() {
       box._updateNewThreadControls();
       assert(row.getAttribute('aria-disabled') === 'true', 'a turn starting with the sheet open left the row enabled');
     } finally {
-      box._closeActionsSheet();
+      box._actionsPopup.close();
       box._conversation = null;
       container.remove();
     }
@@ -290,21 +290,44 @@ export async function runTests() {
   // own, released only through the box's single cleanup handle — a second
   // presentation overwrites the first's handle, and one made after the box left
   // has no disconnect to release it.
-  for (const [label, open, close, selector] of /** @type {Array<[string, string, string, string]>} */ ([
-    ['commands menu', '_openCommandsMenu', '_closeCommandsMenu', '#commands-menu'],
-    ['actions sheet', '_openActionsSheet', '_closeActionsSheet', '#actions-sheet'],
+  for (const [label, popup, selector, button] of /** @type {Array<[string, string, string, string]>} */ ([
+    ['commands menu', '_commandsPopup', '#commands-menu', '#commands-button'],
+    ['skill picker', '_skillPopup', '#skill-menu', '#skill-button'],
+    ['actions sheet', '_actionsPopup', '#actions-sheet', '#more-actions-button'],
   ])) {
+    // A reattach re-renders the box, so the trigger the open began with is gone
+    // by the time it presents: the surface must anchor to the button there is now.
+    await run(`the ${label} opened across a detach and reattach anchors to the live button`, async () => {
+      const { box, container } = mountComposer();
+      try {
+        const stale = box.querySelector(button);
+        const pending = box[popup].open();
+        container.remove();
+        document.body.appendChild(container);
+        await pending;
+        const live = box.querySelector(button);
+        assert(!!live && live !== stale, 'the reattach did not re-render the trigger');
+        assert(document.querySelectorAll(selector).length === 1, `the ${label} did not present`);
+        assert(live.getAttribute('aria-expanded') === 'true',
+          `the live trigger reads aria-expanded=${live.getAttribute('aria-expanded')}, want true`);
+      } finally {
+        box[popup].close();
+        document.querySelectorAll(selector).forEach((el) => el.remove());
+        container.remove();
+      }
+    });
+
     await run(`a double tap on the ${label} presents it once, and closing it leaves nothing behind`, async () => {
       const { box, container } = mountComposer();
       try {
-        await Promise.all([box[open](), box[open]()]);
+        await Promise.all([box[popup].open(), box[popup].open()]);
         const shown = document.querySelectorAll(selector).length;
         assert(shown === 1, `two overlapping opens presented ${shown} surfaces, want 1`);
-        box[close]();
+        box[popup].close();
         const left = document.querySelectorAll(selector).length;
         assert(left === 0, `closing left ${left} surface(s) in the document`);
       } finally {
-        box[close]();
+        box[popup].close();
         document.querySelectorAll(selector).forEach((el) => el.remove());
         container.remove();
       }
@@ -313,13 +336,13 @@ export async function runTests() {
     await run(`opening the ${label} presents nothing when the box detaches mid-open`, async () => {
       const { box, container } = mountComposer();
       try {
-        const pending = box[open]();
+        const pending = box[popup].open();
         container.remove();
         await pending;
         const stray = document.querySelectorAll(selector).length;
         assert(stray === 0, `a detached box presented ${stray} surface(s) on <body>`);
       } finally {
-        box[close]();
+        box[popup].close();
         document.querySelectorAll(selector).forEach((el) => el.remove());
         container.remove();
       }
@@ -328,20 +351,21 @@ export async function runTests() {
     await run(`the ${label} opens on the first tap after the box is detached and reattached`, async () => {
       const { box, container } = mountComposer();
       try {
-        await box[open]();
+        await box[popup].open();
         container.remove();
         document.body.appendChild(container);
         /** @type {Promise<void>|null} */
         let opening = null;
-        const realOpen = box[open];
-        box[open] = () => (opening = realOpen.call(box));
-        box[open === '_openCommandsMenu' ? '_toggleCommandsMenu' : '_toggleActionsSheet']();
-        box[open] = realOpen;
+        const handle = box[popup];
+        const realOpen = handle.open;
+        handle.open = () => (opening = realOpen.call(handle));
+        handle.toggle();
+        handle.open = realOpen;
         assert(opening !== null, 'the first tap after a reattach closed a stale open flag instead of opening');
         await opening;
         assert(!!document.querySelector(selector), 'the first tap after a reattach presented nothing');
       } finally {
-        box[close]();
+        box[popup].close();
         document.querySelectorAll(selector).forEach((el) => el.remove());
         container.remove();
       }

@@ -126,7 +126,7 @@ export async function runTests() {
       const button = /** @type {HTMLElement|null} */ (box.querySelector('#commands-button'));
       assertTrigger(button, 'false', 'commands closed');
 
-      await box._openCommandsMenu();
+      await box._commandsPopup.open();
       assertMenuSurface(document.querySelector('#commands-menu'), 'commands menu');
       assertTrigger(button, 'true', 'commands open');
 
@@ -139,7 +139,7 @@ export async function runTests() {
       failed++;
       errors.push('commands-menu: ' + (e instanceof Error ? e.message : String(e)));
     } finally {
-      box._closeCommandsMenu?.();
+      box._commandsPopup.close();
       container.remove();
     }
   }
@@ -153,7 +153,7 @@ export async function runTests() {
       assertTrigger(button, 'false', 'skills closed');
 
       box._messageThread = makeStubThread(FIXTURE);
-      await box._openSkillMenu();
+      await box._skillPopup.open();
       const menu = /** @type {HTMLElement|null} */ (document.querySelector('#skill-menu'));
       assertMenuSurface(menu, 'skill menu');
       assert(!!menu?.querySelector('.menu-divider[role="separator"]'), 'skill menu: no separator before the footer');
@@ -168,7 +168,7 @@ export async function runTests() {
 
       // Empty snapshot: the hint is an item, but one that does nothing.
       box._messageThread = makeStubThread([]);
-      await box._openSkillMenu();
+      await box._skillPopup.open();
       const empty = /** @type {HTMLElement|null} */ (document.querySelector('#skill-menu'));
       assertMenuSurface(empty, 'empty skill menu');
       const hint = /** @type {HTMLElement|null} */ (empty?.querySelector('.menu-item-hint') ?? null);
@@ -180,7 +180,7 @@ export async function runTests() {
       failed++;
       errors.push('skill-menu: ' + (e instanceof Error ? e.message : String(e)));
     } finally {
-      box._closeSkillMenu?.();
+      box._skillPopup.close();
       container.remove();
     }
   }
@@ -194,7 +194,7 @@ export async function runTests() {
       const button = /** @type {HTMLElement|null} */ (box.querySelector('#more-actions-button'));
       assertTrigger(button, 'false', 'sheet closed');
 
-      await box._openActionsSheet();
+      await box._actionsPopup.open();
       const sheet = /** @type {HTMLElement|null} */ (document.querySelector('#actions-sheet'));
       assertMenuSurface(sheet, 'actions sheet');
       const sections = /** @type {HTMLElement[]} */ ([...(sheet?.querySelectorAll('.actions-sheet-section') ?? [])]);
@@ -221,7 +221,7 @@ export async function runTests() {
       failed++;
       errors.push('actions-sheet: ' + (e instanceof Error ? e.message : String(e)));
     } finally {
-      box._closeActionsSheet?.();
+      box._actionsPopup.close();
       container.remove();
     }
   }

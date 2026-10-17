@@ -159,7 +159,7 @@ export async function runTests() {
   {
     const { box, container, sent } = mountTouchComposer();
     try {
-      await /** @type {any} */ (box)._openActionsSheet();
+      await /** @type {any} */ (box)._actionsPopup.open();
 
       const sheet = /** @type {HTMLElement|null} */ (document.querySelector('.actions-sheet'));
       assert(!!sheet, 'the "+" button must open an .actions-sheet');
@@ -189,7 +189,7 @@ export async function runTests() {
       failed++;
       errors.push('actions-sheet-new-thread: ' + (e instanceof Error ? e.message : String(e)));
     } finally {
-      /** @type {any} */ (box)._closeActionsSheet?.();
+      /** @type {any} */ (box)._actionsPopup.close();
       container.remove();
     }
   }
@@ -210,7 +210,7 @@ export async function runTests() {
       assert(pickerOpened, 'the attach button must trigger the file picker');
 
       // One way to it, not two: the sheet carries no attach row.
-      await /** @type {any} */ (box)._openActionsSheet();
+      await /** @type {any} */ (box)._actionsPopup.open();
       const attachRow = Array.from(document.querySelectorAll('.actions-sheet-item'))
         .find((r) => /attach/i.test(r.textContent || ''));
       assert(!attachRow, 'the actions sheet must not duplicate the inline attach button');
@@ -219,7 +219,7 @@ export async function runTests() {
       failed++;
       errors.push('actions-sheet-attach: ' + (e instanceof Error ? e.message : String(e)));
     } finally {
-      /** @type {any} */ (box)._closeActionsSheet?.();
+      /** @type {any} */ (box)._actionsPopup.close();
       container.remove();
     }
   }
@@ -277,7 +277,7 @@ export async function runTests() {
       closeAllPopups();
       document.querySelectorAll('.strategy-dropdown[data-strategy-selector="true"], .popup-sheet-scrim')
         .forEach((el) => el.remove());
-      /** @type {any} */ (box)._closeActionsSheet?.();
+      /** @type {any} */ (box)._actionsPopup.close();
       container.remove();
       window.requestAnimationFrame = realRaf;
       window.cancelAnimationFrame = realCancelRaf;

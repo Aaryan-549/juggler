@@ -59,6 +59,22 @@ const MODEL_REQUESTS = new Set([
 ]);
 
 /**
+ * The keys the tab's document keydown answers, each to its handler method.
+ * Anything else is not looked at.
+ * @type {Readonly<Record<string, '_navDelete'|'_navVertical'|'_navHorizontal'|'_navEnter'|'_navEscape'>>}
+ */
+const NAV_KEY_HANDLERS = Object.freeze({
+  Delete: '_navDelete',
+  Backspace: '_navDelete',
+  ArrowUp: '_navVertical',
+  ArrowDown: '_navVertical',
+  ArrowLeft: '_navHorizontal',
+  ArrowRight: '_navHorizontal',
+  Enter: '_navEnter',
+  Escape: '_navEscape',
+});
+
+/**
  * ConversationTab - Isolated DOM container for a single conversation
  *
  * Supports Miller columns: selecting any item in column N opens column N+1.
@@ -644,7 +660,7 @@ class ConversationTab extends JugglerElement {
   //      the cases where the user's typing target moves.
   //      Suppressed when _isKeyboardNavigating is true, so arrow-key
   //      navigation through threads never steals focus to a message
-  //      box.  The flag is set by _setupKeyboardNavigation around
+  //      box.  The flag is set by _onNavKeydown around
   //      arrow/enter handling.
   //      Detected in _rebuildColumns by comparing _inputColumn()
   //      before and after the rebuild.
@@ -1166,7 +1182,9 @@ class ConversationTab extends JugglerElement {
   }
 
   /**
-   * Set up centralized keyboard navigation (single document listener)
+   * Set up centralized keyboard navigation (single document listener). The
+   * listener decides whether the key is the tab's at all; each key's own
+   * behaviour is its handler in {@link NAV_KEY_HANDLERS}.
    * @private
    */
   _setupKeyboardNavigation() {
@@ -1176,156 +1194,190 @@ class ConversationTab extends JugglerElement {
     if (this._keyboardNavWired) return;
     this._keyboardNavWired = true;
     this.addCleanup(() => { this._keyboardNavWired = false; });
+    this.onDocument('keydown', /** @type {EventListener} */ ((/** @type {KeyboardEvent} */ e) => this._onNavKeydown(e)));
+  }
 
-    /** @param {KeyboardEvent} e */
-    const onKeydown = (e) => {
-      // Only handle if this is the active tab
-      if (!this.classList.contains('active')) return;
+  /**
+   * The document keydown behind {@link _setupKeyboardNavigation}.
+   * @param {KeyboardEvent} e
+   * @private
+   */
+  _onNavKeydown(e) {
+    const handler = NAV_KEY_HANDLERS[e.key];
+    if (!handler) return;
 
-      // This is a document-level handler that navigates/cancels the
-      // conversation BEHIND focus, so it stands down for an open overlay (↑/↓
-      // would move the selection under it), a field being typed into, or an
-      // approval widget's own keys. Single rule, shared with the tab strip's nav.
-      if (keyShortcutManager.backgroundNavStandsDown(e)) return;
+    // Only handle if this is the active tab
+    if (!this.classList.contains('active')) return;
 
-      // Tab-list focus mode owns arrow keys until the user re-enters the tab.
-      if (document.querySelector('conversation-bar.tab-list-focused')) {
-        if (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowRight' || e.key === 'ArrowLeft') return;
+    // This is a document-level handler that navigates/cancels the
+    // conversation BEHIND focus, so it stands down for an open overlay (↑/↓
+    // would move the selection under it), a field being typed into, or an
+    // approval widget's own keys. Single rule, shared with the tab strip's nav.
+    if (keyShortcutManager.backgroundNavStandsDown(e)) return;
+
+    // Tab-list focus mode owns arrow keys until the user re-enters the tab.
+    if (e.key.startsWith('Arrow') && document.querySelector('conversation-bar.tab-list-focused')) return;
+
+    const activeCol = this._columns[this._selection.activeColumnIndex];
+    if (!activeCol) return;
+
+    // Rule 15 suppression: flag that we're inside keyboard navigation
+    // so _rebuildColumns won't steal focus to a sub-thread composer.
+    this._isKeyboardNavigating = true;
+    try {
+      this[handler](e, activeCol, asArea(activeCol));
+    } finally {
+      this._isKeyboardNavigating = false;
+    }
+  }
+
+  /**
+   * Delete / Backspace: delete the selected item through its properties panel's
+   * own Delete button, or the rows a selected group tile stands for.
+   * @param {KeyboardEvent} e
+   * @param {HTMLElement} activeCol
+   * @param {ConversationArea|null} activeArea
+   * @private
+   */
+  _navDelete(e, activeCol, activeArea) {
+    // ⌘/Ctrl+Backspace is the bin-conversation chord (KeyShortcutManager).
+    // Both listeners sit on document, and stopPropagation() doesn't stop
+    // same-target listeners, so this handler still sees the chord — but it
+    // must not delete the selected item under it. When binning is refused
+    // (a running turn), the chord should do nothing, not fall through here.
+    if (e.metaKey || e.ctrlKey) return;
+    // A folded run owns no properties panel — the column it opens just
+    // lists its rows — so the delete-button hunt below would find
+    // nothing. Backspace on a group tile means what it looks like:
+    // delete the rows the tile stands for.
+    if (activeArea) {
+      const groupId = activeArea.getSelectedItemId();
+      if (groupId && isGroupId(groupId)) {
+        e.preventDefault();
+        this._deleteGroup(activeArea, groupId);
+        return;
       }
-
-      const activeCol = this._columns[this._selection.activeColumnIndex];
-      if (!activeCol) return;
-      const activeArea = asArea(activeCol);
-
-      // Rule 15 suppression: flag that we're inside keyboard navigation
-      // so _rebuildColumns won't steal focus to a sub-thread composer.
-      this._isKeyboardNavigating = true;
-      try {
-        switch (e.key) {
-          case 'Delete':
-          case 'Backspace': {
-            // ⌘/Ctrl+Backspace is the bin-conversation chord (KeyShortcutManager).
-            // Both listeners sit on document, and stopPropagation() doesn't stop
-            // same-target listeners, so this handler still sees the chord — but it
-            // must not delete the selected item under it. When binning is refused
-            // (a running turn), the chord should do nothing, not fall through here.
-            if (e.metaKey || e.ctrlKey) break;
-            // A folded run owns no properties panel — the column it opens just
-            // lists its rows — so the delete-button hunt below would find
-            // nothing. Backspace on a group tile means what it looks like:
-            // delete the rows the tile stands for.
-            if (activeArea) {
-              const groupId = activeArea.getSelectedItemId();
-              if (groupId && isGroupId(groupId)) {
-                e.preventDefault();
-                this._deleteGroup(activeArea, groupId);
-                break;
-              }
-            }
-            let propsPanel = null;
-            if (activeCol.tagName === 'PROPERTIES-PANEL') {
-              propsPanel = activeCol;
-            } else if (activeCol.tagName === 'CONVERSATION-AREA') {
-              const nextCol = this._columns[this._selection.activeColumnIndex + 1];
-              if (nextCol?.tagName === 'PROPERTIES-PANEL' || nextCol?.tagName === 'CONVERSATION-AREA') {
-                propsPanel = /** @type {HTMLElement} */ (nextCol);
-              }
-            }
-            // The panel's content — the Delete button included — is rendered on
-            // a debounce, so between moving the selection and pressing Delete
-            // the button on screen can still be the previous item's. Acting on
-            // it would delete a row the user is not pointing at. Bring the
-            // panel up to the selection before reading anything off it.
-            this._builder.flushPropertiesRender(propsPanel);
-            const deleteBtn = /** @type {HTMLElement|null} */ (propsPanel?.querySelector('.properties-panel-btn.danger'));
-            if (deleteBtn) {
-              e.preventDefault();
-              deleteBtn.click();
-            }
-            break;
-          }
-          case 'ArrowDown':
-          case 'ArrowUp':
-            // ⌥↑/↓ belong to the select-prev/next-item commands, which call
-            // stepItemSelection() themselves from the same document keydown —
-            // stepping here as well would move two items per press. ⌥⌘↑/↓ are
-            // the tab-switch chords, also not ours.
-            if (e.altKey || !activeArea) break;
-            e.preventDefault();
-            this._selection.markManualInteraction();
-            if (e.key === 'ArrowDown') activeArea.selectNextItem();
-            else activeArea.selectPreviousItem();
-            break;
-          case 'ArrowRight':
-            if (activeCol.tagName !== 'CONVERSATION-AREA') break;
-            e.preventDefault();
-            this._selection.markManualInteraction();
-            this._navigateRight();
-            break;
-          case 'ArrowLeft':
-            if (activeCol.tagName !== 'CONVERSATION-AREA') break;
-            e.preventDefault();
-            this._selection.markManualInteraction();
-            if (this._selection.activeColumnIndex === 0) {
-              document.dispatchEvent(new CustomEvent('juggler:focus-tab-list'));
-            } else {
-              this._navigateLeft();
-            }
-            break;
-          case 'Enter': {
-            if (!activeArea) break;
-            const selectedItem = activeArea.getSelectedElement();
-            if (selectedItem) {
-              const confirmation = selectedItem.querySelector('action-confirmation');
-              if (confirmation) {
-                e.preventDefault();
-                confirmation.engage();
-              }
-            }
-            break;
-          }
-          case 'Escape': {
-            // A popup/modal open over the conversation owns Escape (popup-manager
-            // dismisses it and stops the key at document); the overlay gate at the
-            // top of this handler already returned before we got here, so by this
-            // point no overlay is open and Escape means "back out one level".
-            //
-            // What that does — stop, pause, two-step, clear the prompt — is the
-            // user's choice, so the decision lives in escape-behaviour.js and is
-            // shared with the composer's own Escape. It fires regardless of which
-            // column type is active (a "Re-run command" click lands in the
-            // properties panel; gating on CONVERSATION-AREA left Escape a silent
-            // no-op there).
-            //
-            // The vantage is the active column's thread: a sub-thread column
-            // interrupts that thread (leaves it open); the root column (or a
-            // non-thread column like properties) stops everything and closes
-            // open sub-threads. Any prompt-clearing routes through the visible
-            // composer's undoable clear — this handler only runs when focus
-            // ISN'T in the textarea (the early TEXTAREA/INPUT return above), so
-            // it covers Escape from an empty conversation where the box never
-            // took focus.
-            //
-            // Moving focus into the box is itself a rung (below), so a press
-            // that takes it must not also leave fullscreen — the next one, from
-            // the box, can.
-            const focusedThreadId = activeArea?.getMessageThread()?.threadItemId ?? null;
-            handleEscapeKey(e, {
-              focusedThreadId,
-              getComposer: () => this.getComposer(),
-              canLeaveFullscreen: !activeArea,
-            });
-            // Rule 17: escape while navigating the conversation-area → typing mode.
-            if (activeArea) this._focusInput();
-            break;
-          }
-        }
-      } finally {
-        this._isKeyboardNavigating = false;
+    }
+    let propsPanel = null;
+    if (activeCol.tagName === 'PROPERTIES-PANEL') {
+      propsPanel = activeCol;
+    } else if (activeCol.tagName === 'CONVERSATION-AREA') {
+      const nextCol = this._columns[this._selection.activeColumnIndex + 1];
+      if (nextCol?.tagName === 'PROPERTIES-PANEL' || nextCol?.tagName === 'CONVERSATION-AREA') {
+        propsPanel = /** @type {HTMLElement} */ (nextCol);
       }
-    };
+    }
+    // The panel's content — the Delete button included — is rendered on
+    // a debounce, so between moving the selection and pressing Delete
+    // the button on screen can still be the previous item's. Acting on
+    // it would delete a row the user is not pointing at. Bring the
+    // panel up to the selection before reading anything off it.
+    this._builder.flushPropertiesRender(propsPanel);
+    const deleteBtn = /** @type {HTMLElement|null} */ (propsPanel?.querySelector('.properties-panel-btn.danger'));
+    if (deleteBtn) {
+      e.preventDefault();
+      deleteBtn.click();
+    }
+  }
 
-    this.onDocument('keydown', /** @type {EventListener} */ (onKeydown));
+  /**
+   * ↑ / ↓: move the active column's item selection.
+   * @param {KeyboardEvent} e
+   * @param {HTMLElement} _activeCol
+   * @param {ConversationArea|null} activeArea
+   * @private
+   */
+  _navVertical(e, _activeCol, activeArea) {
+    // ⌥↑/↓ belong to the select-prev/next-item commands, which call
+    // stepItemSelection() themselves from the same document keydown —
+    // stepping here as well would move two items per press. ⌥⌘↑/↓ are
+    // the tab-switch chords, also not ours.
+    if (e.altKey || !activeArea) return;
+    e.preventDefault();
+    this._selection.markManualInteraction();
+    if (e.key === 'ArrowDown') activeArea.selectNextItem();
+    else activeArea.selectPreviousItem();
+  }
+
+  /**
+   * ← / →: walk the columns, leaving the first one for the tab list.
+   * @param {KeyboardEvent} e
+   * @param {HTMLElement} activeCol
+   * @param {ConversationArea|null} _activeArea
+   * @private
+   */
+  _navHorizontal(e, activeCol, _activeArea) {
+    // ⌥⌘←/→ are the pinboard's prev/next-pin chords, answered only while the
+    // board is open (an overlay, so this handler has already stood down); with
+    // it closed they must do nothing rather than walk the columns. As with ↑/↓,
+    // an ⌥-chord is never the column walk.
+    if (e.altKey || activeCol.tagName !== 'CONVERSATION-AREA') return;
+    e.preventDefault();
+    this._selection.markManualInteraction();
+    if (e.key === 'ArrowRight') {
+      this._navigateRight();
+    } else if (this._selection.activeColumnIndex === 0) {
+      document.dispatchEvent(new CustomEvent('juggler:focus-tab-list'));
+    } else {
+      this._navigateLeft();
+    }
+  }
+
+  /**
+   * Enter: engage the selected item's approval widget.
+   * @param {KeyboardEvent} e
+   * @param {HTMLElement} _activeCol
+   * @param {ConversationArea|null} activeArea
+   * @private
+   */
+  _navEnter(e, _activeCol, activeArea) {
+    const confirmation = activeArea?.getSelectedElement()?.querySelector('action-confirmation');
+    if (confirmation) {
+      e.preventDefault();
+      confirmation.engage();
+    }
+  }
+
+  /**
+   * Escape: back out one level.
+   * @param {KeyboardEvent} e
+   * @param {HTMLElement} _activeCol
+   * @param {ConversationArea|null} activeArea
+   * @private
+   */
+  _navEscape(e, _activeCol, activeArea) {
+    // A popup/modal open over the conversation owns Escape (popup-manager
+    // dismisses it and stops the key at document); the overlay gate in
+    // _onNavKeydown already returned before we got here, so by this point no
+    // overlay is open and Escape means "back out one level".
+    //
+    // What that does — stop, pause, two-step, clear the prompt — is the
+    // user's choice, so the decision lives in escape-behaviour.js and is
+    // shared with the composer's own Escape. It fires regardless of which
+    // column type is active (a "Re-run command" click lands in the
+    // properties panel; gating on CONVERSATION-AREA left Escape a silent
+    // no-op there).
+    //
+    // The vantage is the active column's thread: a sub-thread column
+    // interrupts that thread (leaves it open); the root column (or a
+    // non-thread column like properties) stops everything and closes
+    // open sub-threads. Any prompt-clearing routes through the visible
+    // composer's undoable clear — this handler only runs when focus
+    // ISN'T in a field (the editable-target stand-down in _onNavKeydown), so
+    // it covers Escape from an empty conversation where the box never
+    // took focus.
+    //
+    // Moving focus into the box is itself a rung (below), so a press
+    // that takes it must not also leave fullscreen — the next one, from
+    // the box, can.
+    const focusedThreadId = activeArea?.getMessageThread()?.threadItemId ?? null;
+    handleEscapeKey(e, {
+      focusedThreadId,
+      getComposer: () => this.getComposer(),
+      canLeaveFullscreen: !activeArea,
+    });
+    // Rule 17: escape while navigating the conversation-area → typing mode.
+    if (activeArea) this._focusInput();
   }
 
   /**

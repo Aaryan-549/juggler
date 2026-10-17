@@ -11,8 +11,9 @@ import { menuOrderedCommands, buildCommandRow, buildManageCommandsRow, buildBrow
 import { openCommandManager } from './command-editor-dialog.js';
 import { isAnyPopupOpen } from '../utils/popup-manager.js';
 import { handleEscapeKey } from '../services/escape-behaviour.js';
-import { presentPopup, COARSE_POINTER_QUERY } from '../utils/popup-surface.js';
-import { applyMenuRoles, attachMenuKeyboard } from '../utils/menu-roles.js';
+import { COARSE_POINTER_QUERY } from '../utils/popup-surface.js';
+import { applyMenuRoles } from '../utils/menu-roles.js';
+import { ComposerPopup } from './composer-popup.js';
 import { CompletionMenu } from './completion-menu.js';
 import { createFileMentionProvider, extractFileMentionsAsync } from './file-mention-provider.js';
 import { slashCommandProvider } from './slash-command-provider.js';
@@ -239,29 +240,30 @@ class Composer extends HTMLElement {
     /** @type {(() => void)|null} @private presentPopup release for the open delay picker */
     this._schedulePickerCleanup = null;
 
-    // Commands menu state
-    /** @type {HTMLElement|null} @private */
-    this._commandsMenu = null;
-    /** @type {boolean} @private */
-    this._commandsMenuOpen = false;
-    /** @type {(() => void)|null} @private - presentPopup release for the open commands menu. */
-    this._popupCleanup = null;
-
-    // Skill picker menu state
-    /** @type {HTMLElement|null} @private */
-    this._skillMenu = null;
-    /** @type {boolean} @private */
-    this._skillMenuOpen = false;
-    /** @type {(() => void)|null} @private - presentPopup release for the open skill picker. */
-    this._skillPopupCleanup = null;
-
-    // Touch-only "⋮" actions sheet state (commands / attach / new thread).
-    /** @type {HTMLElement|null} @private */
-    this._actionsSheet = null;
-    /** @type {boolean} @private */
-    this._actionsSheetOpen = false;
-    /** @type {(() => void)|null} @private - presentPopup release for the open actions sheet. */
-    this._actionsSheetCleanup = null;
+    // The button-anchored popups, each built fresh on open.
+    /** @type {ComposerPopup} @private - The `/` commands menu. */
+    this._commandsPopup = new ComposerPopup(this, {
+      id: 'slash-commands',
+      buttonSelector: '#commands-button',
+      surfaceSelector: '.commands-menu',
+      build: () => this._buildCommandsMenu(),
+    });
+    /** @type {ComposerPopup} @private - The `$` skill picker. */
+    this._skillPopup = new ComposerPopup(this, {
+      id: 'skill-picker',
+      buttonSelector: '#skill-button',
+      surfaceSelector: '.skill-menu',
+      build: () => this._buildSkillMenu(),
+    });
+    /** @type {ComposerPopup} @private - The touch-only "⋮" actions sheet. */
+    this._actionsPopup = new ComposerPopup(this, {
+      id: 'input-actions-sheet',
+      buttonSelector: '#more-actions-button',
+      surfaceSelector: '.actions-sheet',
+      build: () => this._buildActionsSheet(),
+      // Its New Thread row follows the turn, read through `surface`.
+      onPresent: () => this._updateNewThreadControls(),
+    });
 
     /** @type {(() => void)|null} @private - Detaches the pointer-type listener that re-homes the config controls. */
     this._pointerQueryCleanup = null;
@@ -319,11 +321,11 @@ class Composer extends HTMLElement {
     this._cancelScheduledAutoResize();
     // Tear down an open commands menu, skill picker and actions sheet (surface,
     // scrim, observer, dismissal) through their close paths, which also clear
-    // the open flags — a flag left set would make the first tap after a
+    // the open state — state left set would make the first tap after a
     // reattach close a popup that is not there.
-    this._closeCommandsMenu();
-    this._closeSkillMenu();
-    this._closeActionsSheet();
+    this._commandsPopup.close();
+    this._skillPopup.close();
+    this._actionsPopup.close();
     // Tear down an open delay picker.
     if (this._schedulePickerCleanup) {
       this._schedulePickerCleanup();
@@ -439,7 +441,7 @@ class Composer extends HTMLElement {
     if (commandsButton) {
       commandsButton.addEventListener('click', (e) => {
         e.stopPropagation();
-        this._toggleCommandsMenu();
+        this._commandsPopup.toggle();
       });
     }
 
@@ -452,7 +454,7 @@ class Composer extends HTMLElement {
     if (skillButton) {
       skillButton.addEventListener('click', (e) => {
         e.stopPropagation();
-        this._toggleSkillMenu();
+        this._skillPopup.toggle();
       });
     }
 
@@ -778,7 +780,7 @@ class Composer extends HTMLElement {
       moreBtn.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
-        this._toggleActionsSheet();
+        this._actionsPopup.toggle();
       });
     }
 
@@ -838,7 +840,7 @@ class Composer extends HTMLElement {
     // The actions sheet is presented on <body>, outside this box.
     const rows = [
       ...Array.from(this.querySelectorAll('[data-command="thread"], [data-action="new-thread"]')),
-      ...Array.from(this._actionsSheet?.querySelectorAll('[data-action="new-thread"]') ?? []),
+      ...Array.from(this._actionsPopup.surface?.querySelectorAll('[data-action="new-thread"]') ?? []),
     ];
     rows.forEach((row) => {
       row.classList.toggle('disabled', busy);
@@ -2069,13 +2071,13 @@ class Composer extends HTMLElement {
   }
 
   /**
-   * Create the commands dropdown menu element
+   * Build the commands dropdown: the manager and built-ins buttons, then one row
+   * per slash command. Presented by `_commandsPopup`.
+   * @returns {Promise<HTMLElement>} The detached menu.
    * @private
    */
-  _createCommandsMenu() {
-    if (this._commandsMenu) {
-      this._commandsMenu.remove();
-    }
+  async _buildCommandsMenu() {
+    await slashCommandHandler.init();
 
     const menu = document.createElement('menu');
     menu.className = 'dropdown-menu commands-menu';
@@ -2087,14 +2089,14 @@ class Composer extends HTMLElement {
     // button goes where the rest of what the app loads is documented.
     const manageRow = buildManageCommandsRow();
     manageRow.addEventListener('click', () => {
-      this._closeCommandsMenu();
+      this._commandsPopup.close();
       openCommandManager();
     });
     menu.appendChild(manageRow);
 
     const browseRow = buildBrowseCommandsRow();
     browseRow.addEventListener('click', () => {
-      this._closeCommandsMenu();
+      this._commandsPopup.close();
       openSettings('extensions');
     });
     menu.appendChild(browseRow);
@@ -2109,113 +2111,39 @@ class Composer extends HTMLElement {
     }
 
     applyMenuRoles(menu, t('Commands'));
-    // presentPopup (in _openCommandsMenu) owns body-append and teardown.
-    this._commandsMenu = menu;
+    return menu;
   }
 
   /**
-   * Toggle commands menu visibility
-   * @private
-   */
-  _toggleCommandsMenu() {
-    if (this._commandsMenuOpen) {
-      this._closeCommandsMenu();
-    } else {
-      this._openCommandsMenu();
-    }
-  }
-
-  /**
-   * Toggle the skill picker menu.
-   * @private
-   */
-  _toggleSkillMenu() {
-    if (this._skillMenuOpen) {
-      this._closeSkillMenu();
-    } else {
-      this._openSkillMenu();
-    }
-  }
-
-  /**
-   * Open the skill picker: a button-anchored menu of this thread's available
+   * Build the skill picker: a button-anchored menu of this thread's available
    * skills, mirroring the commands (`/`) button. Nothing is inserted on open or
    * on dismissal — only SELECTING a skill splices `$name ` into the composer (via
    * {@link _insertSkillMention}), so the choice flows through the same send-time
-   * activation path as typing `$name`. It opens on an empty snapshot too: with no
-   * skills the menu is the only place that says so and points at the Skills page.
-   * @private
-   * @returns {Promise<void>}
-   */
-  async _openSkillMenu() {
-    const button = this.querySelector('#skill-button');
-    if (!button) return;
-    const skills = await getThreadSkillSnapshot(this._messageThread);
-    // The snapshot is awaited, so the box may have detached meanwhile (nothing
-    // would then release the popup), or a second click may have opened it.
-    if (!this.isConnected || this._skillMenuOpen) return;
-
-    this._createSkillMenu(Array.isArray(skills) ? skills : []);
-    if (!this._skillMenu) return;
-
-    this._skillMenu.classList.add('show');
-    this._skillMenuOpen = true;
-
-    // presentPopup owns body-append, dismissal wiring (outside-click via
-    // insideSelectors + Escape) and the reposition observer, exactly as the
-    // commands menu uses it. A dedicated cleanup handle keeps it independent of
-    // the commands-menu popup.
-    this._skillPopupCleanup = presentPopup({
-      surface: this._skillMenu,
-      anchor: /** @type {HTMLElement} */ (button),
-      id: 'skill-picker',
-      onClose: () => this._closeSkillMenu(),
-      align: 'left',
-      gap: 4,
-      insideSelectors: ['#skill-button', '.skill-menu'],
-    });
-    attachMenuKeyboard(this._skillMenu, { close: () => this._closeSkillMenu() });
-    button.setAttribute('aria-expanded', 'true');
-  }
-
-  /**
-   * Close the skill picker menu.
-   * @private
-   */
-  _closeSkillMenu() {
-    if (!this._skillMenu) return;
-    this._skillMenuOpen = false;
-    // Release tears down the surface, observer and dismissal wiring.
-    if (this._skillPopupCleanup) {
-      this._skillPopupCleanup();
-      this._skillPopupCleanup = null;
-    }
-    this._skillMenu = null;
-    this.querySelector('#skill-button')?.setAttribute('aria-expanded', 'false');
-  }
-
-  /**
-   * Build the skill picker menu: one row per available skill (mono `$name` +
-   * one-line description), each inserting `$name ` on click, followed by a
+   * activation path as typing `$name`. It is built on an empty snapshot too: with
+   * no skills the menu is the only place that says so and points at the Skills
+   * page.
+   *
+   * One row per skill (mono `$name` + one-line description), followed by a
    * "Manage skills…" footer that opens the Skills settings page. With no skills
    * the rows are replaced by a hint saying so, since the footer is then the whole
    * point of the menu. Carries the `commands-menu` class so it borrows the
    * slash-command popup's justified two-column grid and colour scheme verbatim,
    * and shares the `$` completion menu's row builder ({@link renderSkillMenuItem}).
-   * presentPopup (in _openSkillMenu) owns body-append and teardown.
-   * @param {import('../services/skills.js').SkillMeta[]} skills - This thread's snapshot skills
+   * Presented by `_skillPopup`.
+   * @param {import('../services/skills.js').SkillMeta[]} [given] - Skills to list
+   *   instead of reading this thread's snapshot.
+   * @returns {Promise<HTMLElement>} The detached menu.
    * @private
    */
-  _createSkillMenu(skills) {
-    if (this._skillMenu) {
-      this._skillMenu.remove();
-    }
+  async _buildSkillMenu(given) {
+    const skills = given ?? await getThreadSkillSnapshot(this._messageThread);
     const menu = document.createElement('menu');
     menu.className = 'dropdown-menu commands-menu skill-menu';
     menu.id = 'skill-menu';
 
     // Name-sorted, matching the `$` autocomplete's stable ordering.
-    const sorted = [...skills].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+    const sorted = [...(Array.isArray(skills) ? skills : [])]
+      .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
     for (const skill of sorted) {
       // Same row builder as the `$` completion menu; only the click handler
       // differs (the picker splices the mention; the autocomplete accepts it).
@@ -2254,13 +2182,13 @@ class Composer extends HTMLElement {
     manage.dataset.action = 'manage-skills';
     manage.textContent = t('Manage skills…');
     manage.addEventListener('click', () => {
-      this._closeSkillMenu();
+      this._skillPopup.close();
       openSettings('skills');
     });
     menu.appendChild(manage);
 
     applyMenuRoles(menu, t('Skills'));
-    this._skillMenu = menu;
+    return menu;
   }
 
   /**
@@ -2272,7 +2200,7 @@ class Composer extends HTMLElement {
    * @private
    */
   _insertSkillMention(name) {
-    this._closeSkillMenu();
+    this._skillPopup.close();
     const textarea = /** @type {HTMLTextAreaElement|null} */ (this.querySelector('textarea'));
     if (!textarea) return;
     const pos = textarea.selectionStart ?? textarea.value.length;
@@ -2290,66 +2218,12 @@ class Composer extends HTMLElement {
   }
 
   /**
-   * Open the commands menu
-   * @private
-   * @returns {Promise<void>}
-   */
-  async _openCommandsMenu() {
-    await slashCommandHandler.init();
-    // The command list is awaited, so the box may have detached meanwhile
-    // (nothing would then release the popup), or a second click may have opened it.
-    if (!this.isConnected || this._commandsMenuOpen) return;
-    this._createCommandsMenu();
-
-    if (!this._commandsMenu) return;
-
-    const button = this.querySelector('#commands-button');
-    if (!button) return;
-
-    this._commandsMenu.classList.add('show');
-    this._commandsMenuOpen = true;
-
-    // presentPopup owns body-append, dismissal wiring (outside-click via
-    // insideSelectors + Escape, which dismisses the menu rather than
-    // cancelling a running turn), the reposition observer, and the
-    // anchored-vs-sheet decision.
-    this._popupCleanup = presentPopup({
-      surface: this._commandsMenu,
-      anchor: /** @type {HTMLElement} */ (button),
-      id: 'slash-commands',
-      onClose: () => this._closeCommandsMenu(),
-      align: 'left',
-      gap: 4,
-      insideSelectors: ['#commands-button', '.commands-menu'],
-    });
-    attachMenuKeyboard(this._commandsMenu, { close: () => this._closeCommandsMenu() });
-    button.setAttribute('aria-expanded', 'true');
-  }
-
-  /**
-   * Close the commands menu
-   * @private
-   */
-  _closeCommandsMenu() {
-    if (!this._commandsMenu) return;
-
-    this._commandsMenuOpen = false;
-    // Release tears down the surface, scrim, observer and dismissal wiring.
-    if (this._popupCleanup) {
-      this._popupCleanup();
-      this._popupCleanup = null;
-    }
-    this._commandsMenu = null;
-    this.querySelector('#commands-button')?.setAttribute('aria-expanded', 'false');
-  }
-
-  /**
    * Execute a slash command
    * @param {string} commandName
    * @private
    */
   async _executeSlashCommand(commandName) {
-    this._closeCommandsMenu();
+    this._commandsPopup.close();
 
     if (!this._conversation) return;
 
@@ -2357,19 +2231,7 @@ class Composer extends HTMLElement {
   }
 
   /**
-   * Toggle the touch-only "⋮" actions sheet.
-   * @private
-   */
-  _toggleActionsSheet() {
-    if (this._actionsSheetOpen) {
-      this._closeActionsSheet();
-    } else {
-      this._openActionsSheet();
-    }
-  }
-
-  /**
-   * Build and present the "⋮" actions sheet. Essential controls lead — Send
+   * Build the "⋮" actions sheet. Essential controls lead — Send
    * later, New Thread — always visible so they never scroll off behind a long
    * list. (Attach files is not among them: it stays inline beside Send on touch
    * too, where it can be found.) Below them, slash commands and skills each get their own
@@ -2378,17 +2240,23 @@ class Composer extends HTMLElement {
    * one tap away. On a narrow viewport presentPopup renders it as a bottom sheet
    * (drag-to-dismiss); on a wider one it anchors to the "⋮" button. The rows reuse
    * the same handlers as the inline controls, so nothing nests a second popup.
+   * Presented by `_actionsPopup`.
+   * @returns {Promise<HTMLElement>} The detached sheet.
    * @private
-   * @returns {Promise<void>}
    */
-  async _openActionsSheet() {
+  async _buildActionsSheet() {
     await slashCommandHandler.init();
+    /** @type {import('../services/skills.js').SkillMeta[]} */
+    let skills = [];
+    try {
+      skills = await getThreadSkillSnapshot(this._messageThread);
+    } catch {
+      skills = [];
+    }
 
-    const button = this.querySelector('#more-actions-button');
-    if (!button) return;
-
+    const close = () => this._actionsPopup.close();
     const menu = document.createElement('menu');
-    menu.className = 'dropdown-menu actions-sheet show';
+    menu.className = 'dropdown-menu actions-sheet';
     menu.id = 'actions-sheet';
 
     /**
@@ -2410,7 +2278,7 @@ class Composer extends HTMLElement {
       text.textContent = label;
       item.appendChild(text);
       item.addEventListener('click', () => {
-        this._closeActionsSheet();
+        close();
         onClick();
       });
       menu.appendChild(item);
@@ -2447,18 +2315,18 @@ class Composer extends HTMLElement {
     // the `/commands` row it stands for, and the built-ins' button beside it.
     const manageRow = buildManageCommandsRow('actions-sheet-item');
     manageRow.addEventListener('click', () => {
-      this._closeActionsSheet();
+      close();
       openCommandManager();
     });
     const browseRow = buildBrowseCommandsRow('actions-sheet-item');
     browseRow.addEventListener('click', () => {
-      this._closeActionsSheet();
+      close();
       openSettings('extensions');
     });
     const commandRows = menuOrderedCommands(slashCommandHandler.getCommands()).map((cmd) => {
       const row = buildCommandRow(cmd, { extraClass: 'actions-sheet-item', labelClass: 'actions-sheet-label' });
       row.addEventListener('click', () => {
-        this._closeActionsSheet();
+        close();
         this._executeSlashCommand(cmd.name);
       });
       return row;
@@ -2471,16 +2339,6 @@ class Composer extends HTMLElement {
     // led by the same "Manage skills…" row the picker ends with, so it is there
     // to be found when the thread advertises no skills at all. Each row is the
     // picker's own ({@link renderSkillMenuItem}), at the sheet's tap height.
-    /** @type {import('../services/skills.js').SkillMeta[]} */
-    let skills = [];
-    try {
-      skills = await getThreadSkillSnapshot(this._messageThread);
-    } catch {
-      skills = [];
-    }
-    // Both lists are awaited, so the box may have detached meanwhile (nothing
-    // would then release the sheet), or a second tap may have opened it.
-    if (!this.isConnected || this._actionsSheetOpen) return;
     const skillRows = (Array.isArray(skills) ? skills : [])
       .slice()
       .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
@@ -2488,7 +2346,7 @@ class Composer extends HTMLElement {
         const row = renderSkillMenuItem(skill);
         row.classList.add('actions-sheet-item');
         row.addEventListener('click', () => {
-          this._closeActionsSheet();
+          close();
           this._insertSkillMention(skill.name);
         });
         return row;
@@ -2501,7 +2359,7 @@ class Composer extends HTMLElement {
     manageSkillsLabel.textContent = t('Manage skills…');
     manageSkillsRow.appendChild(manageSkillsLabel);
     manageSkillsRow.addEventListener('click', () => {
-      this._closeActionsSheet();
+      close();
       openSettings('skills');
     });
     addSection(t('Skills'), [manageSkillsRow, ...skillRows]);
@@ -2512,35 +2370,7 @@ class Composer extends HTMLElement {
     addRow(t('New Thread'), THREAD_ARROW_SVG, () => this._createThread(), 'new-thread');
 
     applyMenuRoles(menu, t('More actions'));
-    this._actionsSheet = menu;
-    this._updateNewThreadControls();
-    this._actionsSheetOpen = true;
-    this._actionsSheetCleanup = presentPopup({
-      surface: menu,
-      anchor: /** @type {HTMLElement} */ (button),
-      id: 'input-actions-sheet',
-      onClose: () => this._closeActionsSheet(),
-      align: 'left',
-      gap: 4,
-      insideSelectors: ['#more-actions-button', '.actions-sheet'],
-    });
-    attachMenuKeyboard(menu, { close: () => this._closeActionsSheet() });
-    button.setAttribute('aria-expanded', 'true');
-  }
-
-  /**
-   * Close the "⋮" actions sheet.
-   * @private
-   */
-  _closeActionsSheet() {
-    if (!this._actionsSheetOpen) return;
-    this._actionsSheetOpen = false;
-    if (this._actionsSheetCleanup) {
-      this._actionsSheetCleanup();
-      this._actionsSheetCleanup = null;
-    }
-    this._actionsSheet = null;
-    this.querySelector('#more-actions-button')?.setAttribute('aria-expanded', 'false');
+    return menu;
   }
 
   render() {

@@ -221,6 +221,35 @@ export async function runTests() {
     assert(selectedNow() === ids[1],
       `⌥↓ outside a field landed on ${selectedNow()}, not one step down (${ids[1]})`);
 
+    // ⌥⌘←/→ are the pin chords, and with the board closed nothing else answers
+    // them: like ⌥↑/↓, an ⌥-chord is never the tab's column walk.
+    /** @type {string[]} */
+    const walked = [];
+    const realRight = tab._navigateRight;
+    const onTabList = () => walked.push('tab-list');
+    tab._navigateRight = () => walked.push('right');
+    document.addEventListener('juggler:focus-tab-list', onTabList);
+    try {
+      for (const init of [
+        { key: 'ArrowRight', altKey: true, metaKey: true },
+        { key: 'ArrowLeft', altKey: true, metaKey: true },
+        { key: 'ArrowRight', altKey: true },
+        { key: 'ArrowLeft', altKey: true },
+      ]) {
+        const ev = new KeyboardEvent('keydown', { ...init, bubbles: true, cancelable: true });
+        rootCol.querySelector('#message-list')?.dispatchEvent(ev);
+        assert(walked.length === 0 && !ev.defaultPrevented,
+          `${JSON.stringify(init)} walked the columns (${walked.join(', ')})`);
+      }
+      // Control: the plain key still walks.
+      rootCol.querySelector('#message-list')?.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }));
+      assert(walked.join() === 'right', `plain → did not walk right (${walked.join(', ')})`);
+    } finally {
+      tab._navigateRight = realRight;
+      document.removeEventListener('juggler:focus-tab-list', onTabList);
+    }
+
     // Stand where the user would: the row dragged right, so the column being
     // navigated is only partly on screen. Any rule that re-anchors the row on
     // selection has something to move here — parked at the left edge it would

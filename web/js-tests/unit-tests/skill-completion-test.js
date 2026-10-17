@@ -205,13 +205,14 @@ export async function runTests() {
       // composer — only selecting a skill inserts text.
       textarea.value = 'hello';
       textarea.selectionStart = textarea.selectionEnd = textarea.value.length;
-      box._createSkillMenu(FIXTURE);
-      assert(!!box._skillMenu, 'the picker must build a skill menu');
-      const items = box._skillMenu.querySelectorAll('li.skill-mention-item');
+      box._messageThread = makeStubThread().thread;
+      await box._skillPopup.open();
+      assert(!!box._skillPopup.surface, 'the picker must build a skill menu');
+      const items = box._skillPopup.surface.querySelectorAll('li.skill-mention-item');
       assert(items.length === FIXTURE.length,
         `the menu must list one row per skill, got ${items.length}`);
       // A "Manage skills…" footer follows the skill rows (opens Skills settings).
-      assert(!!box._skillMenu.querySelector('li.skill-menu-manage'),
+      assert(!!box._skillPopup.surface.querySelector('li.skill-menu-manage'),
         'the picker must offer a "Manage skills…" footer row');
       assert(textarea.value === 'hello',
         `opening the menu must not modify the composer, got ${JSON.stringify(textarea.value)}`);
@@ -221,7 +222,7 @@ export async function runTests() {
       /** @type {HTMLElement} */ (items[0]).click();
       assert(textarea.value === 'hello $code-review ',
         `selecting must splice "$name ", got ${JSON.stringify(textarea.value)}`);
-      assert(!box._skillMenu, 'selecting a skill must close the menu');
+      assert(!box._skillPopup.surface, 'selecting a skill must close the menu');
 
       // From an empty composer there is no leading space.
       textarea.value = '';
@@ -252,19 +253,19 @@ export async function runTests() {
       assert(!!button, 'composer-box must render a skill picker button');
       assert(!button.hidden, 'the skill button must stay clickable when there are no skills');
 
-      await box._openSkillMenu();
-      assert(!!box._skillMenu, 'clicking with no skills must still open the picker');
-      const rows = box._skillMenu.querySelectorAll('li.skill-mention-item');
+      await box._skillPopup.open();
+      assert(!!box._skillPopup.surface, 'clicking with no skills must still open the picker');
+      const rows = box._skillPopup.surface.querySelectorAll('li.skill-mention-item');
       assert(rows.length === 0, `an empty snapshot must list no skills, got ${rows.length}`);
-      const hint = box._skillMenu.querySelector('li.menu-item-hint');
+      const hint = box._skillPopup.surface.querySelector('li.menu-item-hint');
       assert(!!hint, 'the empty picker must say that there are no skills');
-      assert(!!box._skillMenu.querySelector('li.skill-menu-manage'),
+      assert(!!box._skillPopup.surface.querySelector('li.skill-menu-manage'),
         'the empty picker must offer a "Manage skills…" row into the Skills page');
 
       // Layout: with nothing to describe, the popup must not keep the wide fixed
       // width its description column needs, and the hint must fill the row rather
       // than being wedged into the narrow name column of the two-column grid.
-      const menuWidth = box._skillMenu.getBoundingClientRect().width;
+      const menuWidth = box._skillPopup.surface.getBoundingClientRect().width;
       assert(menuWidth > 0 && menuWidth < 320,
         `an empty picker must shrink to its message, got ${Math.round(menuWidth)}px wide`);
       const rowWidth = hint.getBoundingClientRect().width;
@@ -279,7 +280,7 @@ export async function runTests() {
       failed++;
       errors.push('composer-box-skill-picker-empty: ' + (e instanceof Error ? e.message : String(e)));
     } finally {
-      box._closeSkillMenu();
+      box._skillPopup.close();
       box._completions?.close();
       container.remove();
     }
@@ -347,30 +348,30 @@ export async function runTests() {
       const { thread } = makeStubThread();
       box._messageThread = thread;
 
-      await box._openSkillMenu();
-      opened = box._skillMenu;
+      await box._skillPopup.open();
+      opened = box._skillPopup.surface;
       assert(!!opened && opened.isConnected, 'the picker must be presented in the document');
       container.remove();
       assert(!opened.isConnected,
         'detaching the composer must remove its open skill picker from the document');
-      assert(box._skillPopupCleanup === null && box._skillMenu === null && box._skillMenuOpen === false,
+      assert(box._skillPopup.surface === null && !box._skillPopup.isOpen,
         'detaching the composer must reset the skill picker state');
 
       // Detach while the open is suspended on the snapshot: it must not present
       // a popup for a composer that is no longer in the document.
       document.body.appendChild(container);
-      const pending = box._openSkillMenu();
+      const pending = box._skillPopup.open();
       container.remove();
       await pending;
       const stray = document.querySelector('#skill-menu');
-      assert(stray === null && box._skillMenu === null,
+      assert(stray === null && box._skillPopup.surface === null,
         'an open that resolves after the composer detached must present nothing');
       passed++;
     } catch (e) {
       failed++;
       errors.push('composer-box-skill-picker-detach: ' + (e instanceof Error ? e.message : String(e)));
     } finally {
-      box._closeSkillMenu();
+      box._skillPopup.close();
       opened?.remove();
       document.querySelector('#skill-menu')?.remove();
       box._completions?.close();
@@ -395,7 +396,7 @@ export async function runTests() {
       const long = { name: 'long', description: 'First line\nsecond line ' + 'word '.repeat(80), scope: 'project', source: 'juggler', hasScripts: false };
       const { thread } = makeStubThread(/** @type {any} */ ([...FIXTURE, long]));
       box._messageThread = thread;
-      await box._openActionsSheet();
+      await box._actionsPopup.open();
       const sheet = /** @type {HTMLElement|null} */ (document.querySelector('#actions-sheet'));
       assert(!!sheet, 'the actions sheet must open');
       const rows = /** @type {HTMLElement[]} */ ([...(sheet?.querySelectorAll('li[data-skill]') ?? [])]);
@@ -425,7 +426,7 @@ export async function runTests() {
       failed++;
       errors.push('actions-sheet-skill-rows: ' + (e instanceof Error ? e.message : String(e)));
     } finally {
-      box._closeActionsSheet?.();
+      box._actionsPopup.close();
       box._completions?.close();
       container.remove();
     }
