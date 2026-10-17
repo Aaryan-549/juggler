@@ -63,6 +63,12 @@ let _inFlightId = 0;
 let _generation = 0;
 
 /**
+ * Whether what is held describes a tree other than the one being looked at —
+ * kept on screen across a tab switch until the new tree answers.
+ */
+let _foreign = false;
+
+/**
  * What was last announced, so an unchanged answer is not announced again.
  * @type {string}
  */
@@ -176,9 +182,12 @@ const gitStatusCache = {
           repos: data && Array.isArray(data.repos) ? data.repos : [],
         };
         _error = '';
+        _foreign = false;
       } catch (err) {
         if (generation !== _generation) return _snapshot;
         _error = extractErrorMessage(err);
+        if (_foreign) _snapshot = null;
+        _foreign = false;
       } finally {
         // Only if it is still ours: a reset in between has already discarded
         // this one, and clearing unconditionally would discard its replacement.
@@ -200,6 +209,7 @@ const gitStatusCache = {
     _generation++;
     _snapshot = null;
     _error = '';
+    _foreign = false;
     // Let go of any read still in flight. It is answering a question about the
     // tree we just stopped looking at, and leaving it here would make the next
     // `refresh()` adopt it instead of asking about the new one.
@@ -209,9 +219,9 @@ const gitStatusCache = {
 };
 
 /**
- * Start again against a different tree. Whatever is known describes the previous
- * one, and showing another tree's counts until the next poll comes round would
- * be wrong for as long as twenty seconds — so drop it and ask at once.
+ * Start again against a different project. Whatever is known describes the
+ * previous one, and showing another project's counts until the next poll comes
+ * round would be wrong for as long as twenty seconds — so drop it and ask at once.
  * @returns {void}
  */
 function retarget() {
@@ -219,11 +229,30 @@ function retarget() {
   if (_listeners.size > 0) void gitStatusCache.refresh();
 }
 
+/**
+ * Follow the user to a conversation that works in another tree, without
+ * blanking first. Switching tabs is the commonest thing a user does, and
+ * dropping to "Checking…" for the length of one `git status` changes the card's
+ * height and moves everything around it — usually to come back to the same
+ * answer, since most conversations share a tree. So the last answer stays up
+ * while the new tree is read at once, and watchers hear only if it differs.
+ *
+ * The old answer stays only until the new one: a refused read discards it,
+ * because the previous tree's counts under a tree that cannot be read would be
+ * wrong for as long as the refusal lasts.
+ * @returns {void}
+ */
+function follow() {
+  _generation++;
+  _inFlight = null;
+  _foreign = _snapshot !== null || _error !== '';
+  if (_listeners.size > 0) void gitStatusCache.refresh();
+}
+
 // A project switch replaces the tree this describes.
 wsService.on('project-changed', retarget);
 
-// So does the user moving to a conversation that works somewhere else. The same
-// event, in every way this module cares about.
-onGitWorkspaceChange(retarget);
+// So does the user moving to a conversation that works somewhere else.
+onGitWorkspaceChange(follow);
 
 export default gitStatusCache;

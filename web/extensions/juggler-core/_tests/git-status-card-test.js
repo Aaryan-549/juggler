@@ -18,6 +18,7 @@
 import GitStatusCard from '../cards/git-status-card.js';
 import GitPin from '../pins/git-pin.js';
 import gitStatusCache from '../../../js/services/git-status-cache.js';
+import { setGitWorkspace } from '../../../js/services/git-workspace.js';
 import pinboardItemRegistry from '../../../js/registries/pinboard-item-registry.js';
 import pinboardStore from '../../../js/services/pinboard-store.js';
 import pinboardView from '../../../js/services/pinboard-view.js';
@@ -216,9 +217,8 @@ export async function runTests(_ctx) {
       return original(url, opts);
     });
     try {
-      // What moving to a conversation bound somewhere unreachable does: the tree
-      // changed, so what was known is dropped, and the read of the new one is
-      // refused. Nothing is held back to fall back on.
+      // Nothing known, and the read refused: nothing is held back to fall back
+      // on. (A tab switch reaching the same state is the case further down.)
       gitStatusCache.reset();
       await gitStatusCache.refresh();
     } finally {
@@ -228,6 +228,87 @@ export async function runTests(_ctx) {
       `expected the refusal, got ${JSON.stringify(m.text())}`);
     assert(!m.text().includes('Checking…'),
       `and not a claim that it is still looking, got ${JSON.stringify(m.text())}`);
+    m.teardown();
+  });
+
+  /**
+   * Hold the next status read until the test lets it go, answering `answer` —
+   * or refusing, when `answer` is an Error.
+   * @param {any} answer - What the read should resolve to.
+   * @returns {{release: () => void, restore: () => void}} The levers.
+   */
+  function holdStatus(answer) {
+    const original = window.fetch;
+    /** @type {() => void} */
+    let release = () => {};
+    const gate = new Promise((resolve) => { release = () => resolve(undefined); });
+    window.fetch = /** @type {any} */ (async (/** @type {any} */ url, /** @type {any} */ opts) => {
+      if (!String(url).includes('/git/status')) return original(url, opts);
+      await gate;
+      if (answer instanceof Error) {
+        return {
+          ok: false,
+          status: 400,
+          statusText: 'Bad Request',
+          text: async () => JSON.stringify({ error: answer.message }),
+        };
+      }
+      return { ok: true, json: async () => answer };
+    });
+    let restored = false;
+    const restore = () => {
+      if (restored) return;
+      restored = true;
+      window.fetch = original;
+      setGitWorkspace('');
+    };
+    // Given back before the mount's own teardown, which restores the fetch
+    // underneath this one.
+    owed.push(restore);
+    return { release, restore };
+  }
+
+  await test('switching to a conversation in another tree repaints only if the answer differs', async () => {
+    // The card follows the visible conversation, and a tab switch is the
+    // commonest thing a user does. Dropping to "Checking…" for the length of a
+    // `git status` changes the card's height, and the rail and everything
+    // above it jump; the same answer should not even touch the DOM.
+    const status = { root: '/tmp/proj', repos: [repo({ changed: 2 })] };
+    const m = await mount(status);
+    const held = holdStatus(status);
+    let mutations = 0;
+    const observer = new MutationObserver((records) => { mutations += records.length; });
+    observer.observe(m.contentEl, { childList: true, subtree: true, characterData: true });
+    try {
+      setGitWorkspace('ws_other');
+      await settle();
+      assert(!m.text().includes('Checking…'),
+        `the last answer stays up while the new one is read, got ${JSON.stringify(m.text())}`);
+      assert(m.text().includes('2 changed'), `got ${JSON.stringify(m.text())}`);
+      held.release();
+      await gitStatusCache.refresh();
+      await settle();
+      assert(mutations === 0, `an identical answer repaints nothing, saw ${mutations} mutations`);
+    } finally {
+      observer.disconnect();
+    }
+    held.restore();
+    m.teardown();
+  });
+
+  await test('a switch whose new tree refuses to be read drops the old tree for the refusal', async () => {
+    // Keeping the last answer up is only honest until the new one arrives: if
+    // the new tree cannot be read, the old tree's counts would sit under its
+    // name indefinitely.
+    const m = await mount({ root: '/tmp/proj', repos: [repo({ changed: 2 })] });
+    const held = holdStatus(new Error('workspace ws_gone was closed'));
+    setGitWorkspace('ws_gone');
+    held.release();
+    await gitStatusCache.refresh();
+    await settle();
+    assert(m.text().includes('was closed'), `expected the refusal, got ${JSON.stringify(m.text())}`);
+    assert(!m.text().includes('2 changed'), `and not the old tree's counts, got ${JSON.stringify(m.text())}`);
+    held.restore();
     m.teardown();
   });
 
