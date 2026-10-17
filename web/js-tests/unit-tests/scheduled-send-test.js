@@ -33,6 +33,7 @@ import { closeAllPopups, __resetPopupManagerForTests } from '../../js/utils/popu
 import { underPseudoLocale, shownStrings } from '../utilities/pseudo-locale.js';
 import { isPseudoLocalized } from '../../sdk/lib/i18n.js';
 import '../../js/components/composer.js';
+import MessageThread from '../../js/model/message-thread.js';
 
 /**
  * A stand-in for MessageThread's draft record that keeps the one property the
@@ -48,7 +49,9 @@ function makeStubThread() {
     conversationId: 'conv-1',
     threadItemId: null,
     getContextItems: () => [],
-    hasBusyItems: () => false,
+    // Never queued; the real placement, so a stubbed writer below is the one it calls.
+    sendWillQueue: false,
+    addSendContext(/** @type {any} */ reads) { return MessageThread.prototype.addSendContext.call(this, reads); },
     executeContextItem: async () => {},
     executeContextItemIntoPending: async () => {},
     get draft() {

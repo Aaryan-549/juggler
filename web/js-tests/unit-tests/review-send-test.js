@@ -361,7 +361,7 @@ export async function runTests() {
     await run('it lands under the question already in the box, and takes nothing of it', async () => {
       // Without this the case could pass by there being no box to find: a
       // review that cannot find the composer disturbs nothing either.
-      assert(conversation._getComposer() === composer,
+      assert(tab.getComposer() === composer,
         'precondition: THIS is the box the review will be put in');
       composer.setText('a half-written question');
       composer.flushDraft();

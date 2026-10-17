@@ -270,7 +270,7 @@ class Composer extends HTMLElement {
     /** @type {CompletionMenu|null} @private */
     this._completions = null;
 
-    // Stored promise from the last file-mention executeContextItem call (used by tests)
+    // Stored promise from the last send's mention and dropped-file reads (used by tests)
     /** @type {Promise<any>|null} */
     this._lastMentionPromise = null;
 
@@ -1430,39 +1430,13 @@ class Composer extends HTMLElement {
     // surfaces nowhere and would otherwise strand the flag set.
     this._sending = true;
     try {
-      // While a turn is in flight on THIS thread (it is being driven, or it has
-      // busy items such as a running tool or an approval awaiting a decision)
-      // the message is QUEUED, not refused — Conversation.sendMessage forwards
-      // it to the worker, which parks it in pendingItems and drains it at the
-      // next boundary. So we don't block here; we just nudge the status into
-      // view so the user sees the queued bubble land. Asked of this thread,
-      // because a busy sibling queues nothing here.
-      const busy = !!this._messageThread &&
-              (this._messageThread.isProcessing || this._messageThread.hasBusyItems());
-      if (busy) {
+      // A send while a turn is in flight on THIS thread is QUEUED, not refused
+      // (MessageThread.sendWillQueue), so we don't block here; we just nudge
+      // the status into view so the user sees the queued bubble land.
+      if (this._messageThread?.sendWillQueue) {
         this._scrollToStatus();
       }
 
-      // Create context items for all @-mentions AND dropped text files before
-      // sending. Awaited here so these content items land BEFORE the user message.
-      //
-      // Where they land depends on whether this send will be QUEUED. On an idle
-      // send the reads go straight into the committed items array, landing just
-      // before the about-to-send message. But while a turn is in flight the
-      // message is parked in the worker's pendingItems queue and only promoted at
-      // the next turn boundary — so reads written into items now would be stranded
-      // above the whole in-flight turn's output, with the message promoted far
-      // below. When busy we therefore enqueue the reads onto the SAME pendingItems
-      // queue (ahead of the worker's queued user message), so promotePendingItems
-      // moves the reads and the message into items together, as a contiguous group.
-      //
-      // A mention is FROZEN (`frozen: true`): the model is handed the file as it
-      // stands when this message is sent, and editing it afterwards does not
-      // rewrite that — a live pin near the head of the conversation would
-      // cold-start the whole cached prefix on every edit to the very file the
-      // user mentioned for the agent to work on. Dropped files are snapshots
-      // too, differing only in that they carry the bytes inline (a
-      // `dropped-file`) rather than a path read at the first send.
       // The prose actually sent: the typed text with any `$name` skill triggers
       // removed (they become tool-calls, never prose). Reassigned in the thread
       // block below; equals `message` when there is no thread or no `$name`.
@@ -1491,25 +1465,16 @@ class Composer extends HTMLElement {
         skillNames = extracted.names;
         outgoingMessage = extracted.text;
 
-        // Create context items for all @-mentions AND dropped text files before
-        // sending (from the trigger-stripped prose — stripping `$name` never
-        // affects an `@` token). Awaited here so these land BEFORE the user message.
+        // Context items for every @-mention and dropped text file, written
+        // before the message is (from the trigger-stripped prose — stripping
+        // `$name` never affects an `@` token). Whether they go into the
+        // transcript or ride the pending queue with a queued message is the
+        // thread's call (MessageThread.addSendContext).
         const paths = await extractFileMentionsAsync(outgoingMessage, mt.conversation?.workingWorkspaceId ?? '');
         const textFiles = this._pendingTextFiles;
         this._pendingTextFiles = [];
         if (paths.length > 0 || textFiles.length > 0) {
-          const runFile = busy
-            ? (/** @type {string} */ p) => mt.executeContextItemIntoPending('file-content', { path: p, frozen: true })
-            : (/** @type {string} */ p) => mt.executeContextItem('file-content', { path: p, frozen: true });
-          const runDropped = busy
-            ? (/** @type {{filename:string,content:string}} */ t) =>
-              mt.executeContextItemIntoPending('dropped-file', { filename: t.filename, content: t.content })
-            : (/** @type {{filename:string,content:string}} */ t) =>
-              mt.executeContextItem('dropped-file', { filename: t.filename, content: t.content });
-          this._lastMentionPromise = Promise.all([
-            ...paths.map(runFile),
-            ...textFiles.map(runDropped)
-          ]);
+          this._lastMentionPromise = mt.addSendContext({ paths, droppedFiles: textFiles });
           await this._lastMentionPromise;
         }
         renderAttachmentChips(this);

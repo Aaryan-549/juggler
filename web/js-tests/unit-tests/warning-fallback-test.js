@@ -23,18 +23,29 @@
 
 import { assert } from '../utilities/test-helpers.js';
 import Conversation from '../../js/model/conversation.js';
+import SessionEvents from '../../js/model/session-events.js';
 import { dumpTape } from '../../js/utils/event-tape.js';
+import '../../js/components/conversation-tab.js';
 
 /**
- * A conversation with the real `showWarning` and `_getComposer` and nothing
- * else, carrying a unique id so the tape can be read back for this case alone.
- * @param {any} tabElement - The owning tab element, or null for a conversation that has none
+ * A conversation with the real `showWarning` and a session feed of its own,
+ * carrying a unique id so the tape can be read back for this case alone. Given
+ * a tab, the feed is answered by the real tab's handler run against it, so the
+ * stand-in need only say what composer it shows.
+ * @param {any} tab - A stand-in tab (`getComposer()`), or null for a conversation that has none
  * @returns {any} A conversation ready to be warned
  */
-function conversationWith(tabElement) {
+function conversationWith(tab) {
   const conv = Object.create(Conversation.prototype);
   conv.id = `CONV_WARNING_${Math.random().toString(36).slice(2)}`;
-  conv._tabElement = tabElement;
+  const events = new SessionEvents(/** @type {any} */ ({}));
+  if (tab) {
+    const answer = /** @type {any} */ (customElements.get('conversation-tab')).prototype._answerModelRequest;
+    events.subscribe((event) => {
+      if (event.data?.conversationId === conv.id) answer.call(tab, event);
+    });
+  }
+  conv._session = { events };
   return conv;
 }
 

@@ -34,6 +34,7 @@ import {
   extractSkillMentions,
 } from '../../js/components/skill-mention-provider.js';
 import '../../js/components/composer.js';
+import MessageThread from '../../js/model/message-thread.js';
 
 /** @type {import('../../js/services/skills.js').SkillMeta[]} */
 const FIXTURE = /** @type {any} */ ([
@@ -78,7 +79,9 @@ function makeStubThread(skills = FIXTURE) {
   const thread = {
     conversationId: 'c-test',
     threadItemId: null,
-    hasBusyItems: () => false,
+    // Never queued; the real placement, so a stubbed writer below is the one it calls.
+    sendWillQueue: false,
+    addSendContext(/** @type {any} */ reads) { return MessageThread.prototype.addSendContext.call(this, reads); },
     getContextItems: () => [skillItem],
     executeContextItem: async (/** @type {string} */ type, /** @type {any} */ params) => {
       calls.push({ type, params, pending: false });

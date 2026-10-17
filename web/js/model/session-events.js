@@ -43,7 +43,12 @@ import { reportFault } from '../utils/fault-report.js';
  *
  * A model asking for a view, which the model may not reach itself:
  * `conversation:turn-requested`, `command-manager:open-requested`,
- * `conversation-export:open-requested`.
+ * `conversation-export:open-requested`, `conversation:thread-open-requested`,
+ * `conversation:warning-requested`, and the three a conversation's tab answers
+ * in its composer: `composer:clear-requested`, `composer:restore-requested`,
+ * `composer:draft-requested`. A warning request is the one that carries an
+ * answer back: the tab sets `heard` and `shown` on it, so the conversation can
+ * record a warning nobody showed (see `Conversation.showWarning`).
  * @typedef {'session:loaded'|'session:saved'|'session:save-error'|'session:metadata-changed'
  *   |'session:workspaces-changed'|'workspace:selected'
  *   |'conversation:created'|'conversation:deleted'|'conversation:renamed'|'conversation:rename-requested'
@@ -52,6 +57,8 @@ import { reportFault } from '../utils/fault-report.js';
  *   |'conversation:context-window-updated'|'conversation:strategy-changed'|'context-items:changed'
  *   |'processing:stopped'
  *   |'conversation:turn-requested'|'command-manager:open-requested'|'conversation-export:open-requested'
+ *   |'conversation:thread-open-requested'|'conversation:warning-requested'
+ *   |'composer:clear-requested'|'composer:restore-requested'|'composer:draft-requested'
  * } SessionEventType
  */
 

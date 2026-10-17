@@ -756,9 +756,13 @@ class Conversation {
    * Set the tab element that shows this conversation, and start the status
    * observer that turns worker processing-state frames into LLM status.
    *
-   * The conversation writes nothing into the tab or its columns. The tab hands
-   * its own columns the conversation, paints status from its own subscription
-   * to {@link onStatusChange}, and scrolls on `conversation:turn-requested`.
+   * The conversation writes nothing into the tab or its columns, and calls no
+   * method on it: the reference is kept only for {@link getTabElement}'s
+   * callers. The tab hands its own columns the conversation, paints status from
+   * its own subscription to {@link onStatusChange}, scrolls on
+   * `conversation:turn-requested`, and answers the conversation's other
+   * requests of its view (`composer:*-requested`, `conversation:thread-open-requested`,
+   * `conversation:warning-requested`) in its visible composer.
    * @param {import('../components/conversation-tab.js').default} tabElement
    */
   setTabElement(tabElement) {
@@ -775,25 +779,17 @@ class Conversation {
   }
 
   /**
-   * Get the composer element for this conversation
-   * @returns {HTMLElement|null} Composer element or null
-   *     */
-  _getComposer() {
-    if (!this._tabElement) {
-      return null;
-    }
-    return this._tabElement.getComposer();
-  }
-
-  /**
-   * The thread-item id an composer is currently bound to (null for root),
-   * or null when there is no box.
-   * @param {any} composer
-   * @returns {string|null} The bound thread-item id, or null.
+   * Ask for the box showing `threadId` to be emptied, on the session feed as
+   * `composer:clear-requested`. The tab showing this conversation answers, and
+   * only when its visible box is bound to that thread, so a scheduled send fired
+   * on a hidden thread leaves the visible column's draft alone. Given
+   * `onlyIfText`, it also answers only when the box holds exactly that text.
+   * @param {string|null} threadId - The thread the send went to (null for root).
+   * @param {string} [onlyIfText] - Clear only a box holding this text (compared trimmed).
    * @private
    */
-  _composerThreadId(composer) {
-    return (composer && 'threadItemId' in composer) ? (composer.threadItemId ?? null) : null;
+  _requestComposerClear(threadId, onlyIfText) {
+    this._session?.events.notify('composer:clear-requested', { conversationId: this.id, threadId, onlyIfText });
   }
 
   /**
@@ -1794,9 +1790,6 @@ class Conversation {
 
     // Check for slash commands first (these work even when processing)
     if (options.interpretCommands !== false && userMessage.startsWith('/')) {
-      // Capture composer before command runs — commands may change the active column
-      const composer = this._getComposer();
-      const boundBefore = this._composerThreadId(composer);
       // Clear the box BEFORE running the command, not after. A command like
       // /handoff clones the conversation part-way through execute(), and the
       // clone is taken from the source's persisted draft — so if the command
@@ -1816,14 +1809,10 @@ class Conversation {
       // slash/commands menu, a scheduled or programmatic send) the box instead
       // holds an unrelated in-progress draft; clearInput() would destroy it
       // non-undoably (setText('') wipes the native undo stack), so leave it be.
-      const boxText = (composer && typeof (/** @type {any} */ (composer).getText) === 'function')
-        ? /** @type {any} */ (composer).getText().trim()
-        : '';
-      if (/^\/[a-zA-Z]/.test(userMessage)
-          && boxText === userMessage.trim()
-          && composer && typeof (/** @type {any} */ (composer).clearInput) === 'function'
-          && boundBefore === this._targetThreadId(messageThread, threadItemId)) {
-        /** @type {any} */ (composer).clearInput();
+      // The request is answered synchronously, so the box is judged as it
+      // stands before the command can change the active column.
+      if (/^\/[a-zA-Z]/.test(userMessage)) {
+        this._requestComposerClear(this._targetThreadId(messageThread, threadItemId), userMessage);
       }
       // A command is content too: /clear re-seeds, /handoff clones, and both
       // want a conversation that has already chosen where it works.
@@ -1954,13 +1943,10 @@ class Conversation {
       restorable: consumeComposer,
     };
 
-    // Validation passed locally - now clear the input. Only clear the box when
-    // it is showing the thread we sent to: a scheduled send fired from the
-    // model on a hidden thread must not wipe the visible column's draft.
-    const composer = consumeComposer ? this._getComposer() : null;
-    if (composer && typeof (/** @type {any} */ (composer).clearInput) === 'function'
-        && this._composerThreadId(composer) === this._targetThreadId(messageThread, threadItemId)) {
-      /** @type {any} */ (composer).clearInput();
+    // Validation passed locally - now clear the input, in the box showing the
+    // thread we sent to and no other (see _requestComposerClear).
+    if (consumeComposer) {
+      this._requestComposerClear(this._targetThreadId(messageThread, threadItemId));
     }
 
     // Cancel any pending approval dialogs for this conversation — but NOT
@@ -2698,7 +2684,9 @@ class Conversation {
 
   /**
    * Show a warning message to the user, through the composer that serves this
-   * conversation.
+   * conversation. It is asked for on the session feed as
+   * `conversation:warning-requested`; the tab showing this conversation hears
+   * it (`heard`) and puts it in its visible composer (`shown`).
    *
    * With no composer there is nowhere to put it and the warning is lost, so the
    * drop records itself. Every caller here is a refusal the user is owed an
@@ -2716,12 +2704,10 @@ class Conversation {
    * @param {number} [duration] - Duration to show warning in milliseconds (default: 3000)
    */
   showWarning(message, duration = 3000) {
-    const composer = this._getComposer();
-    if (composer && 'showWarning' in composer && typeof composer.showWarning === 'function') {
-      /** @type {any} */ (composer).showWarning(message, duration);
-      return;
-    }
-    recordTape('warning-dropped', this.id, { message, hasTab: Boolean(this._tabElement) });
+    const request = { conversationId: this.id, message, duration, heard: false, shown: false };
+    this._session?.events.notify('conversation:warning-requested', request);
+    if (request.shown) return;
+    recordTape('warning-dropped', this.id, { message, hasTab: request.heard });
     console.warn('[Conversation] warning with no composer to show it:', message);
   }
 
@@ -2738,22 +2724,17 @@ class Conversation {
       const data = effect.data || {};
       switch (effect.type) {
         case 'openThread': {
-          const tabElement = /** @type {any} */ (this._tabElement);
-          if (tabElement) {
-            tabElement.openThread(data.threadId);
-          }
+          // Opening a column is the tab's: it owns the selection chain.
+          this._session?.events.notify('conversation:thread-open-requested',
+            { conversationId: this.id, threadId: data.threadId });
           break;
         }
         case 'setDraft': {
           // A user command in 'draft' run mode expanded its template into the
           // composer for editing before send. Commands never touch the DOM;
-          // they declare intent and the host splices it in, caret at the end.
-          const composer = /** @type {any} */ (this._getComposer());
-          if (composer && typeof composer.setDraft === 'function') {
-            composer.setDraft(String(data.text ?? ''));
-          } else if (composer && typeof composer.setText === 'function') {
-            composer.setText(String(data.text ?? ''));
-          }
+          // they declare intent and the tab splices it in, caret at the end.
+          this._session?.events.notify('composer:draft-requested',
+            { conversationId: this.id, text: String(data.text ?? '') });
           break;
         }
         case 'openCommandManager': {
@@ -2808,7 +2789,8 @@ class Conversation {
   }
 
   /**
-   * Put the refused message back into the composer after a send failure —
+   * Put the refused message back into the composer after a send failure, asked
+   * for on the session feed as `composer:restore-requested` — the whole of it,
    * text and images together, since that is what the user sent and the box was
    * cleared of both. Restoring the images is also what keeps their bytes alive:
    * a bounced send wrote no item, so the persisted draft becomes the only thing
@@ -2824,10 +2806,7 @@ class Conversation {
     const message = this._pendingUserMessage;
     this._pendingUserMessage = null;
     if (!message || message.restorable === false || this._isEmptyMessage(message)) return;
-    const composer = this._getComposer();
-    if (composer && typeof (/** @type {any} */ (composer).restoreMessage) === 'function') {
-      /** @type {any} */ (composer).restoreMessage(message);
-    }
+    this._session?.events.notify('composer:restore-requested', { conversationId: this.id, message });
   }
 
   /**

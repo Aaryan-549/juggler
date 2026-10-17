@@ -24,7 +24,9 @@
 
 import { assert } from '../utilities/test-helpers.js';
 import Conversation from '../../js/model/conversation.js';
+import SessionEvents from '../../js/model/session-events.js';
 import workerManager from '../../js/services/worker-manager.js';
+import '../../js/components/conversation-tab.js';
 
 /** An uploaded image ref, as a staged attachment reaches the worker. */
 const REF = { id: 'sha-pending-1', mime: 'image/png', filename: 'pixel.png', bytes: 12, width: 1, height: 1 };
@@ -67,6 +69,20 @@ function makeConversation(fields) {
 }
 
 /**
+ * A session feed answered the way the tab showing the conversation answers
+ * it, by the real tab handler, against a stand-in tab whose visible box is
+ * `composer`. The conversation reaches its box only through this feed.
+ * @param {any} composer - The fake composer the tab shows.
+ * @returns {any} A `_session` carrying only the feed.
+ */
+function sessionShowing(composer) {
+  const events = new SessionEvents(/** @type {any} */ ({}));
+  const answer = /** @type {any} */ (customElements.get('conversation-tab')).prototype._answerModelRequest;
+  events.subscribe((event) => answer.call({ getComposer: () => composer }, event));
+  return { events };
+}
+
+/**
  * Run the pending-message restore test suite.
  * @returns {Promise<{passed: number, failed: number, errors: string[]}>} Counts of passed/failed checks and any error messages.
  */
@@ -82,7 +98,7 @@ export async function runTests() {
       const composer = fakeComposer();
       const conv = makeConversation({
         _pendingUserMessage: { content: 'look at this', attachments: [REF] },
-        _getComposer: () => composer
+        _session: sessionShowing(composer)
       });
       conv.restorePendingMessage();
 
@@ -105,7 +121,7 @@ export async function runTests() {
       const composer = fakeComposer();
       const conv = makeConversation({
         _pendingUserMessage: { content: '', attachments: [REF] },
-        _getComposer: () => composer
+        _session: sessionShowing(composer)
       });
       conv.restorePendingMessage();
       assert(composer.attachments.length === 1,
@@ -116,7 +132,7 @@ export async function runTests() {
       const untouched = fakeComposer();
       const empty = makeConversation({
         _pendingUserMessage: { content: '   ', attachments: [] },
-        _getComposer: () => untouched
+        _session: sessionShowing(untouched)
       });
       empty.restorePendingMessage();
       assert(untouched.restores === 0,

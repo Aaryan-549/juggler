@@ -1768,6 +1768,47 @@ export default class MessageThread {
   }
 
   /**
+   * Whether a message sent to this thread now would be QUEUED rather than
+   * start a turn: the thread is being driven, or it has work in flight (a
+   * running tool, an approved one awaiting its claim, a sub-thread still
+   * working). Conversation.sendMessage forwards such a message to the worker,
+   * which parks it in pendingItems and drains it at the next boundary.
+   * @returns {boolean} True when a send now would be queued.
+   */
+  get sendWillQueue() {
+    return this.isProcessing || this.hasBusyItems();
+  }
+
+  /**
+   * Write the reads that accompany a message about to be sent to this thread:
+   * a frozen `file-content` per `@`-mentioned path, and a `dropped-file` per
+   * dropped text file. Awaited by the sender, so they land BEFORE the message.
+   *
+   * Where they land is this thread's call ({@link sendWillQueue}), decided as
+   * they are written. An idle send goes straight into `items`, so the reads go
+   * there too. A queued send is promoted from pendingItems at the next turn
+   * boundary, so its reads ride the same queue, ahead of the message, and are
+   * promoted with it as one contiguous group — written into `items` now they
+   * would sit above the whole in-flight turn while the message landed below it.
+   *
+   * A mention is frozen: the model gets the file as it stands at this send, so
+   * an edit afterwards does not cold-start the cached prefix it sits in. A
+   * dropped file is a snapshot too, carrying its bytes inline.
+   * @param {{paths?: string[], droppedFiles?: Array<{filename: string, content: string}>}} reads - What to read.
+   * @returns {Promise<void>} Resolves once every read is written.
+   */
+  async addSendContext({ paths = [], droppedFiles = [] }) {
+    if (paths.length === 0 && droppedFiles.length === 0) return;
+    const write = this.sendWillQueue
+      ? (/** @type {string} */ type, /** @type {Record<string, any>} */ params) => this.executeContextItemIntoPending(type, params)
+      : (/** @type {string} */ type, /** @type {Record<string, any>} */ params) => this.executeContextItem(type, params);
+    await Promise.all([
+      ...paths.map((path) => write('file-content', { path, frozen: true })),
+      ...droppedFiles.map(({ filename, content }) => write('dropped-file', { filename, content })),
+    ]);
+  }
+
+  /**
    * @param {string} itemId
    * @returns {Promise<void>}
    */

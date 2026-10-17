@@ -344,26 +344,10 @@ class ScheduledSendService {
       }
 
       // Mentions and dropped text files become context items BEFORE the user
-      // message, mirroring the composer's own send path — including its
-      // busy-time behaviour: when a turn is in flight the send is queued, so the
-      // reads must ride the same pendingItems queue (via executeContextItemIntoPending)
-      // to stay grouped with the message on promotion rather than landing in the
-      // live items array now while the message is promoted later. Asked of the
-      // thread being sent to, exactly as sendMessage decides to queue. A mention
-      // is frozen at its send, as the composer's is.
-      const busy = thread.isProcessing ||
-        (typeof thread.hasBusyItems === 'function' && thread.hasBusyItems());
+      // message, through the same thread call the composer's send makes, which
+      // decides whether they ride the pending queue with a queued message.
       const paths = await extractFileMentionsAsync(text, thread.conversation?.workingWorkspaceId ?? '');
-      if (paths.length > 0 || textFiles.length > 0) {
-        await Promise.all([
-          ...paths.map((p) => busy
-            ? thread.executeContextItemIntoPending('file-content', { path: p, frozen: true })
-            : thread.executeContextItem('file-content', { path: p, frozen: true })),
-          ...textFiles.map((t) => busy
-            ? thread.executeContextItemIntoPending('dropped-file', { filename: t.filename, content: t.content })
-            : thread.executeContextItem('dropped-file', { filename: t.filename, content: t.content })),
-        ]);
-      }
+      await thread.addSendContext({ paths, droppedFiles: textFiles });
 
       const reason = await thread.conversation.sendMessage(text, thread.threadItemId, thread, { attachments });
       if (reason === null) {

@@ -43,6 +43,21 @@ export { THREAD_FOCUS_CHANGED };
 const COLUMN_PEEK_REM = 1.5;
 
 /**
+ * What a conversation asks of the tab showing it, on the session feed. The
+ * model holds no element and calls no method on one, so these are its only way
+ * to empty, fill or warn through a composer, or to open a column; the tab
+ * answers them in `_answerModelRequest`.
+ * @type {ReadonlySet<string>}
+ */
+const MODEL_REQUESTS = new Set([
+  'conversation:warning-requested',
+  'conversation:thread-open-requested',
+  'composer:clear-requested',
+  'composer:restore-requested',
+  'composer:draft-requested',
+]);
+
+/**
  * ConversationTab - Isolated DOM container for a single conversation
  *
  * Supports Miller columns: selecting any item in column N opens column N+1.
@@ -251,6 +266,13 @@ class ConversationTab extends JugglerElement {
           return;
         }
 
+        // What the conversation asks of its view is answered hidden or not:
+        // a scheduled send can fire on a conversation nobody is looking at.
+        if (MODEL_REQUESTS.has(event.type)) {
+          if (event.data?.conversationId === this._conversation.id) this._answerModelRequest(event);
+          return;
+        }
+
         // Hidden: defer all rendering work. setActive will flush.
         // 'conversation:switched' for our own conv is also a no-op here:
         // setActive() (called from conversation-bar) runs the sync, and
@@ -424,6 +446,44 @@ class ConversationTab extends JugglerElement {
       if (typeof box.isEmpty === 'function' && !box.isEmpty()) hasText = true;
     });
     return hasText;
+  }
+
+  /**
+   * Answer one of this tab's conversation's requests of its view (see
+   * {@link MODEL_REQUESTS}), in the visible composer. The conversation holds no
+   * element, so this is the only place they are carried out.
+   * @param {import('../model/session-events.js').SessionEvent} event - The request.
+   * @private
+   */
+  _answerModelRequest(event) {
+    const data = event.data;
+    const composer = /** @type {any} */ (this.getComposer());
+    switch (event.type) {
+      case 'conversation:warning-requested':
+        data.heard = true;
+        if (composer) {
+          composer.showWarning(data.message, data.duration);
+          data.shown = true;
+        }
+        break;
+      case 'composer:clear-requested': {
+        // Only the box showing the thread the send went to, and when asked to
+        // check, only a box still holding exactly that text.
+        if (!composer || (composer.threadItemId ?? null) !== (data.threadId ?? null)) break;
+        if (typeof data.onlyIfText === 'string' && composer.getText().trim() !== data.onlyIfText.trim()) break;
+        composer.clearInput();
+        break;
+      }
+      case 'composer:restore-requested':
+        composer?.restoreMessage(data.message);
+        break;
+      case 'composer:draft-requested':
+        composer?.setDraft(data.text);
+        break;
+      case 'conversation:thread-open-requested':
+        this.openThread(data.threadId);
+        break;
+    }
   }
 
   /**

@@ -29,6 +29,7 @@
 
 import { initializeRegistries, assert } from '../utilities/test-helpers.js';
 import '../../js/components/composer.js';
+import MessageThread from '../../js/model/message-thread.js';
 
 /**
  * A stand-in for the Skills context item that getThreadSkillSnapshot() looks
@@ -83,7 +84,9 @@ function mountGatedComposer() {
   /** @type {any} */
   const thread = {
     getContextItems: () => [new FakeSkillItem(gate)],
-    hasBusyItems: () => false,
+    // Never queued; the real placement, so a stubbed writer below is the one it calls.
+    sendWillQueue: false,
+    addSendContext(/** @type {any} */ reads) { return MessageThread.prototype.addSendContext.call(this, reads); },
     executeContextItem: async () => {},
     executeContextItemIntoPending: async () => {},
   };

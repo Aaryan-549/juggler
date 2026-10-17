@@ -12,11 +12,13 @@
  * hears `conversation:turn-requested` on the session feed. Session events go
  * out on the session's own feed and are not mirrored onto `document`. The
  * reverse direction is the view's to own as well: the tab hands its root column
- * the conversation, and the conversation never writes into a column.
+ * the conversation, and the conversation never writes into a column. What the
+ * model wants of a composer — cleared, handed a refused message or a draft, a
+ * warning shown, a thread opened — it asks for on the feed, and the tab answers.
  *
- * The first three cases are structural. The last two drive a real
- * conversation-tab, because "the tab subscribed" is only true if a status
- * change actually reaches one, and stops reaching it once it is gone.
+ * The first four cases are structural. The rest drive a real conversation-tab,
+ * because "the tab subscribed" is only true if a request actually reaches one,
+ * and stops reaching it once it is gone.
  * @module unit-tests/model-view-boundary-test
  */
 
@@ -81,6 +83,37 @@ export async function runTests() {
     assert(!('_conversationArea' in conv), 'the conversation keeps a reference to a column of its own');
   });
 
+  await run('a conversation calls nothing on the tab it is shown in', () => {
+    // Every property read on the tab is recorded, so a model that reaches for
+    // its composer, or asks it to open a thread, shows up here by name.
+    /** @type {string[]} */
+    const touched = [];
+    const tab = new Proxy({}, {
+      get: (_target, key) => { touched.push(String(key)); return () => null; },
+    });
+    const session = /** @type {any} */ (trackTestSession(new Session(/** @type {any} */ ({}))));
+    /** @type {any} */
+    const conv = Object.create(Conversation.prototype);
+    conv.id = 'model-view-boundary-calls';
+    conv._session = session;
+    conv._llmState = { registerConversation() {} };
+    conv.setTabElement(/** @type {any} */ (tab));
+    const priorWarn = console.warn;
+    console.warn = () => {};
+    try {
+      conv.showWarning('a refusal');
+      conv._pendingUserMessage = { content: 'a refused message', attachments: [] };
+      conv.restorePendingMessage();
+      conv._handleCommandSideEffects([
+        { type: 'openThread', data: { threadId: 'thread-1' } },
+        { type: 'setDraft', data: { text: 'a drafted command' } },
+      ]);
+    } finally {
+      console.warn = priorWarn;
+    }
+    assert(touched.length === 0, `the conversation reached into its tab for: ${touched.join(', ')}`);
+  });
+
   await run('session events stay on the session feed', () => {
     const session = /** @type {any} */ (trackTestSession(new Session(/** @type {any} */ ({}))));
     const type = 'model-view-boundary:probe';
@@ -131,6 +164,55 @@ export async function runTests() {
       session.events.notify('conversation:turn-requested', { conversationId: conversation.id });
       assert(scrolls.length === 1 && scrolls[0] === true,
         `the root column was scrolled ${JSON.stringify(scrolls)}, want one forced scroll`);
+    });
+
+    await run('the tab answers the model\'s requests in its own composer', () => {
+      const composer = /** @type {any} */ (tab.getComposer());
+      assert(!!composer, 'test setup: the tab should show a composer');
+
+      /** @type {string[]} */
+      const shown = [];
+      const realShowWarning = composer.showWarning;
+      composer.showWarning = (/** @type {string} */ message) => { shown.push(message); };
+      try {
+        session.events.notify('conversation:warning-requested',
+          { conversationId: 'some-other-conversation', message: 'not this tab\'s', duration: 1, heard: false, shown: false });
+        conversation.showWarning('a refusal', 1000);
+      } finally {
+        composer.showWarning = realShowWarning;
+      }
+      assert(shown.length === 1 && shown[0] === 'a refusal',
+        `the composer showed ${JSON.stringify(shown)}, want only this conversation's warning`);
+
+      conversation._pendingUserMessage = { content: 'handed back', attachments: [] };
+      conversation.restorePendingMessage();
+      assert(composer.getText() === 'handed back',
+        `a refused message must go back into the box, got ${JSON.stringify(composer.getText())}`);
+
+      conversation._handleCommandSideEffects([{ type: 'setDraft', data: { text: '/draft me' } }]);
+      assert(composer.getText() === '/draft me',
+        `a drafted command must land in the box, got ${JSON.stringify(composer.getText())}`);
+
+      session.events.notify('composer:clear-requested',
+        { conversationId: conversation.id, threadId: 'a-thread-this-box-is-not-showing' });
+      assert(composer.getText() === '/draft me', 'a clear for a thread the box is not showing wiped it');
+      session.events.notify('composer:clear-requested',
+        { conversationId: conversation.id, threadId: null, onlyIfText: '/something-else' });
+      assert(composer.getText() === '/draft me', 'a clear for a command the box does not hold wiped it');
+      session.events.notify('composer:clear-requested',
+        { conversationId: conversation.id, threadId: null, onlyIfText: ' /draft me ' });
+      assert(composer.getText() === '', `a clear for what the box holds must empty it, got ${JSON.stringify(composer.getText())}`);
+
+      /** @type {string[]} */
+      const opened = [];
+      const realOpenThread = tab.openThread;
+      tab.openThread = (/** @type {string} */ id) => { opened.push(id); };
+      try {
+        conversation._handleCommandSideEffects([{ type: 'openThread', data: { threadId: 'thread-x' } }]);
+      } finally {
+        tab.openThread = realOpenThread;
+      }
+      assert(opened.length === 1 && opened[0] === 'thread-x', `the tab opened ${JSON.stringify(opened)}, want thread-x`);
     });
 
     // Last, because it detaches the tab.
