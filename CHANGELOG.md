@@ -36,6 +36,8 @@ of changes; this project follows semantic versioning.
 - New conversations' tips can be turned off; "Suggest prompts" now covers starter prompts too
 - Pre-approve a global MCP server in Settings so its tools never ask
 - "Don't ask again" on an MCP tool now covers every conversation in the project
+- The automatic cheap model runs at its lowest reasoning level, so auto-approve answers in time
+- A cheap model that reasons away its whole budget says so instead of silently declining
 
 ## [0.7.6] - 2026-10-09
 

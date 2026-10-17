@@ -77,6 +77,10 @@ type QuickCompleteUsage struct {
 type QuickCompleteResult struct {
 	Text  string
 	Usage QuickCompleteUsage
+	// StopReason is why the provider ended the turn. Empty Text with
+	// StopReasonMaxTokens is the signature of a reasoning model that spent the
+	// whole output budget thinking (see quickCompleteMinMaxTokens).
+	StopReason provider.StopReason
 }
 
 // QuickComplete runs a single bounded LLM turn with no tools, no Yjs document,
@@ -227,12 +231,14 @@ func (s *Server) QuickComplete(ctx context.Context, req QuickCompleteRequest) (Q
 	}
 
 	usage := QuickCompleteUsage{}
+	var stop provider.StopReason
 	if result != nil {
 		usage.InputTokens = result.InputTokens
 		usage.OutputTokens = result.OutputTokens
 		usage.CachedTokens = provider.TokenCount(result.CachedTokens)
+		stop = result.StopReason
 	}
-	return QuickCompleteResult{Text: strings.TrimSpace(b.String()), Usage: usage}, nil
+	return QuickCompleteResult{Text: strings.TrimSpace(b.String()), Usage: usage, StopReason: stop}, nil
 }
 
 // ephemeralConvID mints a throwaway conversation id for an out-of-band turn, so

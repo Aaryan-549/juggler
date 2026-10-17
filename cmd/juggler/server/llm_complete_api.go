@@ -14,6 +14,7 @@ import (
 
 	"juggler/cmd/juggler/core"
 	"juggler/cmd/juggler/msg"
+	"juggler/cmd/juggler/providers/provider"
 	"juggler/cmd/juggler/server/handlers"
 )
 
@@ -48,7 +49,8 @@ const (
 //
 // Failures carry a status a caller can act on without reading prose: 429 the
 // pool is momentarily saturated, 504 the bound elapsed, 400 the request or the
-// model is wrong, 502 everything else.
+// model is wrong, 502 everything else — including a reply left empty by the
+// output budget running out (emptyReplyError).
 func (s *Server) handleLLMComplete(w http.ResponseWriter, r *http.Request) {
 	req, ok := handlers.DecodeJSON[struct {
 		System    string          `json:"system"`
@@ -81,6 +83,9 @@ func (s *Server) handleLLMComplete(w http.ResponseWriter, r *http.Request) {
 		MaxTokens: req.MaxTokens,
 		Timeout:   clampCompleteTimeout(req.TimeoutMs),
 	})
+	if err == nil {
+		err = emptyReplyError(res)
+	}
 	if err != nil {
 		status, reply := completeErrorStatus(err)
 		handlers.WriteErr(w, r, status, reply)
@@ -138,6 +143,19 @@ func completeErrorStatus(err error) (int, error) {
 	default:
 		return http.StatusBadGateway, err
 	}
+}
+
+// emptyReplyError reports a completion that produced no text because the
+// output budget ran out first: a reasoning model that spent the whole cap
+// thinking. It is a failure, not an empty answer — handed "", a caller cannot
+// tell it from a model with nothing to say, and the auto-approve reviewer would
+// read it as a considered deny. The remedy is a setting, so it is reported
+// under the 502 that means "go and fix something", not as a retryable timeout.
+func emptyReplyError(res QuickCompleteResult) error {
+	if strings.TrimSpace(res.Text) != "" || res.StopReason != provider.StopReasonMaxTokens {
+		return nil
+	}
+	return msg.NewError("The model used its whole output budget reasoning and gave no answer. Lower its reasoning level in Settings → Defaults → Cheap model.")
 }
 
 // resolveLLMCompleteModel resolves the request's `model` union to a concrete

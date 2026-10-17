@@ -144,6 +144,68 @@ func TestResolveCheapModelAutoDerivePrefix(t *testing.T) {
 	}
 }
 
+// TestResolveCheapModelAutoDeriveRunsAtTheLowestLevel: a derived cheap model is
+// sent its lowest advertised reasoning level rather than none. With none, the
+// provider applies its own default — max, on GLM — and a micro-task bounded in
+// seconds spends that bound thinking.
+func TestResolveCheapModelAutoDeriveRunsAtTheLowestLevel(t *testing.T) {
+	registerCheapTestProvider("cheaptest", "cheap-mini")
+	s := newCheapResolveServer(t, []ProviderStatus{
+		{Name: "cheaptest", Available: true, ModelsWithContext: []ModelWithContext{
+			{ID: "cheap-mini", ThinkingLevels: []string{"low", "high", "max"}, DefaultThinkingLevel: "max"},
+			{ID: "big"},
+		}},
+	})
+	got, ok := s.resolveCheapModel(context.Background(), core.ModelRef{Provider: "cheaptest", Model: "big"})
+	if !ok {
+		t.Fatal("expected auto-derive to resolve")
+	}
+	if want := (core.ModelRef{Provider: "cheaptest", Model: "cheap-mini", Thinking: "low"}); got != want {
+		t.Fatalf("resolveCheapModel = %+v, want %+v", got, want)
+	}
+}
+
+// TestResolveCheapModelBorrowedTierRunsAtTheLowestLevel covers the same rule on
+// the borrowed path, which resolves through the same tier lookup.
+func TestResolveCheapModelBorrowedTierRunsAtTheLowestLevel(t *testing.T) {
+	registerCheapTestProvider("nohint", "")
+	registerCheapTestProvider("cheaptest", "cheap-mini")
+	s := newCheapResolveServer(t, []ProviderStatus{
+		{Name: "nohint", Available: true, ModelsWithContext: []ModelWithContext{{ID: "big"}}},
+		{Name: "cheaptest", Available: true, ModelsWithContext: []ModelWithContext{
+			{ID: "cheap-mini-20251001", ThinkingLevels: []string{"off", "low", "medium"}},
+		}},
+	})
+	pinDefault(t, s, core.ModelRef{Provider: "cheaptest", Model: "cheap-mini-20251001"})
+
+	got, ok := s.resolveCheapModel(context.Background(), core.ModelRef{Provider: "nohint", Model: "big"})
+	if !ok {
+		t.Fatal("expected the default model's provider to supply a cheap tier")
+	}
+	if want := (core.ModelRef{Provider: "cheaptest", Model: "cheap-mini-20251001", Thinking: "off"}); got != want {
+		t.Fatalf("resolveCheapModel = %+v, want %+v", got, want)
+	}
+}
+
+// TestResolveCheapModelPinWithoutLevelIsLeftAlone: a pin is the user's own
+// choice, and "Default" in the picker is one of the choices it can carry.
+func TestResolveCheapModelPinWithoutLevelIsLeftAlone(t *testing.T) {
+	registerCheapTestProvider("cheaptest", "cheap-mini")
+	s := newCheapResolveServer(t, []ProviderStatus{
+		{Name: "cheaptest", Available: true, ModelsWithContext: []ModelWithContext{
+			{ID: "cheap-mini", ThinkingLevels: []string{"low", "high", "max"}},
+		}},
+	})
+	pinCheap(t, s, core.ModelRef{Provider: "cheaptest", Model: "cheap-mini"})
+	got, ok := s.resolveCheapModel(context.Background(), core.ModelRef{})
+	if !ok {
+		t.Fatal("expected explicit pin to resolve")
+	}
+	if got.Thinking != "" {
+		t.Fatalf("resolveCheapModel = %+v, want the pin as stored", got)
+	}
+}
+
 func TestResolveCheapModelAutoDeriveMissNotInLiveList(t *testing.T) {
 	registerCheapTestProvider("cheaptest", "cheap-mini")
 	s := newCheapResolveServer(t, []ProviderStatus{

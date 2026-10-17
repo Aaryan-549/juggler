@@ -12,6 +12,8 @@ import (
 	"net/http"
 	"testing"
 	"time"
+
+	"juggler/cmd/juggler/providers/provider"
 )
 
 // TestClampCompleteTimeout pins how a caller-supplied wall-clock bound is
@@ -82,6 +84,39 @@ func TestCompleteErrorStatus(t *testing.T) {
 	// telling the user a credential died rather than the model being slow.
 	if _, reply := completeErrorStatus(errors.New("provider \"openai\" unavailable: no credential")); reply.Error() != "provider \"openai\" unavailable: no credential" {
 		t.Fatalf("an unclassified failure must surface verbatim, got %q", reply)
+	}
+}
+
+// TestEmptyReplyError pins when a successful completion is reported as a
+// failure: only a reply that is empty BECAUSE the output budget ran out. A
+// reasoning model that spends the whole cap thinking returns no text, and a
+// caller handed "" cannot tell that from a model with nothing to say — the
+// auto-approve reviewer read it as a considered deny.
+func TestEmptyReplyError(t *testing.T) {
+	tests := []struct {
+		name    string
+		res     QuickCompleteResult
+		wantErr bool
+	}{
+		{"cut off before any text", QuickCompleteResult{StopReason: provider.StopReasonMaxTokens}, true},
+		{"cut off, whitespace only", QuickCompleteResult{Text: "  ", StopReason: provider.StopReasonMaxTokens}, true},
+		{"cut off mid-answer keeps its text", QuickCompleteResult{Text: "allow", StopReason: provider.StopReasonMaxTokens}, false},
+		{"finished with nothing to say", QuickCompleteResult{StopReason: provider.StopReasonEndTurn}, false},
+		{"finished with an answer", QuickCompleteResult{Text: "deny", StopReason: provider.StopReasonEndTurn}, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := emptyReplyError(tc.res)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("emptyReplyError(%+v) = %v, want error: %v", tc.res, err, tc.wantErr)
+			}
+			if err == nil {
+				return
+			}
+			if status, _ := completeErrorStatus(err); status != http.StatusBadGateway {
+				t.Fatalf("an exhausted budget reported as %d, want %d: it is a setting to fix, not a slow call to retry", status, http.StatusBadGateway)
+			}
+		})
 	}
 }
 

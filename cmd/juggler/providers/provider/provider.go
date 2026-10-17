@@ -540,7 +540,8 @@ type ModelInfo struct {
 	// every model. Set only for models with verified non-text input support.
 	InputModalities []string
 	// ThinkingLevels lists the reasoning-effort tiers this model supports, in
-	// display order, each named in the provider's OWN native vocabulary (e.g.
+	// display order — least effort first, which the cheap-model resolver relies
+	// on to pick a floor — each named in the provider's OWN native vocabulary (e.g.
 	// "low"/"medium"/"high", or "none"/"low"/"high"/"xhigh"). A level string IS
 	// the identity — shown in the UI verbatim, stored, and sent back on the next
 	// turn as MessageRequest.ThinkingLevel for the provider to map to its native

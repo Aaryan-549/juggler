@@ -48,7 +48,8 @@ type ModelWithContext struct {
 	ProviderContextWindow   *int `json:"providerContextWindow,omitempty"`
 	ProviderMaxOutputTokens *int `json:"providerMaxOutputTokens,omitempty"`
 	// ThinkingLevels lists the reasoning-effort tiers this model supports, in
-	// display order, each named in the provider's own native vocabulary (e.g.
+	// display order (least effort first; see lowestThinkingLevel), each named
+	// in the provider's own native vocabulary (e.g.
 	// "low"/"medium"/"high", "none"/"low"/"high"/"xhigh"). The string is the
 	// identity: shown verbatim and sent back as the chosen level. Empty/omitted
 	// ⇒ the UI hides the thinking control for this model.
@@ -641,7 +642,7 @@ func (s *Server) liveModelMatch(providerName, wantID string) (string, bool) {
 //     provider is currently available: used as-is.
 //  3. Auto-derive — the primary model's provider advertises a
 //     ProviderInfo.CheapModel that appears in its live list: used with the
-//     matched concrete id.
+//     matched concrete id, at its lowest thinking level (providerCheapTier).
 //  4. Borrowed — the DEFAULT model's provider advertises one, when that is a
 //     different, available provider. A conversation on a plan or an aggregator
 //     with no cheap tier then still gets its tabs named, using a provider the
@@ -708,6 +709,11 @@ func (s *Server) resolveCheapModel(ctx context.Context, primary core.ModelRef) (
 // providerCheapTier resolves a provider's advertised cheap-model hint against
 // its live list. ok=false when the provider names no cheap tier, is
 // unavailable, or publishes nothing matching the hint.
+//
+// The tier runs at the model's lowest advertised reasoning level. Sending no
+// level leaves the provider's own default in force, and that default can be its
+// maximum (GLM's is max) — a micro-task bounded in seconds then spends the
+// bound thinking and never answers.
 func (s *Server) providerCheapTier(providerName string) (core.ModelRef, bool) {
 	info, found := provider.GetProviderInfo(providerName)
 	if !found || info.CheapModel == "" {
@@ -717,7 +723,23 @@ func (s *Server) providerCheapTier(providerName string) (core.ModelRef, bool) {
 	if !ok {
 		return core.ModelRef{}, false
 	}
-	return core.ModelRef{Provider: providerName, Model: concrete}, true
+	return core.ModelRef{Provider: providerName, Model: concrete, Thinking: s.lowestThinkingLevel(providerName, concrete)}, true
+}
+
+// lowestThinkingLevel returns the first of a live model's advertised thinking
+// levels, which are listed least effort first, or "" when it advertises none.
+func (s *Server) lowestThinkingLevel(providerName, modelID string) string {
+	for _, p := range s.cachedProviders() {
+		if p.Name != providerName {
+			continue
+		}
+		for _, m := range p.ModelsWithContext {
+			if m.ID == modelID && len(m.ThinkingLevels) > 0 {
+				return m.ThinkingLevels[0]
+			}
+		}
+	}
+	return ""
 }
 
 // handleCheapModel returns the cheap model used for out-of-band micro-tasks.
