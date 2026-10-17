@@ -254,14 +254,7 @@ func providerMessages(messages []map[string]any) ([]provider.Message, error) {
 
 // threadHasResult reports whether the thread already carries a committed result.
 func (w *ConversationWorker) threadHasResult(threadID string) bool {
-	m := w.doc.GetThreadYMap(threadID)
-	if m == nil {
-		return false
-	}
-	ycrdtMu.Lock()
-	defer ycrdtMu.Unlock()
-	result, _ := m.Get("result").(string)
-	return result != ""
+	return w.doc.threadString(threadID, "result") != ""
 }
 
 // validateCompactionModel returns the pinned model config or a typed
@@ -334,25 +327,11 @@ func (r *run) runReducer(kind string, pinnedModel ModelConfig, budget boundedCom
 // summarizer runs tool-free, so nothing about a fold's identity is carried by a
 // tool name.
 func (w *ConversationWorker) isBoundedCompactionThread(threadID string) bool {
-	m := w.doc.GetThreadYMap(threadID)
-	if m == nil {
-		return false
-	}
-	ycrdtMu.Lock()
-	defer ycrdtMu.Unlock()
-	marked, _ := m.Get("boundedCompaction").(bool)
-	return marked
+	return w.doc.threadFlag(threadID, "boundedCompaction")
 }
 
 func (w *ConversationWorker) compactionPromptItemID(threadID string) string {
-	m := w.doc.GetThreadYMap(threadID)
-	if m == nil {
-		return ""
-	}
-	ycrdtMu.Lock()
-	defer ycrdtMu.Unlock()
-	id, _ := m.Get("compactionPromptItemId").(string)
-	return id
+	return w.doc.threadString(threadID, "compactionPromptItemId")
 }
 
 // resolveCompactionPromptItemID returns the thread's summarization-prompt item

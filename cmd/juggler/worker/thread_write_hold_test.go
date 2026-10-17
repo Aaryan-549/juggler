@@ -206,6 +206,45 @@ func TestTurnOnADeletedThreadReadsNothingAndWritesNothing(t *testing.T) {
 	}
 }
 
+// The deciders that read one field of a thread run on turn goroutines too, and a
+// read off a map resolved in an earlier hold sees the deleted thread's last
+// values, not the thread now carrying the id. Each resolves and reads in one.
+func TestThreadFieldReadsTakeOneHold(t *testing.T) {
+	w := newHoldTestWorker(t)
+	threadID, err := w.currentRun().spawnThread(threadSpec{Goal: "work", Prompt: "do the work"}, toolSpawn{})
+	if err != nil {
+		t.Fatalf("spawnThread: %v", err)
+	}
+	w.doc.SetThreadField(threadID, "result", "stale summary")
+	replaceLastRootThread(w, threadID)
+	w.doc.SetThreadField(threadID, "boundedCompaction", true)
+	w.doc.SetThreadField(threadID, "compactionPromptItemId", "prompt-1")
+	w.doc.SetThreadField(threadID, "forceTool", "Read")
+	tr := w.currentRun().beginTurn(threadID)
+	defer w.sched.unregister(tr.t)
+
+	for _, c := range []struct {
+		name string
+		read func() any
+		want any
+	}{
+		{"threadHasResult", func() any { return w.threadHasResult(threadID) }, false},
+		{"isBoundedCompactionThread", func() any { return w.isBoundedCompactionThread(threadID) }, true},
+		{"compactionPromptItemID", func() any { return w.compactionPromptItemID(threadID) }, "prompt-1"},
+		{"signalParentThread", func() any { return w.signalParentThread(threadID) }, false},
+		// Read is not offered, so the choice is nil after the one read it makes.
+		{"resolveForcedToolChoice", func() any { return tr.resolveForcedToolChoice(nil) == nil }, true},
+	} {
+		var got any
+		if holds := ycrdtHolds(func() { got = c.read() }); holds != 1 {
+			t.Errorf("%s took ycrdtMu %d times, want 1", c.name, holds)
+		}
+		if got != c.want {
+			t.Errorf("%s = %v, want %v from the thread now carrying the id", c.name, got, c.want)
+		}
+	}
+}
+
 func TestSendFollowsItsThreadByID(t *testing.T) {
 	w := newHoldTestWorker(t)
 	threadID, err := w.currentRun().spawnThread(threadSpec{Goal: "work", Prompt: "do the work"}, toolSpawn{})

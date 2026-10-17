@@ -19,6 +19,9 @@
  *   when the pointer type changes) must keep listening to its thread, which it
  *   stays bound to across the move. So must a strategy selector, which observes
  *   the conversation's metadata, the thread's items and its container.
+ * - A conversation tab moved or put back keeps its conversation's session and
+ *   status feeds, which it takes when handed the conversation rather than on
+ *   connect.
  * @module unit-tests/component-teardown
  */
 
@@ -26,6 +29,7 @@ import '../../js/components/tool-action-message.js';
 import '../../js/components/path-input.js';
 import '../../js/components/permission-controls.js';
 import '../../js/components/strategy-selector.js';
+import '../../js/components/conversation-tab.js';
 
 /**
  * @typedef {object} TestResult
@@ -238,6 +242,37 @@ export async function runTests() {
       elsewhere.remove();
     }
   } catch (e) { failed++; errors.push(`strategy-selector re-parented: ${e.message}`); }
+
+  try {
+    const session = new Set();
+    const status = new Set();
+    const conversation = {
+      id: 'teardown-conv',
+      rootItems: [],
+      llmState: null,
+      setTabElement: () => {},
+      onStatusChange: (/** @type {Function} */ fn) => { status.add(fn); return () => status.delete(fn); },
+      session: { subscribe: (/** @type {Function} */ fn) => { session.add(fn); return () => session.delete(fn); } },
+    };
+    const tab = /** @type {any} */ (document.createElement('conversation-tab'));
+    column.appendChild(tab);
+    tab.setConversation(conversation);
+    const elsewhere = document.createElement('div');
+    document.body.appendChild(elsewhere);
+    try {
+      const held = () => `${session.size} session and ${status.size} status subscription(s)`;
+      elsewhere.appendChild(tab);
+      if (session.size !== 1 || status.size !== 1) throw new Error(`after a move it holds ${held()}, want 1 and 1`);
+      tab.remove();
+      if (session.size !== 0 || status.size !== 0) throw new Error(`after removal it holds ${held()}, want none`);
+      elsewhere.appendChild(tab);
+      if (session.size !== 1 || status.size !== 1) throw new Error(`reinserted after a removal it holds ${held()}, want 1 and 1`);
+      tab.remove();
+      passed++;
+    } finally {
+      elsewhere.remove();
+    }
+  } catch (e) { failed++; errors.push(`conversation-tab re-parented: ${e.message}`); }
 
   column.remove();
   return { passed, failed, errors };

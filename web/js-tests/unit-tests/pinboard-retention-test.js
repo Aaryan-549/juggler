@@ -311,6 +311,19 @@ export async function runTests() {
       assert(tally('pin_plain').mounts >= 2, 'the board must go on working after a pin refuses to mount');
     });
 
+    await run('the element coming back shows the pin it was showing', () => {
+      content.setPin(plainPin, active);
+      const { mounts, teardowns } = tally('pin_plain');
+
+      content.remove();
+      assert(tally('pin_plain').teardowns === teardowns + 1, 'leaving the document must end the pin');
+      container.appendChild(content);
+
+      assert(tally('pin_plain').mounts === mounts + 1,
+        'a board put back in the document must mount the pin it was showing, not stand empty');
+      assert(bodies.get('pin_plain').isConnected, 'the remounted pin must be in the document');
+    });
+
     await run('the element leaving the document ends every retained pin', () => {
       content.setPin(keptPin, active);
       const element = bodies.get('pin_kept');

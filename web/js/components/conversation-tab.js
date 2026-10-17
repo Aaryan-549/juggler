@@ -154,6 +154,13 @@ class ConversationTab extends JugglerElement {
   connectedCallback() {
     this.render();
     this.onWindow(TOOL_GROUPING_EVENT, () => this._onToolGroupingChanged());
+    // A tab put back in the document already has its conversation, and is not
+    // handed it again: take back the feeds the disconnect dropped, and rebuild
+    // the columns render() just emptied.
+    if (this._conversation && !this._unsubscribe && !this._statusUnsubscribe) {
+      this._subscribe(this._conversation);
+      this._resync();
+    }
   }
 
   disconnectedCallback() {
@@ -245,6 +252,45 @@ class ConversationTab extends JugglerElement {
     // Give conversation reference to this tab
     conversation.setTabElement(this);
 
+    this._subscribe(conversation);
+
+    // Listen for unified item-selected events (attach once)
+    if (!this._itemSelectedListenerAttached) {
+      this.addEventListener('item-selected', /** @type {EventListener} */ (this._onItemSelected.bind(this)));
+      this.addEventListener('thread-deleted', /** @type {EventListener} */ (this._onThreadDeleted.bind(this)));
+      this.addEventListener('cancel-thread-requested', /** @type {EventListener} */ (this._onCancelThreadRequested.bind(this)));
+      this.addEventListener('expand-thread-requested', /** @type {EventListener} */ (this._onExpandThreadRequested.bind(this)));
+      this.addEventListener('promote-thread-requested', /** @type {EventListener} */ (this._onPromoteThreadRequested.bind(this)));
+      this.addEventListener('request-item-selection', /** @type {EventListener} */ (this._onRequestItemSelection.bind(this)));
+      this.addEventListener('show-transaction-requested', /** @type {EventListener} */ (this._onShowTransactionRequested.bind(this)));
+      this.addEventListener('properties-panel:toggle-transaction', /** @type {EventListener} */ (this._onToggleTransaction.bind(this)));
+      this.addEventListener('restore-input-focus', /** @type {EventListener} */ (this._onRestoreInputFocus.bind(this)));
+      this._itemSelectedListenerAttached = true;
+    }
+
+    this._resync();
+  }
+
+  /**
+   * Bring the columns up to date with the conversation, or, while hidden, leave
+   * that to {@link setActive}.
+   * @private
+   */
+  _resync() {
+    if (this._isHidden) {
+      this._needsResync = true;
+    } else {
+      this._syncWithConversation();
+    }
+  }
+
+  /**
+   * Take the conversation's status and session feeds. Called when handed a
+   * conversation and again on re-connect, since a disconnect drops both.
+   * @param {Conversation} conversation
+   * @private
+   */
+  _subscribe(conversation) {
     // Paint status changes. Rule B: syncWithStatus opens the running thread's
     // column before it updates the footers, so the spinner appears in the
     // right column.
@@ -358,26 +404,6 @@ class ConversationTab extends JugglerElement {
           this._syncWithConversation();
         }
       });
-    }
-
-    // Listen for unified item-selected events (attach once)
-    if (!this._itemSelectedListenerAttached) {
-      this.addEventListener('item-selected', /** @type {EventListener} */ (this._onItemSelected.bind(this)));
-      this.addEventListener('thread-deleted', /** @type {EventListener} */ (this._onThreadDeleted.bind(this)));
-      this.addEventListener('cancel-thread-requested', /** @type {EventListener} */ (this._onCancelThreadRequested.bind(this)));
-      this.addEventListener('expand-thread-requested', /** @type {EventListener} */ (this._onExpandThreadRequested.bind(this)));
-      this.addEventListener('promote-thread-requested', /** @type {EventListener} */ (this._onPromoteThreadRequested.bind(this)));
-      this.addEventListener('request-item-selection', /** @type {EventListener} */ (this._onRequestItemSelection.bind(this)));
-      this.addEventListener('show-transaction-requested', /** @type {EventListener} */ (this._onShowTransactionRequested.bind(this)));
-      this.addEventListener('properties-panel:toggle-transaction', /** @type {EventListener} */ (this._onToggleTransaction.bind(this)));
-      this.addEventListener('restore-input-focus', /** @type {EventListener} */ (this._onRestoreInputFocus.bind(this)));
-      this._itemSelectedListenerAttached = true;
-    }
-
-    if (this._isHidden) {
-      this._needsResync = true;
-    } else {
-      this._syncWithConversation();
     }
   }
 

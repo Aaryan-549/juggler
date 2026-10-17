@@ -188,6 +188,36 @@ func (cd *ConversationDocument) threadFlag(threadItemID, field string) bool {
 	return v
 }
 
+// threadString is threadFlag for a string field, "" when the thread or the
+// field is absent.
+func (cd *ConversationDocument) threadString(threadItemID, field string) string {
+	ycrdtMu.Lock()
+	defer ycrdtMu.Unlock()
+	m := findThreadYMap(cd.getItems(), threadItemID)
+	if m == nil {
+		return ""
+	}
+	v, _ := m.Get(field).(string)
+	return v
+}
+
+// settledLLMChildParent reports whether threadItemID is a create_thread child
+// whose run has settled and, if so, the itemId of the thread containing it (""
+// at root level). Resolve, decide and parent walk share one hold, so a viewer's
+// delete or refold between them cannot answer for a thread no longer there.
+func (cd *ConversationDocument) settledLLMChildParent(threadItemID string) (parentID string, ok bool) {
+	ycrdtMu.Lock()
+	defer ycrdtMu.Unlock()
+	m := findThreadYMap(cd.getItems(), threadItemID)
+	if m == nil {
+		return "", false
+	}
+	if llmCreated, _ := m.Get("llmCreated").(bool); !llmCreated || !threadRunSettledLocked(m) {
+		return "", false
+	}
+	return cd.findParentThreadID(threadItemID), true
+}
+
 // findThreadYMap returns the Y.Map for the thread with the given itemId.
 func findThreadYMap(arr *ycrdt.YArray, threadItemID string) *ycrdt.YMap {
 	var result *ycrdt.YMap

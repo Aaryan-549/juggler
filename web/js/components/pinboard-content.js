@@ -280,6 +280,13 @@ class PinboardContent extends JugglerElement {
     this._body = null;
     /** @type {Pin|null} @private The pin currently mounted. */
     this._pin = null;
+    /**
+     * What was on show when the element left the document — a pin, or null for
+     * the empty state — so connectedCallback can show it again. Null when it was
+     * never shown anything.
+     * @type {{pin: Pin|null}|null} @private
+     */
+    this._leftShowing = null;
     /** @type {PinActiveContext|null} @private */
     this._active = null;
     /** @type {import('juggler/pinboard-item-type').PinController|null} @private */
@@ -384,6 +391,11 @@ class PinboardContent extends JugglerElement {
 
   connectedCallback() {
     this._build();
+    // Leaving the document ended the pin, and the panel above will not hand the
+    // same one over again: show it afresh rather than stand empty.
+    const left = this._leftShowing;
+    this._leftShowing = null;
+    if (left && this._active) this.setPin(left.pin, this._active);
   }
 
   /**
@@ -411,6 +423,7 @@ class PinboardContent extends JugglerElement {
   disconnectedCallback() {
     super.disconnectedCallback();
     this._closeOverflow?.();
+    if (this._active) this._leftShowing = { pin: this._pin };
     this._unmount();
     // Retention is for a pin that is off screen, not for one whose board has
     // left the document: nothing may still be running against a board nobody

@@ -841,19 +841,10 @@ func (w *ConversationWorker) signalParentThread(completedThreadID string) bool {
 	if completedThreadID == "" {
 		return false
 	}
-	threadYMap := w.doc.GetThreadYMap(completedThreadID)
-	if threadYMap == nil {
+	parentThreadID, ok := w.doc.settledLLMChildParent(completedThreadID)
+	if !ok {
 		return false
 	}
-	ycrdtMu.Lock()
-	settled := threadRunSettledLocked(threadYMap)
-	llmCreated, _ := threadYMap.Get("llmCreated").(bool)
-	ycrdtMu.Unlock()
-
-	if !settled || !llmCreated {
-		return false
-	}
-	parentThreadID := w.doc.ParentThreadID(completedThreadID)
 	// Release the finished CHILD's claim before requesting the parent — only the
 	// run that just ended is over. The parent may already be awaiting_llm (its
 	// own turn parked when it spawned this child), which requestLLM below reports

@@ -266,13 +266,7 @@ func (r *run) resolveForcedToolChoice(tools []ToolDefinition) map[string]any {
 	if r.t.thread.itemID == "" {
 		return nil
 	}
-	threadYMap := r.doc.GetThreadYMap(r.t.thread.itemID)
-	if threadYMap == nil {
-		return nil
-	}
-	ycrdtMu.Lock()
-	forceTool, _ := threadYMap.Get("forceTool").(string)
-	ycrdtMu.Unlock()
+	forceTool := r.doc.threadString(r.t.thread.itemID, "forceTool")
 	if forceTool == "" {
 		return nil
 	}
