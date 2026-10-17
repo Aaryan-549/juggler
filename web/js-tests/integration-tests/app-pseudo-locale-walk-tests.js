@@ -29,6 +29,7 @@ import { fetchJson } from '../../js/services/http.js';
 import { applyPinboardOperations } from '../../js/services/pinboard-operations-api.js';
 import { boardId } from '../../js/utils/view-mode.js';
 import { UNTITLED_NAME_RE } from '../../js/model/conversation-naming.js';
+import { pseudoLocalize } from '../../sdk/lib/i18n.js';
 
 /** Every Settings tab, in strip order (settings-panel.js). */
 const SETTINGS_TABS = [
@@ -80,11 +81,22 @@ const INLINE = new Set(['SPAN', 'CODE', 'A', 'STRONG', 'EM', 'B', 'I', 'KBD']);
  */
 function translatedOrSymbol(s) {
   if (!/\p{L}/u.test(s)) return true;
-  // A key chord (⌘N, ⌥⇧⌘M, F2) names keys, which are labelled on the keyboard
-  // rather than translated.
+  // A key chord's key (N, F2) is labelled on the keyboard rather than
+  // translated. On macOS the modifiers are glyphs (⌘N, ⌥⇧⌘M); elsewhere they are
+  // words joined by `+`, each one a message ([Çţŕļ ·]+N).
+  const key = /^(?:[A-Z0-9]|F\d{1,2}|\P{L}+)$/u;
   if (/^[⌘⌥⇧⌃]*(?:[A-Z0-9]|F\d{1,2})$/.test(s.trim())) return true;
-  return s.split('\n').map((l) => l.trim()).filter(Boolean)
-    .every((l) => l.startsWith('[') && /\s·+\]$/.test(l));
+  const parts = s.trim().split('+');
+  if (parts.length > 1 && parts.every((p) => key.test(p) || isTranslatedLine(p))) return true;
+  return s.split('\n').map((l) => l.trim()).filter(Boolean).every(isTranslatedLine);
+}
+
+/**
+ * @param {string} line
+ * @returns {boolean} True when `line` carries the en-XA wrapper.
+ */
+function isTranslatedLine(line) {
+  return line.startsWith('[') && /\s·+\]$/.test(line);
 }
 
 /**
@@ -186,6 +198,19 @@ export const appPseudoLocaleWalkTest = {
 
     /** @type {string[]} */
     const findings = [];
+    // The shell renders chords for the platform it runs on, so the walk sees
+    // one form or the other; each form is judged here on every platform.
+    const chords = {
+      [`${pseudoLocalize('Ctrl')}+${pseudoLocalize('Shift')}+N`]: true,
+      [`${pseudoLocalize('Ctrl')}+${pseudoLocalize('Enter')}`]: true,
+      [`${pseudoLocalize('Ctrl')}+F2`]: true,
+      '⌥⇧⌘M': true,
+      'Ctrl+N': false,
+      [`${pseudoLocalize('Ctrl')}+Enter`]: false,
+    };
+    for (const [chord, ok] of Object.entries(chords)) {
+      if (translatedOrSymbol(chord) !== ok) findings.push(`the walk misjudges the key chord ${JSON.stringify(chord)} as ${ok ? 'English' : 'translated'}`);
+    }
     /**
      * @param {Element|null|undefined} root
      * @param {string} where

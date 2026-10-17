@@ -61,7 +61,10 @@ export async function runTests() {
         same(formatTokens(1500000), '1.5M', 'a part million');
         same(formatTokens(999999), '999k', 'the thousand tier floors');
         same(formatTokens(2000), '2k', 'the thousand tier starts at 2000');
-        same(formatTokens(1500), '1,500', 'below 2000 the exact count, grouped');
+        // Grouping is the locale's: with no UI language the runtime's default
+        // decides it (a POSIX default has none), so `1,500` is pinned for `en`.
+        same(formatTokens(1500), locale === 'en' ? '1,500' : new Intl.NumberFormat().format(1500),
+          'below 2000 the exact count, grouped');
         same(formatBytes(0), '0 B', 'no bytes');
         same(formatBytes(1023), '1023 B', 'bytes, ungrouped');
         same(formatBytes(1536), '1.5 KB', 'kilobytes under ten keep a decimal');
