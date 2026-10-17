@@ -314,7 +314,6 @@ func TestThreadDepthCap(t *testing.T) {
 
 	// A spawn from the deepest thread is refused.
 	w.turn.thread.itemID = deepest.id
-	w.turn.thread.itemsArray = deepest.arr
 	beforeLen := w.doc.GetItemsLengthFromArray(deepest.arr)
 	input := json.RawMessage(`{"goal":"too deep","prompt":"spawn another"}`)
 	if err := w.currentRun().executeCreateThread("tu-deep", "create_thread", input); err != nil {
@@ -362,7 +361,6 @@ func TestThreadDepthCap(t *testing.T) {
 	// A spawn one level above the cap (depth maxThreadDepth-1) is allowed.
 	parent := levels[len(levels)-2]
 	w.turn.thread.itemID = parent.id
-	w.turn.thread.itemsArray = parent.arr
 	if err := w.currentRun().executeCreateThread("tu-ok", "create_thread", json.RawMessage(`{"goal":"ok","prompt":"work"}`)); err != nil {
 		t.Fatalf("executeCreateThread (below cap) returned error: %v", err)
 	}
@@ -649,9 +647,6 @@ func TestThreadErrorReturnsToParent(t *testing.T) {
 	if w.turn.thread.itemID != "" {
 		t.Errorf("thread.itemID should be empty after thread error, got %q", w.turn.thread.itemID)
 	}
-	if w.turn.thread.itemsArray != nil {
-		t.Error("thread.itemsArray should be nil after thread error")
-	}
 
 	// 2. No summary was fabricated. A failure is not a result: the worker never
 	//    passes one off as the thread's summary.
@@ -918,7 +913,6 @@ func TestSettledRunRecordsWhatItCostAndReturned(t *testing.T) {
 
 	threadID := insertThreadWithOpts(w, threadOpts{goal: "Read the files", userMessage: "read them"})
 	w.turn.thread.itemID = threadID
-	w.turn.thread.itemsArray = w.doc.GetThreadItemsArray(threadID)
 
 	w.currentRun().appendTargetMessage(ConversationItem{
 		Type: ItemTypeAssistant, ItemID: generateItemID(), Content: strings.Repeat("file contents ", 4000),
@@ -954,7 +948,6 @@ func TestSettledRunSummarisesThread(t *testing.T) {
 
 	threadID := insertThreadWithOpts(w, threadOpts{goal: "Work", userMessage: "do it"})
 	w.turn.thread.itemID = threadID
-	w.turn.thread.itemsArray = w.doc.GetThreadItemsArray(threadID)
 	reply := func(text string) {
 		w.currentRun().appendTargetMessage(ConversationItem{
 			Type: ItemTypeAssistant, ItemID: generateItemID(), Content: text,

@@ -969,7 +969,9 @@ class Composer extends HTMLElement {
    * The elements MOVE rather than being rebuilt — each one owns live state its
    * host set on it (the strategy selector's messageThread, the model chip's
    * config), and all of that is plain properties, untouched by the disconnect
-   * and reconnect a re-parent causes.
+   * and reconnect a re-parent causes. Listeners are not: an element drops them
+   * on disconnect, so one that listens to what it is bound to must take them
+   * up again on connect, as permission-controls does.
    * @private
    */
   _applyConfigPlacement() {

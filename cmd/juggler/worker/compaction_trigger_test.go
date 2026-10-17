@@ -605,7 +605,6 @@ func TestContextRecoveryFoldsSubthreadPrefix(t *testing.T) {
 	arr := w.doc.GetThreadItemsArray(threadID)
 	w.doc.InsertMessageIntoArray(arr, 0, recoveryTestItems()...)
 	w.turn.thread.itemID = threadID
-	w.turn.thread.itemsArray = arr
 
 	pinned := &ModelConfig{Provider: "original", Model: "rejected"}
 	calls, stub := newRecoveryStub(t, pinned)
@@ -673,7 +672,6 @@ func TestContextRecoveryKeepsDelegatedRunRecords(t *testing.T) {
 	}
 	w.doc.InsertMessageIntoArray(arr, 0, nested...)
 	w.turn.thread.itemID = threadID
-	w.turn.thread.itemsArray = arr
 
 	wireBefore, err := json.Marshal(appendThreadMessages(nil, w.doc.GetItems()[0], w.doc.GetItems()))
 	if err != nil {
@@ -1772,7 +1770,7 @@ func TestFoldPrefixIntoSummaryIfUnchangedAbortsOnConcurrentEdit(t *testing.T) {
 	w := NewConversationWorker("test-conv", "user:test")
 	defer w.doc.Destroy()
 	w.doc.InsertMessage(0, recoveryTestItems()...)
-	arr := w.currentRun().getTargetItemsYArray()
+	arr := w.doc.ensureItems()
 
 	// A promptID that matches no item in the array (mirrors what recovery passes
 	// for its not-yet-inserted synthesized prompt item), so canonical records

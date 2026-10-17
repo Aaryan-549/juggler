@@ -378,7 +378,6 @@ func TestSettledRunFilesItsBoundaryUnderItsOwnThread(t *testing.T) {
 
 	child := insertThreadWithOpts(w, threadOpts{goal: "read a", userMessage: "look at a"})
 	w.turn.thread.itemID = child
-	w.turn.thread.itemsArray = w.doc.GetThreadItemsArray(child)
 
 	w.setMockResponses([]MockResponse{
 		{Blocks: []LLMResponseBlock{{Type: "text", Content: "Found it."}}, StopReason: "end_turn"},

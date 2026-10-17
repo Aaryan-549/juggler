@@ -274,22 +274,33 @@ func (t *OperationTracker) appendMessageLocked(messages ...ConversationItem) {
 	}, t.doc.authorID, true)
 }
 
-// AppendMessageIntoArray adds messages to the end of a nested thread items
-// Y.Array under the tracked (authorID) origin, so sub-thread turn content is
-// captured by the UndoManager exactly like root content. Grouping mirrors
+// AppendMessageToThread adds messages to the end of the thread threadItemID,
+// found by id in the same hold as the write, and reports false — writing
+// nothing — when no thread has that id. A turn or a send names its thread long
+// before it writes, and a viewer may delete the thread or replace it with a
+// same-id copy in between; finding it at the write is what lands the messages
+// in the thread the document now holds (see GetThreadItemsArray).
+//
+// The append is appendMessageIntoArrayLocked's.
+func (t *OperationTracker) AppendMessageToThread(threadItemID string, messages ...ConversationItem) bool {
+	ycrdtMu.Lock()
+	defer ycrdtMu.Unlock()
+	arr := findThreadItemsArray(t.doc.getItems(), threadItemID)
+	if arr == nil {
+		return false
+	}
+	t.appendMessageIntoArrayLocked(arr, messages...)
+	return true
+}
+
+// appendMessageIntoArrayLocked adds messages to the end of a nested thread
+// items Y.Array under the tracked (authorID) origin, so sub-thread turn content
+// is captured by the UndoManager exactly like root content. Grouping mirrors
 // AppendMessage: non-auxiliary types start a new undo group, auxiliary types
 // (streaming tool/thinking content) merge with the current group. Thread items
 // carrying nested Items go in via insertItemWithNested so their child array is
 // populated in source order. The end position is read inside the same hold as
-// the write, for the reason given on AppendMessage.
-func (t *OperationTracker) AppendMessageIntoArray(arr *ycrdt.YArray, messages ...ConversationItem) {
-	ycrdtMu.Lock()
-	defer ycrdtMu.Unlock()
-	t.appendMessageIntoArrayLocked(arr, messages...)
-}
-
-// appendMessageIntoArrayLocked is AppendMessageIntoArray for a caller already
-// holding ycrdtMu.
+// the write, for the reason given on AppendMessage. Callers MUST hold ycrdtMu.
 func (t *OperationTracker) appendMessageIntoArrayLocked(arr *ycrdt.YArray, messages ...ConversationItem) {
 	um := t.ensureUndoManager()
 	if !allAuxiliary(messages) {

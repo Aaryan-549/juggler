@@ -77,9 +77,9 @@ func TestRunThreadIsSetOnlyWhereATurnBegins(t *testing.T) {
 }
 
 // assignsRunThread reports whether an assignment target is a turn's thread
-// context or one of its two fields.
+// context or its id field.
 func assignsRunThread(target string) bool {
-	for _, suffix := range []string{".thread", ".thread.itemID", ".thread.itemsArray"} {
+	for _, suffix := range []string{".thread", ".thread.itemID"} {
 		if strings.HasSuffix(target, suffix) {
 			return true
 		}

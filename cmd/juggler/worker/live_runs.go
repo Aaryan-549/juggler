@@ -97,9 +97,6 @@ func (r *run) beginTurn(threadItemID string) *run {
 	r.sched.seedBoundary(threadItemID, t)
 	tr := r.runFor(t)
 	tr.t.thread.itemID = threadItemID
-	if threadItemID != "" {
-		tr.t.thread.itemsArray = r.doc.GetThreadItemsArray(threadItemID)
-	}
 	r.registerLiveRun(threadItemID, tr.t)
 	return tr
 }

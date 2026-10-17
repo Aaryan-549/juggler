@@ -849,7 +849,6 @@ func TestDelegationBreadthCap(t *testing.T) {
 		}
 		child := onlyThread(t, w)
 		w.turn.thread.itemID = child.ItemID
-		w.turn.thread.itemsArray = w.doc.GetThreadItemsArray(child.ItemID)
 		w.currentRun().appendTargetMessage(ConversationItem{
 			Type: ItemTypeAssistant, ItemID: generateItemID(), Content: "It is blue.",
 		})

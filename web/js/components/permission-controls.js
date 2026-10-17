@@ -75,21 +75,21 @@ class PermissionControls extends HTMLElement {
     this._visiblePathOrder = [];
   }
 
+  /**
+   * Listening follows the document, the binding does not: a control moved to
+   * another parent (the composer re-parents it when the pointer type changes)
+   * is disconnected and connected again, still bound to the same thread, and
+   * picks its listeners back up here.
+   */
   connectedCallback() {
+    this._listen();
     this.render();
   }
 
   disconnectedCallback() {
     this._menu?.close();
     this._menu = null;
-    if (this.metadataObserver && this.messageThread) {
-      this.messageThread.conversation.unobserveMetadata(this.metadataObserver);
-      this.metadataObserver = null;
-    }
-    if (this.sessionUnsubscribe) {
-      this.sessionUnsubscribe();
-      this.sessionUnsubscribe = null;
-    }
+    this._stopListening();
     this._disposeActiveSections();
   }
 
@@ -104,62 +104,74 @@ class PermissionControls extends HTMLElement {
     // popup DOM (and any focused input inside it) for no reason.
     if (this.messageThread === messageThread) return;
 
+    this._stopListening();
+    this.messageThread = messageThread;
+    if (this.isConnected) this._listen();
+
+    this.render();
+  }
+
+  /**
+   * Subscribe to the bound thread's metadata and the session feed, unless
+   * already subscribed or bound to nothing.
+   * @private
+   */
+  _listen() {
+    const messageThread = this.messageThread;
+    if (!messageThread || this.metadataObserver) return;
+    this.metadataObserver = (event) => {
+      // Strategy change can flip showsApprovalControls visibility,
+      // so it needs a full render (button + maybe-hidden popup).
+      if (event.keysChanged.has('currentStrategyId')) {
+        this.render();
+        return;
+      }
+      // A conversation permission-rule change only affects the button
+      // label summary; per-plugin sections inside the popup observe rules
+      // themselves, so we never touch the popup here.
+      if (event.keysChanged.has('conversationPermissionRules')) {
+        this._renderButton();
+      }
+      if (event.keysChanged.has('conversationAllowedPaths')) {
+        // conversationAllowedPaths affects both the button summary and the
+        // generic "Allowed paths" section. Refresh the button
+        // unconditionally; refresh the section only when no
+        // inline editor is open — otherwise a concurrent peer
+        // change would blow away the user's half-typed input.
+        // The deferred section render flushes through
+        // _endPathEditing().
+        this._renderButton();
+        if (this._isEditingPath()) {
+          this._pathRenderPending = true;
+        } else {
+          this._renderAllowedPaths();
+        }
+      }
+    };
+    messageThread.conversation.observeMetadata(this.metadataObserver);
+    const unsub = messageThread.conversation.session?.subscribe?.((evt) => {
+      if (evt.type !== 'session:metadata-changed') return;
+      const keys = evt.data?.keys || [];
+      if (!keys.includes('sessionPermissionRules') && !keys.includes('sessionAllowedPaths')) return;
+      this._renderButton();
+      if (keys.includes('sessionAllowedPaths')) {
+        if (this._isEditingPath()) this._pathRenderPending = true;
+        else this._renderAllowedPaths();
+      }
+    });
+    this.sessionUnsubscribe = typeof unsub === 'function' ? /** @type {() => void} */ (unsub) : null;
+  }
+
+  /** @private */
+  _stopListening() {
     if (this.metadataObserver && this.messageThread) {
       this.messageThread.conversation.unobserveMetadata(this.metadataObserver);
-      this.metadataObserver = null;
     }
+    this.metadataObserver = null;
     if (this.sessionUnsubscribe) {
       this.sessionUnsubscribe();
       this.sessionUnsubscribe = null;
     }
-
-    this.messageThread = messageThread;
-
-    if (messageThread) {
-      this.metadataObserver = (event) => {
-        // Strategy change can flip showsApprovalControls visibility,
-        // so it needs a full render (button + maybe-hidden popup).
-        if (event.keysChanged.has('currentStrategyId')) {
-          this.render();
-          return;
-        }
-        // A conversation permission-rule change only affects the button
-        // label summary; per-plugin sections inside the popup observe rules
-        // themselves, so we never touch the popup here.
-        if (event.keysChanged.has('conversationPermissionRules')) {
-          this._renderButton();
-        }
-        if (event.keysChanged.has('conversationAllowedPaths')) {
-          // conversationAllowedPaths affects both the button summary and the
-          // generic "Allowed paths" section. Refresh the button
-          // unconditionally; refresh the section only when no
-          // inline editor is open — otherwise a concurrent peer
-          // change would blow away the user's half-typed input.
-          // The deferred section render flushes through
-          // _endPathEditing().
-          this._renderButton();
-          if (this._isEditingPath()) {
-            this._pathRenderPending = true;
-          } else {
-            this._renderAllowedPaths();
-          }
-        }
-      };
-      messageThread.conversation.observeMetadata(this.metadataObserver);
-      const unsub = messageThread.conversation.session?.subscribe?.((evt) => {
-        if (evt.type !== 'session:metadata-changed') return;
-        const keys = evt.data?.keys || [];
-        if (!keys.includes('sessionPermissionRules') && !keys.includes('sessionAllowedPaths')) return;
-        this._renderButton();
-        if (keys.includes('sessionAllowedPaths')) {
-          if (this._isEditingPath()) this._pathRenderPending = true;
-          else this._renderAllowedPaths();
-        }
-      });
-      this.sessionUnsubscribe = typeof unsub === 'function' ? /** @type {() => void} */ (unsub) : null;
-    }
-
-    this.render();
   }
 
   /**

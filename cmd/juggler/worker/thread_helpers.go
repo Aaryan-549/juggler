@@ -10,9 +10,8 @@ import (
 
 // resetThreadContext re-roots this run's own thread: subsequent getTarget* /
 // appendTargetMessage calls address the root conversation, not a sub-thread.
-// Clears both fields together so a stale itemsArray can never outlive a cleared
-// itemID. Anything filed under the thread a turn was begun for after this runs
-// asks the live-run registry, not t.thread (see runScheduler.unregister).
+// Anything filed under the thread a turn was begun for after this runs asks the
+// live-run registry, not t.thread (see runScheduler.unregister).
 func (r *run) resetThreadContext() {
 	r.t.thread = threadContext{}
 }
@@ -29,42 +28,36 @@ func (r *run) resetThreadContext() {
 // destination parked there has to be saved and restored on every path out of
 // every handler that sets it.
 
-// resolveThread returns the destination for threadItemID: the zero
-// threadContext for the root, the thread's own items array otherwise, and false
-// when no thread has that id.
+// resolveThread returns the destination for threadItemID — the zero
+// threadContext for the root — and false when no thread has that id. The check
+// answers for this moment only: each read and write through the result finds
+// the thread again where it acts, and one whose thread has gone since reads
+// empty and writes nothing.
 func (w *ConversationWorker) resolveThread(threadItemID string) (threadContext, bool) {
 	if threadItemID == "" {
 		return threadContext{}, true
 	}
-	itemsArray := w.doc.GetThreadItemsArray(threadItemID)
-	if itemsArray == nil {
+	if !w.doc.HasThread(threadItemID) {
 		return threadContext{}, false
 	}
-	return threadContext{itemID: threadItemID, itemsArray: itemsArray}, true
+	return threadContext{itemID: threadItemID}, true
 }
 
-// itemsIn returns the items of dest: a thread's nested array, or the root's.
+// itemsIn returns the items of dest: a thread's nested array, or the root's;
+// none for a thread that has gone.
 func (w *ConversationWorker) itemsIn(dest threadContext) []ConversationItem {
-	if dest.itemsArray != nil {
-		return w.doc.GetItemsFromArray(dest.itemsArray)
+	if dest.itemID != "" {
+		return w.doc.GetThreadItems(dest.itemID)
 	}
 	return w.doc.GetItems()
 }
 
 // itemsLengthIn returns the item count of dest.
 func (w *ConversationWorker) itemsLengthIn(dest threadContext) int {
-	if dest.itemsArray != nil {
-		return w.doc.GetItemsLengthFromArray(dest.itemsArray)
+	if dest.itemID != "" {
+		return w.doc.GetThreadItemsLength(dest.itemID)
 	}
 	return w.doc.GetItemsLength()
-}
-
-// itemsArrayIn returns the raw Y.Array of dest.
-func (w *ConversationWorker) itemsArrayIn(dest threadContext) *ycrdt.YArray {
-	if dest.itemsArray != nil {
-		return dest.itemsArray
-	}
-	return w.doc.getItems()
 }
 
 // appendMessageTo adds message(s) to the end of dest via the OperationTracker
@@ -81,11 +74,12 @@ func (w *ConversationWorker) itemsArrayIn(dest threadContext) *ycrdt.YArray {
 // insert-at-index spelling, because reading the end position and writing at it
 // are two ycrdtMu holds, and that lock promises only that no two y-crdt calls
 // overlap — never that a sequence of them is atomic. Asking for the end and
-// writing at the end is one question, so it takes one hold.
+// writing at the end is one question, so it takes one hold. For a thread, the
+// same hold finds the thread; one that has gone takes nothing.
 func (r *run) appendMessageTo(dest threadContext, msgs ...ConversationItem) {
 	r.stampTxnID(msgs)
-	if dest.itemsArray != nil {
-		r.tracker.AppendMessageIntoArray(dest.itemsArray, msgs...)
+	if dest.itemID != "" {
+		r.tracker.AppendMessageToThread(dest.itemID, msgs...)
 	} else {
 		r.tracker.AppendMessage(msgs...)
 	}
@@ -113,13 +107,11 @@ func (r *run) stampTxnID(msgs []ConversationItem) {
 	}
 }
 
-// getTargetItemsYArray returns the raw Y.Array of the run's own thread.
-func (r *run) getTargetItemsYArray() *ycrdt.YArray { return r.itemsArrayIn(r.t.thread) }
-
-// updateTargetItemByID updates an item field in the run's own thread.
+// updateTargetItemByID updates an item field in the run's own thread, failing
+// when the thread or the item has gone.
 func (r *run) updateTargetItemByID(itemID, field string, value any) error {
-	if r.t.thread.itemsArray != nil {
-		return r.doc.UpdateItemByIDInArray(r.t.thread.itemsArray, itemID, field, value)
+	if r.t.thread.itemID != "" {
+		return r.doc.UpdateItemByIDInThread(r.t.thread.itemID, itemID, field, value)
 	}
 	return r.doc.UpdateItemByID(itemID, field, value)
 }

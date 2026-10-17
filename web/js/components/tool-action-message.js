@@ -11,7 +11,7 @@ import {
 import { wrapWithIcon, createErrorArticle } from '../utils/icon-message-renderer.js';
 import { iconOptionsForItem } from '../utils/item-badge.js';
 import { plain, yGet } from '../model/item-accessor.js';
-import { guarded } from '../utils/fault-report.js';
+import JugglerElement from './juggler-element.js';
 import { capabilityLabel } from '../utils/capability-label.js';
 import { t } from '../../sdk/lib/i18n.js';
 
@@ -61,11 +61,11 @@ import { t } from '../../sdk/lib/i18n.js';
  * - Completed (state='completed' or 'cancelled')
  *
  * Observes Yjs for changes to its own item and re-renders automatically.
+ * The observer is registered through JugglerElement, whose disposer holds the
+ * array it was attached to: a tile removed from its column on its own can no
+ * longer find the column, so teardown must not have to.
  */
-class ToolActionMessage extends HTMLElement {
-  /** @type {((...args: any[]) => void)|null} @private */
-  _yjsObserver = null;
-
+class ToolActionMessage extends JugglerElement {
   /** @type {{state: string|undefined, hasResult: boolean, resultIsError: boolean, hasApprovalOptions: boolean, displayDataJson: string, reviewStatusJson: string}|null} @private */
   _lastSnapshot = null;
 
@@ -76,7 +76,8 @@ class ToolActionMessage extends HTMLElement {
   }
 
   disconnectedCallback() {
-    this._cleanupObserver();
+    super.disconnectedCallback();
+    this._lastSnapshot = null;
   }
 
   /**
@@ -104,7 +105,7 @@ class ToolActionMessage extends HTMLElement {
     this._lastSnapshot = this._snapshot(this._getItem());
 
     // Observe Yjs items array
-    this._yjsObserver = () => {
+    this.observeDeep(messageThread.yarray, () => {
       const item = this._getItem();
       const newSnapshot = this._snapshot(item);
       if (this._hasChanged(newSnapshot)) {
@@ -132,10 +133,7 @@ class ToolActionMessage extends HTMLElement {
         const conversationArea = /** @type {any} */ (this.closest('conversation-area'));
         conversationArea?.updateFooter?.();
       }
-    };
-
-    this._yjsObserver = guarded('tool-action-message', this._yjsObserver);
-    messageThread.yarray.observeDeep(this._yjsObserver);
+    });
   }
 
   /**
@@ -325,21 +323,6 @@ class ToolActionMessage extends HTMLElement {
   _getMessageThread() {
     const conversationArea = /** @type {any} */ (this.closest('conversation-area'));
     return conversationArea?.getMessageThread?.() || null;
-  }
-
-  /**
-   * Clean up the Yjs observer
-   * @private
-   */
-  _cleanupObserver() {
-    if (this._yjsObserver) {
-      const messageThread = this._getMessageThread();
-      if (messageThread?.yarray) {
-        messageThread.yarray.unobserveDeep(this._yjsObserver);
-      }
-      this._yjsObserver = null;
-      this._lastSnapshot = null;
-    }
   }
 
   /**

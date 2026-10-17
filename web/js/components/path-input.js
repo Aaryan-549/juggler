@@ -74,6 +74,14 @@ class PathInput extends HTMLElement {
     /** @type {(() => void)|null} @private */
     this._reposition = null;
     /**
+     * Bumped by every close. A completion fetch notes it before awaiting and
+     * opens nothing if it moved: the menu is portaled to <body> with window
+     * listeners of its own, and one opened for a field already closed or gone
+     * would never be closed.
+     * @type {number} @private
+     */
+    this._closes = 0;
+    /**
      * True when the field was seeded with an initial `value` (a programmatic
      * prefill, e.g. the current project path) that the user has not yet edited.
      * While set, focusing the field must NOT auto-open completions — that popup
@@ -179,6 +187,7 @@ class PathInput extends HTMLElement {
    * @private
    */
   async _fetch(query) {
+    const closes = this._closes;
     const dirsOnly = this.hasAttribute('dirs-only');
     // "Somewhere on this machine" and "somewhere in this project" are different
     // questions with different answers: the first completes anywhere and answers
@@ -191,7 +200,7 @@ class PathInput extends HTMLElement {
     if (dirsOnly) {
       results = results.filter((p) => p.endsWith('/'));
     }
-    if (!this._input) return;
+    if (!this._input || !this.isConnected || closes !== this._closes) return;
     this._openMenu(results);
   }
 
@@ -315,6 +324,7 @@ class PathInput extends HTMLElement {
    * Close the dropdown and cancel any pending fetch debounce.
    * @private */
   _closeMenu() {
+    this._closes++;
     if (this._debounce !== null) {
       clearTimeout(this._debounce);
       this._debounce = null;

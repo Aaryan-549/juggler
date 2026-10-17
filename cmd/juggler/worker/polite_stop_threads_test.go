@@ -172,7 +172,6 @@ func TestPoliteStop_PausedChildNeitherSettlesNorReDrivesItsParent(t *testing.T) 
 	})
 	w.currentRun().claimLLM(child)
 	w.turn.thread.itemID = child
-	w.turn.thread.itemsArray = w.doc.GetThreadItemsArray(child)
 
 	// One scripted turn, for the parent. Consuming it is the regression: the user
 	// asked the conversation to stop, and it issued a request instead.
@@ -373,7 +372,6 @@ func TestPoliteStop_PausedFoldKeepsItsRightToASummary(t *testing.T) {
 	})
 	w.currentRun().claimLLM(fold)
 	w.turn.thread.itemID = fold
-	w.turn.thread.itemsArray = w.doc.GetThreadItemsArray(fold)
 
 	// The user presses Pause while the summarizer is working.
 	w.markPoliteStop("")

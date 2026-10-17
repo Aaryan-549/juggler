@@ -214,7 +214,7 @@ func (r *run) foldedCompactionContextItemIDs(threadID string) []string {
 	if parentID == "" {
 		parentItems = r.doc.GetItems()
 	} else {
-		parentItems = r.doc.GetItemsFromArray(r.doc.GetThreadItemsArray(parentID))
+		parentItems = r.doc.GetThreadItems(parentID)
 	}
 	ids := make([]string, 0, len(parentItems)+len(r.getTargetItems()))
 	for _, item := range parentItems {
@@ -683,7 +683,7 @@ func (r *run) foldConversationForCompaction(handoffPromote bool) (string, bool, 
 		FoldedRuns:             foldedRunsIn(items[prefixStart:prefixEnd]),
 	}
 
-	if !r.foldPrefixIntoSummaryTracked(r.getTargetItemsYArray(), prefixStart, prefixEnd-prefixStart, nil, summaryItem, promptID, fingerprint) {
+	if !r.foldPrefixIntoSummaryTracked(r.t.thread.itemID, prefixStart, prefixEnd-prefixStart, nil, summaryItem, promptID, fingerprint) {
 		return "", false, &BoundedCompactionError{Reason: BoundedCompactionSourceChanged, Message: "conversation changed during compaction; nothing was folded"}
 	}
 	return threadID, true, nil
@@ -698,15 +698,18 @@ func (r *run) foldConversationForCompaction(handoffPromote bool) (string, bool, 
 // fold: one undo restores the pre-fold history and removes the summary thread,
 // instead of the fold lingering as an un-undoable item while the rest of the
 // conversation undoes around it. Returns false without mutating when the source
-// changed under the recheck. keep is spliceSummaryIntoPrefix's: indices inside
-// the range left in place rather than folded.
-func (w *ConversationWorker) foldPrefixIntoSummaryTracked(arr *ycrdt.YArray, start, count int, keep []int, summary ConversationItem, promptID, expectedFingerprint string) bool {
-	if arr == nil || count <= 0 {
+// changed under the recheck, or when the thread threadItemID ("" is the root) has
+// gone; the array is found in the same hold as the splice. keep is
+// spliceSummaryIntoPrefix's: indices inside the range left in place rather than
+// folded.
+func (w *ConversationWorker) foldPrefixIntoSummaryTracked(threadItemID string, start, count int, keep []int, summary ConversationItem, promptID, expectedFingerprint string) bool {
+	if count <= 0 {
 		return false
 	}
 	ycrdtMu.Lock()
 	defer ycrdtMu.Unlock()
-	if !w.doc.foldFingerprintUnchangedLocked(arr, start, count, promptID, expectedFingerprint) {
+	arr := w.doc.threadItemsArrayLocked(threadItemID)
+	if arr == nil || !w.doc.foldFingerprintUnchangedLocked(arr, start, count, promptID, expectedFingerprint) {
 		return false
 	}
 	// Bind the UndoManager to the current items array before capturing, so a

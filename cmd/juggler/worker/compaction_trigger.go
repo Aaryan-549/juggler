@@ -653,7 +653,7 @@ func (r *run) compactToFit(limitErr *provider.ContextLimitExceededError, modelCo
 	// the fold splicing at stale indices — it aborts rather than clobbering. The
 	// tracked variant captures the whole delete+insert as one undo group, so a
 	// single undo reverses the fold (parity with the browser /compact fold).
-	if !r.foldPrefixIntoSummaryTracked(r.getTargetItemsYArray(), prefixStart, prefixEnd-prefixStart, kept, summaryItem, promptID, fingerprint) {
+	if !r.foldPrefixIntoSummaryTracked(r.t.thread.itemID, prefixStart, prefixEnd-prefixStart, kept, summaryItem, promptID, fingerprint) {
 		r.recordCompactionOutcome(compactionKindAuto, "error", result, map[string]any{"reason": string(BoundedCompactionSourceChanged)})
 		return contextRecoveryResult{}, &BoundedCompactionError{
 			Reason: BoundedCompactionSourceChanged, Message: "conversation changed during context recovery; nothing was folded",

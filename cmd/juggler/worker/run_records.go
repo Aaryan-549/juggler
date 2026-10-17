@@ -715,7 +715,7 @@ func openRunMessagesLocked(nested *ycrdt.YArray) []*ycrdt.YMap {
 //
 // No-op at the root, which has no run records at all.
 func (r *run) openThreadContinuationRun(dest threadContext) {
-	if dest.itemsArray == nil {
+	if dest.itemID == "" {
 		return
 	}
 	if runSettled, hasRuns := runSettlement(r.itemsIn(dest)); hasRuns && !runSettled {

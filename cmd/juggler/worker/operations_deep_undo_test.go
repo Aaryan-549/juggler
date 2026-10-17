@@ -55,7 +55,6 @@ func assertRecoveryFoldUndoableAtDepth(t *testing.T, depth int) {
 	}
 	w.doc.InsertMessageIntoArray(arr, 0, recoveryTestItems()...)
 	w.turn.thread.itemID = innerID
-	w.turn.thread.itemsArray = arr
 	w.tracker.EnsureInitialized()
 
 	pinned := &ModelConfig{Provider: "original", Model: "rejected"}

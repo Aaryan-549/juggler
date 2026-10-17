@@ -24,7 +24,6 @@ func TestSubthreadTurnContentIsUndoable(t *testing.T) {
 		t.Fatal("could not build sub-thread")
 	}
 	w.turn.thread.itemID = innerID
-	w.turn.thread.itemsArray = arr
 
 	// A sub-thread turn: an assistant message plus a tool-action, appended the way
 	// the strategy loop does. Both land in one undo group (the assistant is

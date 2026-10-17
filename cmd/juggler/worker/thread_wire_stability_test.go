@@ -563,7 +563,6 @@ func TestResultFedStampMarksTheAnswerNotTheTurn(t *testing.T) {
 
 	// The run settles and the next build carries its result.
 	w.turn.thread.itemID = threadID
-	w.turn.thread.itemsArray = w.doc.GetThreadItemsArray(threadID)
 	w.currentRun().appendTargetMessage(ConversationItem{
 		Type: ItemTypeAssistant, ItemID: "a-1", Content: "Auth lives in auth.go.",
 	})

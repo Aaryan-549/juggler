@@ -41,9 +41,13 @@ const SaveDebounceTime = 2 * time.Second
 // array, or the root conversation's for the zero value. A turn carries the one it
 // writes to (turnState.thread); a handler that writes somewhere else resolves its
 // own with resolveThread and passes it, rather than re-pointing a turn.
+//
+// It holds the thread's id and never a y-crdt handle: a turn writes to its thread
+// for a whole run, and every read and write finds the thread by id where it acts
+// (thread_helpers.go), so one a viewer deleted or replaced in the meantime is
+// seen as it now stands (see GetThreadItemsArray).
 type threadContext struct {
-	itemID     string
-	itemsArray *ycrdt.YArray
+	itemID string
 }
 
 // ConversationWorker handles conversation orchestration.
@@ -1634,11 +1638,11 @@ func (r *run) dispatchThreadRun(threadItemID string) {
 
 // startPreparedThreadRun starts a claimed thread whose admission reservation is
 // already present in the live-run registry. Run goroutine only: the run loop's
-// sched.dispatches() case.
+// sched.dispatches() case. A thread deleted since it was claimed is abandoned.
 func (r *run) startPreparedThreadRun(t *turnState) {
 	tr := r.runFor(t)
 	threadItemID := tr.t.thread.itemID
-	if tr.t.thread.itemsArray == nil {
+	if threadItemID == "" || !r.doc.HasThread(threadItemID) {
 		r.sched.unregister(tr.t)
 		r.abandonThreadRun(threadItemID)
 		return

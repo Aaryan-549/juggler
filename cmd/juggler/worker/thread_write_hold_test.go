@@ -88,7 +88,7 @@ func TestSpawnIntoADeletedThreadWritesNothing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("spawnThread(caller): %v", err)
 	}
-	w.turn.thread = threadContext{itemID: callerID, itemsArray: w.doc.GetThreadItemsArray(callerID)}
+	w.turn.thread = threadContext{itemID: callerID}
 	deleteLastRootItem(w)
 	rootBefore := w.doc.GetItemsLength()
 
@@ -112,7 +112,7 @@ func TestResumeFromADeletedCallerWritesNothing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("spawnThread(caller): %v", err)
 	}
-	w.turn.thread = threadContext{itemID: callerID, itemsArray: w.doc.GetThreadItemsArray(callerID)}
+	w.turn.thread = threadContext{itemID: callerID}
 	deleteLastRootItem(w)
 	session := w.doc.GetThreadItemsArray(sessionID)
 	sessionBefore := w.doc.GetItemsLengthFromArray(session)
@@ -125,5 +125,102 @@ func TestResumeFromADeletedCallerWritesNothing(t *testing.T) {
 	}
 	if got := w.doc.GetItemsLengthFromArray(session); got != sessionBefore {
 		t.Errorf("session items = %d after a refused resume, want %d: its invocation starts a run no caller waits for", got, sessionBefore)
+	}
+}
+
+// A turn and a send name their thread once and write into it for a long time
+// after: a turn for its whole run, a send across the holds that check the
+// thread is idle. Meanwhile a viewer can delete the thread, or replace it with
+// a copy under the same id, as a refold does. y-crdt does not cascade a delete
+// into the types nested under the deleted item, so an array resolved before it
+// never reads as gone: reads keep returning the old transcript and writes into
+// it vanish. Every read and write therefore finds the thread by id where it
+// happens.
+
+// replaceLastRootThread swaps the root's last item, a thread, for a fresh empty
+// thread carrying the same id, as a viewer's refold does.
+func replaceLastRootThread(w *ConversationWorker, threadID string) {
+	deleteLastRootItem(w)
+	index := w.doc.GetItemsLength()
+	w.doc.InsertThread(index, "refolded")
+	if err := w.doc.UpdateItemID(index, threadID); err != nil {
+		panic(err)
+	}
+}
+
+func threadHasItem(w *ConversationWorker, threadID, itemID string) bool {
+	arr := w.doc.GetThreadItemsArray(threadID)
+	if arr == nil {
+		return false
+	}
+	for _, it := range w.doc.GetItemsFromArray(arr) {
+		if it.ItemID == itemID {
+			return true
+		}
+	}
+	return false
+}
+
+func TestTurnWritesFollowItsThreadByID(t *testing.T) {
+	w := newHoldTestWorker(t)
+	threadID, err := w.currentRun().spawnThread(threadSpec{Goal: "work", Prompt: "do the work"}, toolSpawn{})
+	if err != nil {
+		t.Fatalf("spawnThread: %v", err)
+	}
+	tr := w.currentRun().beginTurn(threadID)
+	defer w.sched.unregister(tr.t)
+	replaceLastRootThread(w, threadID)
+
+	tr.appendTargetMessage(ConversationItem{Type: ItemTypeAssistant, ItemID: "a-1", Content: "partial"})
+	if !threadHasItem(w, threadID, "a-1") {
+		t.Fatal("the turn's append did not reach the thread now carrying its id: it went into the replaced one")
+	}
+	if err := tr.updateTargetItemByID("a-1", "content", "streamed"); err != nil {
+		t.Errorf("updateTargetItemByID: %v", err)
+	}
+	if items := tr.getTargetItems(); len(items) != 1 || items[0].Content != "streamed" {
+		t.Errorf("the turn reads %+v, want the one streamed item in the live thread", items)
+	}
+}
+
+func TestTurnOnADeletedThreadReadsNothingAndWritesNothing(t *testing.T) {
+	w := newHoldTestWorker(t)
+	threadID, err := w.currentRun().spawnThread(threadSpec{Goal: "work", Prompt: "do the work"}, toolSpawn{})
+	if err != nil {
+		t.Fatalf("spawnThread: %v", err)
+	}
+	tr := w.currentRun().beginTurn(threadID)
+	defer w.sched.unregister(tr.t)
+	deleteLastRootItem(w)
+	rootBefore := w.doc.GetItemsLength()
+
+	if items := tr.getTargetItems(); len(items) != 0 {
+		t.Errorf("the turn still reads %d items of a deleted thread", len(items))
+	}
+	tr.appendTargetMessage(ConversationItem{Type: ItemTypeAssistant, ItemID: "a-1", Content: "lost"})
+	if err := tr.updateTargetItemByID("a-1", "content", "lost"); err == nil {
+		t.Error("updating an item of a deleted thread succeeded, want an error")
+	}
+	if got := w.doc.GetItemsLength(); got != rootBefore {
+		t.Errorf("root items = %d after writes to a deleted thread, want %d", got, rootBefore)
+	}
+}
+
+func TestSendFollowsItsThreadByID(t *testing.T) {
+	w := newHoldTestWorker(t)
+	threadID, err := w.currentRun().spawnThread(threadSpec{Goal: "work", Prompt: "do the work"}, toolSpawn{})
+	if err != nil {
+		t.Fatalf("spawnThread: %v", err)
+	}
+	dest, ok := w.resolveThread(threadID)
+	if !ok {
+		t.Fatal("resolveThread did not find the thread")
+	}
+	replaceLastRootThread(w, threadID)
+
+	w.currentRun().addUserMessageTo(dest, UserMessageInput{Text: "follow-up"})
+	items := w.itemsIn(dest)
+	if len(items) != 1 || items[0].Content != "follow-up" {
+		t.Errorf("the thread now carrying the id holds %+v, want the sent message", items)
 	}
 }

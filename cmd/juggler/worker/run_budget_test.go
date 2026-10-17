@@ -17,7 +17,6 @@ import (
 func runOnThread(w *ConversationWorker, threadItemID string) *run {
 	r := w.currentRun()
 	r.t.thread.itemID = threadItemID
-	r.t.thread.itemsArray = w.doc.GetThreadItemsArray(threadItemID)
 	r.syncRunBudget()
 	return r
 }

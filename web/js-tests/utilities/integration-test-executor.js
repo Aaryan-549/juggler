@@ -143,6 +143,7 @@ import { runTests as runTabKeyboardMoveTests } from '../unit-tests/tab-keyboard-
 import { runTests as runTabDragAcrossWorkspaceTests } from '../unit-tests/tab-drag-across-workspace-test.js';
 import { runTests as runTabDragWorkspaceOrderTests } from '../unit-tests/tab-drag-workspace-order-test.js';
 import { runTests as runToolActionRenderTests } from '../unit-tests/tool-action-render-test.js';
+import { runTests as runComponentTeardownTests } from '../unit-tests/component-teardown-test.js';
 import { runTests as runJugglerSpinnerLiveTests } from '../unit-tests/juggler-spinner-live-test.js';
 import { runTests as runSubmitPlanActionTests } from '../unit-tests/submit-plan-action-test.js';
 import { runTests as runPlanApprovalTests } from '../unit-tests/plan-approval-test.js';
@@ -665,6 +666,7 @@ const UNIT_TEST_SUITES = [
   { name: 'unit:tab-drag-across-workspace', run: runTabDragAcrossWorkspaceTests },
   { name: 'unit:tab-drag-workspace-order', run: runTabDragWorkspaceOrderTests },
   { name: 'unit:tool-action-render', run: runToolActionRenderTests },
+  { name: 'unit:component-teardown', run: runComponentTeardownTests },
   { name: 'unit:juggler-spinner-live', run: runJugglerSpinnerLiveTests },
   { name: 'unit:submit-plan-action', run: runSubmitPlanActionTests },
   { name: 'unit:plan-approval', run: runPlanApprovalTests },

@@ -46,7 +46,6 @@ func reconcilePassBytes(t *testing.T, payloadBytes int) uint64 {
 		t.Fatalf("createThread: %v", err)
 	}
 	w.turn.thread.itemID = threadID
-	w.turn.thread.itemsArray = w.doc.GetThreadItemsArray(threadID)
 	w.currentRun().appendTargetMessage(ConversationItem{
 		Type: ItemTypeAssistant, ItemID: "a-1", Content: strings.Repeat("x", payloadBytes),
 	})

@@ -5,6 +5,8 @@
 package worker
 
 import (
+	"fmt"
+
 	ycrdt "github.com/skyterra/y-crdt"
 )
 
@@ -80,10 +82,72 @@ func walkAllItems(arr *ycrdt.YArray, currentThreadID string, visit func(m *ycrdt
 
 // GetThreadItemsArray finds a thread Y.Map by itemId and returns its nested
 // "items" Y.Array. Searches recursively through nested threads.
+//
+// The handle is only good inside the hold it was found in. y-crdt does not
+// cascade a delete into the types nested under the deleted item, so an array
+// whose thread a viewer has since deleted or replaced never reads as gone: it
+// keeps returning the old transcript, and writes into it vanish. Code that
+// reads or writes a thread later asks by id — HasThread, GetThreadItems,
+// GetThreadItemsLength, UpdateItemByIDInThread,
+// OperationTracker.AppendMessageToThread — each resolving where it acts.
 func (cd *ConversationDocument) GetThreadItemsArray(threadItemID string) *ycrdt.YArray {
 	ycrdtMu.Lock()
 	defer ycrdtMu.Unlock()
 	return findThreadItemsArray(cd.getItems(), threadItemID)
+}
+
+// threadItemsArrayLocked is the items array threadItemID names: the root's for
+// "", the thread's own otherwise, nil when no thread has the id. Callers MUST
+// hold ycrdtMu, and use the result only inside that hold.
+func (cd *ConversationDocument) threadItemsArrayLocked(threadItemID string) *ycrdt.YArray {
+	if threadItemID == "" {
+		return cd.getItems()
+	}
+	return findThreadItemsArray(cd.getItems(), threadItemID)
+}
+
+// HasThread reports whether a thread with this itemId is in the document.
+func (cd *ConversationDocument) HasThread(threadItemID string) bool {
+	ycrdtMu.Lock()
+	defer ycrdtMu.Unlock()
+	return findThreadItemsArray(cd.getItems(), threadItemID) != nil
+}
+
+// GetThreadItems returns a thread's items, found by itemId in the same hold
+// that reads them; nil when no thread has the id.
+func (cd *ConversationDocument) GetThreadItems(threadItemID string) []ConversationItem {
+	ycrdtMu.Lock()
+	defer ycrdtMu.Unlock()
+	arr := findThreadItemsArray(cd.getItems(), threadItemID)
+	if arr == nil {
+		return nil
+	}
+	return cd.getItemsFromArrayLocked(arr)
+}
+
+// GetThreadItemsLength returns a thread's item count, 0 when no thread has the
+// id.
+func (cd *ConversationDocument) GetThreadItemsLength(threadItemID string) int {
+	ycrdtMu.Lock()
+	defer ycrdtMu.Unlock()
+	arr := findThreadItemsArray(cd.getItems(), threadItemID)
+	if arr == nil {
+		return 0
+	}
+	return int(arr.GetLength())
+}
+
+// UpdateItemByIDInThread sets one field of the item itemID in the thread
+// threadItemID, finding both in one hold. It fails, and writes nothing, when
+// either has gone.
+func (cd *ConversationDocument) UpdateItemByIDInThread(threadItemID, itemID, field string, value any) error {
+	ycrdtMu.Lock()
+	defer ycrdtMu.Unlock()
+	arr := findThreadItemsArray(cd.getItems(), threadItemID)
+	if arr == nil {
+		return fmt.Errorf("thread item %s not found", threadItemID)
+	}
+	return cd.updateItemByIDInArray(arr, itemID, field, value)
 }
 
 // findThreadItemsArray returns the nested "items" Y.Array for the thread with the given itemId.
