@@ -22,14 +22,23 @@
  * - A conversation tab moved or put back keeps its conversation's session and
  *   status feeds, which it takes when handed the conversation rather than on
  *   connect.
+ * - The settings panel put back after a removal hears the socket again — its
+ *   tabs are built once, with the panel, and give up their subscriptions on
+ *   every disconnect — and still shows what it had drawn.
+ * - A model selector moved or put back follows the provider list and the
+ *   connection status exactly once.
  * @module unit-tests/component-teardown
  */
 
+import wsService from '../../js/services/websocket.js';
+import connectionStatus from '../../js/services/connection-status.js';
 import '../../js/components/tool-action-message.js';
 import '../../js/components/path-input.js';
 import '../../js/components/permission-controls.js';
 import '../../js/components/strategy-selector.js';
 import '../../js/components/conversation-tab.js';
+import '../../js/components/settings-panel.js';
+import '../../js/components/model-selector.js';
 
 /**
  * @typedef {object} TestResult
@@ -105,6 +114,27 @@ function countingThread() {
       },
     },
   };
+}
+
+/**
+ * How many listeners the socket holds for each of `events`.
+ * @param {string[]} events
+ * @returns {Record<string, number>} Listener count per event.
+ */
+function socketListeners(events) {
+  const listeners = /** @type {any} */ (wsService)._listeners;
+  return Object.fromEntries(events.map((e) => [e, listeners[e].length]));
+}
+
+/**
+ * Each event's listener count above `baseline`, as one readable line.
+ * @param {string[]} events
+ * @param {Record<string, number>} baseline
+ * @returns {string} e.g. "providers-update +1, clients-changed +0".
+ */
+function socketDelta(events, baseline) {
+  const now = socketListeners(events);
+  return events.map((e) => `${e} ${now[e] - baseline[e] >= 0 ? '+' : ''}${now[e] - baseline[e]}`).join(', ');
 }
 
 /**
@@ -273,6 +303,73 @@ export async function runTests() {
       elsewhere.remove();
     }
   } catch (e) { failed++; errors.push(`conversation-tab re-parented: ${e.message}`); }
+
+  try {
+    const events = ['providers-update', 'clients-changed', 'plugin-changed'];
+    const baseline = socketListeners(events);
+    const panel = /** @type {any} */ (document.createElement('settings-panel'));
+    const elsewhere = document.createElement('div');
+    document.body.appendChild(elsewhere);
+    try {
+      const holdsOneOfEach = () => socketDelta(events, baseline) === events.map((e) => `${e} +1`).join(', ');
+      column.appendChild(panel);
+      if (!holdsOneOfEach()) throw new Error(`a mounted panel holds ${socketDelta(events, baseline)}, want +1 of each`);
+      const drawn = document.createElement('span');
+      drawn.className = 'teardown-drawn';
+      panel.querySelector('#provider-fields-container').appendChild(drawn);
+      elsewhere.appendChild(panel);
+      if (!holdsOneOfEach()) throw new Error(`after a move it holds ${socketDelta(events, baseline)}, want +1 of each`);
+      panel.remove();
+      if (socketDelta(events, baseline) !== events.map((e) => `${e} +0`).join(', ')) {
+        throw new Error(`after removal it holds ${socketDelta(events, baseline)}, want none`);
+      }
+      elsewhere.appendChild(panel);
+      if (!holdsOneOfEach()) throw new Error(`reinserted after a removal it holds ${socketDelta(events, baseline)}, want +1 of each`);
+      // Nothing redraws a tab's fields after the first config load, so a reinsert
+      // that re-rendered the shell would leave them empty for good.
+      if (!panel.querySelector('.teardown-drawn')) throw new Error('reinserting the panel threw away the fields it had drawn');
+      panel.remove();
+      passed++;
+    } finally {
+      panel.remove();
+      elsewhere.remove();
+    }
+  } catch (e) { failed++; errors.push(`settings-panel re-parented: ${e.message}`); }
+
+  {
+    const realSubscribe = connectionStatus.subscribe;
+    let statusSubscribers = 0;
+    connectionStatus.subscribe = (fn) => {
+      statusSubscribers++;
+      const off = realSubscribe.call(connectionStatus, fn);
+      return () => { statusSubscribers--; off(); };
+    };
+    const baseline = socketListeners(['providers-update']);
+    const selector = /** @type {any} */ (document.createElement('model-selector'));
+    selector.fetchProviders = async () => {};
+    const elsewhere = document.createElement('div');
+    document.body.appendChild(elsewhere);
+    try {
+      const held = () => `${socketDelta(['providers-update'], baseline)} and ${statusSubscribers} status subscription(s)`;
+      const holdsOne = () => held() === 'providers-update +1 and 1 status subscription(s)';
+      column.appendChild(selector);
+      elsewhere.appendChild(selector);
+      if (!holdsOne()) throw new Error(`after a move it holds ${held()}, want +1 and 1`);
+      selector.remove();
+      if (held() !== 'providers-update +0 and 0 status subscription(s)') throw new Error(`after removal it holds ${held()}, want none`);
+      elsewhere.appendChild(selector);
+      if (!holdsOne()) throw new Error(`reinserted after a removal it holds ${held()}, want +1 and 1`);
+      selector.remove();
+      passed++;
+    } catch (e) {
+      failed++;
+      errors.push(`model-selector re-parented: ${e.message}`);
+    } finally {
+      selector.remove();
+      elsewhere.remove();
+      connectionStatus.subscribe = realSubscribe;
+    }
+  }
 
   column.remove();
   return { passed, failed, errors };

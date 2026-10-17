@@ -9,6 +9,7 @@
 //   warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the LICENSE file or
 //   <https://www.gnu.org/licenses/agpl-3.0.html> for full terms.
 
+import JugglerElement from './juggler-element.js';
 import { markPopupOpen } from '../utils/popup-manager.js';
 import { fadeOutScrims } from '../utils/modal-scrim.js';
 import { fetchJson } from '../services/http.js';
@@ -54,12 +55,15 @@ const PROVIDERS_READY_TIMEOUT_MS = 5000;
  * dispatches through the tab registry generically, so a tab only implements what
  * it needs. DOM queries are scoped to the tab's own `#tab-<name>` section.
  * @typedef {object} SettingsTabController
- * @property {() => void} [render] - Build static DOM / wire persistent listeners (called from the shell's render()).
+ * @property {() => void} [render] - Build static DOM / wire persistent listeners (called once, from the shell's render()).
  * @property {(data: LoadedSettings, renderFields: boolean) => void} [onConfigLoaded] - Receive the shared loadConfig() payload.
  * @property {() => void} [show] - Tab became visible: fetch own data / arm pollers.
  * @property {() => void} [hide] - Tab hidden: stop pollers.
  * @property {() => void} [close] - Panel closed: stop pollers, drop transient form state.
- * @property {() => void} [dispose] - Element disconnected: remove global/ws listeners.
+ * @property {() => void} [connect] - Element connected: take global/ws listeners. Idempotent, since a
+ *   tab may take them at construction or render.
+ * @property {() => void} [dispose] - Element disconnected: remove global/ws listeners. The next
+ *   connect() takes them again.
  * @property {(settings: any) => void} [onSettingsChanged] - The global settings document changed (here or in another window): adopt the sections this tab owns.
  */
 
@@ -69,8 +73,13 @@ const PROVIDERS_READY_TIMEOUT_MS = 5000;
  * A thin shell around a registry of per-tab controllers (one module each under
  * `settings/`). The shell owns the tab chrome, tab switching, first-load gating,
  * and the shared config fetch; each tab owns its own DOM, state, and pollers.
+ *
+ * The shell is drawn once, on first connect, because what the tabs draw into it
+ * is drawn once too: the data-driven fields come from the first config load and
+ * nothing redraws them. A panel moved or put back keeps its DOM and takes its
+ * listeners — its own, and each tab's through `connect()` — again.
  */
-class SettingsPanel extends HTMLElement {
+class SettingsPanel extends JugglerElement {
   constructor() {
     super();
     /** @type {string} @private */
@@ -79,12 +88,10 @@ class SettingsPanel extends HTMLElement {
     this._releasePopupOpen = null;
     /** @type {boolean} @private */
     this._hasLoadedOnce = false;
+    /** @type {boolean} @private - Whether the shell has been drawn (see the class doc). */
+    this._rendered = false;
     /** @type {HTMLElement|null} @private - The horizontally-scrollable tab strip; watched to drive its edge-fade affordance. */
     this._tabScrollEl = null;
-    /** @type {(() => void)|null} @private */
-    this._onTabScroll = null;
-    /** @type {ResizeObserver|null} @private */
-    this._tabResizeObserver = null;
     /**
      * Adoption of the global settings document, from the prefs store. A machine
      * runs one server per open project and they all share settings.json, so a
@@ -99,7 +106,7 @@ class SettingsPanel extends HTMLElement {
      * only way to refresh them is to rebuild the fields — which would close every
      * open model list, clear its filter, and empty an API-key field mid-typing.
      * That change arrives through providers-update instead.
-     * @type {((settings: any) => void)|null} @private
+     * @type {(settings: any) => void} @private
      */
     this._onSettingsChanged = (settings) => {
       this._dispatchSettings(settings || {});
@@ -107,7 +114,7 @@ class SettingsPanel extends HTMLElement {
 
     // The tab registry: one controller per tab (Extensions gets none — its
     // section just hosts <plugin-catalog>). switchTab / loadConfig / close /
-    // disconnectedCallback dispatch through this generically.
+    // connect and disconnect dispatch through this generically.
     /** @type {Record<string, SettingsTabController>} @private */
     this._tabs = {
       providers: new ProvidersTab(this),
@@ -125,17 +132,37 @@ class SettingsPanel extends HTMLElement {
   }
 
   connectedCallback() {
-    this.render();
-    this.setupListeners();
+    if (!this._rendered) {
+      this._rendered = true;
+      this.render();
+      this.setupListeners();
+    }
+    this._followTabStrip();
+
+    // Each tab removes its own global/ws listeners and stops its pollers on the
+    // way out, and takes the listeners again on the way back in.
+    const tabs = Object.values(this._tabs);
+    for (const tab of tabs) {
+      if (tab.connect) tab.connect();
+    }
+    this.addCleanup(() => {
+      for (const tab of tabs) {
+        if (tab.dispose) tab.dispose();
+      }
+    });
+    this.addCleanup(() => {
+      this._releasePopupOpen?.();
+      this._releasePopupOpen = null;
+    });
+
     // The settings document comes from the prefs store, which reads it once for
     // the page and keeps it current: the panel neither fetches it nor watches the
     // socket for it. A tab cannot tell — and has no reason to care — whether a
     // document arrived because this window asked or because another window changed
     // it, so both arrive by the same call.
-    if (this._onSettingsChanged) {
-      onGlobalSettings(this._onSettingsChanged);
-      void getGlobalSettings().then(this._onSettingsChanged);
-    }
+    onGlobalSettings(this._onSettingsChanged);
+    this.addCleanup(() => offGlobalSettings(this._onSettingsChanged));
+    void getGlobalSettings().then(this._onSettingsChanged);
   }
 
   /**
@@ -147,29 +174,6 @@ class SettingsPanel extends HTMLElement {
     for (const tab of Object.values(this._tabs)) {
       if (tab.onSettingsChanged) tab.onSettingsChanged(settings);
     }
-  }
-
-  disconnectedCallback() {
-    if (this._onSettingsChanged) {
-      offGlobalSettings(this._onSettingsChanged);
-    }
-    if (this._releasePopupOpen) {
-      this._releasePopupOpen();
-      this._releasePopupOpen = null;
-    }
-    // Each tab removes its own global/ws listeners and stops its pollers.
-    for (const tab of Object.values(this._tabs)) {
-      if (tab.dispose) tab.dispose();
-    }
-    if (this._tabScrollEl && this._onTabScroll) {
-      this._tabScrollEl.removeEventListener('scroll', this._onTabScroll);
-    }
-    this._onTabScroll = null;
-    if (this._tabResizeObserver) {
-      this._tabResizeObserver.disconnect();
-      this._tabResizeObserver = null;
-    }
-    this._tabScrollEl = null;
   }
 
   /**
@@ -327,7 +331,8 @@ class SettingsPanel extends HTMLElement {
   }
 
   /**
-   * Setup event listeners
+   * Wire the shell's own controls. They are children drawn once with it, so the
+   * listeners go with them and are bound once.
    * @private
    */
   setupListeners() {
@@ -352,23 +357,28 @@ class SettingsPanel extends HTMLElement {
       });
     });
 
-    // Drive the tab strip's edge-fade affordance from its actual scroll state,
-    // so a left/right fade appears only when there really are tabs hidden past
-    // that edge (see .settings-tabs-scroll in components/settings.css). The
-    // ResizeObserver recomputes when the panel is first shown (0→real width) or
-    // the viewport changes; the scroll listener handles swiping and
-    // scrollIntoView jumps.
-    const tabScroll = this.querySelector('.settings-tabs-scroll');
-    if (tabScroll) {
-      this._tabScrollEl = /** @type {HTMLElement} */ (tabScroll);
-      this._onTabScroll = () => this._updateTabOverflow();
-      tabScroll.addEventListener('scroll', this._onTabScroll, { passive: true });
-      if (typeof ResizeObserver !== 'undefined') {
-        this._tabResizeObserver = new ResizeObserver(() => this._updateTabOverflow());
-        this._tabResizeObserver.observe(tabScroll);
-      }
-      this._updateTabOverflow();
+    this._tabScrollEl = /** @type {HTMLElement|null} */ (this.querySelector('.settings-tabs-scroll'));
+  }
+
+  /**
+   * Drive the tab strip's edge-fade affordance from its actual scroll state,
+   * so a left/right fade appears only when there really are tabs hidden past
+   * that edge (see .settings-tabs-scroll in components/settings.css). The
+   * ResizeObserver recomputes when the panel is first shown (0→real width) or
+   * the viewport changes; the scroll listener handles swiping and
+   * scrollIntoView jumps. Taken on every connect, released on disconnect.
+   * @private
+   */
+  _followTabStrip() {
+    const tabScroll = this._tabScrollEl;
+    if (!tabScroll) return;
+    this.on(tabScroll, 'scroll', () => this._updateTabOverflow(), { passive: true });
+    if (typeof ResizeObserver !== 'undefined') {
+      const resizeObserver = new ResizeObserver(() => this._updateTabOverflow());
+      resizeObserver.observe(tabScroll);
+      this.addCleanup(() => resizeObserver.disconnect());
     }
+    this._updateTabOverflow();
   }
 
   /**

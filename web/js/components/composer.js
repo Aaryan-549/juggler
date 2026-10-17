@@ -68,12 +68,13 @@ import {
   expandTokenWithFeedback,
 } from './composer-paste-tokens.js';
 import {
+  buildSchedulePicker,
   clearScheduledSendState,
   fireScheduledSend as fireArmedSend,
   reconcileScheduleWithDraft,
+  schedulePickerAnchor,
   stopScheduledCountdown,
   syncScheduledSendFromDraft,
-  toggleSchedulePicker,
   updateScheduleButton,
 } from './composer-schedule.js';
 
@@ -237,8 +238,6 @@ class Composer extends HTMLElement {
     this._scheduledSendMode = 'delay';
     /** @type {number|null} @private setInterval id that refreshes the countdown label */
     this._scheduledCountdownId = null;
-    /** @type {(() => void)|null} @private presentPopup release for the open delay picker */
-    this._schedulePickerCleanup = null;
 
     // The button-anchored popups, each built fresh on open.
     /** @type {ComposerPopup} @private - The `/` commands menu. */
@@ -263,6 +262,17 @@ class Composer extends HTMLElement {
       build: () => this._buildActionsSheet(),
       // Its New Thread row follows the turn, read through `surface`.
       onPresent: () => this._updateNewThreadControls(),
+    });
+    /** @type {ComposerPopup} @private - The send-later delay picker (composer-schedule.js). */
+    this._schedulePopup = new ComposerPopup(this, {
+      id: 'schedule-send',
+      buttonSelector: '.schedule-send-btn',
+      surfaceSelector: '.schedule-send-menu',
+      build: () => buildSchedulePicker(this),
+      anchor: () => schedulePickerAnchor(this),
+      align: 'right',
+      gap: 8,
+      dialog: true,
     });
 
     /** @type {(() => void)|null} @private - Detaches the pointer-type listener that re-homes the config controls. */
@@ -319,18 +329,14 @@ class Composer extends HTMLElement {
     // Drop a queued height measurement: it would resolve against a detached box
     // and measure nothing.
     this._cancelScheduledAutoResize();
-    // Tear down an open commands menu, skill picker and actions sheet (surface,
-    // scrim, observer, dismissal) through their close paths, which also clear
-    // the open state — state left set would make the first tap after a
-    // reattach close a popup that is not there.
+    // Tear down an open commands menu, skill picker, actions sheet and delay
+    // picker (surface, scrim, observer, dismissal) through their close paths,
+    // which also clear the open state — state left set would make the first tap
+    // after a reattach close a popup that is not there.
     this._commandsPopup.close();
     this._skillPopup.close();
     this._actionsPopup.close();
-    // Tear down an open delay picker.
-    if (this._schedulePickerCleanup) {
-      this._schedulePickerCleanup();
-      this._schedulePickerCleanup = null;
-    }
+    this._schedulePopup.close();
     if (this._conversationMetadataObserver && this._conversation) {
       this._conversation.unobserveMetadata(this._conversationMetadataObserver);
       this._conversationMetadataObserver = null;
@@ -733,7 +739,7 @@ class Composer extends HTMLElement {
       scheduleBtn.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
-        toggleSchedulePicker(this);
+        this._schedulePopup.toggle();
       });
     }
     // A draft restored on mount may already carry a pending send — re-arm (or,
@@ -2291,7 +2297,7 @@ class Composer extends HTMLElement {
     // Schedule-send ("send later") is a rarely-used control, so on touch it
     // lives here rather than on the inline row. The row opens the same picker as
     // the inline clock button (which stays visible only while armed).
-    addRow(t('Send later'), CLOCK_SVG, () => toggleSchedulePicker(this));
+    addRow(t('Send later'), CLOCK_SVG, () => this._schedulePopup.toggle());
 
     /**
      * Append a closed-by-default collapsible section of pre-built rows (native

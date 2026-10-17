@@ -23,7 +23,6 @@
 
 import { assert } from '../utilities/test-helpers.js';
 import { assertMenuShape, assertDialogPopover } from '../utilities/menu-assertions.js';
-import { toggleSchedulePicker } from '../../js/components/composer-schedule.js';
 import { closeAllPopups, __resetPopupManagerForTests } from '../../js/utils/popup-manager.js';
 import { buildCommandRow, buildManageCommandsRow } from '../../js/services/command-manager-entry.js';
 import { renderSkillMenuItem } from '../../js/components/skill-mention-provider.js';
@@ -234,7 +233,7 @@ export async function runTests() {
     try {
       const button = /** @type {HTMLElement|null} */ (box.querySelector('.schedule-send-btn'));
       assert(button?.getAttribute('aria-expanded') === 'false', 'schedule: the clock button does not start collapsed');
-      toggleSchedulePicker(box);
+      await box._schedulePopup.open();
       assertDialogPopover(document.querySelector('#schedule-send-menu'), button, 'schedule-send picker');
       closeAllPopups();
       assert(!document.querySelector('#schedule-send-menu'), 'schedule: the dismissed picker is still in the page');

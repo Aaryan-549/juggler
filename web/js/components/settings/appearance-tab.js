@@ -82,6 +82,8 @@ export class AppearanceTab {
     this.host = host;
     /** @type {((e: Event) => void)|null} @private - Re-syncs the menu when the theme changes elsewhere (the header button, the OS). */
     this._onThemeMode = null;
+    /** @type {(() => void)|null} @private - Detaches `_onThemeMode`; null while it is not listening. */
+    this._themeModeOff = null;
     /** @type {Promise<void>} - Settles once the Language row's visibility is known. */
     this.languageRowSettled = Promise.resolve();
     /** @type {Promise<void>} - Settles once the last language choice is saved. */
@@ -95,14 +97,20 @@ export class AppearanceTab {
     this.renderAppearanceForm();
   }
 
+  /** Listen for theme changes made elsewhere, once a render has drawn the menu. Idempotent. */
+  connect() {
+    const handler = this._onThemeMode;
+    if (!handler || this._themeModeOff) return;
+    document.addEventListener(THEME_MODE_EVENT, handler);
+    this._themeModeOff = () => document.removeEventListener(THEME_MODE_EVENT, handler);
+  }
+
   /**
-   * Element disconnected: drop the theme listener.
+   * Element disconnected: drop the theme listener. connect() takes it again.
    */
   dispose() {
-    if (this._onThemeMode) {
-      document.removeEventListener(THEME_MODE_EVENT, this._onThemeMode);
-      this._onThemeMode = null;
-    }
+    this._themeModeOff?.();
+    this._themeModeOff = null;
   }
 
   /**
@@ -128,14 +136,13 @@ export class AppearanceTab {
     container.appendChild(this._buildLanguageRow());
 
     // Keep the menu in step with the header button, which changes the same
-    // setting, and with the OS while the mode is System. Registered once;
-    // removed in dispose().
-    if (!this._onThemeMode) {
-      this._onThemeMode = () => {
-        themeRow.select.value = getMode();
-      };
-      document.addEventListener(THEME_MODE_EVENT, this._onThemeMode);
-    }
+    // setting, and with the OS while the mode is System. The listener writes to
+    // the menu this render drew, so a render replaces it.
+    this.dispose();
+    this._onThemeMode = () => {
+      themeRow.select.value = getMode();
+    };
+    this.connect();
   }
 
   /**

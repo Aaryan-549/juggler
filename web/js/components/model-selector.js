@@ -20,6 +20,7 @@
  * @module components/model-selector
  */
 
+import JugglerElement from './juggler-element.js';
 import { presentPopup } from '../utils/popup-surface.js';
 import wsService from '../services/websocket.js';
 import providersCache from '../services/providers-cache.js';
@@ -62,7 +63,7 @@ const RUNNING_TURN_NOTE = markForTranslation('A turn is running. A change takes 
  */
 export const WORKSPACE_ELSEWHERE_HINT = markForTranslation('Runs on this machine; this conversation works elsewhere');
 
-class ModelSelector extends HTMLElement {
+class ModelSelector extends JugglerElement {
   constructor() {
     super();
     /** @type {string} @private */
@@ -75,8 +76,6 @@ class ModelSelector extends HTMLElement {
     this.dropdownOpen = false;
     /** @type {import('../services/connection-status.js').ConnectionStatus} @private */
     this.connectionStatus = null; // 'error', 'disconnected', 'connecting', or null for connected
-    /** @type {(() => void)|null} @private - connectionStatus subscription. */
-    this._connectionStatusOff = null;
     /** @type {boolean} @private */
     this.loadingProviders = false;
     /** @type {import('../model/conversation.js').default|null} @private */
@@ -91,8 +90,6 @@ class ModelSelector extends HTMLElement {
     this._picker = null;
     /** @type {(() => void)|null} @private - presentPopup release for the open picker. */
     this._pickerRelease = null;
-    /** @type {(() => void)|null} @private - Unsubscribes the providers-update listener. */
-    this._providersUpdateOff = null;
     /** @type {import('../model/message-thread.js').default|null} @private */
     this._messageThread = null;
     /**
@@ -133,16 +130,15 @@ class ModelSelector extends HTMLElement {
     // and every instance shows it — not just whichever one a document query
     // happened to reach first.
     this.connectionStatus = connectionStatus.get();
-    this._connectionStatusOff = connectionStatus.subscribe(
+    this.addCleanup(connectionStatus.subscribe(
       (status) => this.setConnectionStatus(status)
-    );
+    ));
 
     this.render();
     this.fetchProviders();
 
     // Listen for incremental provider updates from WebSocket
-    this._providersUpdateOff?.();
-    this._providersUpdateOff = wsService.on('providers-update', (/** @type {unknown} */ data) => {
+    this.addCleanup(wsService.on('providers-update', (/** @type {unknown} */ data) => {
       this.providers = /** @type {Provider[]} */ (data);
       this._syncModelDisplay();
       // The button's label is resolved from the providers list (to map the model
@@ -153,21 +149,14 @@ class ModelSelector extends HTMLElement {
       this._pushToChip();
       this._picker?.refresh();
       if (this._picker) this._picker.providers = this.providers;
-    });
+    }));
   }
 
   disconnectedCallback() {
     // Tear down the picker (and, through the chip, the mini popover), both of
     // which live on document.body.
     this.closeDropdown();
-    if (this._providersUpdateOff) {
-      this._providersUpdateOff();
-      this._providersUpdateOff = null;
-    }
-    if (this._connectionStatusOff) {
-      this._connectionStatusOff();
-      this._connectionStatusOff = null;
-    }
+    super.disconnectedCallback();
     // Drop any gesture/pin state (clears the pin's backstop timer).
     this._cycle.reset();
   }
@@ -601,15 +590,13 @@ class ModelSelector extends HTMLElement {
     const next = /** @type {Promise<Provider[]>} */(new Promise((resolve) => {
       /** @type {ReturnType<typeof setTimeout>|null} */
       let timer = null;
-      /** @param {unknown} data */
-      const handler = (data) => {
+      const off = wsService.on('providers-update', (/** @type {unknown} */ data) => {
         if (timer) clearTimeout(timer);
-        wsService.off('providers-update', handler);
+        off();
         resolve(Array.isArray(data) ? /** @type {Provider[]} */(data) : this.providers);
-      };
-      wsService.on('providers-update', handler);
+      });
       timer = setTimeout(() => {
-        wsService.off('providers-update', handler);
+        off();
         resolve(this.providers);
       }, 4000);
     }));

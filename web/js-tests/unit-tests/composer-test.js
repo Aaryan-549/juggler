@@ -284,8 +284,8 @@ export async function runTests() {
     }
   });
 
-  // The commands menu and the actions sheet await before presenting, so a
-  // second tap can land, or the box can leave the document, inside that gap.
+  // The composer's popups await their build before presenting, so a second tap
+  // can land, or the box can leave the document, inside that gap.
   // Each presentation is a <body>-level surface with dismissal wiring of its
   // own, released only through the box's single cleanup handle — a second
   // presentation overwrites the first's handle, and one made after the box left
@@ -294,6 +294,7 @@ export async function runTests() {
     ['commands menu', '_commandsPopup', '#commands-menu', '#commands-button'],
     ['skill picker', '_skillPopup', '#skill-menu', '#skill-button'],
     ['actions sheet', '_actionsPopup', '#actions-sheet', '#more-actions-button'],
+    ['schedule picker', '_schedulePopup', '#schedule-send-menu', '.schedule-send-btn'],
   ])) {
     // A reattach re-renders the box, so the trigger the open began with is gone
     // by the time it presents: the surface must anchor to the button there is now.

@@ -96,15 +96,21 @@ export class ProvidersTab {
     // can change them — and this tab holds no copy of the settings document. What
     // it reads is the published catalogue, into which the server folds both before
     // republishing it, so that republication is how the change arrives.
-    /** @type {((providers: any) => void)|null} @private */
-    this._onProvidersUpdate = (providers) => {
+    /** @type {(() => void)|null} @private - Drops the providers-update subscription; null while not taken. */
+    this._providersUpdateOff = null;
+    this.connect();
+  }
+
+  /** Follow the published catalogue. Idempotent; taken again after dispose(). */
+  connect() {
+    if (this._providersUpdateOff) return;
+    this._providersUpdateOff = wsService.on('providers-update', (providers) => {
       if (!Array.isArray(providers)) return;
       for (const provider of providers) {
         const update = this._modelRowUpdaters.get(provider && provider.name);
         if (update) update(Array.isArray(provider.modelsWithContext) ? provider.modelsWithContext : []);
       }
-    };
-    wsService.on('providers-update', this._onProvidersUpdate);
+    });
   }
 
   /** Tab became visible: pick up endpoints added or removed since it was last drawn. */
@@ -119,10 +125,8 @@ export class ProvidersTab {
 
   /** Element disconnected: drop the providers-update subscription. */
   dispose() {
-    if (this._onProvidersUpdate) {
-      wsService.off('providers-update', this._onProvidersUpdate);
-      this._onProvidersUpdate = null;
-    }
+    this._providersUpdateOff?.();
+    this._providersUpdateOff = null;
   }
 
   /**

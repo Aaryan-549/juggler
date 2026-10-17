@@ -27,7 +27,7 @@
 import { initializeRegistries, assert } from '../utilities/test-helpers.js';
 import scheduledSendService from '../../js/services/scheduled-send-service.js';
 import {
-  updateScheduleButton, clearScheduledSendState, toggleSchedulePicker,
+  updateScheduleButton, clearScheduledSendState,
 } from '../../js/components/composer-schedule.js';
 import { closeAllPopups, __resetPopupManagerForTests } from '../../js/utils/popup-manager.js';
 import { underPseudoLocale, shownStrings } from '../utilities/pseudo-locale.js';
@@ -318,9 +318,9 @@ export async function runTests() {
           shown.push(b.getAttribute('aria-label') || '<no aria-label>');
         }
       };
-      const openPicker = () => {
+      const openPicker = async () => {
         closeAllPopups();
-        toggleSchedulePicker(box);
+        await box._schedulePopup.open();
         const menu = document.querySelector('#schedule-send-menu');
         assert(!!menu, 'the picker did not open');
         shown.push(menu?.getAttribute('aria-label') || '<no aria-label>');
@@ -341,18 +341,18 @@ export async function runTests() {
           shown.push(scheduleBtn.getAttribute('title') || '');
           collect(box.querySelector('.schedule-send-countdown'));
         }
-        collect(openPicker());
+        collect(await openPicker());
 
         // Armed turn-end.
         box._scheduledSendMode = 'turn-end';
         updateScheduleButton(box);
         shown.push(scheduleBtn.getAttribute('title') || '');
         collect(box.querySelector('.schedule-send-countdown'));
-        collect(openPicker());
+        collect(await openPicker());
 
         // Idle picker, nothing running, then at zero delay.
         clearScheduledSendState(box);
-        let menu = openPicker();
+        let menu = await openPicker();
         collect(menu);
         /** @type {HTMLElement} */ (menu.querySelector('.schedule-stepper-btn')).click();
         assert(/** @type {HTMLButtonElement} */ (menu.querySelector('.schedule-confirm-btn')).disabled,
@@ -361,7 +361,7 @@ export async function runTests() {
 
         // Idle picker while a turn runs.
         thread.conversation = { isTurnActive: () => true };
-        menu = openPicker();
+        menu = await openPicker();
         collect(menu);
         closeAllPopups();
       });

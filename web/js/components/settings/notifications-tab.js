@@ -93,6 +93,8 @@ export class NotificationsTab {
     this.host = host;
     /** @type {((e: Event) => void)|null} @private - Re-syncs the Notifications controls when prefs change elsewhere (e.g. the header bell). */
     this._onAttentionPrefs = null;
+    /** @type {(() => void)|null} @private - Detaches `_onAttentionPrefs`; null while it is not listening. */
+    this._attentionPrefsOff = null;
   }
 
   /** Eager render into the tab's section (called from the shell's render()). */
@@ -100,14 +102,20 @@ export class NotificationsTab {
     this.renderNotificationsForm();
   }
 
+  /** Listen for prefs changed elsewhere, once a render has drawn the controls. Idempotent. */
+  connect() {
+    const handler = this._onAttentionPrefs;
+    if (!handler || this._attentionPrefsOff) return;
+    window.addEventListener(ATTENTION_PREFS_EVENT, handler);
+    this._attentionPrefsOff = () => window.removeEventListener(ATTENTION_PREFS_EVENT, handler);
+  }
+
   /**
-   * Element disconnected: drop the prefs listener.
+   * Element disconnected: drop the prefs listener. connect() takes it again.
    */
   dispose() {
-    if (this._onAttentionPrefs) {
-      window.removeEventListener(ATTENTION_PREFS_EVENT, this._onAttentionPrefs);
-      this._onAttentionPrefs = null;
-    }
+    this._attentionPrefsOff?.();
+    this._attentionPrefsOff = null;
   }
 
   /**
@@ -160,23 +168,22 @@ export class NotificationsTab {
     const tabRows = this._renderTabBehaviourForm(prefs);
 
     // Keep this tab's controls in sync when prefs change elsewhere (the header
-    // bell, or another open settings panel). Registered once; removed in
-    // dispose().
-    if (!this._onAttentionPrefs) {
-      this._onAttentionPrefs = () => {
-        const p = getAttentionPrefs();
-        soundRow.input.checked = p.sound;
-        notifyRow.input.checked = p.notify;
-        if (tabRows) {
-          tabRows.highlight.input.checked = p.tabHighlight;
-          tabRows.reorder.input.checked = p.tabReorder;
-        }
-        chimeRow.controls.pattern.setValue(p.chime.pattern);
-        chimeRow.controls.sound.setValue(p.chime.sound);
-        chimeRow.controls.volume.setValue(p.chime.volume);
-      };
-      window.addEventListener(ATTENTION_PREFS_EVENT, this._onAttentionPrefs);
-    }
+    // bell, or another open settings panel). The listener writes to the controls
+    // this render drew, so a render replaces it.
+    this.dispose();
+    this._onAttentionPrefs = () => {
+      const p = getAttentionPrefs();
+      soundRow.input.checked = p.sound;
+      notifyRow.input.checked = p.notify;
+      if (tabRows) {
+        tabRows.highlight.input.checked = p.tabHighlight;
+        tabRows.reorder.input.checked = p.tabReorder;
+      }
+      chimeRow.controls.pattern.setValue(p.chime.pattern);
+      chimeRow.controls.sound.setValue(p.chime.sound);
+      chimeRow.controls.volume.setValue(p.chime.volume);
+    };
+    this.connect();
   }
 
   /**

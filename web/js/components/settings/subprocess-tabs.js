@@ -539,11 +539,17 @@ export class McpTab {
     this.controller = new ConfigTabController(host, MCP_SPEC);
     /** @type {boolean} @private - True while this tab is the visible one. */
     this._visible = false;
-    /** @type {(() => void)|null} @private - Live refresh off the plugin-changed broadcast. */
-    this._onMcpChanged = () => {
+    /** @type {(() => void)|null} @private - Drops the plugin-changed subscription; null while not taken. */
+    this._mcpChangedOff = null;
+    this.connect();
+  }
+
+  /** Live refresh off the plugin-changed broadcast. Idempotent; taken again after dispose(). */
+  connect() {
+    if (this._mcpChangedOff) return;
+    this._mcpChangedOff = wsService.on('plugin-changed', () => {
       if (this._visible) this.controller.refresh();
-    };
-    wsService.on('plugin-changed', this._onMcpChanged);
+    });
   }
 
   /** Tab became visible: fetch and arm the controller's status poll. */
@@ -576,10 +582,8 @@ export class McpTab {
 
   /** Element disconnected: drop the plugin-changed subscription and stop polling. */
   dispose() {
-    if (this._onMcpChanged) {
-      wsService.off('plugin-changed', this._onMcpChanged);
-      this._onMcpChanged = null;
-    }
+    this._mcpChangedOff?.();
+    this._mcpChangedOff = null;
     this.controller.stopPolling();
   }
 }

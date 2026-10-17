@@ -150,19 +150,26 @@ export class ConnectivityTab {
     /** @type {boolean} @private - True while this tab is the visible one. */
     this._visible = false;
 
-    // Keep the connected-clients box live as viewers join or leave, independent
-    // of the 2 s poll (which only runs while this tab is open). Only the clients
-    // section re-renders — never the whole form — so open LAN/WAN QR images and
-    // controls are left untouched.
-    /** @type {((data: any) => void)|null} @private */
-    this._onClientsChanged = (data) => {
+    /** @type {(() => void)|null} @private - Drops the clients-changed subscription; null while not taken. */
+    this._clientsChangedOff = null;
+    this.connect();
+  }
+
+  /**
+   * Keep the connected-clients box live as viewers join or leave, independent
+   * of the 2 s poll (which only runs while this tab is open). Only the clients
+   * section re-renders — never the whole form — so open LAN/WAN QR images and
+   * controls are left untouched. Idempotent; taken again after dispose().
+   */
+  connect() {
+    if (this._clientsChangedOff) return;
+    this._clientsChangedOff = wsService.on('clients-changed', (/** @type {any} */ data) => {
       this.connectivity.clientCount = data.count;
       this.connectivity.clients = data.clients || [];
       if (this._visible && this._loaded) {
         this._refreshClientsSection();
       }
-    };
-    wsService.on('clients-changed', this._onClientsChanged);
+    });
   }
 
   /** Build the static DOM the shell owns for this tab (the proxy box). */
@@ -240,10 +247,8 @@ export class ConnectivityTab {
 
   /** Element disconnected: drop the clients-changed subscription. */
   dispose() {
-    if (this._onClientsChanged) {
-      wsService.off('clients-changed', this._onClientsChanged);
-      this._onClientsChanged = null;
-    }
+    this._clientsChangedOff?.();
+    this._clientsChangedOff = null;
     this.hide();
   }
 

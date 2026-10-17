@@ -33,7 +33,6 @@
  */
 
 import scheduledSendService from '../services/scheduled-send-service.js';
-import { presentPopup } from '../utils/popup-surface.js';
 import { t, formatDate, formatNumber } from '../../sdk/lib/i18n.js';
 
 /**
@@ -261,33 +260,23 @@ export function updateScheduleButton(composer) {
 }
 
 /**
- * Toggle the delay picker: close it if open, otherwise open it.
+ * What the delay picker hangs from: the clock button, or — on touch, where that
+ * button is hidden unless a send is armed (it lives in the "⋮" actions sheet) —
+ * the still-visible overflow button. On a phone the picker is a bottom sheet,
+ * where the anchor is moot anyway.
  * @param {any} composer - Composer instance
+ * @returns {HTMLElement|null} The anchor, or null when neither is rendered.
  */
-export function toggleSchedulePicker(composer) {
-  if (composer._schedulePickerCleanup) {
-    closeSchedulePicker(composer);
-  } else {
-    openSchedulePicker(composer);
-  }
+export function schedulePickerAnchor(composer) {
+  const clock = /** @type {HTMLElement|null} */ (composer.querySelector('.schedule-send-btn'));
+  if (clock && clock.offsetParent !== null) return clock;
+  return /** @type {HTMLElement|null} */ (composer.querySelector('#more-actions-button')) || clock;
 }
 
 /**
- * Close the delay picker (tears down its popup surface).
- * @param {any} composer - Composer instance
- */
-function closeSchedulePicker(composer) {
-  if (composer._schedulePickerCleanup) {
-    const release = composer._schedulePickerCleanup;
-    composer._schedulePickerCleanup = null;
-    release();
-  }
-  composer.querySelector('.schedule-send-btn')?.setAttribute('aria-expanded', 'false');
-}
-
-/**
- * Build and present the delay picker, anchored to the clock button (or a
- * bottom sheet on a phone). Two shapes:
+ * Build the delay picker, detached; the composer's `_schedulePopup` presents
+ * it, anchored by {@link schedulePickerAnchor} (or as a bottom sheet on a
+ * phone). Two shapes:
  *   • Armed — a single "Cancel timer" button (nothing else to decide).
  *   • Idle — full-width preset chips (15m…5h), hours + 5-minute steppers, one
  *     full-width "Schedule to send at HH:MM" button that both previews the
@@ -295,38 +284,17 @@ function closeSchedulePicker(composer) {
  *     of turn", disabled unless a turn is actually running.
  * The picker never edits the textarea.
  * @param {any} composer - Composer instance
+ * @returns {HTMLElement} The detached picker.
  */
-function openSchedulePicker(composer) {
-  let anchor = /** @type {HTMLElement|null} */ (composer.querySelector('.schedule-send-btn'));
-  // On touch the inline clock button is hidden unless a send is armed (it lives
-  // in the "⋮" actions sheet), so anchor to the still-visible overflow button
-  // when it is not laid out. On a phone the picker is a bottom sheet, where the
-  // anchor is moot anyway.
-  if (!anchor || anchor.offsetParent === null) {
-    anchor = /** @type {HTMLElement|null} */ (composer.querySelector('#more-actions-button')) || anchor;
-  }
-  if (!anchor) return;
+export function buildSchedulePicker(composer) {
+  const close = () => composer._schedulePopup.close();
 
   // A dialog, not a menu: it holds preset chips, steppers and a confirm button.
   const menu = document.createElement('div');
-  menu.className = 'dropdown-menu schedule-send-menu show';
+  menu.className = 'dropdown-menu schedule-send-menu';
   menu.id = 'schedule-send-menu';
   menu.setAttribute('role', 'dialog');
   menu.setAttribute('aria-label', t('Send later'));
-
-  const present = () => {
-    composer._schedulePickerCleanup = presentPopup({
-      surface: menu,
-      anchor,
-      id: 'schedule-send',
-      onClose: () => closeSchedulePicker(composer),
-      align: 'right',
-      insideSelectors: ['.schedule-send-btn', '.schedule-send-menu'],
-    });
-    // Only the clock button opens this; the "⋮" it may hang from on touch says
-    // it opens the actions sheet, which has closed.
-    if (anchor?.classList.contains('schedule-send-btn')) anchor.setAttribute('aria-expanded', 'true');
-  };
 
   // --- Armed: show what it is waiting for, offer to cancel ----------------
   if (composer._scheduledSendAt) {
@@ -343,11 +311,10 @@ function openSchedulePicker(composer) {
     cancelBtn.textContent = t('Cancel timer');
     cancelBtn.addEventListener('click', () => {
       cancelScheduledSend(composer);
-      closeSchedulePicker(composer);
+      close();
     });
     menu.appendChild(cancelBtn);
-    present();
-    return;
+    return menu;
   }
 
   // --- Idle: pick a delay -------------------------------------------------
@@ -451,7 +418,7 @@ function openSchedulePicker(composer) {
     const totalMin = hours * 60 + minutes;
     if (totalMin <= 0) return;
     armScheduledSend(composer, Date.now() + totalMin * 60000, 'delay');
-    closeSchedulePicker(composer);
+    close();
   });
 
   // The other wait: hold the message back until the running turn is done. Live
@@ -469,10 +436,10 @@ function openSchedulePicker(composer) {
     : t('Nothing is running');
   turnEndBtn.addEventListener('click', () => {
     armScheduledSend(composer, Date.now(), 'turn-end');
-    closeSchedulePicker(composer);
+    close();
   });
   menu.appendChild(turnEndBtn);
 
   refresh();
-  present();
+  return menu;
 }
