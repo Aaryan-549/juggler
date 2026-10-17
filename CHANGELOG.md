@@ -5,6 +5,8 @@ of changes; this project follows semantic versioning.
 
 ## [Unreleased]
 
+- Cancelling or deleting a sub-agent beside running siblings now stops its model calls
+
 ## [0.7.7] - 2026-10-17
 
 - New run_code tool: a mutating version of query_code, to give full "code mode" features

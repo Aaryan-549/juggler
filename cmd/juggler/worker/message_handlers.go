@@ -1242,6 +1242,35 @@ func (r *run) cancelAndWaitForIdle() bool {
 	return true
 }
 
+// stopLiveRunsWhere stops every live run whose thread matches, and reports
+// whether any matching run is still winding down — one stopped here, or one
+// already cancelling. Found through the registry rather than the processing
+// projection, which names one live run: beside a read-only sibling it can name
+// the other one. Each stop is handleCancel's for a processing run, scoped to
+// that run's thread.
+func (r *run) stopLiveRunsWhere(reason cancelReason, matches func(threadItemID string) bool) (windingDown bool) {
+	stopped := false
+	for _, live := range r.sched.runs() {
+		if !matches(live.threadItemID) {
+			continue
+		}
+		target := r.runFor(live.t)
+		switch target.loadState() {
+		case StateProcessing:
+			target.logCancel(reason)
+			r.dropPoliteStopsUnder(live.threadItemID)
+			target.abortTurn(live.threadItemID)
+			stopped, windingDown = true, true
+		case StateCancelling:
+			windingDown = true
+		}
+	}
+	if stopped {
+		r.dispatchCancelStrategyExecution()
+	}
+	return windingDown
+}
+
 // handleResummarizeCompactionThread re-runs the folded-compaction summarizer
 // over a compaction thread's existing source: clear the committed summary,
 // re-arm the one-shot needsStrategyRun trigger, then drive the pickup. When the

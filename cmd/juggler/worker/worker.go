@@ -1466,7 +1466,12 @@ func (r *run) handleItemsChange() {
 		"itemCount": r.doc.GetItemsLength(),
 		"state":     string(r.loadState()),
 	})
-	// Cancel if the browser deleted the thread we're currently processing.
+	// Cancel any turn whose thread the browser deleted: every live run, since this
+	// observer usually runs on the run loop, whose ambient turn reads Idle while
+	// the turns stream on goroutines of their own; then the ambient turn itself.
+	r.stopLiveRunsWhere(cancelReasonThreadDeleted, func(threadID string) bool {
+		return threadID != "" && r.doc.GetThreadYMap(threadID) == nil
+	})
 	if r.loadState() == StateProcessing && r.t.thread.itemID != "" {
 		if r.doc.GetThreadYMap(r.t.thread.itemID) == nil {
 			r.handleCancel(cancelReasonThreadDeleted)

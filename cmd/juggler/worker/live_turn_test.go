@@ -500,6 +500,130 @@ func TestCancellingAPendingRequestStopsItsLiveTurn(t *testing.T) {
 	}
 }
 
+// releaseParkedRuns releases the mock's barrier until nothing is live, so a
+// failed test doesn't leave turn goroutines parked on it.
+func releaseParkedRuns(t *testing.T, w *ConversationWorker) {
+	t.Cleanup(func() {
+		for i := 0; i < 400 && w.sched.hasLive(); i++ {
+			w.mock.release()
+			time.Sleep(5 * time.Millisecond)
+		}
+	})
+}
+
+// pausedResponses scripts n turns, each held at the mock barrier.
+func pausedResponses(n int) []MockResponse {
+	out := make([]MockResponse, n)
+	for i := range out {
+		out[i] = MockResponse{
+			Blocks:            []LLMResponseBlock{{Type: provider.ContentBlockTypeText, Content: fmt.Sprintf("answer %d", i)}},
+			StopReason:        "end_turn",
+			PauseBeforeReturn: true,
+		}
+	}
+	return out
+}
+
+// signalItemsChange drives handleItemsChange on the run loop, the way the
+// document observer does.
+func signalItemsChange(w *ConversationWorker) {
+	select {
+	case w.docChangeChan <- struct{}{}:
+	default:
+	}
+}
+
+// TestCancellingAPendingRequestStopsItsRunBesideASibling cancels a claimed
+// createThread whose thread streams beside a read-only sibling, and is not the
+// one the top-level processing projection names. The projection names one live
+// run, so a cancel that starts from it finds the sibling, decides the request's
+// thread owns no active work, and stamps the request cancelled while its turn
+// streams on.
+func TestCancellingAPendingRequestStopsItsRunBesideASibling(t *testing.T) {
+	mc := newMsgChan()
+	w := startTurningWorker(t, mc)
+	w.setMockResponses(pausedResponses(2))
+	releaseParkedRuns(t, w)
+
+	readA := insertReadOnlyChild(w, "read a", "look at a")
+	readB := insertReadOnlyChild(w, "read b", "look at b")
+
+	deadline := time.After(10 * time.Second)
+	projected := ""
+	for {
+		projected, _ = w.readProcessingState()["threadItemId"].(string)
+		if len(w.sched.runs()) == 2 && w.mock.remaining() == 0 && (projected == readA || projected == readB) {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("the two children never ran together; registry=%d projection=%q", len(w.sched.runs()), projected)
+		case <-time.After(5 * time.Millisecond):
+		}
+	}
+	cancelled, sibling := readA, readB
+	if projected == readA {
+		cancelled, sibling = readB, readA
+	}
+
+	pushCancelledClaimedCreateThread(t, w, "r-unnamed", cancelled)
+	signalItemsChange(w)
+
+	// Nothing releases the paused responses, so only the cancel can retire it.
+	for w.sched.runOn(cancelled) != nil {
+		select {
+		case <-deadline:
+			t.Fatalf("the cancelled request's turn is still live (request status %q)", findEntryStatus(w, "r-unnamed"))
+		case <-time.After(5 * time.Millisecond):
+		}
+	}
+	if w.sched.runOn(sibling) == nil {
+		t.Fatal("cancelling one request stopped its sibling's turn")
+	}
+	for findEntryStatus(w, "r-unnamed") != "cancelled" {
+		select {
+		case <-deadline:
+			t.Fatalf("request status = %q, want cancelled", findEntryStatus(w, "r-unnamed"))
+		case <-time.After(5 * time.Millisecond):
+		}
+	}
+}
+
+// TestDeletingAThreadStopsItsLiveTurn deletes a thread while its turn streams on
+// a goroutine of its own. The items observer runs on the run loop, whose ambient
+// turn reads Idle throughout, so it has to find the turn through the registry:
+// one that asked the ambient turn left the deleted thread's call spending.
+func TestDeletingAThreadStopsItsLiveTurn(t *testing.T) {
+	mc := newMsgChan()
+	w := startTurningWorker(t, mc)
+	releaseParkedRuns(t, w)
+
+	threadItemID := insertReadOnlyChild(w, "Delete me", "start")
+	awaitLiveRun(t, w)
+	if w.sched.runOn(threadItemID) == nil {
+		t.Fatalf("the live run is not on the inserted thread %q", threadItemID)
+	}
+
+	func() {
+		ycrdtMu.Lock()
+		defer ycrdtMu.Unlock()
+		items := w.doc.ensureItems()
+		for i := 0; i < int(items.GetLength()); i++ {
+			if m, ok := items.Get(ycrdt.Number(i)).(*ycrdt.YMap); ok && m.Get("itemId") == threadItemID {
+				w.doc.doc.Transact(func(_ *ycrdt.Transaction) {
+					items.Delete(ycrdt.Number(i), 1)
+				}, w.doc.authorID)
+				return
+			}
+		}
+		t.Fatalf("thread %q not found in the root items", threadItemID)
+	}()
+	signalItemsChange(w)
+
+	// Nothing releases the paused response, so only a cancel can retire it.
+	awaitNoLiveRun(t, w)
+}
+
 // TestAPausedMockOutlivingItsTurnReadsNoTurnState pins the rule live_runs.go
 // states and mock_llm.go has to keep: a run's thread field is plain memory the
 // turn goroutine owns, so anything running elsewhere carries its own copy, taken

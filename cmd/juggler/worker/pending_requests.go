@@ -405,10 +405,18 @@ func (r *run) cancelPendingEntry(e pendingEntrySnapshot) {
 		return
 	}
 
+	// Every live run inside the request's subtree. The scan runs on the run
+	// loop, whose ambient turn reads Idle while the request's thread streams on a
+	// goroutine of its own. A later scan publishes the result once they retire.
+	if r.stopLiveRunsWhere(cancelReasonPendingRequest, func(threadID string) bool {
+		return r.threadWithin(threadID, e.threadItemID)
+	}) {
+		return
+	}
+
 	if r.pendingThreadOwnsActiveWork(e.threadItemID) {
-		// The state of the run handleCancel would stop, not this one's: the scan
-		// runs on the run loop, whose ambient turn reads Idle while the request's
-		// thread streams on a goroutine of its own.
+		// Nothing in the subtree is live, so this is the ambient turn: a pickup
+		// posted to the loop but not yet started, or a turn parked on its tools.
 		target, _ := r.cancelTarget()
 		switch target.loadState() {
 		case StateProcessing:
@@ -434,14 +442,19 @@ func (r *run) cancelPendingEntry(e pendingEntrySnapshot) {
 // pending request's thread or one of its descendants. The ownership check gates
 // conversation-wide cancellation, so one request cannot stop an unrelated turn.
 func (w *ConversationWorker) pendingThreadOwnsActiveWork(pendingThreadID string) bool {
-	activeThreadID := w.getProcessingThreadItemID()
-	if pendingThreadID == "" || activeThreadID == "" {
+	return w.threadWithin(w.getProcessingThreadItemID(), pendingThreadID)
+}
+
+// threadWithin reports whether threadID is ancestorID or one of its
+// descendants. The root ("") is within nothing, and nothing is within it.
+func (w *ConversationWorker) threadWithin(threadID, ancestorID string) bool {
+	if threadID == "" || ancestorID == "" {
 		return false
 	}
 	ycrdtMu.Lock()
 	defer ycrdtMu.Unlock()
-	for threadID := activeThreadID; threadID != ""; threadID = w.doc.findParentThreadID(threadID) {
-		if threadID == pendingThreadID {
+	for ; threadID != ""; threadID = w.doc.findParentThreadID(threadID) {
+		if threadID == ancestorID {
 			return true
 		}
 	}
