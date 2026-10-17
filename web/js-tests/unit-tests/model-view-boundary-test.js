@@ -92,7 +92,7 @@ export async function runTests() {
       if (event.type === type) onFeed++;
     });
     try {
-      session.notifyConversationChange(type, {});
+      session.events.notify(type, {});
     } finally {
       document.removeEventListener(type, listener);
       unsubscribe();
@@ -126,9 +126,9 @@ export async function runTests() {
       /** @type {boolean[]} */
       const scrolls = [];
       root.scrollToBottom = (/** @type {boolean} */ force = false) => { scrolls.push(force); };
-      session.notifyConversationChange('conversation:turn-requested', { conversationId: 'some-other-conversation' });
+      session.events.notify('conversation:turn-requested', { conversationId: 'some-other-conversation' });
       assert(scrolls.length === 0, 'another conversation\'s turn scrolled this tab');
-      session.notifyConversationChange('conversation:turn-requested', { conversationId: conversation.id });
+      session.events.notify('conversation:turn-requested', { conversationId: conversation.id });
       assert(scrolls.length === 1 && scrolls[0] === true,
         `the root column was scrolled ${JSON.stringify(scrolls)}, want one forced scroll`);
     });

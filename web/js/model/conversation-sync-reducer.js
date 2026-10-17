@@ -38,8 +38,8 @@ import { reportFault } from '../utils/fault-report.js';
  * @property {(id: string) => boolean} holds - Whether the conversation is in the active map
  * @property {() => string[]} order - The active map's ids, in tab-bar order
  * @property {(id: string, name: string) => void} setName - Record a conversation's canonical folder name
- * @property {(type: string, data: any) => void} notify - Announce on the session's event bus
- * @property {(type: string, data: any) => void} notifyChange - Announce on the `conversation:changed` feed
+ * @property {(type: import('./session-events.js').SessionEventType, data: any) => void} notify - Announce on the session's event feed
+ * @property {(type: import('./session-events.js').SessionEventType, data: any) => void} notifyChange - Announce on the `conversation:changed` feed
  * @property {(id: string) => Promise<object|null>} loadAtHead - Load a conversation from disk into the head of the bar; null if the load failed
  * @property {(id: string, opts: {clearVisibleIfNoFallback: boolean}) => Promise<object|null>} drop - Tear a conversation down and remove it, choosing a fallback if it was loaded; null if it was not held
  * @property {(ids: string[]) => void} reorder - Rebuild the active map in this order

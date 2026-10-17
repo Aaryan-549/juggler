@@ -547,7 +547,7 @@ class JugglerApp {
     const syncWindowTitle = () => updateWindowTitle(session.projectPath || '');
     // The native host's menus and dialogs follow this page's language.
     reportUILocale();
-    session.subscribe(/** @param {{type: string, data?: any}} event */ (event) => {
+    session.subscribe((event) => {
       if (event.type === 'session:loaded') syncWindowTitle();
       // A command (/commands) asked for the manager: the model only announces
       // it, because the dialog is app-level UI.

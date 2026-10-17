@@ -69,7 +69,7 @@ import { normalizeAttachments } from '../utils/attachments.js';
  * @property {() => ReadonlySet<string>} removedPendingConfirm - Ids this client removed whose removal the server has not acknowledged
  * @property {() => ConversationLoadQueue|null} loadQueue - The queue hydrating stubs, if the load built one
  * @property {(queue: ConversationLoadQueue|null) => void} setLoadQueue - Record the load's queue on the session
- * @property {(type: string, data: any) => void} notify - Announce on the session's event bus
+ * @property {(type: import('./session-events.js').SessionEventType, data: any) => void} notify - Announce on the session's event feed
  * @property {(id: string) => Promise<void>} requestLoad - Ask for a stub to be hydrated (`Session._requestConversationLoad`)
  * @property {(id: string) => boolean} switchTo - Put a conversation on screen (`Session.switchConversation`)
  * @property {(settled: Map<string, any>, arrivals: [string, any][]) => Map<string, any>} foldArrivals - Place what arrived mid-refresh (`Session._foldArrivals`)

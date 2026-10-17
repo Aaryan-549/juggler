@@ -281,10 +281,9 @@ class ConversationArea extends HTMLElement {
       // become resolvable (a provision finishing) or stop being one (a peer
       // closing the workspace) with nothing in this conversation's doc moving,
       // so the item path would never hear about it.
-      this._unsubscribeSession = /** @type {(() => void)|null} */ (
-        conversation.session?.subscribe((/** @type {any} */ event) => {
-          if (event?.type === 'session:workspaces-changed') this._refreshConversationTop();
-        }) || null);
+      this._unsubscribeSession = conversation.session?.subscribe((event) => {
+        if (event.type === 'session:workspaces-changed') this._refreshConversationTop();
+      }) || null;
 
       this._getReplySuggestionsController().attach(conversation);
 

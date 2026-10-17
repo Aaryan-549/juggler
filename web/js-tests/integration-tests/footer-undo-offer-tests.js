@@ -131,7 +131,7 @@ export const footerOffersUndoAfterSpanDeleteTest = {
     // Any conversation:changed rebuilds the columns, which re-hands every
     // footer the thread it is already showing. That must not count as the
     // thread moving, or the offer cannot survive its own delete.
-    conversation.session.notifyConversationChange('conversation:changed', {
+    conversation.session.events.notify('conversation:changed', {
       conversationId: conversation.id
     });
     if (!offerVisible(footer)) {

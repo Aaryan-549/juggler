@@ -408,7 +408,7 @@ class ConnectionManager {
     // themselves: conversation-bar handles tab visibility, and conversation-tab
     // repaints its columns (on `session:loaded` too). All that is left here is
     // reporting a failed save.
-    this._unsubscribe = this._session.subscribe(/** @param {{type: string, data: unknown}} event */ (event) => {
+    this._unsubscribe = this._session.subscribe((event) => {
       if (event.type === 'session:save-error') {
         console.error('[ConnectionManager] Failed to save session:', event.data);
       }

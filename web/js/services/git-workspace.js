@@ -102,7 +102,7 @@ export function followSession(session) {
   }
 
   const sync = () => setGitWorkspace(session.getVisibleConversation()?.workspaceId || '');
-  const unsubscribe = /** @type {() => void} */ (session.subscribe((/** @type {any} */ event) => {
+  const unsubscribe = session.subscribe((event) => {
     switch (event?.type) {
       case 'session:loaded':
       case 'conversation:switched':
@@ -112,7 +112,7 @@ export function followSession(session) {
       default:
         break;
     }
-  }));
+  });
   sync();
 
   _unfollow = () => {

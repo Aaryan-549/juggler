@@ -339,7 +339,7 @@ export function setupHeaderControls(session) {
   });
 
   // Subscribe to session events to keep buttons + path display fresh
-  session.subscribe(/** @param {{type: string}} event */ (event) => {
+  session.subscribe((event) => {
     switch (event.type) {
       case 'session:loaded':
         updateProjectPath(session.projectPath || '');

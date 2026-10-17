@@ -79,7 +79,7 @@ class WorkspacePanel extends HTMLElement {
   }
 
   /**
-   * @param {any} session - The session to follow.
+   * @param {import('../model/session.js').default|null} session - The session to follow.
    * @returns {void}
    */
   setSession(session) {
@@ -89,14 +89,13 @@ class WorkspacePanel extends HTMLElement {
     this._refresh();
     if (!session) return;
 
-    this._unsubscribe = session.subscribe(/** @param {{type: string}} event */ (event) => {
+    this._unsubscribe = session.subscribe((event) => {
       // Nothing here is about a conversation except the selection: going to one
       // is what takes this panel off screen. What the conversations are called
       // and how many there are belongs to the tab strip, which is drawing them.
       if (event.type === 'workspace:selected'
         || event.type === 'conversation:switched'
         || event.type === 'session:workspaces-changed'
-        || event.type === 'project:changed'
         || event.type === 'session:loaded') {
         this._refresh();
       }

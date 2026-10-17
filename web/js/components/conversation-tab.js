@@ -239,7 +239,7 @@ class ConversationTab extends JugglerElement {
     // Subscribe to session events
     const session = conversation.session;
     if (session) {
-      this._unsubscribe = /** @type {() => void} */ (session.subscribe((/** @type {{type: string, data?: any}} */ event) => {
+      this._unsubscribe = session.subscribe((event) => {
         if (!this._conversation) return;
 
         // A send or a continue: move to the end the moment it is asked for,
@@ -334,7 +334,7 @@ class ConversationTab extends JugglerElement {
              event.data?.conversationId === this._conversation.id)) {
           this._syncWithConversation();
         }
-      }));
+      });
     }
 
     // Listen for unified item-selected events (attach once)

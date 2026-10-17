@@ -102,7 +102,7 @@ export async function runTests() {
     const offFirst = session.subscribe(() => { throw new Error('session subscriber blew up'); });
     const offSecond = session.subscribe(() => { secondRan++; });
     try {
-      session.notifyConversationChange('listener-isolation:probe', null);
+      session.events.notify('listener-isolation:probe', null);
     } finally {
       offFirst();
       offSecond();

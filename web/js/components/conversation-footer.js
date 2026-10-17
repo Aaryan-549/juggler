@@ -269,7 +269,7 @@ class ConversationFooter extends HTMLElement {
       const conversation = mt.conversation;
       const session = conversation?.session;
       if (session) {
-        this._unsubscribe = /** @type {() => void} */ (session.subscribe((/** @type {any} */ event) => {
+        this._unsubscribe = session.subscribe((event) => {
           if (event.type === 'conversation:context-window-updated' && event.data === conversation) {
             this._scheduleTokenDisplayUpdate();
           } else if (event.type === 'conversation:changed') {
@@ -283,7 +283,7 @@ class ConversationFooter extends HTMLElement {
             // where the removed items used to be.
             this._showUndoOffer(event.data.removed);
           }
-        }));
+        });
       }
       // Mid-turn usage updates arrive on the LLMState status feed (one tick per
       // usage chunk). For a provider that streams authoritative per-step usage

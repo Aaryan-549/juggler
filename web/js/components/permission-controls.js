@@ -146,7 +146,7 @@ class PermissionControls extends HTMLElement {
         }
       };
       messageThread.conversation.observeMetadata(this.metadataObserver);
-      const unsub = messageThread.conversation.session?.subscribe?.((/** @type {any} */ evt) => {
+      const unsub = messageThread.conversation.session?.subscribe?.((evt) => {
         if (evt.type !== 'session:metadata-changed') return;
         const keys = evt.data?.keys || [];
         if (!keys.includes('sessionPermissionRules') && !keys.includes('sessionAllowedPaths')) return;

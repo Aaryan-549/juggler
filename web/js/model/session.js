@@ -19,7 +19,6 @@ import workerManager from '../services/worker-manager.js';
 import { markForTranslation } from '../../sdk/lib/i18n.js';
 import { isEngine } from '../../sdk/lib/client-role.js';
 import { recordTape } from '../utils/event-tape.js';
-import { reportFault } from '../utils/fault-report.js';
 import { isTabReorderEnabled } from '../utils/attention-manager.js';
 import { approvePermittedPendingApprovals } from './conversation-tool-actions.js';
 import { isWorkspaceUsable, patchWorkspace, reorderWorkspaces } from '../services/workspaces.js';
@@ -30,6 +29,7 @@ import ConversationSyncReducer from './conversation-sync-reducer.js';
 import ConversationRegistry from './conversation-registry.js';
 import ProjectSwitchController from './project-switch-controller.js';
 import SessionPersistence, { normalizeHistoryEntry } from './session-persistence.js';
+import SessionEvents from './session-events.js';
 import { seedCreationDefaults, seedConversationAutoItems as seedAutoItems } from './conversation-seeder.js';
 
 /**
@@ -308,18 +308,12 @@ class Session {
     this.metadata = {};
 
     /**
-     * Event listeners
-     * @type {Map<number, Function>}
-     * @private
+     * The session's event feed. The session, its extracts and every
+     * Conversation announce on it; components listen through
+     * {@link subscribe}.
+     * @type {SessionEvents}
      */
-    this._listeners = new Map();
-
-    /**
-     * Next listener ID
-     * @type {number}
-     * @private
-     */
-    this._nextListenerId = 1;
+    this.events = new SessionEvents(this);
 
     /**
      * Unsubscribe functions for the server-push listeners setServices put on
@@ -359,8 +353,8 @@ class Session {
       holds: (id) => this.registry.has(id),
       order: () => this.registry.ids(),
       setName: (id, name) => this.setConversationName(id, name),
-      notify: (type, data) => this._notify(type, data),
-      notifyChange: (type, data) => this._notify(type, data),
+      notify: (type, data) => this.events.notify(type, data),
+      notifyChange: (type, data) => this.events.notify(type, data),
       loadAtHead: (id) => this._loadIntoHead(id),
       drop: (id, opts) => this._dropActiveConversation(id, opts),
       reorder: (ids) => this.registry.arrange(ids),
@@ -401,7 +395,7 @@ class Session {
       removedPendingConfirm: () => this._removedPendingConfirm,
       loadQueue: () => this._loadQueue,
       setLoadQueue: (queue) => { this._loadQueue = queue; },
-      notify: (type, data) => this._notify(type, data),
+      notify: (type, data) => this.events.notify(type, data),
       requestLoad: (id) => this._requestConversationLoad(id),
       switchTo: (id) => this.switchConversation(id),
       foldArrivals: (settled, arrivals) => this._foldArrivals(settled, arrivals),
@@ -642,7 +636,7 @@ class Session {
 
     this.workspaces = this.workspaces.map(row =>
       (row.place === 'head' ? { ...row, place: id } : row));
-    this._notify('session:workspaces-changed', this.workspaces);
+    this.events.notify('session:workspaces-changed', this.workspaces);
 
     return displaced.map(row => row.id);
   }
@@ -702,7 +696,7 @@ class Session {
         // The stub is a first-class tab: it draws its own spinner and hydrates
         // when selected. The notify the load fires on completion rebinds this
         // same entry rather than adding a second one.
-        this._notify('conversation:created', stub);
+        this.events.notify('conversation:created', stub);
       }
     }
 
@@ -720,24 +714,21 @@ class Session {
       const stub = this.registry.get(id);
       if (stubbed && stub?.loadState === 'unloaded') {
         this.registry.remove(id, '_loadIntoHead-stub-failed');
-        this._notify('conversation:deleted', stub);
+        this.events.notify('conversation:deleted', stub);
       }
       return null;
     }
   }
 
   /**
-   * Subscribe to session changes
-   * @param {Function} callback - Callback function (event) => void
-   * @returns {Function} Unsubscribe function
+   * Listen to the session's event feed ({@link SessionEvents#subscribe}).
+   * Kept on the session on purpose: extensions subscribe through it, so it is
+   * extension API rather than a pass-through to tidy away.
+   * @param {import('./session-events.js').SessionEventListener} callback - Called with each event.
+   * @returns {() => void} Stops this subscription.
    */
   subscribe(callback) {
-    const id = this._nextListenerId++;
-    this._listeners.set(id, callback);
-
-    return () => {
-      this._listeners.delete(id);
-    };
+    return this.events.subscribe(callback);
   }
 
   /**
@@ -806,7 +797,7 @@ class Session {
     const list = /** @type {Array<any>} */ (Array.isArray(providers) ? providers : []);
     for (const conv of this.conversations.values()) {
       if (conv.applyProvidersContextWindow(list)) {
-        this._notify('conversation:context-window-updated', conv);
+        this.events.notify('conversation:context-window-updated', conv);
       }
     }
   }
@@ -825,7 +816,7 @@ class Session {
   _onWorkspacesChanged(data) {
     const list = /** @type {{workspaces?: Workspace[]}} */ (data)?.workspaces;
     this.workspaces = Array.isArray(list) ? list : [];
-    this._notify('session:workspaces-changed', this.workspaces);
+    this.events.notify('session:workspaces-changed', this.workspaces);
   }
 
   /**
@@ -865,7 +856,7 @@ class Session {
     const at = rows.findIndex(row => row.id === workspaceId);
     if (at !== -1) {
       this.workspaces = rows.map((row, i) => (i === at ? stored : row));
-      this._notify('session:workspaces-changed', this.workspaces);
+      this.events.notify('session:workspaces-changed', this.workspaces);
     }
     return stored;
   }
@@ -1039,7 +1030,7 @@ class Session {
     without.splice(target, 0, conversationId);
     this.registry.arrange(without);
 
-    this._notify('conversation:reordered', { conversationId });
+    this.events.notify('conversation:reordered', { conversationId });
 
     // Persist the new ordering. The server merges this (possibly partial)
     // order into the manifest, so a viewer that knows only some conversations
@@ -1150,39 +1141,6 @@ class Session {
   }
 
   /**
-   * Notify all listeners of a change.
-   *
-   * Each listener is contained, as on the socket's emitter: its throw goes to
-   * the fault sink and the fan-out carries on, because subscribers are
-   * independent and a release viewer has no console to read the throw in.
-   * @param {string} type - Event type
-   * @param {any} data - Event data
-   * @private
-   */
-  _notify(type, data) {
-    this._listeners.forEach((callback) => {
-      try {
-        callback({ type, data, session: this });
-      } catch (error) {
-        reportFault(`session-listener:${type}`, error);
-      }
-    });
-  }
-
-  /**
-   * Notify listeners about a conversation state change. The public door for
-   * Conversation instances to announce on the session feed, which is the only
-   * place it goes: a component that wants it calls {@link subscribe}. It is
-   * {@link _notify} for callers outside the Session; the Session itself calls
-   * `_notify`.
-   * @param {string} type - Event type (e.g., 'conversation:strategy-changed')
-   * @param {any} data - Event data
-   */
-  notifyConversationChange(type, data) {
-    this._notify(type, data);
-  }
-
-  /**
    * Read a session metadata key.
    * @param {string} key
    * @returns {any} Metadata value, or undefined when absent
@@ -1206,7 +1164,7 @@ class Session {
       if (value === null || value === undefined) delete this.metadata[key];
       else this.metadata[key] = value;
     }
-    this._notify('session:metadata-changed', {
+    this.events.notify('session:metadata-changed', {
       keys,
       metadata: patch,
       remote: !!options.remote
@@ -1436,7 +1394,7 @@ class Session {
       this.sync.endLocalCreate(requestedId, response?.id);
     }
 
-    this._notify('conversation:created', conversation);
+    this.events.notify('conversation:created', conversation);
 
     if (activate) {
       this.switchConversation(conversation.id);
@@ -1458,7 +1416,7 @@ class Session {
     // correctly. Bar-less contexts (the engine worker, the startup initial-
     // conversation created before the bar subscribes) simply have no listener.
     if (wantsRename) {
-      this._notify('conversation:rename-requested', { conversationId: conversation.id });
+      this.events.notify('conversation:rename-requested', { conversationId: conversation.id });
     }
 
     return conversation.id;
@@ -1684,7 +1642,7 @@ class Session {
     // This prevents undoing built-in context items and copied messages
     await workerManager.clearUndoStacks(clone.id);
 
-    this._notify('conversation:created', clone);
+    this.events.notify('conversation:created', clone);
     this.save();
     return clone.id;
   }
@@ -1747,7 +1705,7 @@ class Session {
 
     this.workspaces = this.workspaces.map(row =>
       (row.place === conversationId ? { ...row, place: inherits } : row));
-    this._notify('session:workspaces-changed', this.workspaces);
+    this.events.notify('session:workspaces-changed', this.workspaces);
   }
 
   /**
@@ -1786,7 +1744,7 @@ class Session {
     const orderChanged = current.length !== next.length || current.some((id, i) => next[i] !== id);
     if (orderChanged) {
       this.registry.arrange(next);
-      this._notify('conversation:reordered', { conversationId: moved, beforeId: null });
+      this.events.notify('conversation:reordered', { conversationId: moved, beforeId: null });
       // Sent without naming what moved: the server re-anchors boxes around the
       // conversation a reorder moved, which is the very rule being replaced
       // here. Every drawn box's place is in this arrangement explicitly, so
@@ -1826,7 +1784,7 @@ class Session {
       || rows.some((row, i) => row !== reordered[i]);
     if (tableChanged) {
       this.workspaces = reordered;
-      this._notify('session:workspaces-changed', this.workspaces);
+      this.events.notify('session:workspaces-changed', this.workspaces);
     }
 
     for (const workspaceId of repositioned) {
@@ -1865,7 +1823,7 @@ class Session {
     const order = this.registry.ids().filter(id => id !== conversationId);
     order.splice(order.indexOf(beforeId), 0, conversationId);
     this.registry.arrange(order);
-    this._notify('conversation:reordered', { conversationId, beforeId });
+    this.events.notify('conversation:reordered', { conversationId, beforeId });
 
     // POST /reorder is the sole writer of conversation order.
     this._persistOrder('reorder', conversationId);
@@ -1952,7 +1910,7 @@ class Session {
     // sender too — re-read the whole manifest, and a manifest read is answered
     // ahead of a queued bin write. The reply can still list this conversation,
     // and a refresh treats an id it doesn't hold as one to load.
-    this._notify('conversation:deleted', conv);
+    this.events.notify('conversation:deleted', conv);
     return true;
   }
 
@@ -1994,7 +1952,7 @@ class Session {
 
     // Carried to other viewers by the server's `conversations-changed`
     // op="deleted" broadcast, for the reasons given in binConversation.
-    this._notify('conversation:deleted', conv);
+    this.events.notify('conversation:deleted', conv);
     // Don't call save() - backend DELETE already updated the session
     return true;
   }
@@ -2054,7 +2012,7 @@ class Session {
       marks.delete(conversationId);
     }
     if (was !== active) {
-      this._notify('conversation:auto-naming', { conversationId, active });
+      this.events.notify('conversation:auto-naming', { conversationId, active });
     }
   }
 
@@ -2131,7 +2089,7 @@ class Session {
     // on-disk folder name, so `conv.name` (a getter) reflects the rename
     // immediately.
     this.setConversationName(conversationId, canonical);
-    this._notify('conversation:renamed', { conversationId });
+    this.events.notify('conversation:renamed', { conversationId });
     return canonical;
   }
 
@@ -2155,7 +2113,7 @@ class Session {
     recordTape('session-mut', conversationId, { op: 'visible', from: 'switchConversation' });
     this.registry.select({ kind: 'conversation', id: conversationId });
     if (leavingWorkspace) {
-      this._notify('workspace:selected', null);
+      this.events.notify('workspace:selected', null);
     }
 
     if (alreadyVisible) {
@@ -2181,11 +2139,11 @@ class Session {
     if (conv.modelConfig && !conv.contextWindow) {
       conv.ensureContextWindow().then(() => {
         // Notify again after context window is fetched so token display updates
-        this._notify('conversation:context-window-updated', conv);
+        this.events.notify('conversation:context-window-updated', conv);
       });
     }
 
-    this._notify('conversation:switched', conv);
+    this.events.notify('conversation:switched', conv);
 
     // Save to persist activeConversationId
     // This is necessary because page unload saves are unreliable (async operations may not complete)
@@ -2213,7 +2171,7 @@ class Session {
     }
 
     this.registry.select({ kind: 'workspace', id: workspaceId });
-    this._notify('workspace:selected', workspace);
+    this.events.notify('workspace:selected', workspace);
     return true;
   }
 
@@ -2272,7 +2230,7 @@ class Session {
     });
     this.registry.clear('destroy');
 
-    this._listeners.clear();
+    this.events.clear();
 
     // @ts-ignore - Intentional cleanup in destroy method
     this._apiService = null;

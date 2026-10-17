@@ -185,12 +185,12 @@ export async function runTests() {
     stripSession.workspaces = [];
     stripSession.projectPath = '/tmp/project';
     stripSession.bin = { count: 0, sizeBytes: 0 };
-    stripSession._listeners = new Map();
+    // The strip subscribes, but nothing it is shown here needs announcing.
+    stripSession.events = { subscribe: () => () => {}, notify: () => {}, clear: () => {} };
     stripSession.registry = new ConversationRegistry();
     stripSession.registry.insert(conversation.id, conversation, 'test');
     stripSession.save = () => {};
     stripSession._requestConversationLoad = () => {};
-    stripSession._notify = () => {};
 
     host.appendChild(document.createElement('conversation-tabs-container'));
     document.body.appendChild(host);

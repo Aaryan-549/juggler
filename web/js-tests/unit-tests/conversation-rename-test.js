@@ -33,13 +33,13 @@ function makeSession(name) {
   ];
   session.projectPath = '/tmp/project';
   session.bin = { count: 0, sizeBytes: 0 };
-  session._listeners = new Map();
+  // The strip subscribes, but nothing it is shown here needs announcing.
+  session.events = { subscribe: () => () => {}, notify: () => {}, clear: () => {} };
   session.registry = new ConversationRegistry();
   session.registry.insert('c1',
     { id: 'c1', name, workspaceId: 'ws_a', loadState: 'loaded', hasAutoNameSource: () => false }, 'test');
   session.save = () => {};
   session._requestConversationLoad = () => {};
-  session._notify = () => {};
 
   /** @type {[string, string][]} */
   session.renamed = [];

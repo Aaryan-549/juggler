@@ -41,7 +41,8 @@ function makeSession(workspaces, bindings) {
   session.workspaces = workspaces;
   session.projectPath = '/tmp/project';
   session.bin = { count: 0, sizeBytes: 0 };
-  session._listeners = new Map();
+  // The strip subscribes, but nothing it is shown here needs announcing.
+  session.events = { subscribe: () => () => {}, notify: () => {}, clear: () => {} };
   session.registry = new ConversationRegistry();
   for (const [id, workspaceId] of bindings) {
     session.registry.insert(id, { id, name: id, workspaceId, loadState: 'loaded' }, 'test');
@@ -50,7 +51,6 @@ function makeSession(workspaces, bindings) {
   // queue, and the context-window fetch have nothing to say about selection.
   session.save = () => {};
   session._requestConversationLoad = () => {};
-  session._notify = () => {};
   return session;
 }
 

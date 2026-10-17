@@ -93,9 +93,7 @@ function findFooter(conversation) {
 function forceContextWindow(conversation, budget) {
   /** @type {any} */ (conversation).contextWindow = budget;
   const session = /** @type {any} */ (conversation)._session;
-  if (session?.notifyConversationChange) {
-    session.notifyConversationChange('conversation:context-window-updated', conversation);
-  }
+  session.events.notify('conversation:context-window-updated', conversation);
   /** @type {any} */ (findFooter(conversation))?._updateTokenDisplay?.();
 }
 

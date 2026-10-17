@@ -114,11 +114,9 @@ class PinboardShell extends JugglerElement {
     this._panel?.setSession(session);
     this._syncVisibility();
     if (!session) return;
-    this.addCleanup(/** @type {() => void} */ (
-      session.subscribe(/** @param {{type: string}} event */ (event) => {
-        if (event.type === 'session:loaded' || event.type === 'project:changed') this._syncVisibility();
-      })
-    ));
+    this.addCleanup(session.subscribe((event) => {
+      if (event.type === 'session:loaded') this._syncVisibility();
+    }));
   }
 
   /**

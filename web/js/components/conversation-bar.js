@@ -3,12 +3,6 @@
 //   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
 
 /**
- * @typedef {object} SessionEvent
- * @property {string} type - Event type name
- * @property {any} data - Event data
- */
-
-/**
  * @typedef {object} ModalOptions
  * @property {string} [confirmText] - Text for confirm button
  * @property {string} [cancelText] - Text for cancel button
@@ -703,7 +697,7 @@ class ConversationBar extends JugglerElement {
     );
 
     // Subscribe to session changes
-    this._unsubscribe = session.subscribe(/** @param {SessionEvent} event */ (event) => {
+    this._unsubscribe = session.subscribe((event) => {
       // Something other than the cycle moved the selection (jump-to-attention,
       // a workspace box, another path into the session): it overrides a cycle
       // still settling, exactly as a click does.

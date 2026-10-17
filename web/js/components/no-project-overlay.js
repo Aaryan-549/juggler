@@ -165,10 +165,9 @@ class NoProjectOverlay extends HTMLElement {
     this._session = session;
     this._refresh();
     if (session) {
-      this._unsubscribe = session.subscribe(/** @param {{type: string}} event */ (event) => {
+      this._unsubscribe = session.subscribe((event) => {
         if (
-          event.type === 'project:changed'
-          || event.type === 'session:loaded'
+          event.type === 'session:loaded'
           || event.type === 'conversation:created'
           || event.type === 'conversation:deleted'
         ) {

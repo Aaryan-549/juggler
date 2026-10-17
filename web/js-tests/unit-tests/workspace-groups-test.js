@@ -399,12 +399,14 @@ export async function runTests() {
         workspace('ws_also', { place: 'head' }),
         workspace('ws_elsewhere', { place: 'c0' })
       ],
-      /**
-       * @param {string} event - What happened.
-       * @param {any} payload - What it happened to.
-       * @returns {void}
-       */
-      _notify: (event, payload) => { notified.push([event, payload]); }
+      events: {
+        /**
+         * @param {string} event - What happened.
+         * @param {any} payload - What it happened to.
+         * @returns {void}
+         */
+        notify: (event, payload) => { notified.push([event, payload]); }
+      }
     };
 
     const displaced = Session.prototype._takeTheHeadFromBoxes.call(stub, 'new', '');
@@ -426,12 +428,14 @@ export async function runTests() {
     const stub = {
       workspaces: [workspace('ws_head', { place: 'head' })],
       conversations: new Map(),
-      /**
-       * @param {string} event - What happened.
-       * @param {any} payload - What it happened to.
-       * @returns {void}
-       */
-      _notify: (event, payload) => { notified.push([event, payload]); }
+      events: {
+        /**
+         * @param {string} event - What happened.
+         * @param {any} payload - What it happened to.
+         * @returns {void}
+         */
+        notify: (event, payload) => { notified.push([event, payload]); }
+      }
     };
 
     const displaced = Session.prototype._takeTheHeadFromBoxes.call(stub, 'new', 'ws_head');

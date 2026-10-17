@@ -238,6 +238,7 @@ import { runTests as runConversationFocusPolicyTests } from '../unit-tests/conve
 import { runTests as runRenameErrorCodeTests } from '../unit-tests/rename-error-code-test.js';
 import { runTests as runSessionManifestStateTests } from '../unit-tests/session-manifest-state-test.js';
 import { runTests as runSessionPersistenceTests } from '../unit-tests/session-persistence-test.js';
+import { runTests as runSessionEventsTests } from '../unit-tests/session-events-test.js';
 import { runTests as runConversationSeederTests } from '../unit-tests/conversation-seeder-test.js';
 import { runTests as runConversationBinTests } from '../unit-tests/conversation-bin-test.js';
 import { runTests as runConversationSyncTests } from '../unit-tests/conversation-sync-test.js';
@@ -767,6 +768,7 @@ const UNIT_TEST_SUITES = [
   { name: 'unit:rename-error-code', run: runRenameErrorCodeTests },
   { name: 'unit:session-manifest-state', run: runSessionManifestStateTests },
   { name: 'unit:session-persistence', run: runSessionPersistenceTests },
+  { name: 'unit:session-events', run: runSessionEventsTests },
   { name: 'unit:conversation-seeder', run: runConversationSeederTests },
   { name: 'unit:conversation-bin', run: runConversationBinTests },
   { name: 'unit:conversation-sync', run: runConversationSyncTests },

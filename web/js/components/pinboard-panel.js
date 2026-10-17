@@ -250,7 +250,7 @@ class PinboardPanel extends JugglerElement {
     // moment a board can go looking for the conversation it exists to show.
     if (isPinboardView() && session) void this._openBoardConversation();
     this._unsubscribeSession = session
-      ? /** @type {() => void} */ (session.subscribe(/** @param {{type: string}} event */ (event) => {
+      ? session.subscribe((event) => {
         switch (event.type) {
           case 'session:loaded':
           case 'conversation:switched':
@@ -273,7 +273,7 @@ class PinboardPanel extends JugglerElement {
           default:
             break;
         }
-      }))
+      })
       : null;
     this._render();
   }

@@ -256,7 +256,7 @@ function withFakeServer(session) {
   return {
     broadcast: () => {
       session.workspaces = table.map(row => ({ ...row }));
-      session._notify('session:workspaces-changed', session.workspaces);
+      session.events.notify('session:workspaces-changed', session.workspaces);
     },
     wrote,
     restore: () => { window.fetch = realFetch; }

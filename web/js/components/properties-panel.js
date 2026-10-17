@@ -370,7 +370,7 @@ class PropertiesPanel extends HTMLElement {
     const conversation = this._messageThread?.conversation;
     const session = conversation?.session;
     if (session) {
-      this._strategyUnsubscribe = /** @type {() => void} */ (session.subscribe((/** @type {{type: string, data?: any}} */ event) => {
+      this._strategyUnsubscribe = session.subscribe((event) => {
         if (event.type !== 'conversation:strategy-changed' || event.data?.conversation !== conversation) return;
         if (this._selectedItemId) {
           // Force full re-render by clearing snapshot
@@ -378,7 +378,7 @@ class PropertiesPanel extends HTMLElement {
           this._renderedItemId = null;
           this._renderContent();
         }
-      }));
+      });
     }
   }
 

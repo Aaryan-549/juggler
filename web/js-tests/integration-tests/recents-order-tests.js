@@ -230,7 +230,7 @@ export const turnEndBumpsWithBusyBarrierTest = {
     // mid-turn, so the completion below is read as an edge rather than as a
     // first sighting.
     initAttention(session);
-    session.notifyConversationChange('conversation:changed', { conversationId: D });
+    session.events.notify('conversation:changed', { conversationId: D });
 
     // Release D first while A remains marked busy. Prevent A's tab from being the
     // visible conversation so the switch itself doesn't affect the order being
@@ -300,7 +300,7 @@ export const streamingLeavesDraggedOrderTest = {
     const session = harness.innerHarness.session;
 
     initAttention(session);
-    session.notifyConversationChange('conversation:changed', { conversationId: D });
+    session.events.notify('conversation:changed', { conversationId: D });
 
     // The user drags D below their other tabs while its turn is running. Moving
     // each of the others to sit immediately before D is the drag, expressed

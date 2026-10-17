@@ -560,7 +560,7 @@ class Conversation {
     // rewinding to a last message that never got its reply removes exactly
     // one, and a rewind with no confirmation reads as one that did nothing.
     if (removed > 0) {
-      this._session?.notifyConversationChange?.('conversation:items-removed', {
+      this._session?.events?.notify('conversation:items-removed', {
         conversation: this,
         messageThread,
         removed,
@@ -746,7 +746,7 @@ class Conversation {
   setLoadState(state) {
     if (this._loadState === state) return;
     this._loadState = state;
-    this._session?.notifyConversationChange?.('conversation:loadstate-changed', {
+    this._session?.events?.notify('conversation:loadstate-changed', {
       conversationId: this.id,
       loadState: state
     });
@@ -2058,7 +2058,7 @@ class Conversation {
   _finishProcessing() {
     // Stopping tells the status observers, so the tab drops its spinner.
     this._llmState.stop(this.id);
-    this._session.notifyConversationChange('processing:stopped', this.id);
+    this._session.events.notify('processing:stopped', this.id);
   }
 
   /**
@@ -2067,7 +2067,7 @@ class Conversation {
    * to the end on it; the model itself touches no view.
    */
   announceTurnRequested() {
-    this._session?.notifyConversationChange('conversation:turn-requested', { conversationId: this.id });
+    this._session?.events.notify('conversation:turn-requested', { conversationId: this.id });
   }
 
   /**
@@ -2472,7 +2472,7 @@ class Conversation {
     // no transient 404 in the console.
     const list = await providersCache.waitForFirst();
     if (this.applyProvidersContextWindow(list)) {
-      this._session.notifyConversationChange('conversation:context-window-updated', this);
+      this._session.events.notify('conversation:context-window-updated', this);
     }
   }
 
@@ -2759,13 +2759,13 @@ class Conversation {
         case 'openCommandManager': {
           // The /commands manager is app-level UI, so the model only asks for
           // it; app.js opens the dialog on this event.
-          this._session?.notifyConversationChange('command-manager:open-requested', { conversationId: this.id });
+          this._session?.events.notify('command-manager:open-requested', { conversationId: this.id });
           break;
         }
         case 'openExportDialog': {
           // /export: the export dialog is app-level UI too, opened by app.js
           // for this conversation.
-          this._session?.notifyConversationChange('conversation-export:open-requested', { conversationId: this.id });
+          this._session?.events.notify('conversation-export:open-requested', { conversationId: this.id });
           break;
         }
       }

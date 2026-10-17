@@ -105,7 +105,7 @@ function fakeSession(ids) {
   const idle = { getMetadata: () => ({ status: 'idle' }) };
   const registry = new ConversationRegistry();
   for (const id of ids) registry.insert(id, /** @type {any} */ (idle), 'test');
-  return {
+  const stub = {
     registry,
     get conversations() { return registry.conversations; },
     persists: 0,
@@ -116,9 +116,10 @@ function fakeSession(ids) {
     // workspaces here, so it is the real method answering that there is nothing
     // to re-anchor.
     _reanchorBoxesBeforeMove: Session.prototype._reanchorBoxesBeforeMove,
-    _notify() { this.notifies++; },
+    events: { notify: () => { stub.notifies++; } },
     _persistOrder() { this.persists++; },
   };
+  return stub;
 }
 
 /**

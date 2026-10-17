@@ -1525,7 +1525,7 @@ class PinboardContent extends JugglerElement {
    */
   _watchContextItems(listener, signal) {
     const fire = () => this._scheduleNotify(listener, 'a context-item change', signal);
-    /** @param {{type: string, data?: any}} event - A session event. */
+    /** @param {import('../model/session-events.js').SessionEvent} event - A session event. */
     const onSession = (event) => {
       if (event.type !== 'context-items:changed' && event.type !== 'conversation:changed') return;
       // A pin reads one conversation. Every other conversation in the session

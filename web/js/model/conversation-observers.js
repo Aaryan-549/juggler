@@ -135,7 +135,7 @@ export function setupYjsObservers(c) {
       }
 
       // Notify session for UI updates
-      c._session.notifyConversationChange('conversation:changed', {
+      c._session.events.notify('conversation:changed', {
         conversationId: c.id,
         insertedItemIds: insertedItemIds
       });
@@ -144,7 +144,7 @@ export function setupYjsObservers(c) {
       // Named, like every other conversation event: a listener reading one
       // conversation has no other way to tell whose items moved.
       if (hasContextItems) {
-        c._session.notifyConversationChange('context-items:changed', {
+        c._session.events.notify('context-items:changed', {
           conversationId: c.id
         });
       }
@@ -160,7 +160,7 @@ export function setupYjsObservers(c) {
     } catch (err) {
       console.error('[Conversation] Items observer error (corrupt data?):', err);
       // Still notify UI so the conversation is visible and deletable
-      c._session.notifyConversationChange('conversation:changed', {
+      c._session.events.notify('conversation:changed', {
         conversationId: c.id,
         insertedItemIds: []
       });
@@ -177,7 +177,7 @@ export function setupYjsObservers(c) {
     if (!event.keysChanged) return;
 
     // Refresh cached derived state BEFORE any notify below. The general
-    // conversation:changed is delivered synchronously (session._notify is a
+    // conversation:changed is delivered synchronously (SessionEvents.notify is a
     // plain listener loop) and drives a conversation-tab column rebuild that
     // repaints the bound strategy selector from root.currentStrategyId. That
     // cached field must already hold the new id, or the rebuild reads the stale
@@ -208,7 +208,7 @@ export function setupYjsObservers(c) {
 
     if (changedRelevantKey) {
       // Notify for general UI updates
-      c._session.notifyConversationChange('conversation:changed', {
+      c._session.events.notify('conversation:changed', {
         conversationId: c.id,
         metadataKeys: Array.from(event.keysChanged)
       });
@@ -228,7 +228,7 @@ export function setupYjsObservers(c) {
     }
 
     if (event.keysChanged.has('currentStrategyId')) {
-      c._session.notifyConversationChange('conversation:strategy-changed', {
+      c._session.events.notify('conversation:strategy-changed', {
         conversation: c,
         strategyId: c.getMetadata('currentStrategyId')
       });

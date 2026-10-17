@@ -664,7 +664,7 @@ export function initAttention(sess) {
 
   sess.onLLMStatusChange((id) => onActivity(id));
 
-  sess.subscribe(/** @param {{type: string, data?: any}} e */ (e) => {
+  sess.subscribe((e) => {
     // Emitted per applied Yjs transaction, so this is the streaming firehose
     // during a turn; the edge check is a read-only walk of the thread tree and
     // has to stay synchronous, because the alert must have been raised by the
