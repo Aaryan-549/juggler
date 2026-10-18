@@ -109,7 +109,7 @@ class TaskStopContextItem extends ContextItem {
     const id = /** @type {string} */ (params.task_id || params.shell_id);
     // Name the conversation as well as the task: a task id is a bare handle, and
     // the only ids reachable from here are ones this conversation started.
-    const result = await shellKill({ shell_id: id, conv_id: this.conversation.id });
+    const result = await shellKill({ shellId: id, convId: this.conversation.id });
     return /** @type {Record<string, unknown>} */ (result);
   }
 

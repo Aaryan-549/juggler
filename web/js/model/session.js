@@ -145,7 +145,6 @@ const RENAME_ERROR_CODES = new Map(/** @type {const} */ ([
  * @property {import('../services/llm-state.js').default} llmState - LLM state manager for tracking processing
  * @property {import('../services/action-executor.js').default} actionExecutor - Action executor for cancellation
  * @property {import('../services/websocket.js').default} wsService - WebSocket service; the Session subscribes its server-push listeners on it (setServices). Conversation does not read it.
- * NOTE: conversationArea is supplied per-tab via setTabElement(), not through this services object.
  */
 
 /**
@@ -235,6 +234,16 @@ class Session {
      * @private
      */
     this._removedPendingConfirm = new Set();
+
+    /**
+     * The view's answer to "is the user part-way through a message in this
+     * conversation?", installed by the window's tab bar
+     * ({@link Session#setComposerTextProbe}). Null in a realm with no composers
+     * — the engine, a detached board — where there is no draft to protect.
+     * @type {((conversationId: string) => boolean)|null}
+     * @private
+     */
+    this._composerTextProbe = null;
 
     /**
      * Services object passed to Conversation instances
@@ -467,8 +476,21 @@ class Session {
   shouldFollowRequest(from) {
     if (!from) return true;
     if (this.visibleConversationId !== from) return false;
-    const tab = this.getConversation(from)?.getTabElement?.();
-    return !tab?.hasComposerText?.();
+    return !this._composerTextProbe?.(from);
+  }
+
+  /**
+   * Let the view answer whether a conversation's composer holds unsent text,
+   * which {@link shouldFollowRequest} reads. The session holds no element: the
+   * view that owns the composers answers by conversation id.
+   * @param {(conversationId: string) => boolean} probe - True while that conversation's box holds text.
+   * @returns {() => void} Detaches the probe, if it is still the one installed.
+   */
+  setComposerTextProbe(probe) {
+    this._composerTextProbe = probe;
+    return () => {
+      if (this._composerTextProbe === probe) this._composerTextProbe = null;
+    };
   }
 
   /**

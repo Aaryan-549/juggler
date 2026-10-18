@@ -160,9 +160,6 @@ class ConversationTab extends JugglerElement {
     /** @type {boolean} @private - Suppresses Rule 15 autofocus during keyboard navigation */
     this._isKeyboardNavigating = false;
 
-    /** @type {boolean} @private - Whether the document keydown listener is live (see _setupKeyboardNavigation) */
-    this._keyboardNavWired = false;
-
     /** @type {ColumnBuilder} @private - Builds the columns, and remembers what it last rendered into each */
     this._builder = new ColumnBuilder();
   }
@@ -170,6 +167,7 @@ class ConversationTab extends JugglerElement {
   connectedCallback() {
     this.render();
     this.onWindow(TOOL_GROUPING_EVENT, () => this._onToolGroupingChanged());
+    this.onDocument('keydown', /** @type {EventListener} */ ((/** @type {KeyboardEvent} */ e) => this._onNavKeydown(e)));
     // A tab put back in the document already has its conversation, and is not
     // handed it again: take back the feeds the disconnect dropped, and rebuild
     // the columns render() just emptied.
@@ -265,8 +263,7 @@ class ConversationTab extends JugglerElement {
     root?.resetScrollRestoreFlag();
     if (root) root.conversation = conversation;
 
-    // Give conversation reference to this tab
-    conversation.setTabElement(this);
+    conversation.startStatusObserver();
 
     this._subscribe(conversation);
 
@@ -1123,13 +1120,12 @@ class ConversationTab extends JugglerElement {
     }
 
     this._setupColumnOverflow();
-    this._setupKeyboardNavigation();
   }
 
   /**
    * Wire the container's edge fades to its actual scroll state.
    *
-   * Unlike the keyboard listener this is re-wired on every render, because
+   * Unlike the listeners connectedCallback registers, this is re-wired on every render, because
    * render() builds a new column-container each time and the scroll listener
    * goes with the old one. The ResizeObserver does not, so the previous one is
    * disconnected here and the teardown registered once.
@@ -1182,23 +1178,10 @@ class ConversationTab extends JugglerElement {
   }
 
   /**
-   * Set up centralized keyboard navigation (single document listener). The
-   * listener decides whether the key is the tab's at all; each key's own
-   * behaviour is its handler in {@link NAV_KEY_HANDLERS}.
-   * @private
-   */
-  _setupKeyboardNavigation() {
-    // render() runs many times per connect, so the listener needs a guard the
-    // base class's drain can clear — otherwise a re-connect would find the flag
-    // still set and never re-register.
-    if (this._keyboardNavWired) return;
-    this._keyboardNavWired = true;
-    this.addCleanup(() => { this._keyboardNavWired = false; });
-    this.onDocument('keydown', /** @type {EventListener} */ ((/** @type {KeyboardEvent} */ e) => this._onNavKeydown(e)));
-  }
-
-  /**
-   * The document keydown behind {@link _setupKeyboardNavigation}.
+   * Keyboard navigation: the tab's one document keydown listener, registered
+   * per connection in connectedCallback. It decides whether the key is the
+   * tab's at all; each key's own behaviour is its handler in
+   * {@link NAV_KEY_HANDLERS}.
    * @param {KeyboardEvent} e
    * @private
    */

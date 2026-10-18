@@ -381,7 +381,7 @@ export async function runTests() {
       id: 'teardown-conv',
       rootItems: [],
       llmState: null,
-      setTabElement: () => {},
+      startStatusObserver: () => {},
       onStatusChange: (/** @type {Function} */ fn) => { status.add(fn); return () => status.delete(fn); },
       session: { subscribe: (/** @type {Function} */ fn) => { session.add(fn); return () => session.delete(fn); } },
     };
@@ -398,7 +398,20 @@ export async function runTests() {
       if (session.size !== 0 || status.size !== 0) throw new Error(`after removal it holds ${held()}, want none`);
       elsewhere.appendChild(tab);
       if (session.size !== 1 || status.size !== 1) throw new Error(`reinserted after a removal it holds ${held()}, want 1 and 1`);
+
+      // Its document-level key handling comes back with it, once: a tab that
+      // lost it would ignore the keyboard, and one that gained a second copy
+      // would act twice on every key. The re-render a parked tab gets when it is
+      // shown again must not add one either.
+      let heard = 0;
+      tab._onNavKeydown = () => { heard++; };
+      tab.render();
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+      if (heard !== 1) throw new Error(`reinserted after a removal a key reached its handler ${heard} time(s), want 1`);
       tab.remove();
+      heard = 0;
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+      if (heard !== 0) throw new Error(`removed, a key still reached its handler ${heard} time(s)`);
       passed++;
     } finally {
       elsewhere.remove();

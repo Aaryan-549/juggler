@@ -9,6 +9,8 @@ of changes; this project follows semantic versioning.
 - Double-tapping the composer's ⋮ or / button no longer opens two menus
 - A window whose server dies now restarts it instead of reconnecting forever
 - Slow startups, like logging in with apps reopening, no longer shut the server down
+- Extension ops `stat`, `mkdir`, `getTree`, `expandDirectory` and `fileHash` accept an AbortSignal
+- Extension shell ops take camelCase ids (`taskId`, `shellId`, `convId`); snake_case still works
 
 ## [0.7.7] - 2026-10-17
 

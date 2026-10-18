@@ -202,7 +202,7 @@ export async function runTests(_ctx) {
       reorderConversations: async () => null,
       updateSession: async () => ({ success: true })
     }))));
-    session.conversations.set('src', { id: 'src', name: 'Source', isTurnActive: () => false });
+    session.registry.insert('src', { id: 'src', name: 'Source', isTurnActive: () => false }, 'test');
 
     const loader = workerManager.loader;
     const { loadExisting } = loader;

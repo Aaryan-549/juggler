@@ -114,7 +114,7 @@ export async function runTests() {
     await workerManager.flushPersistence(convId);
 
     await workerManager.loader.destroy(conversation);
-    session.conversations.delete(convId);
+    session.registry.forget(convId, 'test');
     await session.persistence.load();
     await session.ensureConversationLoaded(convId);
 

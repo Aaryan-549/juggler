@@ -70,7 +70,7 @@ const DEFAULT_POLL_MS = 1000;
  * @param {string} [opts.convId] - The conversation this task belongs to. Sent with
  *   every read so the server can refuse an id that names another conversation's
  *   task; omitting it falls back to the project check alone.
- * @param {(params: {task_id: string, conv_id?: string}) => Promise<TaskOutputState>} [opts.readOutput]
+ * @param {(params: {taskId: string, convId?: string}) => Promise<TaskOutputState>} [opts.readOutput]
  *   Output reader; injectable for deterministic tests.
  * @returns {HTMLElement|null} The section element, or null if it wasn't rendered.
  */
@@ -219,7 +219,7 @@ export function renderLiveTaskOutput(wrapper, {
     /** @type {TaskOutputState} */
     let state;
     try {
-      state = await readOutput({ task_id: taskId, conv_id: convId });
+      state = await readOutput({ taskId, convId });
     } catch {
       return;
     }

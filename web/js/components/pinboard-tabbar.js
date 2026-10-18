@@ -53,7 +53,7 @@ class PinboardTabbar extends JugglerElement {
 
   connectedCallback() {
     this._build();
-    this._render();
+    this.render();
   }
 
   /**
@@ -65,7 +65,7 @@ class PinboardTabbar extends JugglerElement {
   setTabs(tabs, activeId) {
     this._tabs = tabs;
     this._activeId = activeId;
-    this._render();
+    this.render();
   }
 
   /**
@@ -110,9 +110,8 @@ class PinboardTabbar extends JugglerElement {
    * Reconcile the tab elements with the current board. Tabs are reused by pin id
    * so a board change made elsewhere doesn't restart animations or swallow a
    * click that landed between press and release.
-   * @private
    */
-  _render() {
+  render() {
     const list = this._list;
     if (!list) return;
     // A drag has the strip arranged as the drop would leave it. Reconciling
@@ -341,7 +340,7 @@ class PinboardTabbar extends JugglerElement {
         // move, the board order this drag just asked for.
         if (this._renderDeferred) {
           this._renderDeferred = false;
-          this._render();
+          this.render();
         }
       },
       onCommit: ({ toIndex }) => this._emit('pinboard-move', { pinId, index: toIndex }),

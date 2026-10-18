@@ -137,7 +137,7 @@ export async function runTests(_ctx) {
       failed++;
       errors.push(`a refused load fails with the server's reason: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
-      if (gone) session.conversations.delete(gone);
+      if (gone) session.registry.forget(gone, 'test');
     }
   }
 
@@ -154,7 +154,7 @@ export async function runTests(_ctx) {
 
       const first = await loadOutcome(session, gone);
       assert(first !== 'loaded', 'precondition: the server refuses the first load');
-      session.conversations.delete(gone);
+      session.registry.forget(gone, 'test');
 
       const retry = await loadOutcome(session, gone);
       assert(retry !== 'loaded', 'the retry of a refused load reported success');
@@ -166,7 +166,7 @@ export async function runTests(_ctx) {
       failed++;
       errors.push(`a refused load can be retried: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
-      if (gone) session.conversations.delete(gone);
+      if (gone) session.registry.forget(gone, 'test');
     }
   }
 

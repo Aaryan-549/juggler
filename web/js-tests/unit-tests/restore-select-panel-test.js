@@ -51,9 +51,7 @@ function createStubConversation(session, id, name, loadState) {
     name,
     session,
     loadState,
-    tabElement: /** @type {any} */ (null),
-    /** @param {any} el - Tab element claiming this conversation */
-    setTabElement(el) { this.tabElement = el; },
+    startStatusObserver() {},
     /** @returns {() => void} Unsubscribe */
     onStatusChange() { return () => {}; }
   };
@@ -127,7 +125,8 @@ export async function runTests() {
     assert(restoredTab.parentElement === tabsContainer,
       'the host was built but never parented into the tabs container');
     assert(restoredTab.classList.contains('active'), 'the newly-built host was not activated');
-    assert(restored.tabElement === restoredTab, 'the host was not bound to its conversation');
+    assert(restoredTab.getConversation() === restored, 'the host was not bound to its conversation');
+    assert(bar.getTabElement('conv_restored') === restoredTab, 'the bar does not answer for the host it built');
     passed++;
 
     // --- 2: it shows the loading overlay, and the old tab is parked ---------

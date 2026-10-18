@@ -46,7 +46,7 @@ async function parkAsStub(session, id, name, loadState) {
     id, name, session, session.getServices(),
     { skipBuiltInContextItems: true, loadState }
   );
-  session.conversations.set(id, stub);
+  session.registry.insert(id, stub, 'test');
   return stub;
 }
 

@@ -698,9 +698,9 @@ async function _runTestBody(harness, testDef, trace) {
   // auto-add and shift item IDs in unrelated tests).
   if (testDef.setupFiles) {
     trace.stage = 'setupFiles';
-    const { writeFileOp } = await import('../../js/services/ops-api.js');
+    const { writeFile } = await import('../../js/services/ops-api.js');
     for (const [path, content] of Object.entries(testDef.setupFiles)) {
-      await writeFileOp({ path, content });
+      await writeFile({ path, content });
     }
   }
 

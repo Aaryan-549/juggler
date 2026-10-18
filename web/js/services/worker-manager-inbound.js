@@ -30,9 +30,199 @@ import { setBootstrapSummarizationPrompt } from '../utils/compaction-utils.js';
 
 /**
  * @typedef {import('./worker-manager.js').WorkerManager} WorkerManager
- * @typedef {import('./worker-manager.js').WorkerMessage} WorkerMessage
- * @typedef {(wm: WorkerManager, conversationId: string, data: WorkerMessage) => (void|Promise<unknown>)} InboundHandler
  */
+
+// ============================================================================
+// The messages, one shape per wire type
+// ============================================================================
+//
+// Each is the message's payload as the worker marshals it (cmd/juggler/worker,
+// messages.go and the map literals beside its senders). The conversation it is
+// about travels in the envelope around it, not in it. Go `[]byte` fields arrive
+// as base64 strings.
+
+/**
+ * A server-built message's words, for `serverText()`.
+ * @typedef {{key?: unknown, params?: unknown, context?: unknown}} ServerTextField
+ */
+
+/**
+ * @typedef {object} ReadyMessage
+ * @property {'ready'} type - Wire type
+ * @property {string} [summarizationPrompt] - The worker's canonical summarization prompt
+ * @property {object|null} [metadata] - Metadata read from the stored document, when it loaded one
+ */
+
+/**
+ * @typedef {object} YjsSyncMessage
+ * @property {'yjs-sync'} type - Wire type
+ * @property {string|null} bytes - A y-generic-sync message, base64
+ * @property {boolean} [engineDerived] - Whether the update came from the engine
+ */
+
+/**
+ * @typedef {object} ResyncOfferMessage
+ * @property {'resync-offer'} type - Wire type
+ */
+
+/**
+ * @typedef {object} ResyncResponseMessage
+ * @property {'resync-response'} type - Wire type
+ * @property {string|null} [bytes] - The ops this client lacks, base64
+ * @property {string|null} [stateVector] - The worker's state vector, base64
+ */
+
+/**
+ * @typedef {object} RenderContextItemsRequestMessage
+ * @property {'render-context-items-request'} type - Wire type
+ * @property {string} requestId - Correlates the reply
+ * @property {string[]} itemIds - Context items to render
+ * @property {number} [sentAt] - Worker clock at send, ms, for the round-trip trace
+ * @property {object} [contextParams] - Params for the render
+ */
+
+/**
+ * @typedef {object} RequestToolsMessage
+ * @property {'request-tools'} type - Wire type
+ * @property {string} requestId - Correlates the reply
+ * @property {string} threadItemId - The thread asking; '' for the root
+ * @property {number} [sentAt] - Worker clock at send, ms, for the round-trip trace
+ */
+
+/**
+ * @typedef {object} BuildSubthreadSpecMessage
+ * @property {'build-subthread-spec'} type - Wire type
+ * @property {string} requestId - Correlates the reply
+ * @property {string} toolUseId - The delegating tool call
+ * @property {string} toolName - Its tool
+ * @property {unknown} toolInput - Its input
+ */
+
+/**
+ * @typedef {object} ApprovalRequestMessage
+ * @property {'approval-request'} type - Wire type
+ * @property {string} toolUseId - The tool call awaiting approval
+ * @property {string} toolName - Its tool
+ * @property {unknown} toolInput - Its input
+ * @property {object} [config] - How to present the request
+ */
+
+/**
+ * @typedef {object} RunStrategyHookMessage
+ * @property {'run-strategy-hook'} type - Wire type
+ * @property {string} hook - Which hook
+ * @property {string} strategyId - The strategy it belongs to
+ * @property {string} [requestId] - Correlates the reply, when one is wanted
+ * @property {string} [threadItemId] - The thread it runs for
+ * @property {string} [previousStrategyId] - The strategy being replaced (activation)
+ */
+
+/**
+ * @typedef {object} RunContextHookMessage
+ * @property {'run-context-hook'} type - Wire type
+ * @property {string} hook - Which hook
+ * @property {number} turnIndex - The turn it runs for
+ */
+
+/**
+ * The fields the three tool commands share.
+ * @typedef {object} ToolCommandFields
+ * @property {string} toolUseId - The tool call to act on
+ * @property {number} [runningEpoch] - Execution generation the command is scoped to (cancel only)
+ */
+
+/** @typedef {ToolCommandFields & {type: 'evaluate-tool'}} EvaluateToolMessage */
+/** @typedef {ToolCommandFields & {type: 'execute-tool'}} ExecuteToolMessage */
+/** @typedef {ToolCommandFields & {type: 'cancel-tool'}} CancelToolMessage */
+
+/**
+ * @typedef {object} CancelStrategyExecutionMessage
+ * @property {'cancel-strategy-execution'} type - Wire type
+ */
+
+/**
+ * Either `threadItemId` (the thread was made) or `error` (it was not).
+ * @typedef {object} CreateThreadResponseMessage
+ * @property {'create-thread-response'} type - Wire type
+ * @property {string} requestId - The request it answers
+ * @property {string} [threadItemId] - The new thread
+ * @property {string} [result] - The thread's result
+ * @property {string} [error] - Why it was not made
+ * @property {boolean} [cancelled] - Whether that was a cancellation
+ */
+
+/**
+ * @typedef {object} ErrorMessage
+ * @property {'error'} type - Wire type
+ * @property {string} [message] - English text
+ * @property {ServerTextField} [text] - The same, as a server message
+ * @property {string} [summary] - A one-line form
+ * @property {string} [stack] - Stack trace
+ */
+
+/**
+ * @typedef {object} ValidationErrorMessage
+ * @property {'validation-error'} type - Wire type
+ * @property {string} [message] - English text
+ * @property {ServerTextField} [text] - The same, as a server message
+ */
+
+/**
+ * A transition of the worker's processing state, which itself syncs through
+ * the document's metadata.
+ * @typedef {object} StatusMessage
+ * @property {'status'} type - Wire type
+ * @property {string} status - The state entered
+ * @property {string} [message] - English text
+ * @property {string} [code] - Machine-readable reason
+ * @property {ServerTextField} [text] - The message, as a server message
+ */
+
+/**
+ * @typedef {object} AckMessage
+ * @property {'ack'} type - Wire type
+ * @property {string} ackId - The request it answers
+ * @property {unknown} [result] - What the request produced, if anything
+ */
+
+/**
+ * @typedef {object} SaveErrorMessage
+ * @property {'save-error'} type - Wire type
+ * @property {string} [error] - What went wrong
+ */
+
+/**
+ * Any message a worker sends a client, told apart by `type`.
+ * @typedef {ReadyMessage|YjsSyncMessage|ResyncOfferMessage|ResyncResponseMessage
+ *   |RenderContextItemsRequestMessage|RequestToolsMessage|BuildSubthreadSpecMessage
+ *   |ApprovalRequestMessage|RunStrategyHookMessage|RunContextHookMessage
+ *   |EvaluateToolMessage|ExecuteToolMessage|CancelToolMessage
+ *   |CancelStrategyExecutionMessage|CreateThreadResponseMessage|ErrorMessage
+ *   |ValidationErrorMessage|StatusMessage|AckMessage|SaveErrorMessage} WorkerMessage
+ */
+
+/**
+ * A handler, as the table holds it. Each is written against its own message's
+ * shape and enters the table through {@link entry}, which checks that pairing.
+ * @typedef {(wm: WorkerManager, conversationId: string, data: any) => (void|Promise<unknown>)} InboundHandler
+ */
+
+/**
+ * A handler for one message type, against that type's shape.
+ * @template {WorkerMessage['type']} K
+ * @typedef {(wm: WorkerManager, conversationId: string, data: Extract<WorkerMessage, {type: K}>) => (void|Promise<unknown>)} HandlerFor
+ */
+
+/**
+ * One table row: a type and the handler for it, checked against each other.
+ * @template {WorkerMessage['type']} K
+ * @param {K} type - The wire type
+ * @param {HandlerFor<K>} handler - Its handler
+ * @returns {[string, InboundHandler]} The row
+ */
+function entry(type, handler) {
+  return [type, handler];
+}
 
 /**
  * The conversation a message is about, if this client holds it.
@@ -53,7 +243,7 @@ function bytesField(field) {
   return field ? base64ToBytes(/** @type {string} */ (field)) : null;
 }
 
-/** @type {InboundHandler} */
+/** @type {HandlerFor<'ready'>} */
 function onReady(wm, conversationId, data) {
   // The worker owns the canonical summarization prompt and ships it with
   // every "ready" (server-wide constant, independent of this entry).
@@ -70,7 +260,7 @@ function onReady(wm, conversationId, data) {
   conversationOf(wm, conversationId)?.activateYjsSync({ broadcastInitialState: !took.loadFromDisk });
 }
 
-/** @type {InboundHandler} */
+/** @type {HandlerFor<'yjs-sync'>} */
 function onYjsSync(wm, conversationId, data) {
   // All sync goes through YjsConversationSync.
   if (!data.bytes) {
@@ -86,14 +276,14 @@ function onYjsSync(wm, conversationId, data) {
     // shows only the conversations the user explicitly opened and runs no
     // session-wide flow, so loading siblings' convs would be pure waste.
     if (isEngine()) {
-      wm.loader.autoLoad(conversationId, /** @type {string} */ (/** @type {unknown} */ (data.bytes)));
+      wm.loader.autoLoad(conversationId, data.bytes);
     }
     return;
   }
   conversation.handleYjsSyncMessage(/** @type {Uint8Array} */ (bytesField(data.bytes)));
 }
 
-/** @type {InboundHandler} */
+/** @type {HandlerFor<'resync-offer'>} */
 function onResyncOffer(wm, conversationId) {
   // The worker telling a freshly attached engine that this conversation
   // is loaded on the server. It carries no state, because what is needed
@@ -125,7 +315,7 @@ function onResyncOffer(wm, conversationId) {
   }
 }
 
-/** @type {InboundHandler} */
+/** @type {HandlerFor<'resync-response'>} */
 function onResyncResponse(wm, conversationId, data) {
   // The worker's answer to our reconnect resync-request: the ops we are
   // missing, plus the worker's state vector. Apply its ops, then send back
@@ -150,26 +340,26 @@ function onResyncResponse(wm, conversationId, data) {
   }
 }
 
-/** @type {InboundHandler} */
+/** @type {HandlerFor<'cancel-strategy-execution'>} */
 function onCancelStrategyExecution(wm, conversationId) {
   // Worker cancelled — abort engine-driven strategy execution (plan
   // driver) by firing the conversation's stop handlers.
   conversationOf(wm, conversationId)?.cancelStrategyExecution?.();
 }
 
-/** @type {InboundHandler} */
+/** @type {HandlerFor<'create-thread-response'>} */
 function onCreateThreadResponse(wm, _conversationId, data) {
   /** @type {{error: string, cancelled: boolean}|{threadItemId: string, result: string}} */
   const outcome = data.error
     ? { error: String(data.error), cancelled: !!data.cancelled }
     : {
-      threadItemId: /** @type {string} */ (/** @type {any} */ (data).threadItemId),
+      threadItemId: /** @type {string} */ (data.threadItemId),
       result: /** @type {string} */ (data.result)
     };
-  wm.settleThreadRequest(/** @type {string} */ (data.requestId), outcome);
+  wm.settleThreadRequest(data.requestId, outcome);
 }
 
-/** @type {InboundHandler} */
+/** @type {HandlerFor<'error'>} */
 function onError(wm, conversationId, data) {
   console.error(`[WorkerManager] Worker error for ${conversationId}:`, data.message, data.stack);
   // An error arriving before ready IS the answer to the init: the worker
@@ -183,7 +373,7 @@ function onError(wm, conversationId, data) {
     : `Worker error for ${conversationId}`);
 }
 
-/** @type {InboundHandler} */
+/** @type {HandlerFor<'validation-error'>} */
 function onValidationError(wm, conversationId, data) {
   // Show validation error in composer warning
   if (!data.message) return;
@@ -196,7 +386,7 @@ function onValidationError(wm, conversationId, data) {
   conversation.restorePendingMessage();
 }
 
-/** @type {InboundHandler} */
+/** @type {HandlerFor<'status'>} */
 function onStatus(wm, conversationId) {
   // Processing state syncs via Yjs metadata (doc.metadata.processingState),
   // which LLMState observes directly — this message carries nothing of its
@@ -209,12 +399,12 @@ function onStatus(wm, conversationId) {
   conversationOf(wm, conversationId)?.flushPendingSyncs?.();
 }
 
-/** @type {InboundHandler} */
+/** @type {HandlerFor<'ack'>} */
 function onAck(wm, _conversationId, data) {
   if (data.ackId) wm.settleAck(data.ackId, data.result);
 }
 
-/** @type {InboundHandler} */
+/** @type {HandlerFor<'save-error'>} */
 function onSaveError(_wm, conversationId, data) {
   console.error(`[WorkerManager] Save failed for ${conversationId}:`, data.error);
 }
@@ -229,28 +419,28 @@ function onSaveError(_wm, conversationId, data) {
  * tool where it was. Their rejections are reported by the router.
  * @type {ReadonlyMap<string, InboundHandler>}
  */
-export const INBOUND_HANDLERS = new Map(/** @type {Array<[string, InboundHandler]>} */ ([
-  ['ready', onReady],
-  ['yjs-sync', onYjsSync],
-  ['resync-offer', onResyncOffer],
-  ['resync-response', onResyncResponse],
-  ['render-context-items-request', (wm, id, data) => protocols.handleRenderContextItemsRequest(wm, id, data)],
-  ['request-tools', (wm, id, data) => protocols.handleRequestTools(wm, id, data)],
-  ['build-subthread-spec', (wm, id, data) => protocols.handleBuildSubthreadSpec(wm, id, data)],
-  ['approval-request', (wm, id, data) => protocols.handleApprovalRequest(wm, id, data)],
-  ['run-strategy-hook', (wm, id, data) => protocols.handleRunStrategyHook(wm, id, data)],
-  ['run-context-hook', (wm, id, data) => protocols.handleRunContextHook(wm, id, data)],
-  ['evaluate-tool', (wm, id, data) => protocols.handleEvaluateTool(wm, id, /** @type {string} */ (data.toolUseId))],
-  ['execute-tool', (wm, id, data) => protocols.handleExecuteTool(wm, id, /** @type {string} */ (data.toolUseId))],
-  ['cancel-tool', (wm, id, data) => protocols.handleCancelTool(wm, id, /** @type {string} */ (data.toolUseId), data.runningEpoch)],
-  ['cancel-strategy-execution', onCancelStrategyExecution],
-  ['create-thread-response', onCreateThreadResponse],
-  ['error', onError],
-  ['validation-error', onValidationError],
-  ['status', onStatus],
-  ['ack', onAck],
-  ['save-error', onSaveError],
-]));
+export const INBOUND_HANDLERS = new Map([
+  entry('ready', onReady),
+  entry('yjs-sync', onYjsSync),
+  entry('resync-offer', onResyncOffer),
+  entry('resync-response', onResyncResponse),
+  entry('render-context-items-request', (wm, id, data) => protocols.handleRenderContextItemsRequest(wm, id, data)),
+  entry('request-tools', (wm, id, data) => protocols.handleRequestTools(wm, id, data)),
+  entry('build-subthread-spec', (wm, id, data) => protocols.handleBuildSubthreadSpec(wm, id, data)),
+  entry('approval-request', (wm, id, data) => protocols.handleApprovalRequest(wm, id, data)),
+  entry('run-strategy-hook', (wm, id, data) => protocols.handleRunStrategyHook(wm, id, data)),
+  entry('run-context-hook', (wm, id, data) => protocols.handleRunContextHook(wm, id, data)),
+  entry('evaluate-tool', (wm, id, data) => protocols.handleEvaluateTool(wm, id, data.toolUseId)),
+  entry('execute-tool', (wm, id, data) => protocols.handleExecuteTool(wm, id, data.toolUseId)),
+  entry('cancel-tool', (wm, id, data) => protocols.handleCancelTool(wm, id, data.toolUseId, data.runningEpoch)),
+  entry('cancel-strategy-execution', onCancelStrategyExecution),
+  entry('create-thread-response', onCreateThreadResponse),
+  entry('error', onError),
+  entry('validation-error', onValidationError),
+  entry('status', onStatus),
+  entry('ack', onAck),
+  entry('save-error', onSaveError),
+]);
 
 /**
  * Hand one worker message to its handler.
@@ -260,7 +450,8 @@ export const INBOUND_HANDLERS = new Map(/** @type {Array<[string, InboundHandler
  * is reported here under the message's type rather than going unhandled.
  * @param {WorkerManager} wm - The manager the message arrived on
  * @param {string} conversationId - Conversation the message is about
- * @param {WorkerMessage} data - The message
+ * @param {WorkerMessage|{type: string}} data - The message; a type outside the
+ *   vocabulary is reported, not handled
  * @returns {void}
  */
 export function routeWorkerMessage(wm, conversationId, data) {

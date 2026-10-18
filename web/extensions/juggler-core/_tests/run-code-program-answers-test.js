@@ -14,7 +14,7 @@
  */
 
 import { assert } from '../../../js-tests/utilities/test-helpers.js';
-import { readFileLoad } from '../../../js/services/ops-api.js';
+import { readFile } from '../../../js/services/ops-api.js';
 import actionExecutor from '../../../js/services/action-executor.js';
 import YoloStrategyType from '../strategies/yolo-strategy-type.js';
 import { runProgramSuite, waitUntil } from './run-code-program-helpers.js';
@@ -88,7 +88,7 @@ export async function runTests(_ctx) {
       });
       const done = await finished;
       assert(done.state === 'completed' && done.result?.content === 'done', `it runs under the new strategy: ${JSON.stringify(done.result)}`);
-      const ran = await readFileLoad({ path: log });
+      const ran = await readFile({ path: log });
       assert(String(ran.content) === 'x', `once: ${JSON.stringify(ran.content)}`);
     });
 
@@ -161,7 +161,7 @@ export async function runTests(_ctx) {
       answerHeld(conversation, mt, id, 'B');
       const done = await finished;
       assert(done.result?.content === 'answer: Pick: B', `the answer reaches the program: ${JSON.stringify(done.result)}`);
-      const ran = await readFileLoad({ path: file });
+      const ran = await readFile({ path: file });
       assert(String(ran.content) === 'x', `bash ran once: ${JSON.stringify(ran.content)}`);
     });
   });

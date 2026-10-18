@@ -312,7 +312,7 @@ func (s *Server) runRealtimeClientLoop(ctx context.Context, client RealtimeClien
 				cancel()
 				jlog.Error("Shell start REJECTED (ID already in use): shellID=%s", shellReq.ShellID)
 				// Route the rejection to the requester (not the viewer group) so
-				// the engine's shellExecuteStreaming settles. Matches the
+				// the engine's shellStreaming settles. Matches the
 				// output-delivery path in processShellRequest.
 				client.Send(map[string]any{
 					"type":    "shell-output",

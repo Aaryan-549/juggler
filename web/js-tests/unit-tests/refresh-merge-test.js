@@ -102,7 +102,7 @@ export async function runTests(_ctx) {
           arrivalId, 'Arrival', session, session.getServices(),
           { skipBuiltInContextItems: true, loadState: 'unloaded' }
         );
-        session.conversations.set(arrivalId, stub);
+        session.registry.insert(arrivalId, stub, 'test');
       });
 
       await session.persistence.refreshFromServer();
@@ -118,7 +118,7 @@ export async function runTests(_ctx) {
       errors.push(`an arrival during a refresh survives it: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       if (realApi) session._apiService = realApi;
-      session.conversations.delete(arrivalId);
+      session.registry.forget(arrivalId, 'test');
       for (const id of created) await session.deleteConversation(id);
     }
   }
@@ -139,7 +139,7 @@ export async function runTests(_ctx) {
         live.id, name, session, session.getServices(),
         { skipBuiltInContextItems: true, loadState: 'unloaded' }
       );
-      session.conversations.set(live.id, stub);
+      session.registry.insert(live.id, stub, 'test');
 
       await session.persistence.refreshFromServer();
       await until(() => session.conversations.get(live.id)?.loadState === 'loaded',

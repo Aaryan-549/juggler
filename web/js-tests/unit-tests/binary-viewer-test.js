@@ -15,7 +15,7 @@
  */
 
 import fileViewerRegistry from '../../js/registries/file-viewer-registry.js';
-import { writeFileOp } from '../../js/services/ops-api.js';
+import { writeFile } from '../../js/services/ops-api.js';
 import { createBoundOps } from '../../sdk/ops.js';
 import BinaryFileViewer from '../../extensions/juggler-core/viewers/binary-file-viewer.js';
 import TextFileViewer from '../../extensions/juggler-core/viewers/text-file-viewer.js';
@@ -168,7 +168,7 @@ export async function runTests() {
   const onDisk = `${dir}/blob.bin`;
   const project = createBoundOps(() => ({ workspaceId: '' }));
   try {
-    await writeFileOp({ path: onDisk, content: 'bytes nothing will show\n' });
+    await writeFile({ path: onDisk, content: 'bytes nothing will show\n' });
     const live = await render(createFileSource({
       path: onDisk, mime: '', size: 24, isBinary: true,
     }));
@@ -207,7 +207,7 @@ export async function runTests() {
         values.forEach((v, i) => { if (i > 0) v.setAttribute('data-test-data', ''); });
         shownStrings(drawn, '[data-test-data]').forEach((s, i) => { shown[`${where} ${i}`] = s; });
       };
-      await writeFileOp({ path: `${xaDir}/7.7`, content: 'bytes nothing will show\n' });
+      await writeFile({ path: `${xaDir}/7.7`, content: 'bytes nothing will show\n' });
       collect('extension', await render(createFileSource({
         path: `${xaDir}/7.7`, mime: '', size: 24, isBinary: true,
       })), 3);

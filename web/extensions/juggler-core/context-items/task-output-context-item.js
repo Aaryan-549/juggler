@@ -79,8 +79,8 @@ class TaskOutputContextItem extends ContextItem {
     // cursor, so a read aimed at the wrong conversation would consume output
     // meant for someone else rather than merely showing it.
     const result = await shellOutputDelta({
-      task_id: /** @type {string} */ (params.task_id),
-      conv_id: this.conversation.id,
+      taskId: /** @type {string} */ (params.task_id),
+      convId: this.conversation.id,
     });
     return /** @type {Record<string, unknown>} */ (result);
   }

@@ -15,7 +15,7 @@
 
 import { assert } from '../utilities/test-helpers.js';
 import { fetchJson } from '../../js/services/http.js';
-import { writeFileOp } from '../../js/services/ops-api.js';
+import { writeFile } from '../../js/services/ops-api.js';
 import { createBoundOps } from '../../sdk/ops.js';
 import { registerWorkspace, unregisterWorkspace, listWorkspaces } from '../../js/services/workspaces.js';
 import { provisionWorkspace, recordProgress } from '../../js/services/workspace-provisioning.js';
@@ -115,10 +115,10 @@ export async function runTests() {
       const elsewhere = `instructions-${stamp}`;
       const marker = `# instructions from the place the provider named ${stamp}`;
       const ownMarker = `# instructions of the workspace itself ${stamp}`;
-      await writeFileOp({ path: `${elsewhere}/.cursorrules`, content: marker });
+      await writeFile({ path: `${elsewhere}/.cursorrules`, content: marker });
       // Writing the workspace's own file is also what makes its root exist,
       // which the server insists on before anything may be worked in there.
-      await writeFileOp({ path: `folder-${stamp}/.instructions`, content: ownMarker });
+      await writeFile({ path: `folder-${stamp}/.instructions`, content: ownMarker });
 
       const made = await fetchJson('/api/session/workspaces', {
         method: 'POST',

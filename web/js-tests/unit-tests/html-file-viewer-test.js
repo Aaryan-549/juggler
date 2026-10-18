@@ -17,7 +17,7 @@
 
 import fileViewerRegistry from '../../js/registries/file-viewer-registry.js';
 import { fetchJson } from '../../js/services/http.js';
-import { writeFileOp } from '../../js/services/ops-api.js';
+import { writeFile } from '../../js/services/ops-api.js';
 import { apiUrl } from '../../js/utils/api-url.js';
 import { createBoundOps } from '../../sdk/ops.js';
 import { createFileSource, fileSourceFromText, toDescriptor } from '../../sdk/file-source.js';
@@ -104,7 +104,7 @@ function dispose(rendered) {
   rendered.header.remove();
 }
 
-/** A 4×3 image, written as text so `writeFileOp` can put it on disk. */
+/** A 4×3 image, written as text so `writeFile` can put it on disk. */
 const SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="4" height="3"><rect width="4" height="3"/></svg>\n';
 
 /**
@@ -255,9 +255,9 @@ export async function runTests() {
   try {
     const root = String((await fetchJson(apiUrl('/session')))?.projectPath || '');
     tally(check(root.length > 0, 'the test server should report its project path', errors));
-    await writeFileOp({ path: `${dir}/above.svg`, content: SVG });
-    await writeFileOp({ path: `${dir}/page/beside.svg`, content: SVG });
-    await writeFileOp({ path: `${dir}/page/index.html`, content: ASSET_PAGE });
+    await writeFile({ path: `${dir}/above.svg`, content: SVG });
+    await writeFile({ path: `${dir}/page/beside.svg`, content: SVG });
+    await writeFile({ path: `${dir}/page/index.html`, content: ASSET_PAGE });
     const absPath = `${root.replace(/[\\/]+$/, '')}/${dir}/page/index.html`;
     const host = document.createElement('div');
     document.body.append(host);

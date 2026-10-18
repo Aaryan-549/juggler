@@ -17,7 +17,7 @@
  */
 
 import { openExternalURL, externalURLFromHref, localFilePathFromHref } from '../../sdk/lib/window-control.js';
-import { osOpenPath } from './ops-api.js';
+import { openPath } from './ops-api.js';
 
 /**
  * Resolve an activated anchor and act on it, or leave the event alone.
@@ -42,7 +42,7 @@ function handleLinkActivation(e) {
   const filePath = localFilePathFromHref(rawHref, anchor.href);
   if (filePath) {
     e.preventDefault();
-    void osOpenPath({ path: filePath }).catch(() => {});
+    void openPath({ path: filePath }).catch(() => {});
   }
 }
 

@@ -113,8 +113,8 @@ func (ops *ShellOperations) startBackground(params map[string]any) (any, error) 
 	timeout := timeoutFromParams(params, maxExecTimeoutMs)
 
 	// Extract conversation/tool-use tracking params (optional)
-	convID, _ := params["conv_id"].(string)
-	toolUseID, _ := params["tool_use_id"].(string)
+	convID, _ := params["convId"].(string)
+	toolUseID, _ := params["toolUseId"].(string)
 
 	// Generate unique shell ID
 	shellID := fmt.Sprintf("bg-%d", time.Now().UnixNano())
@@ -368,7 +368,7 @@ func (ops *ShellOperations) execute(ctx context.Context, params map[string]any) 
 	setProcGroup(cmd)
 	cmd.Dir = workingDir
 
-	convID, _ := params["conv_id"].(string)
+	convID, _ := params["convId"].(string)
 	spillID := fmt.Sprintf("exec-%d", time.Now().UnixNano())
 	output := newCappedBuffer(outputHeadLimit, outputTailLimit).
 		withSpill(ops.scope.Root(), newSpillFile(spillDirFor(ops.scope.ProjectRoot(), convID), spillID))
@@ -461,7 +461,7 @@ func (ops *ShellOperations) executePythonCode(ctx context.Context, code string, 
 	cmd.Dir = ops.scope.Root()
 	cmd.Stdin = strings.NewReader(code)
 
-	convID, _ := params["conv_id"].(string)
+	convID, _ := params["convId"].(string)
 	spillID := fmt.Sprintf("pyexec-%d", time.Now().UnixNano())
 	output := newCappedBuffer(outputHeadLimit, outputTailLimit).
 		withSpill(ops.scope.Root(), newSpillFile(spillDirFor(ops.scope.ProjectRoot(), convID), spillID))

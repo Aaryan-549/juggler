@@ -297,7 +297,7 @@ func startWritingTask(t *testing.T, dir string) string {
 	t.Helper()
 	res, err := NewShellOperations(NewPathScope(dir, nil)).startBackground(map[string]any{
 		"command": `echo ready; i=0; while :; do i=$((i+1)); true > "w$i" 2>/dev/null || sleep 0.05; done`,
-		"conv_id": "conv-sandbox",
+		"convId":  "conv-sandbox",
 	})
 	if err != nil {
 		t.Fatalf("startBackground failed: %v", err)

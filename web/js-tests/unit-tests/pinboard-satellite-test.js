@@ -194,7 +194,6 @@ function makeComposeConversation(id) {
     id,
     name: 'Board conv',
     sent,
-    getTabElement: () => null,
     sendMessage: async (/** @type {string} */ text, /** @type {string|null} */ thread,
       /** @type {any} */ _messageThread, /** @type {any} */ options) => {
       sent.push({ text, thread, options });

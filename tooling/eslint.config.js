@@ -5,7 +5,6 @@
 import js from '@eslint/js';
 import jsdoc from 'eslint-plugin-jsdoc';
 import stylistic from '@stylistic/eslint-plugin';
-import { URL } from 'node:url';
 import noAbsoluteApiUrl from './eslint-rules/no-absolute-api-url.js';
 import noRawUiString from './eslint-rules/no-raw-ui-string.js';
 
@@ -219,11 +218,11 @@ export default [
         // so the call to catch is apiUrl('/ops/call').
         {
           selector: "CallExpression[callee.name='apiUrl'] > Literal[value=/^\\/ops\\/call/]",
-          message: 'FORBIDDEN: Direct fetch() to /api/ops/call detected. Use typed functions from ops-api.js instead. Example: import { readFileLoad } from \'./services/ops-api.js\' and call readFileLoad(params)'
+          message: 'FORBIDDEN: Direct fetch() to /api/ops/call detected. Use typed functions from ops-api.js instead. Example: import { readFile } from \'./services/ops-api.js\' and call readFile(params)'
         },
         {
           selector: "CallExpression[callee.name='apiUrl'] > TemplateLiteral:has(TemplateElement[value.raw=/^\\/ops\\/call/])",
-          message: 'FORBIDDEN: Direct fetch() to /api/ops/call detected. Use typed functions from ops-api.js instead. Example: import { readFileLoad } from \'./services/ops-api.js\' and call readFileLoad(params)'
+          message: 'FORBIDDEN: Direct fetch() to /api/ops/call detected. Use typed functions from ops-api.js instead. Example: import { readFile } from \'./services/ops-api.js\' and call readFile(params)'
         },
         // ===================================================================
         // Enforce ContextBuilder - prevent manual context string concatenation

@@ -206,14 +206,14 @@ class NoProjectOverlay extends JugglerElement {
 
     if (!this._rendered) {
       this._rendered = true;
-      this._render();
+      this.render();
       void this._loadRecents();
       void this._awaitProviders();
     }
   }
 
-  /** @private */
-  _render() {
+  /** Draw the element as its state stands. Repeatable. */
+  render() {
     // Drag-and-drop of a folder needs the native host to read the dropped
     // path — the page is never told one. Offering it in a browser tab or on a
     // remote client would be advertising something that silently does nothing,

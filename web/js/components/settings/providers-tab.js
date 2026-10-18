@@ -636,16 +636,14 @@ export class ProvidersTab {
     return new Promise((resolve) => {
       /** @type {ReturnType<typeof setTimeout>|null} */
       let timer = null;
-      /** @param {unknown} data */
-      const handler = (data) => {
+      const off = wsService.on('providers-update', (/** @type {unknown} */ data) => {
         if (Array.isArray(data) && !accept(data)) return;
         if (timer) clearTimeout(timer);
-        wsService.off('providers-update', handler);
+        off();
         resolve(Array.isArray(data) ? data : this.providers);
-      };
-      wsService.on('providers-update', handler);
+      });
       timer = setTimeout(() => {
-        wsService.off('providers-update', handler);
+        off();
         resolve(this.providers);
       }, 4000);
     });

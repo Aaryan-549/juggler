@@ -202,7 +202,7 @@ class UpdateButton extends JugglerElement {
    */
   _scheduleRender() {
     if (this._raf) return;
-    this._raf = requestAnimationFrame(() => { this._raf = 0; this._render(); });
+    this._raf = requestAnimationFrame(() => { this._raf = 0; this.render(); });
   }
 
   /**
@@ -228,8 +228,8 @@ class UpdateButton extends JugglerElement {
     void startInstall({ auto: true });
   }
 
-  /** @private */
-  _render() {
+  /** Draw the element as its state stands. Repeatable. */
+  render() {
     const vm = this._viewModel();
     this._maybeAutoKick(vm);
     const visible = this._isRelevant(vm);

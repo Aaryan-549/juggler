@@ -60,26 +60,27 @@ function scriptLoads(session, stubConversation) {
 /**
  * Build a Session holding two stub conversations: 'caller' (the one that asks
  * for the switch) and 'target' (the newly created peer). Neither touches the
- * network — a focus only reads the map, the visible id, and the caller's tab
- * element. With `creating`, 'target' is left out of the map: its `created`
- * broadcast is what will bring it in.
+ * network — a focus only reads the map, the visible id, and the view's answer
+ * about the caller's composer. With `creating`, 'target' is left out of the
+ * map: its `created` broadcast is what will bring it in.
  * @param {{composerText?: boolean, creating?: boolean}} [opts] - composerText
- *   marks the caller's tab as holding an unsent draft.
- * @returns {{session: any, switched: string[], land: Map<string, () => void>}}
+ *   marks the caller's composer as holding an unsent draft.
+ * @returns {{session: any, switched: string[], land: Map<string, () => void>, drafts: Set<string>}}
  *   The session, a log of every conversation id switchConversation was asked to
- *   show, and the scripted loads.
+ *   show, the scripted loads, and the conversations whose composer holds text.
  */
 function makeSession({ composerText = false, creating = false } = {}) {
   const session = /** @type {any} */ (trackTestSession(new Session(/** @type {any} */ ({}))));
 
+  /** @type {Set<string>} */
+  const drafts = new Set(composerText ? ['caller'] : []);
+  session.setComposerTextProbe((/** @type {string} */ id) => drafts.has(id));
+
   /**
    * @param {string} id - Conversation id
-   * @returns {any} Stub conversation exposing just the tab element the policy reads
+   * @returns {any} Stub conversation
    */
-  const stubConversation = (id) => ({
-    id,
-    getTabElement: () => ({ hasComposerText: () => composerText })
-  });
+  const stubConversation = (id) => ({ id });
 
   session.registry.insert('caller', stubConversation('caller'), 'test');
   if (!creating) session.registry.insert('target', stubConversation('target'), 'test');
@@ -94,7 +95,7 @@ function makeSession({ composerText = false, creating = false } = {}) {
     return true;
   };
 
-  return { session, switched, land };
+  return { session, switched, land, drafts };
 }
 
 /**
@@ -168,12 +169,12 @@ export async function runTests(_ctx) {
   });
 
   await run('drops a parked switch when the user starts typing during the load', async () => {
-    const { session, switched, land } = makeSession({ creating: true });
+    const { session, switched, land, drafts } = makeSession({ creating: true });
     const created = session.sync.created('target', 'Target');
     session.sync.focus('target', 'caller');
 
     // The user began a message while the create was still loading.
-    session.conversations.get('caller').getTabElement = () => ({ hasComposerText: () => true });
+    drafts.add('caller');
     land.get('target')?.();
     await created;
     assert(switched.length === 0,

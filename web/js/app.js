@@ -378,7 +378,7 @@ class JugglerApp {
           this.flushComposerDrafts();
           // Save scroll positions for all conversations before page close
           session.conversations.forEach((conversation) => {
-            const tab = conversation.getTabElement();
+            const tab = this._tabFor(conversation);
             const conversationArea = tab?.getConversationArea();
             if (conversationArea) {
               // @ts-ignore - saveScrollPositionImmediately is a method on conversation-area
@@ -806,6 +806,17 @@ class JugglerApp {
   }
 
   /**
+   * The tab showing a conversation in this window, from the tab bar that owns
+   * the tabs.
+   * @param {import('./model/conversation.js').default} conversation - The conversation
+   * @returns {import('./components/conversation-tab.js').default|null} Its tab, or null when it has none
+   * @private
+   */
+  _tabFor(conversation) {
+    return /** @type {any} */ (this.conversationBar)?.getTabElement?.(conversation.id) ?? null;
+  }
+
+  /**
    * Locate a message item in the conversation's ACTIVE column — the focused
    * thread column when there is one, the root thread otherwise — which is the
    * vantage every item-level command (rollback, branch) acts from.
@@ -815,7 +826,7 @@ class JugglerApp {
    * @private
    */
   _resolveActiveThreadItem(conversation, itemId) {
-    const tab = /** @type {any} */ (conversation.getTabElement());
+    const tab = /** @type {any} */ (this._tabFor(conversation));
     const messageThread = tab?.getActiveMessageThread?.() || conversation.rootMessageThread;
     const itemIndex = messageThread.findIndexByItemId(itemId);
     const item = /** @type {import('../sdk/lib/message.js').Message|undefined} */ (messageThread.items[itemIndex]);
@@ -965,8 +976,7 @@ class JugglerApp {
    * @private
    */
   _loadMessageIntoInput(conversation, message) {
-    // Access composer through the tab element
-    const tabElement = conversation.getTabElement();
+    const tabElement = this._tabFor(conversation);
     if (!tabElement) return;
     const composer = tabElement.getComposer();
     if (!composer) return;

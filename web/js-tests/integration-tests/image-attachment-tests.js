@@ -25,6 +25,7 @@
 
 import { textResponse } from '../utilities/integration-test-runner.js';
 import { normalizeAttachments } from '../../js/utils/attachments.js';
+import { tabFor } from '../utilities/conversation-tab-lookup.js';
 
 /**
  * Poll for a predicate to become true (image-attachment rewind test).
@@ -137,7 +138,7 @@ export const rewindRestoresAttachmentsTest = {
       pushVisionAndTextProviders(wsService);
       conversation.setModelConfig({ provider: 'vision-co', model: 'vis-1' });
 
-      const tab = /** @type {any} */ (conversation.getTabElement());
+      const tab = tabFor(conversation);
       const composer = tab?.getComposer?.();
       if (!composer) return; // headless — no UI to drive
 
@@ -247,7 +248,7 @@ export const propertiesPanelShowsAttachmentsTest = {
     const harness = ctx.harness;
     const apiService = (await import('../../js/services/api.js')).default;
 
-    const tab = /** @type {any} */ (conversation.getTabElement());
+    const tab = tabFor(conversation);
     const composer = tab?.getComposer?.();
     if (!composer) return; // headless — no UI to drive
 
@@ -327,7 +328,7 @@ export const imageOnlySendTest = {
       pushVisionAndTextProviders(wsService);
       conversation.setModelConfig({ provider: 'vision-co', model: 'vis-1' });
 
-      const tab = /** @type {any} */ (conversation.getTabElement());
+      const tab = tabFor(conversation);
       const composer = tab?.getComposer?.();
       if (!composer) return; // headless — no UI to drive
 
@@ -392,7 +393,7 @@ export const pasteAsyncClipboardFallbackTest = {
   operations: [],
 
   async customAssertions(conversation) {
-    const tab = /** @type {any} */ (conversation.getTabElement());
+    const tab = tabFor(conversation);
     const composer = tab?.getComposer?.();
     if (!composer) return; // headless — no UI to drive
 

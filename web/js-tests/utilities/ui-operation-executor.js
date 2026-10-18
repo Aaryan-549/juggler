@@ -696,7 +696,7 @@ export async function executeUIOperation(harness, op) {
       // than the whole test. Path is taken verbatim (no testDir prefix);
       // the caller is responsible for cleanup via delete-fixture-file.
       if (!op.path) throw new Error('write-fixture-file requires path');
-      const { writeFileOp: _wff } = await import('../../js/services/ops-api.js');
+      const { writeFile: _wff } = await import('../../js/services/ops-api.js');
       await _wff({ path: op.path, content: op.content ?? '' });
       break;
     }

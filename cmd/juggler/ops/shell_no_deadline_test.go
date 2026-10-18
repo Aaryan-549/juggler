@@ -88,7 +88,7 @@ func TestStartBackground_NoDeadlineStillKillable(t *testing.T) {
 	}
 	shellOps, id := startNoDeadlineTask(t)
 
-	res, err := shellOps.kill(map[string]any{"shell_id": id})
+	res, err := shellOps.kill(map[string]any{"shellId": id})
 	if err != nil {
 		t.Fatalf("kill failed: %v", err)
 	}

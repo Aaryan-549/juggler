@@ -1133,9 +1133,9 @@ export class IntegrationTestHarness {
    * @returns {Promise<string>} File content
    */
   async readFile(relativePath) {
-    const { readFileLoad } = await import('../../js/services/ops-api.js');
+    const { readFile } = await import('../../js/services/ops-api.js');
     const fullPath = this._fixtureDir ? `${this._fixtureDir}/${relativePath}` : relativePath;
-    const result = await readFileLoad({ path: fullPath });
+    const result = await readFile({ path: fullPath });
     return result?.content || '';
   }
 

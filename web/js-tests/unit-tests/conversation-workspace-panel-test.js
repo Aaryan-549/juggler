@@ -17,7 +17,7 @@
 import { waitFor, neutralizeStrayOverlays, assert } from '../utilities/test-helpers.js';
 import { INITIALISED_KEY } from '../../js/model/conversation.js';
 import contextItemRegistry from '../../js/registries/context-item-registry.js';
-import { writeFileOp } from '../../js/services/ops-api.js';
+import { writeFile } from '../../js/services/ops-api.js';
 import { createBoundOps } from '../../sdk/ops.js';
 import { registerWorkspace, unregisterWorkspace, listWorkspaces } from '../../js/services/workspaces.js';
 import {
@@ -631,7 +631,7 @@ export async function runTests() {
       const name = `bin-sole-${Math.random().toString(36).slice(2, 8)}`;
       const dir = `${projectPath}/${name}`;
       const projectOps = createBoundOps(() => ({}));
-      await writeFileOp({ path: `${name}/made-here.txt`, content: 'yes' });
+      await writeFile({ path: `${name}/made-here.txt`, content: 'yes' });
       const made = await registerWorkspace({
         root: dir,
         label: 'left behind',
@@ -805,8 +805,8 @@ export async function runTests() {
       const fromMarker = `# the tree it started in ${stamp}`;
       const toMarker = `# the tree it moved to ${stamp}`;
       const project = createBoundOps(() => ({ workspaceId: '' }));
-      await writeFileOp({ path: `${from}/NOTES.md`, content: fromMarker });
-      await writeFileOp({ path: `${to}/NOTES.md`, content: toMarker });
+      await writeFile({ path: `${from}/NOTES.md`, content: fromMarker });
+      await writeFile({ path: `${to}/NOTES.md`, content: toMarker });
       const madeFrom = await registerWorkspace({
         root: `${projectPath}/${from}`, label: 'where it started', state: 'ready'
       });

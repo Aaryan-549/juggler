@@ -75,11 +75,11 @@ class FileView extends JugglerElement {
    */
   setSource(source) {
     this._source = source;
-    if (this.isConnected) void this._render();
+    if (this.isConnected) void this.render();
   }
 
   connectedCallback() {
-    if (this._source && !this._teardown) void this._render();
+    if (this._source && !this._teardown) void this.render();
   }
 
   disconnectedCallback() {
@@ -113,9 +113,8 @@ class FileView extends JugglerElement {
    * Render the current source: header, then either a terminal state or the
    * resolved viewer's output.
    * @returns {Promise<void>}
-   * @private
    */
-  async _render() {
+  async render() {
     this._cleanup();
     const token = ++this._renderToken;
     const source = this._source;

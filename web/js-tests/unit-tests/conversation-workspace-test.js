@@ -22,7 +22,7 @@
 import { waitFor, assert } from '../utilities/test-helpers.js';
 import { INITIALISED_KEY } from '../../js/model/conversation.js';
 import { fetchJson } from '../../js/services/http.js';
-import { writeFileOp } from '../../js/services/ops-api.js';
+import { writeFile } from '../../js/services/ops-api.js';
 import { createBoundOps } from '../../sdk/ops.js';
 import { rebindConversation } from '../../js/services/workspace-rebinding.js';
 import { placeForNewConversation } from '../../js/services/workspace-provisioning.js';
@@ -198,7 +198,7 @@ export async function runTests() {
       const project = createBoundOps(() => ({ workspaceId: '' }));
       // `.cursorrules` is an assistant file the project root does not have, so
       // its arrival and departure are the tree being read, not a cache.
-      await writeFileOp({ path: `${elsewhere}/.cursorrules`, content: marker });
+      await writeFile({ path: `${elsewhere}/.cursorrules`, content: marker });
       const made = await fetchJson('/api/session/workspaces', {
         method: 'POST',
         body: { root: `${projectPath}/${elsewhere}`, label: 'a tree with rules of its own', state: 'ready' }
@@ -236,7 +236,7 @@ export async function runTests() {
       const stamp = Math.random().toString(36).slice(2, 8);
       const elsewhere = `seed-keep-${stamp}`;
       const project = createBoundOps(() => ({ workspaceId: '' }));
-      await writeFileOp({ path: `${elsewhere}/.cursorrules`, content: `# ${stamp}` });
+      await writeFile({ path: `${elsewhere}/.cursorrules`, content: `# ${stamp}` });
       const made = await fetchJson('/api/session/workspaces', {
         method: 'POST',
         body: { root: `${projectPath}/${elsewhere}`, label: 'somewhere else entirely', state: 'ready' }
@@ -276,7 +276,7 @@ export async function runTests() {
       const stamp = Math.random().toString(36).slice(2, 8);
       const elsewhere = `seed-deleted-${stamp}`;
       const project = createBoundOps(() => ({ workspaceId: '' }));
-      await writeFileOp({ path: `${elsewhere}/.cursorrules`, content: `# ${stamp}` });
+      await writeFile({ path: `${elsewhere}/.cursorrules`, content: `# ${stamp}` });
       const made = await fetchJson('/api/session/workspaces', {
         method: 'POST',
         body: { root: `${projectPath}/${elsewhere}`, label: 'a tree with one instruction', state: 'ready' }
@@ -323,8 +323,8 @@ export async function runTests() {
       const elsewhere = `seed-twins-${stamp}`;
       const shared = `# one file, two names ${stamp}`;
       const project = createBoundOps(() => ({ workspaceId: '' }));
-      await writeFileOp({ path: `${elsewhere}/AGENTS.md`, content: shared });
-      await writeFileOp({ path: `${elsewhere}/CLAUDE.md`, content: shared });
+      await writeFile({ path: `${elsewhere}/AGENTS.md`, content: shared });
+      await writeFile({ path: `${elsewhere}/CLAUDE.md`, content: shared });
       const made = await fetchJson('/api/session/workspaces', {
         method: 'POST',
         body: { root: `${projectPath}/${elsewhere}`, label: 'a tree that keeps both', state: 'ready' }

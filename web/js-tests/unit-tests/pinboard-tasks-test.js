@@ -148,7 +148,7 @@ export async function runTests() {
       if (opFailure) {
         return new window.Response(JSON.stringify({ success: false, error: opFailure }), { status: 200 });
       }
-      const tasks = (body.params.task_ids || []).map((/** @type {string} */ id) => ({
+      const tasks = (body.params.taskIds || []).map((/** @type {string} */ id) => ({
         task_id: id,
         status: alive.has(id) ? 'running' : 'not_found',
         running: alive.has(id),
@@ -157,9 +157,9 @@ export async function runTests() {
     }
     if (body.operation === 'kill') {
       kills.push(body.params);
-      alive.delete(body.params.shell_id);
+      alive.delete(body.params.shellId);
       return new window.Response(
-        JSON.stringify({ success: true, data: { shell_id: body.params.shell_id, killed: true } }),
+        JSON.stringify({ success: true, data: { shell_id: body.params.shellId, killed: true } }),
         { status: 200 }
       );
     }
@@ -372,11 +372,11 @@ export async function runTests() {
 
     await run('the check asks only about ids the transcript already named', () => {
       const last = probes[probes.length - 1];
-      assert(last.conv_id === conversation.id, `expected the conversation named, got ${last.conv_id}`);
-      assert(Array.isArray(last.task_ids), 'the check must name the ids it is asking about');
+      assert(last.convId === conversation.id, `expected the conversation named, got ${last.convId}`);
+      assert(Array.isArray(last.taskIds), 'the check must name the ids it is asking about');
       const known = ['bg-build', 'bg-monitor', 'bg-sub', 'bg-ghost'];
-      assert(last.task_ids.every((/** @type {string} */ id) => known.includes(id)),
-        `it must not ask about anything it did not read: ${JSON.stringify(last.task_ids)}`);
+      assert(last.taskIds.every((/** @type {string} */ id) => known.includes(id)),
+        `it must not ask about anything it did not read: ${JSON.stringify(last.taskIds)}`);
     });
 
     // --- what never leaves the model -----------------------------------------
@@ -406,10 +406,10 @@ export async function runTests() {
       const before = kills.length;
       await service().stop('bg-sub');
       assert(kills.length === before + 1, `expected one kill, got ${kills.length - before}`);
-      assert(kills[kills.length - 1].shell_id === 'bg-sub',
-        `expected the named task, got ${kills[kills.length - 1].shell_id}`);
-      assert(kills[kills.length - 1].conv_id === conversation.id,
-        `a bare task id is not enough authority; got ${JSON.stringify(kills[kills.length - 1].conv_id)}`);
+      assert(kills[kills.length - 1].shellId === 'bg-sub',
+        `expected the named task, got ${kills[kills.length - 1].shellId}`);
+      assert(kills[kills.length - 1].convId === conversation.id,
+        `a bare task id is not enough authority; got ${JSON.stringify(kills[kills.length - 1].convId)}`);
     });
 
     await run('a stopped task is gone from the list without waiting for the next check', () => {

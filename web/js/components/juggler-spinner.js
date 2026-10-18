@@ -189,8 +189,8 @@ function prefersReducedMotion() {
  */
 function clubHTML(index, count) {
   const angle = (360 / count) * index;
-  return `<span class="js-pivot" aria-hidden="true" style="--js-angle: ${angle.toFixed(3)}deg; --js-phase: ${index}">`
-        + `<span class="js-orbit"><span class="js-club">${CLUB_SVG_HTML}</span></span></span>`;
+  return `<span class="spinner-pivot" aria-hidden="true" style="--spinner-angle: ${angle.toFixed(3)}deg; --spinner-phase: ${index}">`
+        + `<span class="spinner-orbit"><span class="spinner-club">${CLUB_SVG_HTML}</span></span></span>`;
 }
 
 class JugglerSpinner extends JugglerElement {
@@ -435,7 +435,7 @@ class JugglerSpinner extends JugglerElement {
    * Grow or shrink the cascade to `count` clubs without disturbing the ones
    * already flying.
    *
-   * Re-spacing is just a new `--js-angle` per pivot, which the CSS transitions,
+   * Re-spacing is just a new `--spinner-angle` per pivot, which the CSS transitions,
    * so the survivors glide to their new slots rather than snapping. Clubs are
    * added at the end and removed from the end, and every survivor keeps its
    * own element — and therefore its own running animation and phase — so
@@ -446,14 +446,14 @@ class JugglerSpinner extends JugglerElement {
   _respace(count) {
     this._invalidateAnimations();
     // Departing clubs fade out first and detach when the fade is done. They are
-    // taken out of the layout pass immediately (js-leaving), so the survivors
+    // taken out of the layout pass immediately (spinner-leaving), so the survivors
     // re-space around the count they are heading for rather than shuffling
     // twice.
-    const before = Array.from(this.children).filter(el => !el.classList.contains('js-leaving'));
+    const before = Array.from(this.children).filter(el => !el.classList.contains('spinner-leaving'));
     for (let i = before.length; i > count; i--) {
       const leaving = /** @type {HTMLElement} */ (before[i - 1]);
       if (!leaving) continue;
-      leaving.classList.add('js-leaving', 'js-faded');
+      leaving.classList.add('spinner-leaving', 'spinner-faded');
       setTimeout(() => leaving.remove(), TUNING.fadeMs);
     }
     const survivors = before.slice(0, count);
@@ -463,21 +463,21 @@ class JugglerSpinner extends JugglerElement {
       this.insertAdjacentHTML('beforeend', clubHTML(i, count));
       const el = this.lastElementChild;
       if (!el) continue;
-      el.classList.add('js-faded');
+      el.classList.add('spinner-faded');
       added.push(el);
     }
 
-    // Settle the spacing variables BEFORE touching any animation. --js-n feeds
+    // Settle the spacing variables BEFORE touching any animation. --spinner-n feeds
     // the flip's delay calc, and _syncPhase below forces a style recalc — so a
     // sync done first would read the phases of the old spacing.
-    this.style.setProperty('--js-n', String(count));
+    this.style.setProperty('--spinner-n', String(count));
     survivors.concat(added).forEach((pivot, i) => {
       const el = /** @type {HTMLElement} */ (pivot);
-      el.style.setProperty('--js-angle', `${((360 / count) * i).toFixed(3)}deg`);
-      el.style.setProperty('--js-phase', String(i));
+      el.style.setProperty('--spinner-angle', `${((360 / count) * i).toFixed(3)}deg`);
+      el.style.setProperty('--spinner-phase', String(i));
     });
 
-    // The survivors' flip delays have just changed with --js-n, which shifts
+    // The survivors' flip delays have just changed with --spinner-n, which shifts
     // each flip a fraction of a turn in one frame. That shift is deliberate and
     // must NOT be compensated for: the delay is what pins a club's slow-zone to
     // the bottom of its orbit, so holding the old flip angle would keep the
@@ -495,7 +495,7 @@ class JugglerSpinner extends JugglerElement {
     // invisible until something else forced a frame.
     if (added.length) {
       void this.offsetHeight;
-      for (const pivot of added) pivot.classList.remove('js-faded');
+      for (const pivot of added) pivot.classList.remove('spinner-faded');
     }
   }
 
@@ -539,11 +539,11 @@ class JugglerSpinner extends JugglerElement {
         dropsThisSession--;
         return;
       }
-      victim.classList.add('js-dropping');
-      this._invalidateAnimations(); // js-dropping rewrites animation-name on that club
+      victim.classList.add('spinner-dropping');
+      this._invalidateAnimations(); // spinner-dropping rewrites animation-name on that club
       this._reapply(); // before measuring: playback rate is what stretches the fall
       setTimeout(() => {
-        victim.classList.remove('js-dropping');
+        victim.classList.remove('spinner-dropping');
         this._invalidateAnimations();
         this._reapply();
       }, this._dropDurationMs(victim));
@@ -582,7 +582,7 @@ class JugglerSpinner extends JugglerElement {
    * @private
    */
   _pickDropVictim() {
-    const clubs = Array.from(this.querySelectorAll('.js-club'));
+    const clubs = Array.from(this.querySelectorAll('.spinner-club'));
     if (clubs.length === 0) return null;
     const random = () => clubs[Math.floor(Math.random() * clubs.length)] || null;
 
@@ -599,8 +599,8 @@ class JugglerSpinner extends JugglerElement {
     let best = null;
     let bestErr = Infinity;
     for (const club of clubs) {
-      const pivot = club.closest('.js-pivot');
-      const slot = parseFloat(/** @type {HTMLElement|null} */ (pivot)?.style.getPropertyValue('--js-angle') || '');
+      const pivot = club.closest('.spinner-pivot');
+      const slot = parseFloat(/** @type {HTMLElement|null} */ (pivot)?.style.getPropertyValue('--spinner-angle') || '');
       if (!Number.isFinite(slot)) continue;
       // Shortest angular distance to the target, either way round the ring.
       const err = Math.abs((((slot + spun - target) % 360) + 540) % 360 - 180);
@@ -652,9 +652,9 @@ class JugglerSpinner extends JugglerElement {
     if (this._animCache) return this._animCache;
     /** @type {Animation[]} */ const orbits = [];
     /** @type {Animation[]} */ const flips = [];
-    for (const el of Array.from(this.querySelectorAll('.js-orbit, .js-club'))) {
+    for (const el of Array.from(this.querySelectorAll('.spinner-orbit, .spinner-club'))) {
       if (typeof (/** @type {any} */ (el).getAnimations) !== 'function') continue;
-      const target = el.classList.contains('js-orbit') ? orbits : flips;
+      const target = el.classList.contains('spinner-orbit') ? orbits : flips;
       for (const a of el.getAnimations()) target.push(a);
     }
     this._animCache = { orbits, flips };
@@ -684,17 +684,17 @@ class JugglerSpinner extends JugglerElement {
    * to be at when it appeared — visibly out of the cascade. Copying
    * `currentTime` from an existing club is exact, and the CSS keeps handling
    * the rest: every orbit runs with no delay (so matching currentTime IS
-   * matching position), and each flip's own `--js-phase` delay then places its
+   * matching position), and each flip's own `--spinner-phase` delay then places its
    * slow-zone at the bottom of its slot.
-   * @param {Element} pivot - The newly-inserted `.js-pivot`.
+   * @param {Element} pivot - The newly-inserted `.spinner-pivot`.
    * @private
    */
   _syncPhase(pivot) {
     const { orbits, flips } = this._animations();
     const orbitRef = orbits.find(a => a.currentTime !== null);
     const flipRef = flips.find(a => a.currentTime !== null);
-    const newOrbit = /** @type {any} */ (pivot.querySelector('.js-orbit'));
-    const newFlip = /** @type {any} */ (pivot.querySelector('.js-club'));
+    const newOrbit = /** @type {any} */ (pivot.querySelector('.spinner-orbit'));
+    const newFlip = /** @type {any} */ (pivot.querySelector('.spinner-club'));
     if (orbitRef && newOrbit?.getAnimations) {
       for (const a of newOrbit.getAnimations()) a.currentTime = orbitRef.currentTime;
     }
@@ -746,7 +746,7 @@ class JugglerSpinner extends JugglerElement {
    */
   _renderClubs(count) {
     this._invalidateAnimations();
-    this.style.setProperty('--js-n', String(count));
+    this.style.setProperty('--spinner-n', String(count));
     let html = '';
     for (let i = 0; i < count; i++) html += clubHTML(i, count);
     this.innerHTML = html;

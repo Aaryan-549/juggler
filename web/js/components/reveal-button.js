@@ -19,7 +19,7 @@
  */
 
 import JugglerElement from './juggler-element.js';
-import { osRevealPath } from '../services/ops-api.js';
+import { revealPath } from '../services/ops-api.js';
 import { showNotice } from './modal-dialog.js';
 import { extractErrorMessage } from '../../sdk/lib/error-utils.js';
 import { t } from '../../sdk/lib/i18n.js';
@@ -59,7 +59,7 @@ class RevealButton extends JugglerElement {
   }
 
   connectedCallback() {
-    if (!this._button) this._render();
+    if (!this._button) this._build();
     this._update();
   }
 
@@ -79,7 +79,7 @@ class RevealButton extends JugglerElement {
   }
 
   /** @private */
-  _render() {
+  _build() {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'reveal-button';
@@ -110,7 +110,7 @@ class RevealButton extends JugglerElement {
     // screen changes — so the button is indistinguishable from a dead one
     // unless it says. The op's own text carries which of the operational
     // reasons it was: the path has gone, or there is no file manager to ask.
-    void osRevealPath({ path }).catch((err) => {
+    void revealPath({ path }).catch((err) => {
       showNotice(t("Couldn't show that file. {error}", { error: extractErrorMessage(err) }));
     });
   }

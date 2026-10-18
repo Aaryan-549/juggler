@@ -16,7 +16,7 @@ import { showNotice } from '../components/modal-dialog.js';
 import { extractErrorMessage } from '../../sdk/lib/error-utils.js';
 import { registerContextMenuProvider, codeReferenceMenuItem } from '../services/context-menu-service.js';
 import { isAbsolutePath } from './code-selection.js';
-import { osOpenPath, osRevealPath } from '../services/ops-api.js';
+import { openPath, revealPath } from '../services/ops-api.js';
 import { localFilePathFromHref } from '../../sdk/lib/window-control.js';
 import pinboardView from '../services/pinboard-view.js';
 import { OPEN_IN_NEW_SVG, PIN_SVG } from './icons.js';
@@ -175,9 +175,9 @@ export function addFilePath(wrapper, path, info, options = {}) {
  * @param {string} path - Absolute path to open.
  * @returns {Promise<void>}
  */
-async function openPath(path) {
+async function openInHost(path) {
   try {
-    await osOpenPath({ path });
+    await openPath({ path });
   } catch (err) {
     showNotice(t("Couldn't open that file. {error}", { error: extractErrorMessage(err) }));
   }
@@ -190,7 +190,7 @@ async function openPath(path) {
  */
 async function showPath(path) {
   try {
-    await osRevealPath({ path });
+    await revealPath({ path });
   } catch (err) {
     showNotice(t("Couldn't show that file. {error}", { error: extractErrorMessage(err) }));
   }
@@ -223,7 +223,7 @@ export function createFileActions(path, options = {}) {
     open.title = t('Open file');
     open.setAttribute('aria-label', t('Open file'));
     open.innerHTML = OPEN_IN_NEW_SVG;
-    open.addEventListener('click', () => { void openPath(path); });
+    open.addEventListener('click', () => { void openInHost(path); });
     actions.appendChild(open);
   }
 
@@ -440,7 +440,7 @@ registerContextMenuProvider({
     if (!path) return null;
     /** @type {import('../services/context-menu-service.js').ContextMenuItem[]} */
     const items = [
-      { label: t('Open file'), onClick: () => { void openPath(path); } },
+      { label: t('Open file'), onClick: () => { void openInHost(path); } },
       { label: revealLabel(), onClick: () => { void showPath(path); } },
       {
         label: t('Copy path'),

@@ -130,7 +130,7 @@ func awaitShellDone(t *testing.T, c *WSClient, shellID string) bool {
 
 // TestProcessShellRequest_DeliversToRequesterNotViewerGroup is the regression
 // guard for the bash-wedge bug. shell-output is consumed solely by the engine's
-// shellExecuteStreaming, which resolves the bash tool on the `done` chunk. The
+// shellStreaming, which resolves the bash tool on the `done` chunk. The
 // chunk must reach the client that REQUESTED the shell — not the project's
 // viewer group — because the persistent engine is not a reliable viewer-group
 // member (it never reloads to re-join after a SwitchProject).

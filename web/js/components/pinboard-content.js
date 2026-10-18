@@ -27,7 +27,7 @@ import pinboardView from '../services/pinboard-view.js';
 import wsService from '../services/websocket.js';
 import gitStatusCache from '../services/git-status-cache.js';
 import gitReviewService from '../services/git-review-service.js';
-import { shellKill, shellTaskStatus } from '../services/ops-api.js';
+import { shellKill, shellStatus } from '../services/ops-api.js';
 import { presentPopup } from '../utils/popup-surface.js';
 import { applyMenuRoles, attachMenuKeyboard } from '../utils/menu-roles.js';
 import { reviewDraftBoundsError } from '../utils/review-draft.js';
@@ -41,6 +41,7 @@ import findBar from './find-bar.js';
 import { REFRESH_SVG } from '../utils/icons.js';
 import { PINBOARD_BODY_ID } from './pinboard-tabbar.js';
 import { THREAD_FOCUS_CHANGED } from './conversation-tab.js';
+import { conversationTabFor } from './conversation-bar.js';
 import { itemGoal } from '../model/thread-alias.js';
 import { satelliteLink } from '../services/pinboard-link.js';
 import { isPinboardView } from '../utils/view-mode.js';
@@ -143,17 +144,18 @@ function pasteIntoComposer(composer, text) {
  * The thread's own box, found by the binding rather than by what is on screen:
  * `getComposer()` answers with whichever column the user is working in, so a
  * review read on a sub-thread would otherwise be pasted into the root's box. A
- * detached board has no tabs at all, which is how a board window discovers it has
- * nowhere of its own to put text.
+ * detached board has no tab bar at all, which is how a board window discovers it
+ * has nowhere of its own to put text.
  *
- * It must also be a box that is still in the document. A conversation holds on to
- * its tab element after the window has taken it out of the page, and text put in
- * that box is text put nowhere: nobody can see it, and nothing will ever send it.
+ * It must also be a box that is still in the document: text put in a box the
+ * window has taken out of the page is text put nowhere — nobody can see it, and
+ * nothing will ever send it.
  * @param {any} thread - The thread whose box is wanted.
  * @returns {any} The composer element, or null.
  */
 function composerForThread(thread) {
-  const tab = thread?.conversation?.getTabElement?.();
+  const id = thread?.conversation?.id;
+  const tab = /** @type {any} */ (id ? conversationTabFor(id) : null);
   if (!tab?.isConnected) return null;
   const wanted = thread.threadItemId ?? null;
   return [...tab.querySelectorAll('composer-box')]
@@ -1809,9 +1811,9 @@ class PinboardContent extends JugglerElement {
 
     this._taskProbing = true;
     try {
-      const answer = await shellTaskStatus({
-        conv_id: convId,
-        task_ids: candidates.map((task) => task.taskId),
+      const answer = await shellStatus({
+        convId,
+        taskIds: candidates.map((task) => task.taskId),
       });
       // The conversation may have changed while the probe was out; its answer is
       // about a conversation nobody is looking at any more.
@@ -1919,7 +1921,7 @@ class PinboardContent extends JugglerElement {
       await this._pollTasks();
       return;
     }
-    await shellKill({ shell_id: taskId, conv_id: convId });
+    await shellKill({ shellId: taskId, convId });
     await this._pollTasks();
   }
 

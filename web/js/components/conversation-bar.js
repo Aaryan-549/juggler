@@ -184,6 +184,9 @@ class ConversationBar extends JugglerElement {
     /** @type {Function|null} @private Unsubscribe from LLMState status observer */
     this._llmStateUnsubscribe = null;
 
+    /** @type {(() => void)|null} @private Detaches the composer-text probe installed on the session */
+    this._detachComposerProbe = null;
+
     /** @type {number} @private Timestamp (ms) of the last accepted new-conversation create, for leading-edge debounce */
     this._lastCreateAt = 0;
 
@@ -266,6 +269,8 @@ class ConversationBar extends JugglerElement {
       this._llmStateUnsubscribe();
       this._llmStateUnsubscribe = null;
     }
+    this._detachComposerProbe?.();
+    this._detachComposerProbe = null;
     if (this._renderFrame !== null) {
       cancelAnimationFrame(this._renderFrame);
       this._renderFrame = null;
@@ -677,9 +682,16 @@ class ConversationBar extends JugglerElement {
       this._llmStateUnsubscribe();
       this._llmStateUnsubscribe = null;
     }
+    this._detachComposerProbe?.();
 
     this._cancelCycle();
     this._session = session;
+
+    // The session decides whether a request may move the viewer, and a draft in
+    // the asking conversation's box vetoes it; the boxes are this bar's.
+    this._detachComposerProbe = session.setComposerTextProbe(
+      (conversationId) => !!/** @type {any} */ (this._tabElements.get(conversationId))?.hasComposerText?.()
+    );
 
     // Seed the auto-naming setting cache (best-effort, fire-and-forget) so the
     // new-tab rename-vs-focus decision reads a current value.
@@ -812,6 +824,16 @@ class ConversationBar extends JugglerElement {
     // THEN link conversation to tab (child elements now exist)
     // @ts-ignore - setConversation is a method on conversation-tab
     tabElement.setConversation(conversation);
+  }
+
+  /**
+   * The `<conversation-tab>` showing a conversation in this window, or null
+   * when it has none — not built yet, or already taken down.
+   * @param {string} conversationId - Conversation id
+   * @returns {import('./conversation-tab.js').default|null} The tab element
+   */
+  getTabElement(conversationId) {
+    return /** @type {any} */ (this._tabElements.get(conversationId)) || null;
   }
 
   /**
@@ -2860,6 +2882,17 @@ customElements.define('conversation-bar', ConversationBar);
 
 // Export for modules
 /** @type {WindowWithConversationBar} */ (/** @type {any} */ (window)).ConversationBar = ConversationBar;
+
+/**
+ * The `<conversation-tab>` showing a conversation in this window, found through
+ * the connected bar. Null in a window with no bar (a detached board) or when
+ * the bar has no tab for it.
+ * @param {string} conversationId - Conversation id
+ * @returns {import('./conversation-tab.js').default|null} The tab element
+ */
+export function conversationTabFor(conversationId) {
+  return _activeBar?.getTabElement(conversationId) ?? null;
+}
 
 // A long-press on a row is a lift, not a right-click, until it is let go where
 // it was (see _touchHold).

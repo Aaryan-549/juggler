@@ -181,7 +181,7 @@ class MonitorContextItem extends ContextItem {
 
   /**
    * Start the background command. The worker observes the resulting tool-action
-   * (correlated by tool_use_id) and starts streaming its output into the
+   * (correlated by toolUseId) and starts streaming its output into the
    * conversation.
    * @param {Record<string, unknown>} params - Prepared params
    * @returns {Promise<Record<string, unknown>>} Monitor task descriptor
@@ -199,8 +199,8 @@ class MonitorContextItem extends ContextItem {
     const result = await this.ops.shellBackground({
       command,
       timeout: timeoutMs,
-      conv_id: this.conversation.id,
-      tool_use_id: this.toolUseId
+      convId: this.conversation.id,
+      toolUseId: this.toolUseId
     });
 
     // Ask the worker (via the generic task-output delivery binding) to stream

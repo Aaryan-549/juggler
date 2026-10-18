@@ -102,12 +102,12 @@ class NoConversationsOverlay extends JugglerElement {
 
     if (!this._rendered) {
       this._rendered = true;
-      this._render();
+      this.render();
     }
   }
 
-  /** @private */
-  _render() {
+  /** Draw the element as its state stands. Repeatable. */
+  render() {
     const product = 'Juggler'; // i18n-ignore: the product name, which the logo spells out
     this.innerHTML = `
       <section class="onboarding-panel" aria-label="${escapeHtml(t('No conversations'))}">

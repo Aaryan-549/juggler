@@ -73,7 +73,7 @@ function mount(live) {
  *
  * The fumble is the one part of the spinner that is decoration rather than
  * instrumentation, so it is suppressed twice under the preference: the CSS
- * leaves `.js-dropping` spinning in the ring, and `offerDrop` returns before
+ * leaves `.spinner-dropping` spinning in the ring, and `offerDrop` returns before
  * arming. CI machines report the preference, so the drop cases assert whichever
  * of the two behaviours this machine is entitled to.
  * @returns {boolean} True when the reduce preference is set.
@@ -181,18 +181,18 @@ export async function runTests() {
     const el = mount(true); mounted.push(el);
     el.clubs = 6;
     const angles = Array.from(el.children).map((/** @type {any} */ p) =>
-      parseFloat(p.style.getPropertyValue('--js-angle')));
+      parseFloat(p.style.getPropertyValue('--spinner-angle')));
     const expected = [0, 60, 120, 180, 240, 300];
     for (let i = 0; i < expected.length; i++) {
       if (Math.abs(angles[i] - expected[i]) > 0.01)
         throw new Error(`slot ${i}: expected ${expected[i]}deg, got ${angles[i]}deg`);
     }
     const phases = Array.from(el.children).map((/** @type {any} */ p) =>
-      p.style.getPropertyValue('--js-phase'));
+      p.style.getPropertyValue('--spinner-phase'));
     if (phases.join(',') !== '0,1,2,3,4,5')
       throw new Error(`expected phases 0..5, got ${phases.join(',')}`);
-    if (el.style.getPropertyValue('--js-n') !== '6')
-      throw new Error(`expected --js-n 6, got ${el.style.getPropertyValue('--js-n')}`);
+    if (el.style.getPropertyValue('--spinner-n') !== '6')
+      throw new Error(`expected --spinner-n 6, got ${el.style.getPropertyValue('--spinner-n')}`);
     passed++;
   } catch (e) { failed++; errors.push(`re-spacing distributes slots evenly: ${e.message}`); }
 
@@ -247,7 +247,7 @@ export async function runTests() {
     /** @returns {any[]} Every animation currently driving the cascade. */
     const animsNow = () => {
       /** @type {any[]} */ const list = [];
-      for (const node of Array.from(el.querySelectorAll('.js-orbit, .js-club'))) {
+      for (const node of Array.from(el.querySelectorAll('.spinner-orbit, .spinner-club'))) {
         for (const a of /** @type {any} */ (node).getAnimations()) list.push(a);
       }
       return list;
@@ -314,7 +314,7 @@ export async function runTests() {
     await new Promise(r => setTimeout(r, 120)); // let the cascade get off frame 0
     el.clubs = 5;
     const times = [];
-    for (const node of Array.from(el.querySelectorAll('.js-orbit'))) {
+    for (const node of Array.from(el.querySelectorAll('.spinner-orbit'))) {
       for (const a of /** @type {any} */ (node).getAnimations()) times.push(a.currentTime);
     }
     if (times.length !== 5) throw new Error(`expected 5 orbit animations, got ${times.length}`);
@@ -493,7 +493,7 @@ export async function runTests() {
   try {
     const el = mount(true); mounted.push(el);
     /** @type {any[]} */ const orbits = [];
-    for (const node of Array.from(el.querySelectorAll('.js-orbit'))) {
+    for (const node of Array.from(el.querySelectorAll('.spinner-orbit'))) {
       for (const a of /** @type {any} */ (node).getAnimations()) orbits.push(a);
     }
     if (orbits.length !== 3) throw new Error(`expected 3 orbit animations, got ${orbits.length}`);
@@ -532,8 +532,8 @@ export async function runTests() {
   // mid-fall and teleport the club back into the ring.
   try {
     const el = mount(true); mounted.push(el);
-    const club = /** @type {any} */ (el.querySelector('.js-club'));
-    club.classList.add('js-dropping');
+    const club = /** @type {any} */ (el.querySelector('.spinner-club'));
+    club.classList.add('spinner-dropping');
     el._invalidateAnimations();
     const drop = club.getAnimations().find((/** @type {any} */ a) => a.animationName === 'juggler-spinner-drop');
     if (reducedMotion()) {
@@ -541,7 +541,7 @@ export async function runTests() {
       // buys the spin alone, and there is no fall to run to completion.
       if (drop) throw new Error('reduced motion must leave the club in the ring');
     } else {
-      if (!drop) throw new Error('js-dropping did not start a drop animation');
+      if (!drop) throw new Error('spinner-dropping did not start a drop animation');
 
       const full = el._dropDurationMs(club);
       const nominal = Number(drop.effect.getComputedTiming().activeDuration);
@@ -556,7 +556,7 @@ export async function runTests() {
       if (!(slow > full * 1.8))
         throw new Error(`at half speed expected roughly double (${full}ms → ${slow}ms)`);
     }
-    club.classList.remove('js-dropping');
+    club.classList.remove('spinner-dropping');
     passed++;
   } catch (e) { failed++; errors.push(`the fumble runs to completion at any speed: ${e.message}`); }
 
@@ -600,7 +600,7 @@ export async function runTests() {
       throw new Error(`expected ${expected} armed fumble(s)${expected === 0 ? ' under reduced motion' : ''}, got ${armed}`);
     // Nothing may fumble on the spot: a drop that fired the instant a turn
     // began would land on every trivial turn, which is not rare.
-    if (document.querySelectorAll('.js-dropping').length !== 0)
+    if (document.querySelectorAll('.spinner-dropping').length !== 0)
       throw new Error('a fumble fired immediately instead of waiting out the turn');
     passed++;
   } catch (e) { failed++; errors.push(`drop session budget: ${e.message}`); }

@@ -26,7 +26,7 @@ import FilePin from '../pins/file-pin.js';
 import pinboardItemRegistry from '../../../js/registries/pinboard-item-registry.js';
 import pinboardStore from '../../../js/services/pinboard-store.js';
 import pinboardView from '../../../js/services/pinboard-view.js';
-import { writeFileOp, mkdirOp } from '../../../js/services/ops-api.js';
+import { writeFile, mkdir } from '../../../js/services/ops-api.js';
 import { describePin } from '../../../js/components/pinboard-content.js';
 import { assert } from '../../../js-tests/utilities/test-helpers.js';
 import { underPseudoLocale, shownStrings } from '../../../js-tests/utilities/pseudo-locale.js';
@@ -103,7 +103,7 @@ export async function runTests(ctx) {
   const base = native(`${ctx.fixtureDir}/_projfiles_${Math.random().toString(36).slice(2, 10)}`);
   // `mkdir` makes one directory, not a path, so the base has to exist before
   // anything is created under it.
-  await mkdirOp({ path: base });
+  await mkdir({ path: base });
 
   /**
    * Build a directory tree under this suite's base and hand back its root, ready
@@ -115,9 +115,9 @@ export async function runTests(ctx) {
    */
   async function makeTree(name, dirs, files) {
     const root = native(`${base}/${name}`);
-    await mkdirOp({ path: root });
-    for (const dir of dirs) await mkdirOp({ path: native(`${root}/${dir}`) });
-    for (const file of files) await writeFileOp({ path: native(`${root}/${file}`), content: `${file}\n` });
+    await mkdir({ path: root });
+    for (const dir of dirs) await mkdir({ path: native(`${root}/${dir}`) });
+    for (const file of files) await writeFile({ path: native(`${root}/${file}`), content: `${file}\n` });
     return root;
   }
 
@@ -538,8 +538,8 @@ export async function runTests(ctx) {
       // Both folders gain a file on disk, and the pin is told about one of them.
       // A pin that re-read the tree would show both, which is the failure this
       // is here to catch.
-      await writeFileOp({ path: native(`${root}/a/added.txt`), content: 'a\n' });
-      await writeFileOp({ path: native(`${root}/b/added.txt`), content: 'b\n' });
+      await writeFile({ path: native(`${root}/a/added.txt`), content: 'a\n' });
+      await writeFile({ path: native(`${root}/b/added.txt`), content: 'b\n' });
       mounted.fireChange([{ path: native(`${root}/a/added.txt`), event: 'create' }]);
 
       await waitFor(() => namesOf(mounted.body).includes('added.txt'),
@@ -560,7 +560,7 @@ export async function runTests(ctx) {
 
       // No change event: this is exactly the case Refresh exists for, since the
       // watcher is rooted at the project and cannot see everything.
-      await writeFileOp({ path: native(`${root}/second.txt`), content: 'two\n' });
+      await writeFile({ path: native(`${root}/second.txt`), content: 'two\n' });
       const actions = mounted.controller.getActions();
       assert(actions.length === 1 && actions[0].id === 'refresh',
         `the toolbar offers exactly Refresh, got ${JSON.stringify(actions.map((/** @type {any} */ a) => a.id))}`);

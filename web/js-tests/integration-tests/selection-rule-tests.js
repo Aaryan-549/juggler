@@ -11,6 +11,7 @@
  */
 
 import { textResponse, toolUseResponse } from '../utilities/integration-test-runner.js';
+import { tabFor } from '../utilities/conversation-tab-lookup.js';
 
 // ============================================================================
 // Rule 2: Auto-select tool-actions on insert
@@ -59,7 +60,7 @@ export const selectionAutoSelectToolAction = {
 
   customAssertions(conversation) {
     // UI-mode only: verify a tool-action-message has .selected class
-    const tab = conversation.getTabElement?.();
+    const tab = tabFor(conversation);
     if (!tab) return; // Non-UI mode — skip
     const rootCol = tab.querySelector('conversation-area');
     if (!rootCol) return;
@@ -155,7 +156,7 @@ export const selectionToolActionOverridesManual = {
   customAssertions(conversation) {
     // UI-mode only: verify the SECOND tool-action has .selected
     // (the latest tool-action should be selected, not the first one)
-    const tab = conversation.getTabElement?.();
+    const tab = tabFor(conversation);
     if (!tab) return;
     const rootCol = tab.querySelector('conversation-area');
     if (!rootCol) return;
@@ -231,7 +232,7 @@ export const selectionUserMessageResets = {
   },
 
   customAssertions(conversation) {
-    const tab = conversation.getTabElement?.();
+    const tab = tabFor(conversation);
     if (!tab) return;
     const rootCol = tab.querySelector('conversation-area');
     if (!rootCol) return;
@@ -291,7 +292,7 @@ export const selectionNewThreadAutoOpens = {
     // By the time customAssertions runs, the thread may have closed
     // (processing returned to root). We verify the thread-message
     // exists in the DOM as a rendered element.
-    const tab = conversation.getTabElement?.();
+    const tab = tabFor(conversation);
     if (!tab) return;
     const threadMessages = tab.querySelectorAll('thread-message');
     if (threadMessages.length === 0) {
@@ -346,7 +347,7 @@ export const selectionContinueInNewThread = {
   ],
 
   customAssertions(conversation) {
-    const tab = conversation.getTabElement?.();
+    const tab = tabFor(conversation);
     if (!tab) return;
     // After continueInNewThread, at least one thread column should be open.
     // The continuation thread B is nested inside thread A, so we expect
@@ -402,7 +403,7 @@ export const selectionAutoSelectInSubThread = {
   },
 
   customAssertions(conversation) {
-    const tab = conversation.getTabElement?.();
+    const tab = tabFor(conversation);
     if (!tab) return;
 
     // The root column should have the thread-message selected (it was auto-selected
@@ -482,7 +483,7 @@ export const selectionAutoSelectInRootAfterThread = {
   },
 
   customAssertions(conversation) {
-    const tab = conversation.getTabElement?.();
+    const tab = tabFor(conversation);
     if (!tab) return;
     const rootCol = tab.querySelector('conversation-area:not(.thread-column)');
     if (!rootCol) return;
@@ -544,7 +545,7 @@ export const selectionContinueBtnVisibleAfterToolUse = {
   },
 
   customAssertions(conversation) {
-    const tab = conversation.getTabElement?.();
+    const tab = tabFor(conversation);
     if (!tab) return; // Non-UI mode — skip
     const rootCol = tab.querySelector('conversation-area:not(.thread-column)');
     if (!rootCol) return;
@@ -864,7 +865,7 @@ export const selectionResizeHandleTracksLogicalOrder = {
   ],
 
   customAssertions(conversation) {
-    const tab = conversation.getTabElement?.();
+    const tab = tabFor(conversation);
     if (!tab) return; // Non-UI mode — skip.
 
     const container = tab.querySelector('column-container');
@@ -942,7 +943,7 @@ export const selectionRightmostConversationKeepsResizeHandle = {
   ],
 
   customAssertions(conversation) {
-    const tab = conversation.getTabElement?.();
+    const tab = tabFor(conversation);
     if (!tab) return; // Non-UI mode — skip.
 
     const container = tab.querySelector('column-container');

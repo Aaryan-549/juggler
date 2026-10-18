@@ -21,7 +21,7 @@
 
 import MemoryContextItem from '../context-items/memory-context-item.js';
 import GlobContextItem from '../context-items/glob-context-item.js';
-import { writeFileOp } from '../../../js/services/ops-api.js';
+import { writeFile } from '../../../js/services/ops-api.js';
 import { seedAutoContextItems } from '../../../js/model/conversation-seeder.js';
 import {
   initializeRegistries,
@@ -91,7 +91,7 @@ export async function runTests(ctx) {
 
   await test('shouldAutoInstantiate is true once the memory file exists', async () => {
     const present = `${ctx.fixtureDir}/_memory_seed/present/MEMORY.md`;
-    await writeFileOp({ path: present, content: '# Memory\n\n- [2026-06-14] seeded fact\n' });
+    await writeFile({ path: present, content: '# Memory\n\n- [2026-06-14] seeded fact\n' });
     assert((await MemoryContextItem.shouldAutoInstantiate(present)) === true, 'present file → auto-instantiate');
   });
 

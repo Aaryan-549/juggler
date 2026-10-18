@@ -210,8 +210,8 @@ export const ownerLink = {
   /** @type {((compose: {text: string, conversation: string, thread: string|null}) => void)|null} @private */
   _onCompose: null,
 
-  /** @type {((event: any) => void)|null} @private */
-  _handler: null,
+  /** @type {(() => void)|null} @private Unsubscribe from boards' relayed messages. */
+  _unsubscribeRelay: null,
 
   /**
    * Start answering boards. Idempotent — the second call replaces the handlers
@@ -229,8 +229,9 @@ export const ownerLink = {
     this._onReveal = onReveal;
     this._onSelect = onSelect || null;
     this._onCompose = onCompose || null;
-    if (this._handler) return;
-    this._handler = (event) => {
+    if (this._unsubscribeRelay) return;
+    /** @param {any} event - A relayed frame */
+    const handler = (event) => {
       const message = parse(event);
       if (!message) return;
       switch (message.kind) {
@@ -271,7 +272,7 @@ export const ownerLink = {
           break;
       }
     };
-    wsService.on('viewer-relay', this._handler);
+    this._unsubscribeRelay = wsService.on('viewer-relay', handler);
   },
 
   /**
@@ -387,8 +388,8 @@ export const ownerLink = {
    * @returns {void}
    */
   reset() {
-    if (this._handler) wsService.off('viewer-relay', this._handler);
-    this._handler = null;
+    this._unsubscribeRelay?.();
+    this._unsubscribeRelay = null;
     this._onReveal = null;
     this._onSelect = null;
     this._onCompose = null;
@@ -408,11 +409,8 @@ export const satelliteLink = {
   /** @type {string} @private The owner named in this document's URL. */
   _owner: '',
 
-  /** @type {((data: any) => void)|null} @private */
-  _clientsHandler: null,
-
-  /** @type {(() => void)|null} @private */
-  _openHandler: null,
+  /** @type {(() => void)|null} @private Unsubscribe from the viewer list and the reconnects. */
+  _unsubscribe: null,
 
   /** @type {(() => void)|null} @private Unsubscribe from the wait for this viewer's own id. */
   _addressWait: null,
@@ -448,7 +446,7 @@ export const satelliteLink = {
     // arrived holds no record of the boards it opened — a reload is a fresh page
     // with an empty list of them — so this is also how a board that outlived its
     // owner's reload gets its reveals working again.
-    this._clientsHandler = (data) => {
+    const offClients = wsService.on('clients-changed', (/** @type {any} */ data) => {
       const present = (data?.clients || []).some(
         (/** @type {any} */ client) => client?.viewerId === this._owner,
       );
@@ -459,13 +457,12 @@ export const satelliteLink = {
       if (this._present) return;
       this._present = true;
       this.hello();
-    };
-    wsService.on('clients-changed', this._clientsHandler);
+    });
 
     // A reconnect leaves the owner holding a board it is no longer talking to,
     // so introduce ourselves again rather than waiting for it to notice.
-    this._openHandler = () => this.hello();
-    wsService.on('open', this._openHandler);
+    const offOpen = wsService.on('open', () => this.hello());
+    this._unsubscribe = () => { offClients(); offOpen(); };
 
     this.hello();
   },
@@ -571,10 +568,8 @@ export const satelliteLink = {
    * @returns {void}
    */
   reset() {
-    if (this._clientsHandler) wsService.off('clients-changed', this._clientsHandler);
-    if (this._openHandler) wsService.off('open', this._openHandler);
-    this._clientsHandler = null;
-    this._openHandler = null;
+    this._unsubscribe?.();
+    this._unsubscribe = null;
     this._dropAddressWait();
     this._owner = '';
     this._present = false;

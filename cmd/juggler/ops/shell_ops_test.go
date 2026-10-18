@@ -135,7 +135,7 @@ func TestStartBackground_PublishesDurableFinalSnapshot(t *testing.T) {
 	shellOps := NewShellOperations(NewPathScope(t.TempDir(), nil))
 	res, err := shellOps.startBackground(map[string]any{
 		"command": "printf 'durable output\\n'",
-		"conv_id": "conv-persist", "tool_use_id": "tool-persist",
+		"convId":  "conv-persist", "toolUseId": "tool-persist",
 	})
 	if err != nil {
 		t.Fatalf("startBackground failed: %v", err)
@@ -187,7 +187,7 @@ func TestGetOutput_ReturnsDeltaNotCumulative(t *testing.T) {
 
 	// First delta read after A appears returns exactly "A\n".
 	waitForOutput(t, id, "A", 5*time.Second)
-	out1, err := shellOps.getOutputDelta(map[string]any{"task_id": id})
+	out1, err := shellOps.getOutputDelta(map[string]any{"taskId": id})
 	if err != nil {
 		t.Fatalf("getOutputDelta #1 failed: %v", err)
 	}
@@ -202,14 +202,14 @@ func TestGetOutput_ReturnsDeltaNotCumulative(t *testing.T) {
 	// Second delta read before B is a no-op: the cursor already consumed "A\n".
 	// The cumulative getOutput path must STILL return the full log — proving the
 	// delta cursor is isolated and the Monitor live-output panel is unaffected.
-	out2, err := shellOps.getOutputDelta(map[string]any{"task_id": id})
+	out2, err := shellOps.getOutputDelta(map[string]any{"taskId": id})
 	if err != nil {
 		t.Fatalf("getOutputDelta #2 failed: %v", err)
 	}
 	if got := out2.(map[string]any)["output"]; got != "" {
 		t.Fatalf("second delta (no new output): expected %q, got %q", "", got)
 	}
-	cumul, err := shellOps.getOutput(map[string]any{"task_id": id})
+	cumul, err := shellOps.getOutput(map[string]any{"taskId": id})
 	if err != nil {
 		t.Fatalf("getOutput (cumulative) failed: %v", err)
 	}
@@ -219,7 +219,7 @@ func TestGetOutput_ReturnsDeltaNotCumulative(t *testing.T) {
 
 	// Third delta read after B appears returns only the NEW line, not "A\nB\n".
 	waitForOutput(t, id, "B", 5*time.Second)
-	out3, err := shellOps.getOutputDelta(map[string]any{"task_id": id})
+	out3, err := shellOps.getOutputDelta(map[string]any{"taskId": id})
 	if err != nil {
 		t.Fatalf("getOutputDelta #3 failed: %v", err)
 	}

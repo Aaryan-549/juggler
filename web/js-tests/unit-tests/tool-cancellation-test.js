@@ -344,18 +344,18 @@ export async function runTests(_ctx) {
   }
 
   // Test 5: aborting an in-flight streaming shell must SEND shell-cancel to
-  // the server, not just settle locally. Regression target: shellCancelStreaming
+  // the server, not just settle locally. Regression target: cancelShellStreaming
   // read the never-assigned `window.wsService` and silently no-opped, so an
   // interrupted bash resolved cancelled:true in the engine while the server-side
   // process ran on until its timeout reaped it (up to 20 minutes). This drives
-  // the REAL shellExecuteStreaming and stubs only the WS boundary on the same
+  // the REAL shellStreaming and stubs only the WS boundary on the same
   // websocket.js singleton it uses.
   {
     const wsService = (await import('../../js/services/websocket.js')).default;
     const originalSendStart = wsService.sendShellStart;
     const originalSendCancel = wsService.sendShellCancel;
     try {
-      const { shellExecuteStreaming } = await import('../../js/services/shell-streaming.js');
+      const { shellStreaming } = await import('../../js/services/shell-streaming.js');
 
       /** @type {string|null} */
       let startedShellId = null;
@@ -374,7 +374,7 @@ export async function runTests(_ctx) {
       };
 
       const controller = new AbortController();
-      const resultPromise = shellExecuteStreaming(
+      const resultPromise = shellStreaming(
         { command: 'sleep 999' },
         () => {},
         controller.signal

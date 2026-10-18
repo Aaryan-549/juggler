@@ -218,7 +218,7 @@ class UpdateNotice extends JugglerElement {
   open(vm) {
     this._vm = vm;
     const ev = this._effectiveVm(vm);
-    this._build(ev);
+    this.render(ev);
     this._registerDismissal(ev);
   }
 
@@ -251,7 +251,7 @@ class UpdateNotice extends JugglerElement {
     }
     const ev = this._effectiveVm(vm);
     if (this._renderKey !== this._computeRenderKey(ev)) {
-      this._build(ev);
+      this.render(ev);
       return;
     }
     this._patchProgress(ev);
@@ -313,10 +313,9 @@ class UpdateNotice extends JugglerElement {
 
   /**
    * Build the full dialog DOM for vm.
-   * @private
    * @param {UpdateViewModel} vm
    */
-  _build(vm) {
+  render(vm) {
     this._renderKey = this._computeRenderKey(vm);
     const dismissible = this._dismissible(vm);
     const severity = vm.notice && vm.notice.severity === 'required'
@@ -578,7 +577,7 @@ class UpdateNotice extends JugglerElement {
     // round-trip away during the launch warmup) reconciles this in refresh().
     // Without it the click has no visible effect and reads as dead.
     this._pendingInstall = true;
-    if (this._vm) this._build(this._effectiveVm(this._vm));
+    if (this._vm) this.render(this._effectiveVm(this._vm));
     void startInstall();
   }
 
@@ -608,7 +607,7 @@ class UpdateNotice extends JugglerElement {
           error: res.message || null,
           errorStage: 'restart',
         };
-        this._build(this._vm);
+        this.render(this._vm);
       }
       // status 'ok' quits the app; nothing more to do.
     } finally {

@@ -85,7 +85,7 @@ export const DEFAULT_EXEC_TIMEOUT_MS = 30000;
 /**
  * Hard cap on any requested shell/command timeout, in milliseconds.
  * Single source of truth for the front-end timeout bound, shared by
- * shellExecute() here and the bash tool's validate() in execute-context-item.js.
+ * shell() here and the bash tool's validate() in execute-context-item.js.
  * The Go backend enforces the same cap (maxExecTimeoutMs in shell_ops.go).
  */
 export const MAX_EXEC_TIMEOUT_MS = 1200000;
@@ -140,11 +140,34 @@ export function __setOpCallTimeoutForTest(ms) {
  * caller gets a TypeError naming the parameter rather than a backend error.
  * @param {object} params - The operation's parameters
  * @param {string} name - The parameter that must be present and non-empty
+ * @param {string} [alias] - Another spelling the server also reads (the shell
+ *   op's snake_case ids — see shellParamSpellings in ops/shell_ops.go)
  */
-function requireParam(params, name) {
-  if (!(/** @type {Record<string, unknown>} */ (params))[name]) {
+function requireParam(params, name, alias) {
+  const p = /** @type {Record<string, unknown>} */ (params);
+  if (!p[name] && !(alias && p[alias])) {
     throw new TypeError(`${name} is required`);
   }
+}
+
+/**
+ * Read a rooted op's trailing arguments into the canonical
+ * `(signal, allowedPaths, workspaceId)`, accepting the signal-less order
+ * `(allowedPaths, workspaceId)` as well. That order is told apart by a grant (an
+ * array) in the signal's place, or a workspace id (a string) in the grant's; the
+ * canonical order never puts either there. These are public `juggler/ops`
+ * exports called by position from extension code, so a call in the signal-less
+ * order is honoured rather than sent with its grant as a workspace.
+ * @param {any} signal - Second argument.
+ * @param {any} allowedPaths - Third argument.
+ * @param {any} workspaceId - Fourth argument.
+ * @returns {[AbortSignal|undefined, string[]|undefined, string|undefined]} The canonical trio.
+ */
+function rootedArgs(signal, allowedPaths, workspaceId) {
+  if (Array.isArray(signal) || typeof allowedPaths === 'string') {
+    return [undefined, signal, allowedPaths];
+  }
+  return [signal, allowedPaths, workspaceId];
 }
 
 // ============================================================================
@@ -420,7 +443,7 @@ function requireParam(params, name) {
  *   The -1 that {@link ShellStartBackgroundParams} reads as "no deadline" is refused
  *   here: a command whose caller waits for its output must have something that ends it.
  * @property {string} [cwd] - Working directory for command
- * @property {string} [conv_id] - Conversation that owns this command; buckets its full-output spill file
+ * @property {string} [convId] - Conversation that owns this command; buckets its full-output spill file
  */
 
 /**
@@ -438,7 +461,13 @@ function requireParam(params, name) {
 // ============================================================================
 
 /**
- * Call a backend operation with type safety and error handling
+ * Call a backend operation with type safety and error handling.
+ *
+ * Every exported wrapper takes its trailing arguments in this function's order:
+ * `(params, signal, allowedPaths, workspaceId)` for an op rooted in a tree, and
+ * `(params, signal, workspaceId)` for the shell, which takes no grant. A wrapper
+ * with nothing to cancel still keeps the `signal` slot, so the grant and the
+ * workspace sit in the same place in every call.
  * @template T
  * @param {string} toolId - Operation handler ID (e.g., "read-file")
  * @param {string} operation - Operation name (e.g., "loadFile")
@@ -559,7 +588,7 @@ async function callOp(toolId, operation, params, signal, allowedPaths, workspace
  * @param {string} [workspaceId] - Where to run it (top-level transport; see callOp)
  * @returns {Promise<ReadFileLoadResult>} File content and metadata
  */
-export async function readFileLoad(params, signal, allowedPaths, workspaceId) {
+export async function readFile(params, signal, allowedPaths, workspaceId) {
   requireParam(params, 'path');
   return callOp('read-file', 'loadFile', params, signal, allowedPaths, workspaceId);
 }
@@ -692,7 +721,7 @@ export async function deleteProgramSnapshot(convId, toolUseId) {
  * @param {string} [workspaceId] - Where to run it (top-level transport; see callOp)
  * @returns {Promise<ReadFileWriteResult>} Write operation result with path and metadata
  */
-export async function writeFileOp(params, signal, allowedPaths, workspaceId) {
+export async function writeFile(params, signal, allowedPaths, workspaceId) {
   requireParam(params, 'path');
   if (params.content === undefined || params.content === null) {
     throw new TypeError('content is required');
@@ -707,14 +736,14 @@ export async function writeFileOp(params, signal, allowedPaths, workspaceId) {
  * Edit file using search-and-replace
  * @param {ReadFileEditParams} params
  * @param {AbortSignal} [signal] - Abort signal for cancellation
- * @param {string[]} [allowedPaths] - Standing allowed-paths grant (top-level transport; see writeFileOp)
+ * @param {string[]} [allowedPaths] - Standing allowed-paths grant (top-level transport; see writeFile)
  * @param {string} [workspaceId] - Where to run it (top-level transport; see callOp)
  * @returns {Promise<ReadFileEditResult>} Edit operation result with file metadata
  * @throws {OpsError} On failure. An old_str that matches nothing throws with
  *   code `SEARCH_NOT_FOUND`, and `detail.path` and `detail.contentHash` (the
  *   file's current bytes).
  */
-export async function readFileEdit(params, signal, allowedPaths, workspaceId) {
+export async function editFile(params, signal, allowedPaths, workspaceId) {
   requireParam(params, 'path');
   // Accept old_str or any alias (backend normalizes)
   if (!params.old_str && !params.oldContent && !params.old && !params.pattern && !params.search) {
@@ -731,11 +760,11 @@ export async function readFileEdit(params, signal, allowedPaths, workspaceId) {
  * Edit file by replacing a line range
  * @param {ReadFileEditLinesParams} params
  * @param {AbortSignal} [signal] - Abort signal for cancellation
- * @param {string[]} [allowedPaths] - Standing allowed-paths grant (top-level transport; see writeFileOp)
+ * @param {string[]} [allowedPaths] - Standing allowed-paths grant (top-level transport; see writeFile)
  * @param {string} [workspaceId] - Where to run it (top-level transport; see callOp)
  * @returns {Promise<ReadFileEditLinesResult>} Line edit operation result with file metadata
  */
-export async function readFileEditLines(params, signal, allowedPaths, workspaceId) {
+export async function editFileLines(params, signal, allowedPaths, workspaceId) {
   requireParam(params, 'path');
   if (params.edits !== undefined) {
     // Batch mode: validate the edits array, skip the single-edit fields.
@@ -760,37 +789,43 @@ export async function readFileEditLines(params, signal, allowedPaths, workspaceI
 /**
  * Get file hash for staleness detection (lightweight, doesn't read full content)
  * @param {{path: string}} params
+ * @param {AbortSignal} [signal] - Abort signal for cancellation
  * @param {string[]} [allowedPaths] - Standing allowed-paths grant (top-level transport)
  * @param {string} [workspaceId] - Where to run it (top-level transport; see callOp)
  * @returns {Promise<{path: string, exists: boolean, contentHash?: string, fileModifiedAt?: number}>} File hash and metadata for change detection
  */
-export async function readFileGetHash(params, allowedPaths, workspaceId) {
+export async function fileHash(params, signal, allowedPaths, workspaceId) {
+  [signal, allowedPaths, workspaceId] = rootedArgs(signal, allowedPaths, workspaceId);
   requireParam(params, 'path');
-  return callOp('read-file', 'getFileHash', params, undefined, allowedPaths, workspaceId);
+  return callOp('read-file', 'getFileHash', params, signal, allowedPaths, workspaceId);
 }
 
 /**
  * Get file/directory metadata without reading content
  * @param {{path: string, userInitiated?: boolean}} params
+ * @param {AbortSignal} [signal] - Abort signal for cancellation
  * @param {string[]} [allowedPaths] - Standing allowed-paths grant (top-level transport)
  * @param {string} [workspaceId] - Where to run it (top-level transport; see callOp)
  * @returns {Promise<{path: string, exists: boolean, isFile?: boolean, isDirectory?: boolean, size?: number, modified?: number}>} File/directory metadata
  */
-export async function statOp(params, allowedPaths, workspaceId) {
+export async function stat(params, signal, allowedPaths, workspaceId) {
+  [signal, allowedPaths, workspaceId] = rootedArgs(signal, allowedPaths, workspaceId);
   requireParam(params, 'path');
-  return callOp('read-file', 'stat', params, undefined, allowedPaths, workspaceId);
+  return callOp('read-file', 'stat', params, signal, allowedPaths, workspaceId);
 }
 
 /**
  * Create a directory
  * @param {{path: string, recursive?: boolean}} params
+ * @param {AbortSignal} [signal] - Abort signal for cancellation
  * @param {string[]} [allowedPaths] - Standing allowed-paths grant (top-level transport)
  * @param {string} [workspaceId] - Where to run it (top-level transport; see callOp)
  * @returns {Promise<{path: string}>} Created directory path
  */
-export async function mkdirOp(params, allowedPaths, workspaceId) {
+export async function mkdir(params, signal, allowedPaths, workspaceId) {
+  [signal, allowedPaths, workspaceId] = rootedArgs(signal, allowedPaths, workspaceId);
   requireParam(params, 'path');
-  return callOp('read-file', 'mkdir', params, undefined, allowedPaths, workspaceId);
+  return callOp('read-file', 'mkdir', params, signal, allowedPaths, workspaceId);
 }
 
 // ============================================================================
@@ -800,11 +835,13 @@ export async function mkdirOp(params, allowedPaths, workspaceId) {
 /**
  * Get directory tree structure
  * @param {TreeGetTreeParams} params
+ * @param {AbortSignal} [signal] - Abort signal for cancellation
  * @param {string[]} [allowedPaths] - Standing allowed-paths grant (top-level transport)
  * @param {string} [workspaceId] - Where to run it (top-level transport; see callOp)
  * @returns {Promise<TreeGetTreeResult>} Directory tree structure and metadata
  */
-export async function treeGetTree(params, allowedPaths, workspaceId) {
+export async function getTree(params, signal, allowedPaths, workspaceId) {
+  [signal, allowedPaths, workspaceId] = rootedArgs(signal, allowedPaths, workspaceId);
   // Validate depth if provided
   if (params.depth !== undefined) {
     if (typeof params.depth !== 'number' || params.depth < 1 || params.depth > 5) {
@@ -817,19 +854,21 @@ export async function treeGetTree(params, allowedPaths, workspaceId) {
       throw new TypeError('fileType must be "all", "files", or "dirs"');
     }
   }
-  return callOp('tree', 'getTree', params, undefined, allowedPaths, workspaceId);
+  return callOp('tree', 'getTree', params, signal, allowedPaths, workspaceId);
 }
 
 /**
  * Expand directory to show contents
  * @param {TreeExpandDirParams} params
+ * @param {AbortSignal} [signal] - Abort signal for cancellation
  * @param {string[]} [allowedPaths] - Standing allowed-paths grant (top-level transport)
  * @param {string} [workspaceId] - Where to run it (top-level transport; see callOp)
  * @returns {Promise<TreeExpandDirResult>} Directory contents with file and folder items
  */
-export async function treeExpandDirectory(params, allowedPaths, workspaceId) {
+export async function expandDirectory(params, signal, allowedPaths, workspaceId) {
+  [signal, allowedPaths, workspaceId] = rootedArgs(signal, allowedPaths, workspaceId);
   requireParam(params, 'path');
-  return callOp('tree', 'expandDirectory', params, undefined, allowedPaths, workspaceId);
+  return callOp('tree', 'expandDirectory', params, signal, allowedPaths, workspaceId);
 }
 
 /**
@@ -858,7 +897,7 @@ export async function treeExpandDirectory(params, allowedPaths, workspaceId) {
  * @param {string} [workspaceId] - Where to run it (top-level transport; see callOp)
  * @returns {Promise<TreeGlobResult>} Matching files sorted by modification time
  */
-export async function treeGlob(params, signal, allowedPaths, workspaceId) {
+export async function glob(params, signal, allowedPaths, workspaceId) {
   requireParam(params, 'pattern');
   return callOp('tree', 'glob', params, signal, allowedPaths, workspaceId);
 }
@@ -898,7 +937,7 @@ export async function treeGlob(params, signal, allowedPaths, workspaceId) {
  * @param {string} [workspaceId] - Where to run it (top-level transport; see callOp)
  * @returns {Promise<TreeCopyResult>} What was copied
  */
-export async function treeCopy(params, signal, allowedPaths, workspaceId) {
+export async function copyTree(params, signal, allowedPaths, workspaceId) {
   requireParam(params, 'to');
   return callOp('tree', 'copy', params, signal, allowedPaths, workspaceId);
 }
@@ -932,7 +971,7 @@ export async function treeCopy(params, signal, allowedPaths, workspaceId) {
  * @param {string} [workspaceId] - Where to run it (top-level transport; see callOp)
  * @returns {Promise<TreeCompareResult>} What differs
  */
-export async function treeCompare(params, signal, allowedPaths, workspaceId) {
+export async function compareTrees(params, signal, allowedPaths, workspaceId) {
   if (!params.left || !params.right) {
     throw new TypeError('left and right are required');
   }
@@ -951,7 +990,7 @@ export async function treeCompare(params, signal, allowedPaths, workspaceId) {
  * @param {string} [workspaceId] - Where to run it (top-level transport; see callOp)
  * @returns {Promise<GrepSearchResult>} Search results with matching files and lines
  */
-export async function grepSearch(params, signal, allowedPaths, workspaceId) {
+export async function grep(params, signal, allowedPaths, workspaceId) {
   requireParam(params, 'pattern');
   // Validate maxResults if provided
   if (params.maxResults !== undefined) {
@@ -966,12 +1005,15 @@ export async function grepSearch(params, signal, allowedPaths, workspaceId) {
  * Find symbol definition (function, class, etc.)
  * @param {GrepFindSymbolParams} params
  * @param {AbortSignal} [signal] - Abort signal for cancellation
+ * @param {string[]} [allowedPaths] - Standing allowed-paths grant (top-level transport)
  * @param {string} [workspaceId] - Where to run it (top-level transport; see callOp)
  * @returns {Promise<GrepFindSymbolResult>} Symbol definitions found across files
  */
-export async function grepFindSymbol(params, signal, workspaceId) {
+export async function findSymbol(params, signal, allowedPaths, workspaceId) {
+  // (params, signal, workspaceId), which carried no grant, is honoured too.
+  if (typeof allowedPaths === 'string') [allowedPaths, workspaceId] = [undefined, allowedPaths];
   requireParam(params, 'symbol');
-  return callOp('grep', 'findSymbol', params, signal, undefined, workspaceId);
+  return callOp('grep', 'findSymbol', params, signal, allowedPaths, workspaceId);
 }
 
 // ============================================================================
@@ -981,9 +1023,6 @@ export async function grepFindSymbol(params, signal, workspaceId) {
 /**
  * Execute shell command
  * @param {ShellExecuteParams} params
- * @param {string} [workspaceId] - Where to run it (top-level transport; see callOp).
- *   This is the command's working directory as well as its containment boundary:
- *   the scope's root is what `ops.validateCwd` measures a requested cwd against.
  * @param {AbortSignal} [signal] - Abort signal. Aborting it cancels the server's
  *   request context, and the backend kills the command's whole process group
  *   from there (`ops/shell_exec.go`, `killProcessGroup`) — so a caller that
@@ -991,9 +1030,18 @@ export async function grepFindSymbol(params, signal, workspaceId) {
  *   waiting for it. Without one a command runs to completion whatever the
  *   caller does, which is indistinguishable from cancelling right up until the
  *   moment it writes something.
+ * @param {string} [workspaceId] - Where to run it (top-level transport; see callOp).
+ *   This is the command's working directory as well as its containment boundary:
+ *   the scope's root is what `ops.validateCwd` measures a requested cwd against.
+ *   A shell takes no allowed-paths grant: its cwd is confined to that root.
  * @returns {Promise<ShellExecuteResult>} Command execution result with stdout, stderr, and exit code
  */
-export async function shellExecute(params, workspaceId, signal) {
+export async function shell(params, signal, workspaceId) {
+  // (params, workspaceId, signal) is honoured too: a string never fills the
+  // signal's place, nor an object the workspace's.
+  if (typeof signal === 'string' || (typeof workspaceId === 'object' && workspaceId !== null)) {
+    [signal, workspaceId] = [/** @type {any} */ (workspaceId), /** @type {any} */ (signal)];
+  }
   // Must have either command or code
   if (!params.command && !params.code) {
     throw new TypeError('command or code is required');
@@ -1041,8 +1089,8 @@ export async function shellExecute(params, workspaceId, signal) {
  *   stops it or the server goes away, which is what a long-lived local server —
  *   a dev server, a patch host an extension embeds — needs. Do not pass 0
  *   meaning "forever": 0 is a real duration and the task dies immediately.
- * @property {string} [conv_id] - Conversation ID for tracking ownership
- * @property {string} [tool_use_id] - Tool use ID for frontend correlation
+ * @property {string} [convId] - Conversation ID for tracking ownership
+ * @property {string} [toolUseId] - Tool use ID for frontend correlation
  */
 
 /**
@@ -1056,7 +1104,7 @@ export async function shellExecute(params, workspaceId, signal) {
 /**
  * Start a command in the background
  *
- * Deliberately takes no `AbortSignal`, unlike {@link shellExecute}. A background
+ * Deliberately takes no `AbortSignal`, unlike {@link shell}. A background
  * shell owns its own cancellation (`shell.cancel`, `ops/shell_registry.go`) and
  * is meant to outlive the request that started it, so aborting that request
  * would abandon the reply without stopping the process — leaving a task running
@@ -1066,7 +1114,7 @@ export async function shellExecute(params, workspaceId, signal) {
  * @param {string} [workspaceId] - Where to run it (top-level transport; see callOp)
  * @returns {Promise<ShellStartBackgroundResult>} Background task info
  */
-export async function shellStartBackground(params, workspaceId) {
+export async function shellBackground(params, workspaceId) {
   requireParam(params, 'command');
   return callOp('shell', 'startBackground', params, undefined, undefined, workspaceId);
 }
@@ -1074,8 +1122,8 @@ export async function shellStartBackground(params, workspaceId) {
 /**
  * Parameters for getting task output
  * @typedef {object} ShellGetOutputParams
- * @property {string} task_id - The task ID to get output from
- * @property {string} [conv_id] - The conversation the task belongs to. When given,
+ * @property {string} taskId - The task ID to get output from
+ * @property {string} [convId] - The conversation the task belongs to. When given,
  *   the server refuses an id belonging to a different conversation; the project the
  *   task was started in is always checked whether this is given or not.
  * @property {boolean} [block] - Whether to wait for completion (not yet implemented)
@@ -1097,8 +1145,8 @@ export async function shellStartBackground(params, workspaceId) {
  * @param {ShellGetOutputParams} params
  * @returns {Promise<ShellGetOutputResult>} Task output result
  */
-export async function shellGetOutput(params) {
-  requireParam(params, 'task_id');
+export async function shellOutput(params) {
+  requireParam(params, 'taskId', 'task_id');
   return callOp('shell', 'getOutput', params);
 }
 
@@ -1106,21 +1154,21 @@ export async function shellGetOutput(params) {
  * Get NEW output from a background task since the previous getOutputDelta call
  * for the same task (BashOutput semantics). Advances a per-task read cursor, so
  * repeated polling returns only unseen output — never the whole accumulated log
- * again. Used by the TaskOutput tool; the cumulative {@link shellGetOutput} is
+ * again. Used by the TaskOutput tool; the cumulative {@link shellOutput} is
  * left for consumers (the Monitor live-output panel) that keep their own cursor.
  * @param {ShellGetOutputParams} params
  * @returns {Promise<ShellGetOutputResult & {outputIsNew?: boolean}>} Delta output result
  */
-export async function shellGetOutputDelta(params) {
-  requireParam(params, 'task_id');
+export async function shellOutputDelta(params) {
+  requireParam(params, 'taskId', 'task_id');
   return callOp('shell', 'getOutputDelta', params);
 }
 
 /**
  * Parameters for killing a shell
  * @typedef {object} ShellKillParams
- * @property {string} shell_id - The shell ID to kill
- * @property {string} [conv_id] - The conversation the task belongs to. When given,
+ * @property {string} shellId - The shell ID to kill
+ * @property {string} [convId] - The conversation the task belongs to. When given,
  *   the server refuses an id belonging to a different conversation; the project the
  *   task was started in is always checked whether this is given or not.
  */
@@ -1139,16 +1187,16 @@ export async function shellGetOutputDelta(params) {
  * @returns {Promise<ShellKillResult>} Kill result
  */
 export async function shellKill(params) {
-  requireParam(params, 'shell_id');
+  requireParam(params, 'shellId', 'shell_id');
   return callOp('shell', 'kill', params);
 }
 
 /**
  * Parameters for a task liveness probe
  * @typedef {object} ShellTaskStatusParams
- * @property {string} conv_id - The conversation whose tasks these are. Required:
+ * @property {string} convId - The conversation whose tasks these are. Required:
  *   there is no way to ask what tasks exist, only whether these ones are alive.
- * @property {string[]} task_ids - The task IDs to ask about
+ * @property {string[]} taskIds - The task IDs to ask about
  */
 
 /**
@@ -1169,8 +1217,8 @@ export async function shellKill(params) {
  * @param {ShellTaskStatusParams} params
  * @returns {Promise<{tasks: ShellTaskLiveness[]}>} One answer per requested ID
  */
-export async function shellTaskStatus(params) {
-  requireParam(params, 'conv_id');
+export async function shellStatus(params) {
+  requireParam(params, 'convId', 'conv_id');
   return callOp('shell', 'taskStatus', params);
 }
 
@@ -1382,7 +1430,7 @@ export async function generateText(params, signal) {
  * @param {{path: string}} params - The file or directory path to open.
  * @returns {Promise<OSLaunchResult>} Launch result.
  */
-export async function osOpenPath(params) {
+export async function openPath(params) {
   requireParam(params, 'path');
   return callOp('os', 'open', params);
 }
@@ -1392,7 +1440,7 @@ export async function osOpenPath(params) {
  * @param {{path: string}} params - The file or directory path to reveal.
  * @returns {Promise<OSLaunchResult>} Launch result.
  */
-export async function osRevealPath(params) {
+export async function revealPath(params) {
   requireParam(params, 'path');
   return callOp('os', 'reveal', params);
 }

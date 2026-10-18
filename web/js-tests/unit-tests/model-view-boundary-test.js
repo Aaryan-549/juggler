@@ -71,47 +71,31 @@ export async function runTests() {
     assert(!('_conversationTabs' in state), 'LLMState keeps a map of tab elements');
   });
 
-  await run('a conversation writes nothing into the view it is shown in', () => {
-    /** @type {any} */
-    const area = {};
+  await run('a conversation holds no reference to the view it is shown in', () => {
+    const proto = /** @type {any} */ (Conversation.prototype);
+    const strays = ['setTabElement', 'getTabElement'].filter((name) => name in proto);
+    assert(strays.length === 0, `Conversation still carries its tab: ${strays.join(', ')}`);
     /** @type {any} */
     const conv = Object.create(Conversation.prototype);
     conv.id = 'model-view-boundary';
     conv._llmState = { registerConversation() {} };
-    conv.setTabElement(/** @type {any} */ ({ getConversationArea: () => area, getComposer: () => null }));
-    assert(!('conversation' in area), 'setTabElement wrote the conversation into the tab\'s column');
-    assert(!('_conversationArea' in conv), 'the conversation keeps a reference to a column of its own');
+    conv.startStatusObserver();
+    const held = Object.keys(conv).filter((key) => /tab|area|composer/i.test(key));
+    assert(held.length === 0, `the conversation keeps a view reference: ${held.join(', ')}`);
   });
 
-  await run('a conversation calls nothing on the tab it is shown in', () => {
-    // Every property read on the tab is recorded, so a model that reaches for
-    // its composer, or asks it to open a thread, shows up here by name.
-    /** @type {string[]} */
-    const touched = [];
-    const tab = new Proxy({}, {
-      get: (_target, key) => { touched.push(String(key)); return () => null; },
-    });
+  await run('the session asks the view about a draft, and holds no tab', () => {
     const session = /** @type {any} */ (trackTestSession(new Session(/** @type {any} */ ({}))));
-    /** @type {any} */
-    const conv = Object.create(Conversation.prototype);
-    conv.id = 'model-view-boundary-calls';
-    conv._session = session;
-    conv._llmState = { registerConversation() {} };
-    conv.setTabElement(/** @type {any} */ (tab));
-    const priorWarn = console.warn;
-    console.warn = () => {};
-    try {
-      conv.showWarning('a refusal');
-      conv._pendingUserMessage = { content: 'a refused message', attachments: [] };
-      conv.restorePendingMessage();
-      conv._handleCommandSideEffects([
-        { type: 'openThread', data: { threadId: 'thread-1' } },
-        { type: 'setDraft', data: { text: 'a drafted command' } },
-      ]);
-    } finally {
-      console.warn = priorWarn;
-    }
-    assert(touched.length === 0, `the conversation reached into its tab for: ${touched.join(', ')}`);
+    session.registry.insert('drafting', { id: 'drafting' }, 'test');
+    session.registry.select({ kind: 'conversation', id: 'drafting' });
+    assert(session.shouldFollowRequest('drafting'), 'with no view attached the request must be followed');
+    /** @type {string[]} */
+    const asked = [];
+    const detach = session.setComposerTextProbe((/** @type {string} */ id) => { asked.push(id); return true; });
+    assert(!session.shouldFollowRequest('drafting'), 'a draft in the view must stop the request');
+    assert(asked.length === 1 && asked[0] === 'drafting', `the probe was asked about ${JSON.stringify(asked)}`);
+    detach();
+    assert(session.shouldFollowRequest('drafting'), 'a detached probe must no longer be consulted');
   });
 
   await run('session events stay on the session feed', () => {

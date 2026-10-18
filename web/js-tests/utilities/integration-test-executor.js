@@ -127,6 +127,7 @@ import { runTests as runUnboundedAwaitTests } from '../unit-tests/unbounded-awai
 import { runTests as runModalSupersedeTests } from '../unit-tests/modal-supersede-test.js';
 import { runTests as runModalDialogTests } from '../unit-tests/modal-dialog-test.js';
 import { runTests as runHttpErrorsTests } from '../unit-tests/http-errors-test.js';
+import { runTests as runOpsApiArgumentsTests } from '../unit-tests/ops-api-arguments-test.js';
 import { runTests as runApprovalButtonsTests } from '../unit-tests/approval-buttons-test.js';
 import { runTests as runResponseHandlerModelTextTests } from '../unit-tests/response-handler-model-text-test.js';
 import { runTests as runCapabilityCatalogTests } from '../unit-tests/capability-catalog-test.js';
@@ -650,6 +651,7 @@ const UNIT_TEST_SUITES = [
   { name: 'unit:modal-supersede', run: runModalSupersedeTests },
   { name: 'unit:modal-dialog', run: runModalDialogTests },
   { name: 'unit:http-errors', run: runHttpErrorsTests },
+  { name: 'unit:ops-api-arguments', run: runOpsApiArgumentsTests },
   { name: 'unit:approval-buttons', run: runApprovalButtonsTests },
   { name: 'unit:response-handler-model-text', run: runResponseHandlerModelTextTests },
   { name: 'unit:capability-catalog', run: runCapabilityCatalogTests },
@@ -1300,9 +1302,9 @@ export async function runTestByName(testName, ctx) {
 
     const unitCtx = /** @type {any} */ (ctx);
     if (!unitCtx.readFile) {
-      const { readFileLoad } = await import('../../js/services/ops-api.js');
+      const { readFile } = await import('../../js/services/ops-api.js');
       unitCtx.readFile = async (/** @type {string} */ relativePath) => {
-        const result = await readFileLoad({ path: `${ctx.fixtureDir}/${relativePath}` });
+        const result = await readFile({ path: `${ctx.fixtureDir}/${relativePath}` });
         return (/** @type {any} */ (result)).content ?? '';
       };
     }

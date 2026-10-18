@@ -456,12 +456,10 @@ const fakeSession = {
     for (const fn of [...sessionListeners]) fn({ type });
   },
   getVisibleConversation: () => null,
-  getConversation: (/** @type {string} */ id) => id === 'conversation-one'
-    ? { getTabElement: () => ({ hasComposerText: () => composerHasText }) }
-    : null,
+  getConversation: (/** @type {string} */ id) => (id === 'conversation-one' ? { id } : null),
   shouldFollowRequest(from) {
     if (!from || this.visibleConversationId !== from) return false;
-    return !this.getConversation(from)?.getTabElement?.()?.hasComposerText?.();
+    return !composerHasText;
   },
 };
 
@@ -1408,7 +1406,7 @@ export async function runTests(_ctx) {
       assert(!!Panel, 'pinboard-panel is not defined');
       const thread = {
         threadItemId: null,
-        conversation: { getTabElement: () => null, sendMessage: async () => '42' },
+        conversation: { id: 'no-tab-here', sendMessage: async () => '42' },
       };
       const stand = {
         _showConversationForBoard: async () => true,
@@ -2039,7 +2037,7 @@ export async function runTests(_ctx) {
         // A review sent as a message that the conversation refused, with its reason.
         const refused = await thrown(() => composeForThread({
           threadItemId: null,
-          conversation: { getTabElement: () => null, sendMessage: async () => '42' },
+          conversation: { id: 'no-tab-here', sendMessage: async () => '42' },
         }, '7'));
         if (!refused.includes('42')) raw.push(`send failure keeps the reason: ${refused}`);
         check('send failure', [refused.replace('42', '')]);

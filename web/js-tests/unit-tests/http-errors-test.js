@@ -17,7 +17,7 @@ import { assert } from '../utilities/test-helpers.js';
 import { underPseudoLocale } from '../utilities/pseudo-locale.js';
 import { isPseudoLocalized, pseudoLocalize } from '../../sdk/lib/i18n.js';
 import { fetchJson, httpErrorText, HttpError } from '../../js/services/http.js';
-import { readFileLoad, OpsError } from '../../js/services/ops-api.js';
+import { readFile, OpsError } from '../../js/services/ops-api.js';
 import { applyPinboardOperations } from '../../js/services/pinboard-operations-api.js';
 import * as errorUtils from '../../sdk/lib/error-utils.js';
 
@@ -170,7 +170,7 @@ export async function runTests() {
         assert(isPseudoLocalized(prefixed.message), `prefix + server message is plain English: ${JSON.stringify(prefixed.message)}`);
       });
       await withFetch(answering(200, opRefusal), async () => {
-        const err = await rejection(() => readFileLoad({ path: 'x.txt' }));
+        const err = await rejection(() => readFile({ path: 'x.txt' }));
         assert(err instanceof OpsError, `expected an OpsError, got ${String(err)}`);
         assert(err.message === 'workspace 7 was closed', `the op's English changed: ${JSON.stringify(err.message)}`);
         assert(err.serverMessage?.key === 'workspace {name} was closed', `serverMessage = ${JSON.stringify(err.serverMessage)}`);
@@ -184,7 +184,7 @@ export async function runTests() {
   await run('under en-XA an op the server refused over HTTP reads translated in the UI', async () => {
     await underPseudoLocale('http-errors-test', async () => {
       await withFetch(answering(409, JSON.stringify({ success: false, error: 'no project loaded', message: { key: 'no project loaded' } })), async () => {
-        const err = await rejection(() => readFileLoad({ path: 'x.txt' }));
+        const err = await rejection(() => readFile({ path: 'x.txt' }));
         assert(err.message === 'HTTP 409: no project loaded', `the English changed: ${JSON.stringify(err.message)}`);
         const text = errorUtils.errorText(err);
         assert(text === `HTTP 409: ${pseudoLocalize('no project loaded')}`, `errorText = ${JSON.stringify(text)}`);

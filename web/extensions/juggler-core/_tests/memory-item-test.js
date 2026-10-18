@@ -18,7 +18,7 @@
  */
 
 import MemoryContextItem from '../context-items/memory-context-item.js';
-import { readFileLoad } from '../../../js/services/ops-api.js';
+import { readFile } from '../../../js/services/ops-api.js';
 import {
   initializeRegistries,
   createTestSession,
@@ -102,7 +102,7 @@ export async function runTests(ctx) {
    */
   async function readBack(path) {
     try {
-      const r = await readFileLoad({ path });
+      const r = await readFile({ path });
       return r && typeof r.content === 'string' ? r.content : '';
     } catch {
       return '';

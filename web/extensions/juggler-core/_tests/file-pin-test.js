@@ -23,7 +23,7 @@
 
 import FilePin from '../pins/file-pin.js';
 import { fetchLiveFile, renderLiveFileBody } from '../lib/live-file.js';
-import { writeFileOp } from '../../../js/services/ops-api.js';
+import { writeFile } from '../../../js/services/ops-api.js';
 import pinboardItemRegistry from '../../../js/registries/pinboard-item-registry.js';
 import { addFilePath } from 'juggler/ui';
 import { assert } from '../../../js-tests/utilities/test-helpers.js';
@@ -90,7 +90,7 @@ export async function runTests(ctx) {
    */
   async function writeFixture(name, content) {
     const path = `${base}_${name}`;
-    await writeFileOp({ path, content });
+    await writeFile({ path, content });
     return path;
   }
 
@@ -514,7 +514,7 @@ export async function runTests(ctx) {
     const mounted = mount({ path });
     try {
       assert((await settled(mounted.body)).includes('before'), 'it starts with what was there');
-      await writeFileOp({ path, content: 'after' });
+      await writeFile({ path, content: 'after' });
       mounted.fireChange([{ path, event: 'write' }]);
 
       const deadline = Date.now() + 5000;
@@ -533,7 +533,7 @@ export async function runTests(ctx) {
     const mounted = mount({ path });
     try {
       await settled(mounted.body);
-      await writeFileOp({ path, content: 'changed behind its back' });
+      await writeFile({ path, content: 'changed behind its back' });
       mounted.fireChange([{ path: `${base}_somebody_else.txt`, event: 'write' }]);
       await new Promise((r) => { setTimeout(r, 400); });
       assert((mounted.body.textContent || '').includes('undisturbed'),
@@ -550,7 +550,7 @@ export async function runTests(ctx) {
       assert(!before.includes('appeared.txt'), 'the new file is not there to begin with');
 
       // A file inside the directory is the directory changing.
-      await writeFileOp({ path: `${base}_dir/appeared.txt`, content: 'new' });
+      await writeFile({ path: `${base}_dir/appeared.txt`, content: 'new' });
       mounted.fireChange([{ path: `${base}_dir/appeared.txt`, event: 'create' }]);
 
       const deadline = Date.now() + 5000;
@@ -569,7 +569,7 @@ export async function runTests(ctx) {
     const mounted = mount({ path });
     try {
       await settled(mounted.body);
-      await writeFileOp({ path, content: 'second' });
+      await writeFile({ path, content: 'second' });
       const refresh = mounted.controller.getActions?.().find((a) => a.id === 'refresh');
       assert(!!refresh, 'the pin offers Refresh, because the watcher cannot see everything');
       await refresh?.run();

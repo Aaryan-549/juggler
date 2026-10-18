@@ -137,7 +137,10 @@ Rules for using them:
 ## Naming
 
 - A class is prefixed with its group: `.composer-*`, `.settings-*`,
-  `.pinboard-*`. The prefix is what makes ownership checkable.
+  `.pinboard-*`, `.spinner-*`. The prefix is what makes ownership checkable.
+  There is no second scheme for classes JavaScript selects: script and
+  stylesheet name an element by the same group-prefixed class, and a custom
+  property a group sets carries the same prefix (`--spinner-angle`).
 - `__element` / `--modifier` within a component is fine and used in places
   (`.pinboard-tabbar__list`, `.pp-status--invalid`). Consistency inside one file
   matters more than consistency across all of them.

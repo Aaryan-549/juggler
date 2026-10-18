@@ -201,10 +201,8 @@ export async function runTests() {
       const kept = `refresh-kept-${Math.random().toString(36).slice(2)}`;
       const dropped = `refresh-dropped-${Math.random().toString(36).slice(2)}`;
       const session = makeSession({ conversationOrder: [kept], conversationNames: { [kept]: 'Kept' } });
-      // Through the live map, so this setup means the same thing before and
-      // after the list had an owner — the assertion is what is under test.
-      session.conversations.set(kept, stub(kept));
-      session.conversations.set(dropped, stub(dropped));
+      session.registry.insert(kept, stub(kept), 'test');
+      session.registry.insert(dropped, stub(dropped), 'test');
 
       await session.persistence.refreshFromServer();
 

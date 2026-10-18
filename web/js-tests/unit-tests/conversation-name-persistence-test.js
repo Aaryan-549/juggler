@@ -40,7 +40,7 @@ export async function runTests(_ctx) {
   for (const convId of loadedConvIds) {
     logger.info(`[conversation-name-persistence-test] Terminating and clearing conversation: ${convId}`);
     workerManager.terminate(convId);
-    session.conversations.delete(convId);
+    session.registry.forget(convId, 'test');
   }
 
   logger.info('[conversation-name-persistence-test] About to create new test conversation');
@@ -61,7 +61,7 @@ export async function runTests(_ctx) {
   // Destroy conversation and terminate worker
   logger.info('[conversation-name-persistence-test] Destroying conversation and worker');
   await workerManager.loader.destroy(conversation);
-  session.conversations.delete(convId);
+  session.registry.forget(convId, 'test');
 
   // Reload session (simulates page reload)
   logger.info('[conversation-name-persistence-test] Reloading session from backend');

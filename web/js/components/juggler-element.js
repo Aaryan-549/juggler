@@ -12,6 +12,15 @@ import { guarded } from '../utils/fault-report.js';
  * drains them in reverse order. Subclasses that override disconnectedCallback
  * MUST call `super.disconnectedCallback()` (or use `addCleanup`).
  *
+ * Register a connection's listeners in `connectedCallback`. Each connection
+ * then registers them exactly once and each disconnect removes them, so an
+ * element that is moved or re-parented needs no flag remembering whether it is
+ * already wired.
+ *
+ * Naming, which nothing here calls but every element follows: `render()` draws
+ * the element as its state stands and may run any number of times; `_build()`
+ * lays down structure that is made once and that `render()` then fills.
+ *
  * Pattern mirrors {@link module:model/conversation-observers~setupYjsObservers}.
  */
 class JugglerElement extends HTMLElement {

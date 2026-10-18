@@ -421,7 +421,7 @@ async function testUndoHistoryPersistence(session) {
 
   // Destroy and reload
   await workerManager.loader.destroy(conv1);
-  session.conversations.delete(conv1.id);
+  session.registry.forget(conv1.id, 'test');
   await session.persistence.load();
   await session.ensureConversationLoaded(conv1.id);
 
@@ -2498,7 +2498,7 @@ export async function runTests(_ctx) {
   for (const convId of loadedConvIds) {
     logger.info(`[undo-redo-test] Terminating and clearing conversation: ${convId}`);
     workerManager.terminate(convId);
-    session.conversations.delete(convId);
+    session.registry.forget(convId, 'test');
   }
 
   const tests = [

@@ -21,7 +21,7 @@
  */
 
 import MemoryPin from '../pins/memory-pin.js';
-import { writeFileOp } from '../../../js/services/ops-api.js';
+import { writeFile } from '../../../js/services/ops-api.js';
 import { assert } from '../../../js-tests/utilities/test-helpers.js';
 import { underPseudoLocale, shownStrings } from '../../../js-tests/utilities/pseudo-locale.js';
 import { isPseudoLocalized } from '../../../sdk/lib/i18n.js';
@@ -79,7 +79,7 @@ export async function runTests(ctx) {
    */
   async function writeMemory(name, content) {
     const path = `${base}_${name}.md`;
-    await writeFileOp({ path, content });
+    await writeFile({ path, content });
     return path;
   }
 
@@ -306,7 +306,7 @@ export async function runTests(ctx) {
     await settled(m.body);
     assert((m.body.textContent || '').includes('Before'), 'first read missing');
 
-    await writeFileOp({ path, content: '# Memory\n\n- [2026-06-14] After\n' });
+    await writeFile({ path, content: '# Memory\n\n- [2026-06-14] After\n' });
     const refresh = m.controller.getActions().find((/** @type {any} */ a) => a.id === 'refresh');
     assert(refresh, 'Refresh is how a hand edit is picked up, since nothing watches this file');
     await refresh.run();
@@ -320,7 +320,7 @@ export async function runTests(ctx) {
     const m = mount(path);
     await settled(m.body);
 
-    await writeFileOp({ path, content: '# Memory\n\n- [2026-06-14] One fact\n- [2026-06-15] Two facts\n' });
+    await writeFile({ path, content: '# Memory\n\n- [2026-06-14] One fact\n- [2026-06-15] Two facts\n' });
     // What a `remember` tool action looks like from the pin: the conversation's
     // context items changed, so the file it reads may have too.
     m.fireChange();
@@ -333,7 +333,7 @@ export async function runTests(ctx) {
     const m = mount(path);
     await settled(m.body);
 
-    await writeFileOp({ path, content: '# Memory\n\n- [2026-06-14] After the burst\n' });
+    await writeFile({ path, content: '# Memory\n\n- [2026-06-14] After the burst\n' });
 
     // Signal faster than the settling period and never stop. A settling timer
     // that every event restarts has no floor: while the events keep coming the

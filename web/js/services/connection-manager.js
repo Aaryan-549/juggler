@@ -68,8 +68,8 @@ class ConnectionManager {
     /** @type {(() => void)|null} @private - Stops the git surfaces following this window's visible conversation */
     this._unfollowGit = null;
 
-    /** @type {Map<string, import('./websocket.js').WSEventCallback>} @private */
-    this._wsCallbacks = new Map();
+    /** @type {Array<() => void>} @private - Unsubscribes for the WebSocket listeners setup() registered */
+    this._wsUnsubscribes = [];
 
     /** @type {{show: () => void, hide: () => void, startCountdown: (delayMs: number) => void}|null} @private */
     this._disconnectionOverlay = options.disconnectionOverlay || null;
@@ -134,55 +134,47 @@ class ConnectionManager {
     const sessionCallback = /** @type {any} */ (async () => {
       await this._initializeSession();
     });
-    this._wsCallbacks.set('session', sessionCallback);
-    wsService.on('session', sessionCallback);
+    this._wsUnsubscribes.push(wsService.on('session', sessionCallback));
 
     // Handle connection events
     const openCallback = /** @type {any} */ (async () => {
       await this._handleOpen();
     });
-    this._wsCallbacks.set('open', openCallback);
-    wsService.on('open', openCallback);
+    this._wsUnsubscribes.push(wsService.on('open', openCallback));
 
     const closeCallback = /** @type {any} */ (() => {
       if (this._disconnectionOverlay) this._disconnectionOverlay.show();
     });
-    this._wsCallbacks.set('close', closeCallback);
-    wsService.on('close', closeCallback);
+    this._wsUnsubscribes.push(wsService.on('close', closeCallback));
 
     // Handle reconnection attempt notifications
     const reconnectAttemptCallback = /** @type {any} */ ((/** @type {{attempt: number, delayMs: number}} */ data) => {
       if (this._disconnectionOverlay) this._disconnectionOverlay.startCountdown(data.delayMs);
     });
-    this._wsCallbacks.set('reconnect-attempt', reconnectAttemptCallback);
-    wsService.on('reconnect-attempt', reconnectAttemptCallback);
+    this._wsUnsubscribes.push(wsService.on('reconnect-attempt', reconnectAttemptCallback));
 
     const errorCallback = /** @type {any} */ ((/** @type {Error} */ error) => {
       console.error('[ConnectionManager] WebSocket error:', error);
     });
-    this._wsCallbacks.set('error', errorCallback);
-    wsService.on('error', errorCallback);
+    this._wsUnsubscribes.push(wsService.on('error', errorCallback));
 
     // Handle incoming messages
     const messageCallback = (/** @type {any} */ data) => {
       this._onServerMessage(data);
     };
-    this._wsCallbacks.set('message', messageCallback);
-    wsService.on('message', messageCallback);
+    this._wsUnsubscribes.push(wsService.on('message', messageCallback));
 
     // Handle retry notifications
     const retryCallback = (/** @type {any} */ data) => {
       this._handleRetryNotification(data);
     };
-    this._wsCallbacks.set('retry', retryCallback);
-    wsService.on('retry', retryCallback);
+    this._wsUnsubscribes.push(wsService.on('retry', retryCallback));
 
     // Handle streaming error notifications
     const streamingErrorCallback = (/** @type {any} */ data) => {
       this._handleStreamingError(data);
     };
-    this._wsCallbacks.set('streaming-error', streamingErrorCallback);
-    wsService.on('streaming-error', streamingErrorCallback);
+    this._wsUnsubscribes.push(wsService.on('streaming-error', streamingErrorCallback));
 
     // Connect only now that all listeners are registered. The studio adopt path
     // flushes buffered realtime frames and emits 'open' synchronously inside
@@ -430,15 +422,11 @@ class ConnectionManager {
       this._unfollowGit = null;
     }
 
-    // Remove every WebSocket listener registered in setup(). Iterating the map
-    // (rather than hand-listing event names) guarantees none leak when the set
-    // of registered events changes.
-    if (wsService) {
-      for (const [event, callback] of this._wsCallbacks) {
-        wsService.off(/** @type {any} */ (event), callback);
-      }
-      this._wsCallbacks.clear();
-    }
+    // Remove every WebSocket listener registered in setup(). Each registration
+    // kept its own unsubscribe, so none can leak when the set of registered
+    // events changes.
+    for (const unsubscribe of this._wsUnsubscribes) unsubscribe();
+    this._wsUnsubscribes = [];
 
     // Clear references
     this._session = null;

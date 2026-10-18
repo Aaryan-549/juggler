@@ -141,7 +141,7 @@ export async function runTests(_ctx) {
       // Whatever state the assertions left it in, the conversation is binned
       // server-side: empty it out rather than leaving it for the next lane.
       if (doomedId) {
-        session.conversations.delete(doomedId);
+        session.registry.forget(doomedId, 'test');
         try {
           await session.bin.deletePermanently(doomedId);
         } catch {
@@ -201,7 +201,7 @@ export async function runTests(_ctx) {
       if (realApi) session._apiService = realApi;
       mount?.container.remove();
       if (doomedId) {
-        session.conversations.delete(doomedId);
+        session.registry.forget(doomedId, 'test');
         try {
           await session.bin.deletePermanently(doomedId);
         } catch {

@@ -55,7 +55,7 @@ async function _runTests() {
   for (const convId of loadedConvIds) {
     logger.info(`[context-item-persistence-test] Terminating and clearing conversation: ${convId}`);
     workerManager.terminate(convId);  // Terminate FIRST
-    session.conversations.delete(convId);  // Then remove from session
+    session.registry.forget(convId, 'test');  // Then remove from session
   }
 
   logger.info('[context-item-persistence-test] About to create new test conversation');
@@ -108,7 +108,7 @@ async function _runTests() {
 
   // Destroy conversation and terminate worker (atomic operation with enforced cleanup order)
   await workerManager.loader.destroy(conversation);
-  session.conversations.delete(conversation.id);
+  session.registry.forget(conversation.id, 'test');
 
   // Reload session (simulates page reload)
   await session.persistence.load();

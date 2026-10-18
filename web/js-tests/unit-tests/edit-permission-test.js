@@ -17,7 +17,7 @@ import {
   assert
 } from '../utilities/test-helpers.js';
 import contextItemRegistry from '../../js/registries/context-item-registry.js';
-import { writeFileOp } from '../../js/services/ops-api.js';
+import { writeFile } from '../../js/services/ops-api.js';
 
 /**
  * @typedef {object} TestContext
@@ -137,7 +137,7 @@ export async function runTests(_ctx) {
     const conversation = await createTestConversation(session);
 
     // Seed a file in the fixture directory with known content.
-    await writeFileOp({ path: 'reg-edit-validate.txt', content: 'hello world\n' });
+    await writeFile({ path: 'reg-edit-validate.txt', content: 'hello world\n' });
 
     // Record the file as read so the read-before-edit freshness guard admits
     // the edit and validation reaches the dryRun SEARCH_NOT_FOUND path this

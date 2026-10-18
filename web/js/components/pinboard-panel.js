@@ -132,14 +132,14 @@ class PinboardPanel extends JugglerElement {
 
   connectedCallback() {
     this._build();
-    this.addCleanup(pinboardStore.subscribe(() => this._render()));
-    this.addCleanup(pinboardView.subscribe(() => this._render()));
+    this.addCleanup(pinboardStore.subscribe(() => this.render()));
+    this.addCleanup(pinboardView.subscribe(() => this.render()));
     // A hot-reloaded extension is a different class: everything mounted against
     // the old one has to come down before anything is mounted against the new.
     this.onDocument(REGISTRIES_RELOADED, () => this._remount());
     // Column selection is not session state, so this is the only notice the
     // board gets that the user has moved into or out of a sub-thread.
-    this.onDocument(THREAD_FOCUS_CHANGED, () => this._render());
+    this.onDocument(THREAD_FOCUS_CHANGED, () => this.render());
     // A board has no columns, so pointing at a thread is something it asks the
     // window it was detached from to do. That is all the link is for now, and it
     // is why a board with no owner left is a board that still works.
@@ -153,7 +153,7 @@ class PinboardPanel extends JugglerElement {
     } else {
       this._restoreBoards();
     }
-    this._render();
+    this.render();
   }
 
   /**
@@ -198,7 +198,7 @@ class PinboardPanel extends JugglerElement {
     const session = /** @type {any} */ (this._session);
     if (!conversationId || !session) {
       this._boardState = 'missing';
-      this._render();
+      this.render();
       return;
     }
     if (typeof session.ensureConversationLoaded === 'function') {
@@ -209,7 +209,7 @@ class PinboardPanel extends JugglerElement {
       }
     }
     this._boardState = session.getConversation?.(conversationId) ? 'ready' : 'missing';
-    this._render();
+    this.render();
   }
 
   /**
@@ -224,7 +224,7 @@ class PinboardPanel extends JugglerElement {
    */
   _loseConversation() {
     this._boardState = 'missing';
-    this._render();
+    this.render();
     closeThisWindow();
   }
 
@@ -256,7 +256,7 @@ class PinboardPanel extends JugglerElement {
           case 'conversation:switched':
           case 'conversation:renamed':
           case 'conversation:created':
-            this._render();
+            this.render();
             break;
           case 'conversation:deleted':
             // The session is asked rather than the event: deleting and binning
@@ -268,14 +268,14 @@ class PinboardPanel extends JugglerElement {
               this._loseConversation();
               break;
             }
-            this._render();
+            this.render();
             break;
           default:
             break;
         }
       })
       : null;
-    this._render();
+    this.render();
   }
 
   /**
@@ -692,9 +692,8 @@ class PinboardPanel extends JugglerElement {
 
   /**
    * Draw the board as it stands.
-   * @private
    */
-  _render() {
+  render() {
     if (!this._tabbar || !this._content) return;
     // A board window is the window, so it is on screen for as long as it
     // exists. The docked panel is put away with a transform and stays in the
@@ -797,7 +796,7 @@ class PinboardPanel extends JugglerElement {
     // just been replaced, so keeping the old one alive would be keeping exactly
     // the thing the reload was meant to get rid of.
     this._content?.syncPins([]);
-    this._render();
+    this.render();
   }
 
   /**

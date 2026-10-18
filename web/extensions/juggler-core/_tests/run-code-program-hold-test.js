@@ -15,7 +15,7 @@
  */
 
 import { assert } from '../../../js-tests/utilities/test-helpers.js';
-import { writeFileOp, readFileLoad } from '../../../js/services/ops-api.js';
+import { writeFile, readFile } from '../../../js/services/ops-api.js';
 import actionExecutor from '../../../js/services/action-executor.js';
 import contextItemRegistry from '../../../js/registries/context-item-registry.js';
 import { programChangeReport } from '../../../js/utils/program-changes.js';
@@ -35,7 +35,7 @@ export async function runTests(_ctx) {
     // same run.
     await test('a parked call is held; approving it runs that call in the same run, each call once', async () => {
       const dir = `rc-hold-${Date.now()}`;
-      await writeFileOp({ path: `${dir}/c.txt`, content: 'hello world\n' });
+      await writeFile({ path: `${dir}/c.txt`, content: 'hello world\n' });
       const log = `${dir}/log.txt`;
       const command = heldCommand(log);
       const code = `
@@ -58,7 +58,7 @@ export async function runTests(_ctx) {
       const always = options.filter((/** @type {any} */ o) => String(o.value).startsWith('yes-always'));
       assert(always.length > 0, `bash's own "don't ask again" buttons: ${JSON.stringify(options)}`);
       assert(always.every((/** @type {any} */ o) => o.rules && o.itemType && o.itemType !== 'run-code'), `each carries its rule, for the sub-tool: ${JSON.stringify(always)}`);
-      const edited = await readFileLoad({ path: `${dir}/c.txt` });
+      const edited = await readFile({ path: `${dir}/c.txt` });
       assert(String(edited.content).includes('hello there'), 'the edit before the hold ran');
       assert(await absent(log), 'the held call did not run');
       const before = rowBrief(mt, id);
@@ -96,7 +96,7 @@ export async function runTests(_ctx) {
       const [seen, ran, startedAt] = String(done.result?.content).split('|');
       assert(seen === 'hello world' && ran === 'ran', `it saw its own read and the real run: ${done.result?.content}`);
       assert(Number(startedAt) < answeredAt, `one run, started before the answer — not run again after it: ${startedAt} vs ${answeredAt}`);
-      const logged = await readFileLoad({ path: log });
+      const logged = await readFile({ path: log });
       assert(String(logged.content) === 'x', `bash ran exactly once: ${JSON.stringify(logged.content)}`);
       const after = rowBrief(mt, id);
       assert(after === 'edit:ok,bash:ok', `one row per call: ${after}`);
@@ -161,7 +161,7 @@ export async function runTests(_ctx) {
       await assertParks(conversation, mt, command);
       const finished = startAsAction(conversation, mt, id);
       await waitHeld(mt, id, 'bash');
-      await writeFileOp({ path: flag, content: 'go' });
+      await writeFile({ path: flag, content: 'go' });
       const done = await finished;
       assert(done.state === 'completed' && done.result?.content === 'left', `it completes: ${done.state} ${JSON.stringify(done.result)}`);
       assert(!done.heldCall && !done.approvalOptions, `with no card left on it: ${JSON.stringify(done)}`);

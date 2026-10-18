@@ -171,7 +171,7 @@ func startLoneProcessTask(t *testing.T, root, convID string) string {
 	shellOps := NewShellOperations(NewPathScope(root, nil))
 	res, err := shellOps.startBackground(map[string]any{
 		"command": "echo ready; exec sleep 30",
-		"conv_id": convID,
+		"convId":  convID,
 	})
 	if err != nil {
 		t.Fatalf("startBackground failed: %v", err)

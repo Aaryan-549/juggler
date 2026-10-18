@@ -105,8 +105,51 @@ func (ops *ShellOperations) probeFnOrDefault() func(dir string) {
 	return func(dir string) { _, _ = os.Stat(dir) }
 }
 
+// shellParamSpellings maps each snake_case spelling of the shell op's id params
+// to the camelCase every other op uses. `juggler/ops` is public and extensions
+// pass these params by name, so both spellings are read.
+//
+// Results keep their snake_case keys (`task_id`, `shell_id`): a context item
+// stores an op's result in its conversation as the tool's result, and stored
+// conversations are read back with those keys.
+var shellParamSpellings = map[string]string{
+	"conv_id":     "convId",
+	"tool_use_id": "toolUseId",
+	"task_id":     "taskId",
+	"shell_id":    "shellId",
+	"task_ids":    "taskIds",
+}
+
+// withCamelParams returns params with every snake_case id param also under its
+// camelCase name, unless the caller sent that one too. The caller's map is not
+// modified.
+func withCamelParams(params map[string]any) map[string]any {
+	var out map[string]any
+	for snake, camel := range shellParamSpellings {
+		v, ok := params[snake]
+		if !ok {
+			continue
+		}
+		if _, set := params[camel]; set {
+			continue
+		}
+		if out == nil {
+			out = make(map[string]any, len(params)+len(shellParamSpellings))
+			for k, pv := range params {
+				out[k] = pv
+			}
+		}
+		out[camel] = v
+	}
+	if out == nil {
+		return params
+	}
+	return out
+}
+
 // Execute executes a shell operation
 func (ops *ShellOperations) Execute(ctx context.Context, operation string, params map[string]any) (any, error) {
+	params = withCamelParams(params)
 	switch operation {
 	case "execute":
 		return ops.execute(ctx, params)
@@ -137,7 +180,7 @@ func (ops *ShellOperations) Execute(ctx context.Context, operation string, param
 //   - Conversation. Optional, and enforced only when the caller names one. This
 //     is scoping rather than privilege: /api/ops/call authenticates with a single
 //     per-instance token and there is no per-conversation identity behind it, so
-//     conv_id is a statement of which conversation the caller is acting for, not
+//     convId is a statement of which conversation the caller is acting for, not
 //     proof of anything. It still earns its place — a surface that knows about one
 //     conversation should not be able to reach into another's tasks by id — but do
 //     not read it as an access-control decision.
@@ -153,7 +196,7 @@ func (ops *ShellOperations) ownedTask(taskID string, params map[string]any) *Bac
 	if !sameProject(shell.ProjectRoot, ops.scope.Root()) {
 		return nil
 	}
-	if convID, _ := params["conv_id"].(string); convID != "" && shell.ConvID != convID {
+	if convID, _ := params["convId"].(string); convID != "" && shell.ConvID != convID {
 		return nil
 	}
 	return shell
@@ -161,9 +204,9 @@ func (ops *ShellOperations) ownedTask(taskID string, params map[string]any) *Bac
 
 // getOutput retrieves output from a background shell
 func (ops *ShellOperations) getOutput(params map[string]any) (any, error) {
-	taskID, ok := params["task_id"].(string)
+	taskID, ok := params["taskId"].(string)
 	if !ok || taskID == "" {
-		return nil, fmt.Errorf("missing task_id parameter")
+		return nil, fmt.Errorf("missing taskId parameter")
 	}
 
 	shell := ops.ownedTask(taskID, params)
@@ -205,9 +248,9 @@ func (ops *ShellOperations) getOutput(params map[string]any) (any, error) {
 // getOutput path is untouched — the Monitor live-output panel, which keeps its
 // own diff cursor over the full buffer, keeps calling that.
 func (ops *ShellOperations) getOutputDelta(params map[string]any) (any, error) {
-	taskID, ok := params["task_id"].(string)
+	taskID, ok := params["taskId"].(string)
 	if !ok || taskID == "" {
-		return nil, fmt.Errorf("missing task_id parameter")
+		return nil, fmt.Errorf("missing taskId parameter")
 	}
 
 	shell := ops.ownedTask(taskID, params)
@@ -245,9 +288,9 @@ func (ops *ShellOperations) getOutputDelta(params map[string]any) (any, error) {
 
 // kill terminates a background shell
 func (ops *ShellOperations) kill(params map[string]any) (any, error) {
-	shellID, ok := params["shell_id"].(string)
+	shellID, ok := params["shellId"].(string)
 	if !ok || shellID == "" {
-		return nil, fmt.Errorf("missing shell_id parameter")
+		return nil, fmt.Errorf("missing shellId parameter")
 	}
 
 	shell := ops.ownedTask(shellID, params)
@@ -276,13 +319,13 @@ func (ops *ShellOperations) kill(params map[string]any) (any, error) {
 }
 
 // listBackgroundShells returns one conversation's background shells, within the
-// caller's current project. conv_id is required rather than optional: an omitted
+// caller's current project. convId is required rather than optional: an omitted
 // filter would mean "every task in the process", which is a listing of other
 // conversations' commands and is never what a caller wants.
 func (ops *ShellOperations) listBackgroundShells(params map[string]any) (any, error) {
-	convID, ok := params["conv_id"].(string)
+	convID, ok := params["convId"].(string)
 	if !ok || convID == "" {
-		return nil, fmt.Errorf("missing conv_id parameter")
+		return nil, fmt.Errorf("missing convId parameter")
 	}
 
 	return map[string]any{"shells": ops.shellsFor(convID)}, nil
@@ -311,13 +354,13 @@ func (ops *ShellOperations) shellsFor(convID string) []map[string]any {
 // It carries no output, no command and no exit code. A task the caller does not
 // own reports the same "not running, not found" as one that never existed.
 func (ops *ShellOperations) taskStatus(params map[string]any) (any, error) {
-	convID, ok := params["conv_id"].(string)
+	convID, ok := params["convId"].(string)
 	if !ok || convID == "" {
-		return nil, fmt.Errorf("missing conv_id parameter")
+		return nil, fmt.Errorf("missing convId parameter")
 	}
-	raw, ok := params["task_ids"].([]any)
+	raw, ok := params["taskIds"].([]any)
 	if !ok {
-		return nil, fmt.Errorf("missing task_ids parameter")
+		return nil, fmt.Errorf("missing taskIds parameter")
 	}
 
 	// One registry pass for the whole batch: a board polling a dozen tasks should

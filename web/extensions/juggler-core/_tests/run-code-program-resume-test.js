@@ -14,7 +14,7 @@
  */
 
 import { assert } from '../../../js-tests/utilities/test-helpers.js';
-import { writeFileOp, readFileLoad, loadProgramSnapshot } from '../../../js/services/ops-api.js';
+import { writeFile, readFile, loadProgramSnapshot } from '../../../js/services/ops-api.js';
 import { dropSnapshot } from '../context-items/run-code-context-item.js';
 import { programChangeReport } from '../../../js/utils/program-changes.js';
 import { runProgramSuite } from './run-code-program-helpers.js';
@@ -37,7 +37,7 @@ export async function runTests(_ctx) {
     await test('a real run with concurrent calls leaves a snapshot it resumes from after the engine is lost', async () => {
       const dir = `rc-real-${Date.now()}`;
       const names = ['a', 'b', 'c'];
-      for (const [i, n] of names.entries()) await writeFileOp({ path: `${dir}/${n}.txt`, content: `hello ${i}\n` });
+      for (const [i, n] of names.entries()) await writeFile({ path: `${dir}/${n}.txt`, content: `hello ${i}\n` });
       const log = `${dir}/log.txt`;
       const command = heldCommand(log);
       const code = `
@@ -67,7 +67,7 @@ export async function runTests(_ctx) {
       assert(journal.slice(0, -1).every((e) => !e.pending) && journal.at(-1).pending && kept.heldStep === 11,
         `every call before it answered, the held call pending at the step named: ${JSON.stringify(journal.map((e) => [e.key, e.pending]))} ${kept.heldStep}`);
       for (const n of names) {
-        const now = await readFileLoad({ path: `${dir}/${n}.txt` });
+        const now = await readFile({ path: `${dir}/${n}.txt` });
         assert(String(now.content).startsWith('there'), `${n} was edited before the hold: ${now.content}`);
       }
 
@@ -79,7 +79,7 @@ export async function runTests(_ctx) {
       assert(JSON.stringify(value.texts) === JSON.stringify(['hello 0\n', 'hello 1\n', 'hello 2\n']), `it saw what it read before the hold: ${JSON.stringify(value.texts)}`);
       assert(value.hits === 3 && value.listed === 3 && value.r === 'ran', `and its searches and the command: ${JSON.stringify(value)}`);
       assert(JSON.stringify(value.after) === JSON.stringify(['there 0\n', 'there 1\n', 'there 2\n']), `each edit applied once: ${JSON.stringify(value.after)}`);
-      assert(String((await readFileLoad({ path: log })).content) === 'x', 'the command ran once');
+      assert(String((await readFile({ path: log })).content) === 'x', 'the command ran once');
       const rows = rowBrief(mt, id);
       assert(rows === 'edit:ok,edit:ok,edit:ok,bash:ok', `one row per call, across runs: ${rows}`);
     });
@@ -89,7 +89,7 @@ export async function runTests(_ctx) {
     // first.
     await test('two waiting calls fired together are held in turn, and each runs once', async () => {
       const dir = `rc-twice-${Date.now()}`;
-      await writeFileOp({ path: `${dir}/c.txt`, content: 'seed\n' });
+      await writeFile({ path: `${dir}/c.txt`, content: 'seed\n' });
       const commands = [1, 2].map((n) => heldCommand(`${dir}/log${n}.txt`));
       const code = `
         const startedAt = Date.now();
@@ -114,7 +114,7 @@ export async function runTests(_ctx) {
       assert(done.state === 'completed' && a === 'ran' && b === 'ran', `it finishes: ${JSON.stringify(done.result)}`);
       assert(Number(startedAt) < answeredAt, 'in one run');
       for (const n of [1, 2]) {
-        const ran = await readFileLoad({ path: `${dir}/log${n}.txt` });
+        const ran = await readFile({ path: `${dir}/log${n}.txt` });
         assert(String(ran.content) === 'x', `command ${n} ran once: ${JSON.stringify(ran.content)}`);
       }
       const rows = rowBrief(mt, id);
@@ -124,7 +124,7 @@ export async function runTests(_ctx) {
 
     await test('a program lost with no snapshot fails and runs nothing', async () => {
       const dir = `rc-lost-${Date.now()}`;
-      await writeFileOp({ path: `${dir}/c.txt`, content: 'hello world\n' });
+      await writeFile({ path: `${dir}/c.txt`, content: 'hello world\n' });
       const log = `${dir}/log.txt`;
       const command = heldCommand(log);
       const code = `
@@ -146,7 +146,7 @@ export async function runTests(_ctx) {
       const report = programChangeReport(displayOf(mt, id));
       assert(report.includes(`- edit: ${dir}/c.txt`), `the change before the hold is still reported: ${JSON.stringify(report)}`);
       assert(await absent(log), 'nothing ran again');
-      const content = await readFileLoad({ path: `${dir}/c.txt` });
+      const content = await readFile({ path: `${dir}/c.txt` });
       assert(String(content.content) === 'hello there\n', `the edit is not redone: ${content.content}`);
     });
 
@@ -155,7 +155,7 @@ export async function runTests(_ctx) {
     // that ran between them runs again.
     await test('a program lost at its second hold resumes from it, each call once', async () => {
       const dir = `rc-second-${Date.now()}`;
-      await writeFileOp({ path: `${dir}/seed.txt`, content: '' });
+      await writeFile({ path: `${dir}/seed.txt`, content: '' });
       const [first, second] = [1, 2].map((n) => heldCommand(`${dir}/log${n}.txt`));
       const code = `
         const a = await tools.bash({ command: ${JSON.stringify(first)} });
@@ -176,7 +176,7 @@ export async function runTests(_ctx) {
       const done = await runAsAction(conversation, mt, id, () => mt.resolveApproval(id, 'yes', { source: 'user' }));
       assert(done.state === 'completed' && done.result?.content === 'ran|ran', `the replay finishes: ${JSON.stringify(done.result)}`);
       for (const f of ['log1', 'between', 'log2']) {
-        const ran = await readFileLoad({ path: `${dir}/${f}.txt` });
+        const ran = await readFile({ path: `${dir}/${f}.txt` });
         assert(String(ran.content) === 'x', `${f} ran once: ${JSON.stringify(ran.content)}`);
       }
       assert(rowBrief(mt, id) === 'bash:ok,bash:ok,bash:ok', `one row per call, across runs: ${rowBrief(mt, id)}`);
@@ -188,7 +188,7 @@ export async function runTests(_ctx) {
     // again, and make again everything that ran since.
     await test('a snapshot that cannot be kept at a later hold leaves none from an earlier one', async () => {
       const dir = `rc-failsave-${Date.now()}`;
-      await writeFileOp({ path: `${dir}/seed.txt`, content: '' });
+      await writeFile({ path: `${dir}/seed.txt`, content: '' });
       const [first, second] = [1, 2].map((n) => heldCommand(`${dir}/log${n}.txt`));
       const code = `
         await tools.bash({ command: ${JSON.stringify(first)} });
@@ -211,7 +211,7 @@ export async function runTests(_ctx) {
       assert(done.result?.isError && String(done.result?.content).includes("Couldn't resume the program"),
         `it cannot resume, and says so: ${JSON.stringify(done.result)}`);
       for (const f of ['log1', 'between']) {
-        const ran = await readFileLoad({ path: `${dir}/${f}.txt` });
+        const ran = await readFile({ path: `${dir}/${f}.txt` });
         assert(String(ran.content) === 'x', `${f} ran once, not again: ${JSON.stringify(ran.content)}`);
       }
       assert(await absent(`${dir}/log2.txt`), 'the call it held never ran');
@@ -251,7 +251,7 @@ export async function runTests(_ctx) {
         return finished;
       });
       assert(done.state === 'completed' && done.result?.content === 'ran', `it finishes: ${JSON.stringify(done.result)}`);
-      assert(String((await readFileLoad({ path: log })).content) === 'x', 'the call ran once');
+      assert(String((await readFile({ path: log })).content) === 'x', 'the call ran once');
     });
 
     // Nothing starts past a write still running — not even a read, as a
@@ -271,7 +271,7 @@ export async function runTests(_ctx) {
       const id = item.toolUseId;
       const finished = startAsAction(conversation, mt, id);
       await waitHeld(mt, id, 'AskUserQuestion');
-      const stopped = await readFileLoad({ path: file });
+      const stopped = await readFile({ path: file });
       assert(String(stopped.content) === 'startend', `the write finished before the question was put: ${JSON.stringify(stopped.content)}`);
       const before = rowBrief(mt, id);
       assert(before === 'bash:ok,AskUserQuestion:held', `its row is kept as it ended: ${before}`);
@@ -282,7 +282,7 @@ export async function runTests(_ctx) {
       answerHeld(conversation, mt, id, 'B');
       const done = await finished;
       assert(done.result?.content === 'answer: Pick: B', `the program finishes: ${JSON.stringify(done.result)}`);
-      const ran = await readFileLoad({ path: file });
+      const ran = await readFile({ path: file });
       assert(String(ran.content) === 'startend', `the write ran once: ${JSON.stringify(ran.content)}`);
       const report = programChangeReport(displayOf(mt, id));
       assert((report.match(/- bash: /g) || []).length === 1, `it is reported once: ${JSON.stringify(report)}`);

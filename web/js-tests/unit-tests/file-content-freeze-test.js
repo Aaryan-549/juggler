@@ -45,7 +45,7 @@ import {
   waitFor
 } from '../utilities/test-helpers.js';
 import contextItemRegistry from '../../js/registries/context-item-registry.js';
-import { writeFileOp } from '../../js/services/ops-api.js';
+import { writeFile } from '../../js/services/ops-api.js';
 import { createBoundOps } from '../../sdk/ops.js';
 import { formatFileContentForLLM, parseFileContentForLLM } from '../../sdk/lib/context-item-utils.js';
 import { smartTruncate } from '../../sdk/lib/smart-truncate.js';
@@ -495,7 +495,7 @@ export async function runTests(_ctx) {
       (/** @type {any} */ i) => i.id === itemId);
 
     try {
-      await writeFileOp({ path, content: `# as it stood when work began ${stamp}\n` });
+      await writeFile({ path, content: `# as it stood when work began ${stamp}\n` });
       conversation.rootMessageThread.addContextItem(contextItemRegistry.createItem({
         id: itemId,
         type: 'file-content',
@@ -514,7 +514,7 @@ export async function runTests(_ctx) {
 
       // The agent rewrites the instructions it was handed, which is the routine
       // case and the expensive one.
-      await writeFileOp({ path, content: `# rewritten mid-conversation ${stamp}\n` });
+      await writeFile({ path, content: `# rewritten mid-conversation ${stamp}\n` });
       const later = await fromDocument().createContextText({ forRequest: true });
       assert(later === sent,
         `a later turn sends byte-identical bytes, so the cached prefix still hits, got ${JSON.stringify(later)}`);

@@ -42,40 +42,9 @@ import { bytesToBase64 } from '../utils/base64.js';
  */
 
 /**
- * @typedef {object} WorkerMessage
- * @property {string} type - Message type
- * @property {object} [patch] - State patch data
- * @property {number[]} [update] - Yjs update
- * @property {number[]} [bytes] - Yjs sync message bytes (from y-generic-sync)
- * @property {number[]} [stateVector] - Worker's Yjs state vector (for resync-response)
- * @property {string} [itemId] - Message ID
- * @property {string} [content] - Content
- * @property {string} [chunkType] - Chunk type
- * @property {string} [requestId] - Request ID
- * @property {string} [ackId] - Acknowledgment ID
- * @property {*} [result] - Result data (for ack messages)
- * @property {string[]} [itemIds] - Context item IDs
- * @property {object} [contextParams] - Context params
- * @property {string} [toolName] - Tool name
- * @property {object} [params] - Params
- * @property {string} [toolUseId] - Tool use ID
- * @property {number} [runningEpoch] - Execution generation for a cancel-tool command (scopes the abort to one incarnation)
- * @property {boolean} [commandDriven] - Tool command: conversation's reactive reducer is disabled
- * @property {object} [toolInput] - Tool input
- * @property {object} [config] - Config
- * @property {object} [payload] - Payload
- * @property {string} [status] - Status
- * @property {string} [message] - Message
- * @property {{key?: unknown, params?: unknown, context?: unknown}} [text] - The
- *   message as a server message, for `serverText()`; `message` is its English
- * @property {string} [stack] - Stack trace
- * @property {boolean} [success] - Success flag (for ack messages)
- * @property {string} [error] - Error message (for error/save-error messages)
- * @property {boolean} [cancelled] - Whether the error was due to cancellation
- * @property {object[]} [items] - Items array (for state-reset)
- * @property {object[]} [contextItems] - Context items array (for state-reset)
- * @property {object} [metadata] - Metadata extracted from Yjs (for ready messages when loading existing conversations)
- * @property {string} [summarizationPrompt] - Worker-owned canonical summarization prompt (for ready messages)
+ * Any message a worker sends a client; one shape per wire type, defined with
+ * the handlers that read them.
+ * @typedef {import('./worker-manager-inbound.js').WorkerMessage} WorkerMessage
  */
 
 /**

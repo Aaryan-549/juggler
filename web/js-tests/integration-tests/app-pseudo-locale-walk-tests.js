@@ -269,9 +269,11 @@ export const appPseudoLocaleWalkTest = {
       const session = await until(() => win.jugglerApp?.getSession()?.conversations.get(conversation.id) && win.jugglerApp.getSession(),
         'the shell to load this conversation', 20000);
       const doc = /** @type {Document} */ (frame.contentDocument);
+      /** @returns {any} The shell's tab for this conversation, from the shell's own tab bar. */
+      const ownTab = () => /** @type {any} */ (doc.querySelector('conversation-bar'))?.getTabElement?.(conversation.id) ?? null;
       describeShell = () => {
         const own = /** @type {any} */ (session.conversations.get(conversation.id));
-        const t = own?.getTabElement?.();
+        const t = ownTab();
         const active = /** @type {any} */ (doc.querySelector('conversation-tab.active'));
         return `\n  shell: visible=${session.visibleConversationId} own=${conversation.id}`
           + ` ownTab=${t ? (t.isConnected ? 'connected' : 'detached') : 'none'}`
@@ -288,7 +290,7 @@ export const appPseudoLocaleWalkTest = {
       // stays hidden and unrendered.
       session.switchConversation(conversation.id);
       const tab = await until(() => {
-        const t = /** @type {any} */ (session.conversations.get(conversation.id))?.getTabElement?.();
+        const t = ownTab();
         return t && t.querySelector('tool-action-message, tool-group-message') ? t : null;
       }, 'the conversation to render its tool rows', 20000);
       await until(() => !doc.querySelector('[data-loading-overlay="startup"]:not([hidden])')

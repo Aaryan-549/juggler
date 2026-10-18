@@ -26,7 +26,7 @@ func startTestTask(t *testing.T, root, convID string) string {
 	shellOps := NewShellOperations(NewPathScope(root, nil))
 	res, err := shellOps.startBackground(map[string]any{
 		"command": "echo ready; sleep 30",
-		"conv_id": convID,
+		"convId":  convID,
 	})
 	if err != nil {
 		t.Fatalf("startBackground failed: %v", err)
@@ -65,7 +65,7 @@ func TestTaskFromAnotherProjectIsUnreachable(t *testing.T) {
 	id := startTestTask(t, projectA, "conv-a")
 	fromB := NewShellOperations(NewPathScope(projectB, nil))
 
-	res, err := fromB.getOutput(map[string]any{"task_id": id})
+	res, err := fromB.getOutput(map[string]any{"taskId": id})
 	if err != nil {
 		t.Fatalf("getOutput errored: %v", err)
 	}
@@ -73,7 +73,7 @@ func TestTaskFromAnotherProjectIsUnreachable(t *testing.T) {
 		t.Fatalf("getOutput from another project: expected not_found, got %q", got)
 	}
 
-	res, err = fromB.getOutputDelta(map[string]any{"task_id": id})
+	res, err = fromB.getOutputDelta(map[string]any{"taskId": id})
 	if err != nil {
 		t.Fatalf("getOutputDelta errored: %v", err)
 	}
@@ -81,7 +81,7 @@ func TestTaskFromAnotherProjectIsUnreachable(t *testing.T) {
 		t.Fatalf("getOutputDelta from another project: expected not_found, got %q", got)
 	}
 
-	res, err = fromB.kill(map[string]any{"shell_id": id})
+	res, err = fromB.kill(map[string]any{"shellId": id})
 	if err != nil {
 		t.Fatalf("kill errored: %v", err)
 	}
@@ -95,10 +95,10 @@ func TestTaskFromAnotherProjectIsUnreachable(t *testing.T) {
 	}
 }
 
-// TestConversationIsCheckedWhenGiven pins conv_id as opt-in strictness: naming
+// TestConversationIsCheckedWhenGiven pins convId as opt-in strictness: naming
 // the wrong conversation is refused, naming the right one works, and omitting it
 // falls back to the project check alone so a third-party caller that never knew
-// about conv_id keeps working.
+// about convId keeps working.
 func TestConversationIsCheckedWhenGiven(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("POSIX-only shell command")
@@ -108,7 +108,7 @@ func TestConversationIsCheckedWhenGiven(t *testing.T) {
 	id := startTestTask(t, root, "conv-owner")
 	shellOps := NewShellOperations(NewPathScope(root, nil))
 
-	res, err := shellOps.getOutput(map[string]any{"task_id": id, "conv_id": "conv-other"})
+	res, err := shellOps.getOutput(map[string]any{"taskId": id, "convId": "conv-other"})
 	if err != nil {
 		t.Fatalf("getOutput errored: %v", err)
 	}
@@ -116,7 +116,7 @@ func TestConversationIsCheckedWhenGiven(t *testing.T) {
 		t.Fatalf("wrong conversation: expected not_found, got %q", got)
 	}
 
-	res, err = shellOps.getOutput(map[string]any{"task_id": id, "conv_id": "conv-owner"})
+	res, err = shellOps.getOutput(map[string]any{"taskId": id, "convId": "conv-owner"})
 	if err != nil {
 		t.Fatalf("getOutput errored: %v", err)
 	}
@@ -124,7 +124,7 @@ func TestConversationIsCheckedWhenGiven(t *testing.T) {
 		t.Fatalf("owning conversation: expected running, got %q", got)
 	}
 
-	res, err = shellOps.getOutput(map[string]any{"task_id": id})
+	res, err = shellOps.getOutput(map[string]any{"taskId": id})
 	if err != nil {
 		t.Fatalf("getOutput errored: %v", err)
 	}
@@ -134,7 +134,7 @@ func TestConversationIsCheckedWhenGiven(t *testing.T) {
 }
 
 // TestListBackgroundShellsRequiresConversation guards the shape that made the
-// old list op dangerous: an omitted conv_id meant "every task in the process",
+// old list op dangerous: an omitted convId meant "every task in the process",
 // and each row carried the task's full output.
 func TestListBackgroundShellsRequiresConversation(t *testing.T) {
 	if runtime.GOOS == "windows" {
@@ -146,10 +146,10 @@ func TestListBackgroundShellsRequiresConversation(t *testing.T) {
 	shellOps := NewShellOperations(NewPathScope(root, nil))
 
 	if _, err := shellOps.listBackgroundShells(map[string]any{}); err == nil {
-		t.Fatal("expected listBackgroundShells to refuse an absent conv_id")
+		t.Fatal("expected listBackgroundShells to refuse an absent convId")
 	}
 
-	res, err := shellOps.listBackgroundShells(map[string]any{"conv_id": "conv-a"})
+	res, err := shellOps.listBackgroundShells(map[string]any{"convId": "conv-a"})
 	if err != nil {
 		t.Fatalf("listBackgroundShells errored: %v", err)
 	}
@@ -173,7 +173,7 @@ func TestListBackgroundShellsIsScopedToProject(t *testing.T) {
 	startTestTask(t, projectA, "shared-conv-id")
 	fromB := NewShellOperations(NewPathScope(projectB, nil))
 
-	res, err := fromB.listBackgroundShells(map[string]any{"conv_id": "shared-conv-id"})
+	res, err := fromB.listBackgroundShells(map[string]any{"convId": "shared-conv-id"})
 	if err != nil {
 		t.Fatalf("listBackgroundShells errored: %v", err)
 	}
@@ -198,8 +198,8 @@ func TestTaskStatusAnswersOnlyLiveness(t *testing.T) {
 
 	shellOps := NewShellOperations(NewPathScope(projectA, nil))
 	res, err := shellOps.taskStatus(map[string]any{
-		"conv_id":  "conv-a",
-		"task_ids": []any{mine, otherConv, otherProject, "bg-does-not-exist"},
+		"convId":  "conv-a",
+		"taskIds": []any{mine, otherConv, otherProject, "bg-does-not-exist"},
 	})
 	if err != nil {
 		t.Fatalf("taskStatus errored: %v", err)
@@ -234,8 +234,8 @@ func TestTaskStatusAnswersOnlyLiveness(t *testing.T) {
 		}
 	}
 
-	if _, err := shellOps.taskStatus(map[string]any{"task_ids": []any{mine}}); err == nil {
-		t.Fatal("expected taskStatus to refuse an absent conv_id")
+	if _, err := shellOps.taskStatus(map[string]any{"taskIds": []any{mine}}); err == nil {
+		t.Fatal("expected taskStatus to refuse an absent convId")
 	}
 }
 

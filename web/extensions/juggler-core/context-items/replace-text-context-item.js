@@ -26,7 +26,7 @@ const t = translator('@juggler/core');
 
 /**
  * The read-file op's code for an edit whose old_str matched nothing (an
- * OpsError's `code`; see ops-api.js readFileEdit).
+ * OpsError's `code`; see ops-api.js editFile).
  */
 const SEARCH_NOT_FOUND = 'SEARCH_NOT_FOUND';
 

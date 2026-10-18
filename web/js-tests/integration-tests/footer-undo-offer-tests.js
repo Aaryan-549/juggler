@@ -15,6 +15,7 @@
  */
 
 import { textResponse } from '../utilities/integration-test-runner.js';
+import { tabFor } from '../utilities/conversation-tab-lookup.js';
 
 /**
  * Poll for a predicate to become true. The delete, the undo and the undoState
@@ -43,7 +44,7 @@ async function waitFor(predicate, timeoutMs = 3000, label = 'condition') {
  * @returns {HTMLElement|null} The footer element, or null in headless mode.
  */
 function findFooter(conversation) {
-  const tab = /** @type {any} */ (conversation).getTabElement?.();
+  const tab = tabFor(conversation);
   if (!tab) return null;
   const footer = /** @type {HTMLElement|null} */ (tab.querySelector('conversation-footer'));
   if (!footer) {

@@ -111,7 +111,7 @@ function quietButton() {
 function drawButton(el, state) {
   el._server = state.server;
   el._updater = state.updater;
-  el._render();
+  el.render();
 }
 
 /**

@@ -25,6 +25,7 @@
 
 import { textResponse } from '../utilities/integration-test-runner.js';
 import providersCache from '../../js/services/providers-cache.js';
+import { tabFor } from '../utilities/conversation-tab-lookup.js';
 
 /**
  * Poll for a predicate to become true. The footer fetches the
@@ -50,7 +51,7 @@ async function waitFor(predicate, timeoutMs = 2000, label = 'condition') {
  * @returns {HTMLElement|null} The token-display element, or null in headless mode.
  */
 function findTokenDisplay(conversation) {
-  const tab = /** @type {any} */ (conversation).getTabElement?.();
+  const tab = tabFor(conversation);
   if (!tab) return null;
   return /** @type {HTMLElement|null} */ (tab.querySelector('conversation-footer token-display'));
 }
@@ -62,7 +63,7 @@ function findTokenDisplay(conversation) {
  * @returns {HTMLElement|null} The conversation-footer element, or null in headless mode.
  */
 function findFooter(conversation) {
-  const tab = /** @type {any} */ (conversation).getTabElement?.();
+  const tab = tabFor(conversation);
   if (!tab) return null;
   return /** @type {HTMLElement|null} */ (tab.querySelector('conversation-footer'));
 }

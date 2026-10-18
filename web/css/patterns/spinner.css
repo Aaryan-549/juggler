@@ -7,10 +7,10 @@
 :where(juggler-spinner) {
     --size: 2rem;
     --duration: 1.5s;
-    --js-n: 3;
-    --js-radius: calc(var(--size) * 0.28);
-    --js-club-w: calc(var(--size) * 0.22);
-    --js-club-h: calc(var(--size) * 0.36);
+    --spinner-n: 3;
+    --spinner-radius: calc(var(--size) * 0.28);
+    --spinner-club-w: calc(var(--size) * 0.22);
+    --spinner-club-h: calc(var(--size) * 0.36);
 
     display: inline-block;
     position: relative;
@@ -21,7 +21,7 @@
     contain: layout style;
 }
 
-/* Do NOT add `will-change: transform` here (or on .js-orbit / .js-club). A
+/* Do NOT add `will-change: transform` here (or on .spinner-orbit / .spinner-club). A
    permanent layer promotion makes WebKit run these as accelerated compositor
    animations, and an accelerated animation paused via the hidden-document rule
    below does not reliably re-commit after the window has been occluded for a
@@ -33,27 +33,27 @@
 /* Each club rides two nested rotations, and the split is what makes a variable
    club count possible:
 
-     .js-pivot — STATIC rotation to this club's slot on the orbit (--js-angle,
+     .spinner-pivot — STATIC rotation to this club's slot on the orbit (--spinner-angle,
                  stamped inline as 360deg * i / n).
-     .js-orbit — the shared spin around the centre. Identical timing on every
+     .spinner-orbit — the shared spin around the centre. Identical timing on every
                  club, with NO animation-delay anywhere.
 
-   Rotations compose, so club i sits at (--js-angle + the common orbit angle) —
+   Rotations compose, so club i sits at (--spinner-angle + the common orbit angle) —
    the same evenly-spaced cascade the delays used to produce. Splitting it this
    way buys two things a per-club animation-delay cannot. First, all the orbit
    animations are literally the same animation with the same start time, so they
    can never drift apart. Second, re-spacing for a new club count only changes
-   --js-angle, and a static transform is transition-able (unlike
+   --spinner-angle, and a static transform is transition-able (unlike
    animation-delay, which is not animatable and would snap every club to a new
    position) — so the cascade opens out and closes up smoothly instead of
    bunching. */
-:where(juggler-spinner) .js-pivot {
+:where(juggler-spinner) .spinner-pivot {
     position: absolute;
     left: 50%;
     top: 50%;
     width: 0;
     height: 0;
-    transform: rotate(var(--js-angle, 0deg));
+    transform: rotate(var(--spinner-angle, 0deg));
     transition: transform 400ms ease, opacity 250ms ease;
 }
 
@@ -63,11 +63,11 @@
    on removal it is set and the element detaches once the fade has run. The fade
    is shorter than the re-spacing glide, so the count settles visually before
    the spacing does. */
-:where(juggler-spinner) .js-pivot.js-faded {
+:where(juggler-spinner) .spinner-pivot.spinner-faded {
     opacity: 0;
 }
 
-:where(juggler-spinner) .js-orbit {
+:where(juggler-spinner) .spinner-orbit {
     position: absolute;
     left: 0;
     top: 0;
@@ -83,17 +83,17 @@
    any club count. Expressed against the --duration variable (not
    animation-duration) so the offsets stay proportional if --duration is
    overridden. */
-:where(juggler-spinner) .js-club {
+:where(juggler-spinner) .spinner-club {
     position: absolute;
-    width: var(--js-club-w);
-    height: var(--js-club-h);
-    left: calc(var(--js-club-w) / -2);
-    top: calc((var(--js-radius) + var(--js-club-h) / 2) * -1);
+    width: var(--spinner-club-w);
+    height: var(--spinner-club-h);
+    left: calc(var(--spinner-club-w) / -2);
+    top: calc((var(--spinner-radius) + var(--spinner-club-h) / 2) * -1);
     animation: juggler-spinner-spin var(--duration) linear infinite;
-    animation-delay: calc(var(--duration) * var(--js-phase, 0) / var(--js-n) * -1);
+    animation-delay: calc(var(--duration) * var(--spinner-phase, 0) / var(--spinner-n) * -1);
 }
 
-/* Scoped through .js-club, which the svg always lives inside, so this matches
+/* Scoped through .spinner-club, which the svg always lives inside, so this matches
    all three clubs.
 
    Specificity buys no protection here and must not be relied on for any:
@@ -104,7 +104,7 @@
    whole spinner. Raising the count here would only swap the failure for a layer
    inversion (patterns sits below components), which is what lint-css-arch
    reports. A container styles its own icons with a child combinator instead. */
-:where(juggler-spinner) .js-club svg {
+:where(juggler-spinner) .spinner-club svg {
     display: block;
     width: 100%;
     height: 100%;
@@ -154,12 +154,12 @@
 
    The duration is a fraction of the orbit rather than an absolute, so the fall
    still finishes within one pass of the bottom whatever --duration says. */
-:where(juggler-spinner) .js-club.js-dropping {
+:where(juggler-spinner) .spinner-club.spinner-dropping {
     animation:
         juggler-spinner-spin var(--duration) linear infinite,
         juggler-spinner-drop calc(var(--duration) * 0.6) linear 1;
     animation-delay:
-        calc(var(--duration) * var(--js-phase, 0) / var(--js-n) * -1),
+        calc(var(--duration) * var(--spinner-phase, 0) / var(--spinner-n) * -1),
         0s;
 }
 
@@ -178,19 +178,19 @@
 
     /* hits the floor */
     26% {
-        translate: 0 calc(var(--js-radius) * -1.2);
+        translate: 0 calc(var(--spinner-radius) * -1.2);
         animation-timing-function: cubic-bezier(0, 0, 0.35, 1);
     }
 
     /* bounces */
     40% {
-        translate: 0 calc(var(--js-radius) * -0.9);
+        translate: 0 calc(var(--spinner-radius) * -0.9);
         animation-timing-function: cubic-bezier(0.45, 0, 1, 1);
     }
 
     /* and settles */
     52% {
-        translate: 0 calc(var(--js-radius) * -1.2);
+        translate: 0 calc(var(--spinner-radius) * -1.2);
         animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
     }
 
@@ -204,10 +204,10 @@
    nothing they need and is exactly the unrequested movement this preference
    exists to stop. Suppressed, and nothing informational is withheld. */
 @media (prefers-reduced-motion: reduce) {
-    juggler-spinner .js-club.js-dropping {
+    juggler-spinner .spinner-club.spinner-dropping {
         animation:
             juggler-spinner-spin var(--duration) linear infinite;
-        animation-delay: calc(var(--duration) * var(--js-phase, 0) / var(--js-n) * -1);
+        animation-delay: calc(var(--duration) * var(--spinner-phase, 0) / var(--spinner-n) * -1);
     }
 }
 

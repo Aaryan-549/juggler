@@ -47,6 +47,7 @@ import { formatReviewMessage } from '../../js/utils/review-message.js';
 import { formatCodeReference } from '../../sdk/lib/context-item-utils.js';
 import '../../js/components/pinboard-content.js';
 import '../../js/components/conversation-tab.js';
+import '../../js/components/conversation-bar.js';
 
 /** The context the probe was mounted with. */
 const probe = { context: /** @type {any} */ (null) };
@@ -175,6 +176,10 @@ export async function runTests() {
   let board = null;
   /** @type {any} */
   let tab = null;
+  /** @type {any} */
+  let bar = null;
+  /** @type {any} */
+  let tabsContainer = null;
 
   // --- the message ----------------------------------------------------------
 
@@ -295,10 +300,18 @@ export async function runTests() {
     const childThread = conversation.resolveMessageThread(child);
 
     // A real tab, for a real composer: what the send must leave alone is the box
-    // the reviewer has a half-written question sitting in.
-    tab = /** @type {any} */ (document.createElement('conversation-tab'));
-    container.appendChild(tab);
-    tab.setConversation(conversation);
+    // the reviewer has a half-written question sitting in. It is the window's
+    // tab bar that builds it and answers for it, as in the app — a board finds
+    // a conversation's box through the bar, and a tab no bar owns is not one
+    // the window shows.
+    tabsContainer = document.createElement('conversation-tabs-container');
+    container.appendChild(tabsContainer);
+    bar = /** @type {any} */ (document.createElement('conversation-bar'));
+    container.appendChild(bar);
+    bar.setSession(session);
+    await waitFor(() => !!bar.getTabElement(conversation.id),
+      { description: 'the bar to build a tab for the conversation' });
+    tab = bar.getTabElement(conversation.id);
     tab.setActive();
     await waitFor(() => !!tab.querySelector('composer-box textarea'),
       { description: 'the root composer to build' });
@@ -414,7 +427,7 @@ export async function runTests() {
       try {
         await body();
       } finally {
-        container.appendChild(tab);
+        tabsContainer.appendChild(tab);
         tab.setActive();
         await waitFor(() => !!tab.querySelector('composer-box textarea'),
           { description: 'the root composer to be built again' });
@@ -618,6 +631,7 @@ export async function runTests() {
   } finally {
     board?.remove();
     content?.remove();
+    bar?.remove();
     tab?.remove();
     container.remove();
     pinboardItemRegistry.reset();

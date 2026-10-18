@@ -135,7 +135,7 @@ class EmptyHintTips extends JugglerElement {
     );
 
     this.replaceChildren(badge, row);
-    this._render(0);
+    this._showTip(0);
     this._restartRotation();
   }
 
@@ -187,7 +187,7 @@ class EmptyHintTips extends JugglerElement {
     const n = this._tips.length;
     if (n === 0) return;
     this._index = (((this._index + delta) % n) + n) % n;
-    this._render(Math.sign(delta));
+    this._showTip(Math.sign(delta));
   }
 
   /** @returns {string|null} Id of the tip on show, or null when there is none. */
@@ -205,7 +205,7 @@ class EmptyHintTips extends JugglerElement {
    * @param {number} direction
    * @private
    */
-  _render(direction) {
+  _showTip(direction) {
     const viewport = this.querySelector('.empty-hint-tips__viewport');
     const tip = this._tips[this._index];
     if (!viewport || !tip) return;

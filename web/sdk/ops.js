@@ -15,35 +15,34 @@
  * user-approval layer (tool approval dialogs, allowed-paths), which applies to
  * every op regardless of what an extension declared in its manifest.
  *
- * The public names below are a clean, guessable vocabulary (`readFile`, `glob`,
- * `grep`, `shell`, …) — deliberately decoupled from the internal `ops-api`
- * implementation names, which carry a subsystem prefix (`readFileLoad`,
- * `treeGlob`, `grepSearch`, …). Import what you need by name; there is no bare
- * `fetch`/`search` (those would shadow web globals). Use `httpRequest` for
+ * The names below are a clean, guessable vocabulary (`readFile`, `glob`,
+ * `grep`, `shell`, …), and they are the names `ops-api` itself uses: an op has
+ * one name, whichever side of the SDK it is called from. Import what you need
+ * by name; there is no bare `fetch`/`search` (those would shadow web globals). Use `httpRequest` for
  * generic server-side HTTP, or `webFetch`/`webSearch` for the convenience
  * specialisations. All three refuse private, loopback and link-local
  * destinations; `httpRequest`'s `allowPrivateHosts` is the only way to reach a
  * server on the machine or the network Juggler is running inside.
  */
 import {
-  readFileLoad,
-  writeFileOp,
-  readFileEdit,
-  readFileEditLines,
-  readFileGetHash,
-  statOp,
-  mkdirOp,
-  treeGetTree,
-  treeExpandDirectory,
-  treeGlob,
-  treeCopy,
-  treeCompare,
-  grepSearch,
-  grepFindSymbol,
-  shellExecute,
-  shellStartBackground
+  readFile,
+  writeFile,
+  editFile,
+  editFileLines,
+  fileHash,
+  stat,
+  mkdir,
+  getTree,
+  expandDirectory,
+  glob,
+  copyTree,
+  compareTrees,
+  grep,
+  findSymbol,
+  shell,
+  shellBackground
 } from '../js/services/ops-api.js';
-import { shellExecuteStreaming } from '../js/services/shell-streaming.js';
+import { shellStreaming } from '../js/services/shell-streaming.js';
 import { FileSystem, ReadOnlyFileSystem } from '../js/services/fs.js';
 
 // No quote characters in comments inside these export lists: the engine
@@ -54,38 +53,38 @@ export {
   MAX_EXEC_TIMEOUT_MS,
   DEFAULT_EXEC_TIMEOUT_MS,
   // Filesystem
-  readFileLoad as readFile,
+  readFile,
   uploadAssetBase64,
   // The snapshot a program tool keeps while one of its calls waits on the user
   saveProgramSnapshot,
   loadProgramSnapshot,
   deleteProgramSnapshot,
-  writeFileOp as writeFile,
-  readFileEdit as editFile,
-  readFileEditLines as editFileLines,
-  readFileGetHash as fileHash,
-  statOp as stat,
-  mkdirOp as mkdir,
+  writeFile,
+  editFile,
+  editFileLines,
+  fileHash,
+  stat,
+  mkdir,
   // Directory tree
-  treeGetTree as getTree,
-  treeExpandDirectory as expandDirectory,
-  treeGlob as glob,
-  treeCopy as copyTree,
-  treeCompare as compareTrees,
+  getTree,
+  expandDirectory,
+  glob,
+  copyTree,
+  compareTrees,
   // Search
-  grepSearch as grep,
-  grepFindSymbol as findSymbol,
+  grep,
+  findSymbol,
   // Shell
-  shellExecute as shell,
-  shellStartBackground as shellBackground,
-  shellGetOutput as shellOutput,
-  shellGetOutputDelta as shellOutputDelta,
+  shell,
+  shellBackground,
+  shellOutput,
+  shellOutputDelta,
   shellKill,
   // Liveness for tasks you already hold ids for. Not an inventory: it answers
   // only about the ids you pass, and carries no output, so a surface watching a
   // long-lived task polls this rather than dragging the whole log back with
   // `shellOutput` every few seconds.
-  shellTaskStatus as shellStatus,
+  shellStatus,
   // Web
   httpRequest,
   webFetch,
@@ -97,8 +96,8 @@ export {
   // LLM (out-of-band text generation)
   generateText,
   // OS integration
-  osOpenPath as openPath,
-  osRevealPath as revealPath,
+  openPath,
+  revealPath,
   // MCP (Model Context Protocol) client
   mcpListServers,
   mcpListTools,
@@ -113,8 +112,8 @@ export {
 // Live shell execution is the one op that streams rather than returning once,
 // so it rides the WebSocket instead of /api/ops/call and lives beside it.
 export {
-  shellExecuteStreaming as shellStreaming,
-  shellCancelStreaming as cancelShellStreaming,
+  shellStreaming,
+  cancelShellStreaming,
 } from '../js/services/shell-streaming.js';
 
 export { FileSystem, ReadOnlyFileSystem } from '../js/services/fs.js';
@@ -130,23 +129,23 @@ export { FileSystem, ReadOnlyFileSystem } from '../js/services/fs.js';
  * the identically-named export above with `allowedPaths` and `workspaceId`
  * already in it.
  * @typedef {object} BoundOps
- * @property {(params: any, signal?: AbortSignal) => ReturnType<typeof readFileLoad>} readFile - Read a file.
- * @property {(params: any, signal?: AbortSignal) => ReturnType<typeof writeFileOp>} writeFile - Create or overwrite a file.
- * @property {(params: any, signal?: AbortSignal) => ReturnType<typeof readFileEdit>} editFile - Search-and-replace within a file.
- * @property {(params: any, signal?: AbortSignal) => ReturnType<typeof readFileEditLines>} editFileLines - Replace a line range.
- * @property {(params: any) => ReturnType<typeof readFileGetHash>} fileHash - Hash a file, for staleness checks.
- * @property {(params: any) => ReturnType<typeof statOp>} stat - File/directory metadata.
- * @property {(params: any) => ReturnType<typeof mkdirOp>} mkdir - Create a directory.
- * @property {(params: any) => ReturnType<typeof treeGetTree>} getTree - Directory tree.
- * @property {(params: any) => ReturnType<typeof treeExpandDirectory>} expandDirectory - One directory's entries.
- * @property {(params: any, signal?: AbortSignal) => ReturnType<typeof treeGlob>} glob - Files matching a pattern.
- * @property {(params: any, signal?: AbortSignal) => ReturnType<typeof treeCopy>} copyTree - Copy a tree, respecting the ignore rules.
- * @property {(params: any, signal?: AbortSignal) => ReturnType<typeof treeCompare>} compareTrees - Say how two trees differ.
- * @property {(params: any, signal?: AbortSignal) => ReturnType<typeof grepSearch>} grep - Search file contents.
- * @property {(params: any, signal?: AbortSignal) => ReturnType<typeof grepFindSymbol>} findSymbol - Find a symbol's definition.
- * @property {(params: any, signal?: AbortSignal) => ReturnType<typeof shellExecute>} shell - Run a command and wait for it; aborting the signal kills it.
- * @property {(params: any) => ReturnType<typeof shellStartBackground>} shellBackground - Start a command in the background (stopped by id, not by signal).
- * @property {(params: any, onOutput: (chunk: any) => void, signal?: AbortSignal) => ReturnType<typeof shellExecuteStreaming>} shellStreaming - Run a command, streaming its output.
+ * @property {(params: any, signal?: AbortSignal) => ReturnType<typeof readFile>} readFile - Read a file.
+ * @property {(params: any, signal?: AbortSignal) => ReturnType<typeof writeFile>} writeFile - Create or overwrite a file.
+ * @property {(params: any, signal?: AbortSignal) => ReturnType<typeof editFile>} editFile - Search-and-replace within a file.
+ * @property {(params: any, signal?: AbortSignal) => ReturnType<typeof editFileLines>} editFileLines - Replace a line range.
+ * @property {(params: any, signal?: AbortSignal) => ReturnType<typeof fileHash>} fileHash - Hash a file, for staleness checks.
+ * @property {(params: any, signal?: AbortSignal) => ReturnType<typeof stat>} stat - File/directory metadata.
+ * @property {(params: any, signal?: AbortSignal) => ReturnType<typeof mkdir>} mkdir - Create a directory.
+ * @property {(params: any, signal?: AbortSignal) => ReturnType<typeof getTree>} getTree - Directory tree.
+ * @property {(params: any, signal?: AbortSignal) => ReturnType<typeof expandDirectory>} expandDirectory - One directory's entries.
+ * @property {(params: any, signal?: AbortSignal) => ReturnType<typeof glob>} glob - Files matching a pattern.
+ * @property {(params: any, signal?: AbortSignal) => ReturnType<typeof copyTree>} copyTree - Copy a tree, respecting the ignore rules.
+ * @property {(params: any, signal?: AbortSignal) => ReturnType<typeof compareTrees>} compareTrees - Say how two trees differ.
+ * @property {(params: any, signal?: AbortSignal) => ReturnType<typeof grep>} grep - Search file contents.
+ * @property {(params: any, signal?: AbortSignal) => ReturnType<typeof findSymbol>} findSymbol - Find a symbol's definition.
+ * @property {(params: any, signal?: AbortSignal) => ReturnType<typeof shell>} shell - Run a command and wait for it; aborting the signal kills it.
+ * @property {(params: any) => ReturnType<typeof shellBackground>} shellBackground - Start a command in the background (stopped by id, not by signal).
+ * @property {(params: any, onOutput: (chunk: any) => void, signal?: AbortSignal) => ReturnType<typeof shellStreaming>} shellStreaming - Run a command, streaming its output.
  * @property {() => FileSystem} fileSystem - An fs.promises-alike rooted here.
  * @property {() => ReadOnlyFileSystem} readOnlyFileSystem - The same, refusing writes.
  */
@@ -177,23 +176,23 @@ export function createBoundOps(resolveScope) {
   const where = () => resolveScope().workspaceId || undefined;
 
   return {
-    readFile: (params, signal) => readFileLoad(params, signal, paths(), where()),
-    writeFile: (params, signal) => writeFileOp(params, signal, paths(), where()),
-    editFile: (params, signal) => readFileEdit(params, signal, paths(), where()),
-    editFileLines: (params, signal) => readFileEditLines(params, signal, paths(), where()),
-    fileHash: (params) => readFileGetHash(params, paths(), where()),
-    stat: (params) => statOp(params, paths(), where()),
-    mkdir: (params) => mkdirOp(params, paths(), where()),
-    getTree: (params) => treeGetTree(params, paths(), where()),
-    expandDirectory: (params) => treeExpandDirectory(params, paths(), where()),
-    glob: (params, signal) => treeGlob(params, signal, paths(), where()),
-    copyTree: (params, signal) => treeCopy(params, signal, paths(), where()),
-    compareTrees: (params, signal) => treeCompare(params, signal, paths(), where()),
-    grep: (params, signal) => grepSearch(params, signal, paths(), where()),
-    findSymbol: (params, signal) => grepFindSymbol(params, signal, where()),
-    shell: (params, signal) => shellExecute(params, where(), signal),
-    shellBackground: (params) => shellStartBackground(params, where()),
-    shellStreaming: (params, onOutput, signal) => shellExecuteStreaming(params, onOutput, signal, where()),
+    readFile: (params, signal) => readFile(params, signal, paths(), where()),
+    writeFile: (params, signal) => writeFile(params, signal, paths(), where()),
+    editFile: (params, signal) => editFile(params, signal, paths(), where()),
+    editFileLines: (params, signal) => editFileLines(params, signal, paths(), where()),
+    fileHash: (params, signal) => fileHash(params, signal, paths(), where()),
+    stat: (params, signal) => stat(params, signal, paths(), where()),
+    mkdir: (params, signal) => mkdir(params, signal, paths(), where()),
+    getTree: (params, signal) => getTree(params, signal, paths(), where()),
+    expandDirectory: (params, signal) => expandDirectory(params, signal, paths(), where()),
+    glob: (params, signal) => glob(params, signal, paths(), where()),
+    copyTree: (params, signal) => copyTree(params, signal, paths(), where()),
+    compareTrees: (params, signal) => compareTrees(params, signal, paths(), where()),
+    grep: (params, signal) => grep(params, signal, paths(), where()),
+    findSymbol: (params, signal) => findSymbol(params, signal, paths(), where()),
+    shell: (params, signal) => shell(params, signal, where()),
+    shellBackground: (params) => shellBackground(params, where()),
+    shellStreaming: (params, onOutput, signal) => shellStreaming(params, onOutput, signal, where()),
     fileSystem: () => new FileSystem(paths(), where()),
     readOnlyFileSystem: () => new ReadOnlyFileSystem(paths(), where())
   };

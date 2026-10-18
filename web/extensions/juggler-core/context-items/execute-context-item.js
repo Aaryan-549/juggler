@@ -777,8 +777,8 @@ class ExecuteContextItem extends ContextItem {
         {
           command,
           timeout: params.timeout ? Number(params.timeout) : undefined,
-          conv_id: this.conversation.id,
-          tool_use_id: this.toolUseId
+          convId: this.conversation.id,
+          toolUseId: this.toolUseId
         }
       );
 
@@ -843,7 +843,7 @@ class ExecuteContextItem extends ContextItem {
     // Tag the command with its owning conversation so the backend buckets any
     // full-output spill file under that conversation (deleted when it is).
     const execParams = /** @type {import('../../../js/services/ops-api.js').ShellExecuteParams} */ (
-      { ...params, conv_id: this.conversation.id }
+      { ...params, convId: this.conversation.id }
     );
 
     // Try streaming execution first, fall back to blocking if WebSocket unavailable
@@ -1220,7 +1220,7 @@ class ExecuteContextItem extends ContextItem {
       describeStatus: describeTaskStatus,
       initialState: persistedTask,
       convId: this.conversation.id,
-      onStop: () => shellKill({ shell_id: taskId, conv_id: this.conversation.id }),
+      onStop: () => shellKill({ shellId: taskId, convId: this.conversation.id }),
       stopLabel: t('Stop task')
     });
 

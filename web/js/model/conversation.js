@@ -211,9 +211,6 @@ class Conversation {
     /** @type {import('../services/action-executor.js').default} @private */
     this._actionExecutor = services.actionExecutor;
 
-    /** @type {import('../components/conversation-tab.js').default|null} @private */
-    this._tabElement = null;
-
     // Each conversation owns its own ResponseHandler so streaming state
     // can't bleed across conversations.
 
@@ -753,29 +750,19 @@ class Conversation {
   }
 
   /**
-   * Set the tab element that shows this conversation, and start the status
-   * observer that turns worker processing-state frames into LLM status.
+   * Start the status observer that turns worker processing-state frames into
+   * LLM status. Called by the tab that shows this conversation.
    *
-   * The conversation writes nothing into the tab or its columns, and calls no
-   * method on it: the reference is kept only for {@link getTabElement}'s
-   * callers. The tab hands its own columns the conversation, paints status from
-   * its own subscription to {@link onStatusChange}, scrolls on
-   * `conversation:turn-requested`, and answers the conversation's other
-   * requests of its view (`composer:*-requested`, `conversation:thread-open-requested`,
+   * The conversation holds no reference to that tab: the view keeps the lookup
+   * (`ConversationBar#getTabElement`). The tab hands its own columns the
+   * conversation, paints status from its own subscription to
+   * {@link onStatusChange}, scrolls on `conversation:turn-requested`, and
+   * answers the conversation's other requests of its view
+   * (`composer:*-requested`, `conversation:thread-open-requested`,
    * `conversation:warning-requested`) in its visible composer.
-   * @param {import('../components/conversation-tab.js').default} tabElement
    */
-  setTabElement(tabElement) {
-    this._tabElement = tabElement;
+  startStatusObserver() {
     this._llmState.registerConversation(this);
-  }
-
-  /**
-   * Get the tab element for this conversation
-   * @returns {import('../components/conversation-tab.js').default|null} Tab element or null
-   */
-  getTabElement() {
-    return this._tabElement;
   }
 
   /**
@@ -2930,7 +2917,7 @@ class Conversation {
     }
 
     // Unregister from LLM state — this tears down the per-conversation Yjs
-    // metadata observer registered in setTabElement(). Without it the observer
+    // metadata observer registered in startStatusObserver(). Without it the observer
     // (and its captured conversation) leak for the app's lifetime.
     this._llmState?.unregisterConversation?.(this.id);
 

@@ -17,8 +17,8 @@
 import { waitFor, assert } from '../utilities/test-helpers.js';
 import { budgetFor } from '../utilities/test-deadline.js';
 import { fetchJson } from '../../js/services/http.js';
-import { shellExecuteStreaming } from '../../js/services/shell-streaming.js';
-import { writeFileOp } from '../../js/services/ops-api.js';
+import { shellStreaming } from '../../js/services/shell-streaming.js';
+import { writeFile } from '../../js/services/ops-api.js';
 import { createBoundOps } from '../../sdk/ops.js';
 import {
   registerWorkspace,
@@ -211,7 +211,7 @@ export async function runTests() {
         release(bound);
 
         const marker = `ws-shell-${Math.random().toString(36).slice(2, 8)}.txt`;
-        const ran = await shellExecuteStreaming(
+        const ran = await shellStreaming(
           { command: `echo made-here > ${marker}` }, () => {}, undefined, id);
         assert(ran.success, `the command ran, got ${JSON.stringify(ran)}`);
 
@@ -225,7 +225,7 @@ export async function runTests() {
         assert(elsewhere.exists === false,
           `and nowhere else, got ${JSON.stringify(elsewhere)}`);
 
-        const refused = await shellExecuteStreaming(
+        const refused = await shellStreaming(
           { command: 'echo this must not run' }, () => {}, undefined, 'ws_never_registered');
         assert(refused.success === false && refused.error,
           `an id the session never heard of is refused rather than run in the project, got ${JSON.stringify(refused)}`);
@@ -354,7 +354,7 @@ export async function runTests() {
         // a probe that resolves anywhere but the workspace finds nothing to seed,
         // and a read that does comes back missing.
         const marker = `# only in the workspace ${Math.random().toString(36).slice(2, 8)}`;
-        await writeFileOp({ path: '.cursorrules', content: marker }, undefined, undefined, id);
+        await writeFile({ path: '.cursorrules', content: marker }, undefined, undefined, id);
 
         const bound = await makeConversation(session, 'seeded-from-its-tree', { workspaceId: id });
         release(bound);
@@ -387,9 +387,9 @@ export async function runTests() {
       const toMarker = `# instructions of the tree it moved to ${stamp}`;
       const onlyThere = `# a file the tree it left never had ${stamp}`;
       const project = createBoundOps(() => ({ workspaceId: '' }));
-      await writeFileOp({ path: `${from}/AGENTS.md`, content: fromMarker });
-      await writeFileOp({ path: `${to}/AGENTS.md`, content: toMarker });
-      await writeFileOp({ path: `${to}/.cursorrules`, content: onlyThere });
+      await writeFile({ path: `${from}/AGENTS.md`, content: fromMarker });
+      await writeFile({ path: `${to}/AGENTS.md`, content: toMarker });
+      await writeFile({ path: `${to}/.cursorrules`, content: onlyThere });
       const madeFrom = await fetchJson('/api/session/workspaces', {
         method: 'POST',
         body: { root: `${projectPath}/${from}`, label: 'where it started', state: 'ready' }
@@ -451,12 +451,12 @@ export async function runTests() {
       const lacks = `rebind-lacks-${stamp}`;
       const marker = `# instructions only the tree it left ever had ${stamp}`;
       const project = createBoundOps(() => ({ workspaceId: '' }));
-      await writeFileOp({ path: `${had}/AGENTS.md`, content: marker });
+      await writeFile({ path: `${had}/AGENTS.md`, content: marker });
       // The destination has instructions of its own under a different name, and
       // none at all under this one. Its arrival is also the barrier this case
       // needs: an item can only be seeded after the move has finished refreshing
       // the items that were already there.
-      await writeFileOp({ path: `${lacks}/.cursorrules`, content: `# different instructions ${stamp}` });
+      await writeFile({ path: `${lacks}/.cursorrules`, content: `# different instructions ${stamp}` });
       const madeHad = await fetchJson('/api/session/workspaces', {
         method: 'POST',
         body: { root: `${projectPath}/${had}`, label: 'a tree with instructions', state: 'ready' }

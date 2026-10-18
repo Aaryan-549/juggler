@@ -690,8 +690,8 @@
 		"--pinboard-width",
 		"--update-pct",
 		"--scrim-from",
-		"--js-angle",
-		"--js-phase",
+		"--spinner-angle",
+		"--spinner-phase",
 		"--line-digits",
 		"--tt-arrow-x"
 	]

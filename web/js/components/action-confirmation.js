@@ -106,7 +106,7 @@ class ActionConfirmation extends JugglerElement {
     // setOptions draws the buttons, so a connect only draws ones that never
     // were: a move keeps an edit in progress, its typed pattern and its focus
     // ring.
-    if (!this.firstElementChild) this._render();
+    if (!this.firstElementChild) this.render();
     this.on(this, 'click', (e) => this._handleButtonClick(/** @type {MouseEvent} */ (e)));
     this.on(this, 'keydown', (e) => this._handleKeyDown(/** @type {KeyboardEvent} */ (e)));
     this.on(this, 'focusout', (e) => this._handleFocusOut(/** @type {FocusEvent} */ (e)));
@@ -126,7 +126,7 @@ class ActionConfirmation extends JugglerElement {
     this._reviseTokens = {};
     this._debounceTimers = {};
     this._editSnapshots = {};
-    this._render();
+    this.render();
   }
 
   /**
@@ -161,9 +161,8 @@ class ActionConfirmation extends JugglerElement {
 
   /**
    * Render the approval buttons
-   * @private
    */
-  _render() {
+  render() {
     if (!this._options) {
       return;
     }

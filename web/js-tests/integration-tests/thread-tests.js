@@ -11,6 +11,7 @@
  */
 
 import { textResponse, toolUseResponse, multiToolResponse } from '../utilities/integration-test-runner.js';
+import { tabFor } from '../utilities/conversation-tab-lookup.js';
 
 // ============================================================================
 // TEST DEFINITIONS
@@ -446,7 +447,7 @@ export const threadSettlesOnTrailingTextTest = {
       );
     }
     // A summary is not an ending: the thread column stays, composer and all.
-    const tab = conversation.getTabElement?.();
+    const tab = tabFor(conversation);
     const cols = Array.from(tab?.querySelectorAll('conversation-area.thread-column') || []);
     if (cols.length === 0) {
       throw new Error('thread-settles-on-trailing-text: thread column gone — a summary must not end the thread');
@@ -497,7 +498,7 @@ export const threadResultVisibleInTranscriptTest = {
   ],
 
   customAssertions: (conversation) => {
-    const tab = conversation.getTabElement?.();
+    const tab = tabFor(conversation);
     if (!tab) throw new Error('thread-result-visible: no tab element');
     const cols = Array.from(tab.querySelectorAll('conversation-area.thread-column'));
     if (cols.length === 0) {
@@ -556,7 +557,7 @@ export const threadResultBlockFollowsTheRunTest = {
   ],
 
   customAssertions: (conversation) => {
-    const tab = conversation.getTabElement?.();
+    const tab = tabFor(conversation);
     if (!tab) throw new Error('thread-result-block-follows-the-run: no tab element');
     const cols = Array.from(tab.querySelectorAll('conversation-area.thread-column'));
     if (cols.length === 0) {
@@ -1426,7 +1427,7 @@ export const threadPlanIndicatorScopedTest = {
   // (including root); post-fix it stays scoped to the sub-thread's own column.
   customAssertions: (conversation) => {
     const PLAN = 'Sub-thread plan: first do A, then B';
-    const tab = conversation.getTabElement?.();
+    const tab = tabFor(conversation);
     if (!tab) throw new Error('thread-plan-indicator-scoped: tab element missing');
     const areas = Array.from(tab.querySelectorAll('conversation-area'));
     const root = areas.find((a) => !a.classList.contains('thread-column'));
@@ -1505,7 +1506,7 @@ export const threadSessionAliasTilesTest = {
       throw new Error('thread-session-alias-tiles: an alias owns no transcript');
     }
 
-    const tab = conversation.getTabElement?.();
+    const tab = tabFor(conversation);
     if (!tab) throw new Error('thread-session-alias-tiles: no tab element');
     const root = Array.from(tab.querySelectorAll('conversation-area'))
       .find((/** @type {Element} */ a) => !a.classList.contains('thread-column'));

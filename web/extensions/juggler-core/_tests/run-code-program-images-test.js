@@ -14,7 +14,7 @@
  */
 
 import { assert } from '../../../js-tests/utilities/test-helpers.js';
-import { writeFileOp } from '../../../js/services/ops-api.js';
+import { writeFile } from '../../../js/services/ops-api.js';
 import QueryCodeContextItem from '../context-items/query-code-context-item.js';
 import { runProgramSuite, waitUntil } from './run-code-program-helpers.js';
 
@@ -67,7 +67,7 @@ export async function runTests(_ctx) {
     // and image() is how it attaches one.
     await test('tools.read on an image gives a handle, and image() attaches it', async () => {
       const dir = `rc-image-${Date.now()}`;
-      await writeFileOp({ path: `${dir}/shot.png`, content: 'not really a png' });
+      await writeFile({ path: `${dir}/shot.png`, content: 'not really a png' });
       const code = `
         const r = await tools.read({ file_path: "${dir}/shot.png" });
         await image(r.images[0]);
@@ -91,8 +91,8 @@ export async function runTests(_ctx) {
 
     await test('image(path) attaches what fs found; anything else is refused', async () => {
       const dir = `rc-image-path-${Date.now()}`;
-      await writeFileOp({ path: `${dir}/found.png`, content: 'also not a png' });
-      await writeFileOp({ path: `${dir}/notes.txt`, content: 'text\n' });
+      await writeFile({ path: `${dir}/found.png`, content: 'also not a png' });
+      await writeFile({ path: `${dir}/notes.txt`, content: 'text\n' });
       const code = `
         const [found] = await glob("*.png", { cwd: "${dir}" });
         await image("${dir}/" + found);
@@ -114,7 +114,7 @@ export async function runTests(_ctx) {
 
     await test('an image the program holds while it waits is attached once approved', async () => {
       const dir = `rc-image-held-${Date.now()}`;
-      await writeFileOp({ path: `${dir}/shot.png`, content: 'held png' });
+      await writeFile({ path: `${dir}/shot.png`, content: 'held png' });
       const log = `${dir}/log.txt`;
       const command = heldCommand(log);
       const code = `
@@ -143,7 +143,7 @@ export async function runTests(_ctx) {
     // not what the file holds by the time the user answers.
     await test('image(path) before a lost engine is replayed, not read again', async () => {
       const dir = `rc-image-replay-${Date.now()}`;
-      await writeFileOp({ path: `${dir}/shot.png`, content: 'before the stop' });
+      await writeFile({ path: `${dir}/shot.png`, content: 'before the stop' });
       const log = `${dir}/log.txt`;
       const command = heldCommand(log);
       const code = `
@@ -158,7 +158,7 @@ export async function runTests(_ctx) {
       const held = heldOf(mt, id);
       assert(held.length === 1, `while it waits, the item holds the image: ${JSON.stringify(held)}`);
       await loseEngine(conversation, id, finished);
-      await writeFileOp({ path: `${dir}/shot.png`, content: 'changed while it waited' });
+      await writeFile({ path: `${dir}/shot.png`, content: 'changed while it waited' });
       const done = await runAsAction(conversation, mt, id, () => mt.resolveApproval(id, 'yes', { source: 'user' }));
       assert(done.state === 'completed', `it finishes: ${JSON.stringify(done.result)}`);
       const attachments = mt.getToolAction(id).get('attachments');
@@ -169,7 +169,7 @@ export async function runTests(_ctx) {
 
     await test('query_code attaches an image by path', async () => {
       const dir = `qc-image-${Date.now()}`;
-      await writeFileOp({ path: `${dir}/chart.png`, content: 'a chart' });
+      await writeFile({ path: `${dir}/chart.png`, content: 'a chart' });
       const code = `await image("${dir}/chart.png"); return "see it";`;
       const { conversation, mt } = await setup(code);
       const qc = new QueryCodeContextItem({ id: QueryCodeContextItem.MANIFEST.id, session, conversation, messageThread: mt });

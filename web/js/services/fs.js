@@ -7,8 +7,8 @@
  * @module fs
  */
 
-import { readFileLoad, writeFileOp, statOp, mkdirOp } from './ops-api.js';
-import { treeExpandDirectory } from './ops-api.js';
+import { readFile, writeFile, stat, mkdir } from './ops-api.js';
+import { expandDirectory } from './ops-api.js';
 
 /**
  * Lightweight Dirent-like object returned by readdir with `withFileTypes`.
@@ -120,7 +120,7 @@ export class FileSystem {
       }
       if (options.raw) params.raw = true;
     }
-    const result = await readFileLoad(/** @type {any} */ (params), undefined, this._allowedPaths, this._workspaceId);
+    const result = await readFile(/** @type {any} */ (params), undefined, this._allowedPaths, this._workspaceId);
     if (!result.exists) {
       throw new FileSystemError('ENOENT', `no such file or directory: ${filePath}`);
     }
@@ -142,7 +142,7 @@ export class FileSystem {
    * @returns {Promise<void>}
    */
   async writeFile(filePath, content) {
-    await writeFileOp({ path: filePath, content: String(content) }, undefined, undefined, this._workspaceId);
+    await writeFile({ path: filePath, content: String(content) }, undefined, undefined, this._workspaceId);
   }
 
   /**
@@ -152,7 +152,7 @@ export class FileSystem {
    * @returns {Promise<string[]|Dirent[]>} Directory entry names or Dirent objects
    */
   async readdir(dirPath, options) {
-    const result = await treeExpandDirectory({ path: dirPath }, this._allowedPaths, this._workspaceId);
+    const result = await expandDirectory({ path: dirPath }, undefined, this._allowedPaths, this._workspaceId);
     const items = result.items || [];
     if (options?.withFileTypes) {
       return items.map(i => new Dirent(i.name, i.isDir));
@@ -166,7 +166,7 @@ export class FileSystem {
    * @returns {Promise<Stats>} Stats object with size, mtime, isFile/isDirectory
    */
   async stat(filePath) {
-    const result = await statOp({ path: filePath }, this._allowedPaths, this._workspaceId);
+    const result = await stat({ path: filePath }, undefined, this._allowedPaths, this._workspaceId);
     if (!result.exists) {
       throw new FileSystemError('ENOENT', `no such file or directory: ${filePath}`);
     }
@@ -179,7 +179,7 @@ export class FileSystem {
    * @returns {Promise<void>}
    */
   async access(filePath) {
-    const result = await statOp({ path: filePath }, this._allowedPaths, this._workspaceId);
+    const result = await stat({ path: filePath }, undefined, this._allowedPaths, this._workspaceId);
     if (!result.exists) {
       throw new FileSystemError('ENOENT', `no such file or directory: ${filePath}`);
     }
@@ -192,7 +192,7 @@ export class FileSystem {
    * @returns {Promise<void>}
    */
   async mkdir(dirPath, options) {
-    await mkdirOp({ path: dirPath, recursive: options?.recursive ?? false }, this._allowedPaths, this._workspaceId);
+    await mkdir({ path: dirPath, recursive: options?.recursive ?? false }, undefined, this._allowedPaths, this._workspaceId);
   }
 }
 

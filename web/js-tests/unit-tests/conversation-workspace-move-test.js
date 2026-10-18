@@ -13,7 +13,7 @@
  */
 
 import { waitFor, assert } from '../utilities/test-helpers.js';
-import { writeFileOp } from '../../js/services/ops-api.js';
+import { writeFile } from '../../js/services/ops-api.js';
 import { createBoundOps } from '../../sdk/ops.js';
 import { registerWorkspace, unregisterWorkspace, listWorkspaces } from '../../js/services/workspaces.js';
 import {
@@ -356,8 +356,8 @@ export async function runTests() {
       const fromMarker = `# instructions of the tree it started in ${stamp}`;
       const toMarker = `# instructions of the tree it moved to ${stamp}`;
       const project = createBoundOps(() => ({ workspaceId: '' }));
-      await writeFileOp({ path: `${from}/AGENTS.md`, content: fromMarker });
-      await writeFileOp({ path: `${to}/AGENTS.md`, content: toMarker });
+      await writeFile({ path: `${from}/AGENTS.md`, content: fromMarker });
+      await writeFile({ path: `${to}/AGENTS.md`, content: toMarker });
       const madeFrom = await registerWorkspace({
         root: `${projectPath}/${from}`, label: 'where it started', state: 'ready'
       });

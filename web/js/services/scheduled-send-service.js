@@ -120,10 +120,8 @@ class ScheduledSendService {
      * @type {number|null} @private
      */
     this._connectedSince = null;
-    /** @type {() => void} @private */
-    this._onWsOpen = () => { this._connectedSince = Date.now(); };
-    /** @type {() => void} @private */
-    this._onWsClose = () => { this._connectedSince = null; };
+    /** @type {(() => void)|null} @private Unsubscribe from the link's open and close. */
+    this._unfollowLink = null;
   }
 
   /**
@@ -139,8 +137,9 @@ class ScheduledSendService {
     // as a fresh connect so the first sweeps wait out CONNECT_SETTLE_MS just
     // like a reconnect would.
     this._connectedSince = wsService.isConnected() ? Date.now() : null;
-    wsService.on('open', this._onWsOpen);
-    wsService.on('close', this._onWsClose);
+    const offOpen = wsService.on('open', () => { this._connectedSince = Date.now(); });
+    const offClose = wsService.on('close', () => { this._connectedSince = null; });
+    this._unfollowLink = () => { offOpen(); offClose(); };
     this._intervalId = setInterval(() => this._sweep(), POLL_INTERVAL_MS);
   }
 
@@ -150,8 +149,8 @@ class ScheduledSendService {
       clearInterval(this._intervalId);
       this._intervalId = null;
     }
-    wsService.off('open', this._onWsOpen);
-    wsService.off('close', this._onWsClose);
+    this._unfollowLink?.();
+    this._unfollowLink = null;
     this._connectedSince = null;
     this._session = null;
     this._firing.clear();

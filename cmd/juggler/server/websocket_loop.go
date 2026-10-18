@@ -129,7 +129,7 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 //
 // Chunks go straight back to the client that requested the shell (`requester`),
 // NOT to the project's viewer group. shell-output is consumed solely by the
-// engine's shellExecuteStreaming, which resolves the bash tool on the `done`
+// engine's shellStreaming, which resolves the bash tool on the `done`
 // chunk. The engine is persistent across SwitchProject, but the viewer group is
 // per-project and replaced on every switch — and the engine, unlike viewers,
 // never reloads to re-join the new group. Broadcasting via the viewer group
@@ -167,7 +167,7 @@ func (s *Server) streamShell(ctx context.Context, resolve workspace.ResolveFunc,
 	ws, err := resolve(req.WorkspaceID)
 	if err != nil {
 		// Refuse to the requester in the shape it is waiting for: a done chunk
-		// carrying the reason, so the engine's shellExecuteStreaming settles with
+		// carrying the reason, so the engine's shellStreaming settles with
 		// the refusal instead of sitting at `running` until its safety timeout.
 		requester.Send(map[string]any{
 			"type":    "shell-output",

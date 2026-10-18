@@ -65,7 +65,7 @@ async function renameThrowing(thrown, newName = 'New name') {
   const session = /** @type {any} */ (trackTestSession(new Session(/** @type {any} */ ({
     renameConversation: async () => { throw thrown; }
   }))));
-  session.conversations.set('conv_abc', { id: 'conv_abc' });
+  session.registry.insert('conv_abc', { id: 'conv_abc' }, 'test');
   try {
     await session.renameConversation('conv_abc', newName);
   } catch (e) {

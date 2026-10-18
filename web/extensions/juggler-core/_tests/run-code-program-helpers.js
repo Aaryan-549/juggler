@@ -68,7 +68,7 @@ import {
 } from '../../../js-tests/utilities/test-helpers.js';
 import { budgetFor } from '../../../js-tests/utilities/test-deadline.js';
 import { createToolActionMessage } from '../../../sdk/lib/message.js';
-import { readFileLoad, loadProgramSnapshot } from '../../../js/services/ops-api.js';
+import { readFile, loadProgramSnapshot } from '../../../js/services/ops-api.js';
 import actionExecutor from '../../../js/services/action-executor.js';
 import YoloStrategyType from '../strategies/yolo-strategy-type.js';
 import RunCodeContextItem, { saveSnapshot } from '../context-items/run-code-context-item.js';
@@ -469,7 +469,7 @@ export async function runProgramSuite(defineCases) {
    * @param {string} path - The file
    * @returns {Promise<boolean>} It does not exist
    */
-  const absent = async (path) => (await readFileLoad({ path }).catch(() => null))?.exists !== true;
+  const absent = async (path) => (await readFile({ path }).catch(() => null))?.exists !== true;
 
   try {
     await defineCases({

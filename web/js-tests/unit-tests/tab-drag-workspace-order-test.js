@@ -80,7 +80,7 @@ function mountBar(workspaces, bindings) {
   // where the tab is left, so the catch-up is answered rather than performed.
   session.seedConversationAutoItems = async () => {};
   for (const [id, workspaceId] of bindings) {
-    session.conversations.set(id, { id, name: id, workspaceId, session });
+    session.registry.insert(id, { id, name: id, workspaceId, session }, 'test');
   }
 
   bar._session = session;

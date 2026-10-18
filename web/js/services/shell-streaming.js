@@ -68,7 +68,7 @@ import { MAX_EXEC_TIMEOUT_MS } from './ops-api.js';
  *   cannot honour, through the same `Usable` check the ops endpoint uses.
  * @returns {Promise<ShellStreamResult>} Final result when command completes
  */
-export async function shellExecuteStreaming(params, onOutput, signal, workspaceId) {
+export async function shellStreaming(params, onOutput, signal, workspaceId) {
   // Validate parameters
   if (!params.command && !params.code) {
     throw new TypeError('command or code is required');
@@ -175,7 +175,7 @@ export async function shellExecuteStreaming(params, onOutput, signal, workspaceI
       if (!resolved) {
         resolved = true;
         cleanup();
-        shellCancelStreaming(shellId);
+        cancelShellStreaming(shellId);
         resolve({
           command,
           stdout: stdout.trimEnd(),
@@ -205,20 +205,20 @@ export async function shellExecuteStreaming(params, onOutput, signal, workspaceI
       if (resolved) return;
       resolved = true;
       cleanup();
-      shellCancelStreaming(shellId);
+      cancelShellStreaming(shellId);
       resolve({
         command,
         stdout: stdout.trimEnd(),
         exitCode: -1,
         success: false,
-        error: `shellExecuteStreaming hit client-side safety timeout after ${timeoutMs}ms (worker never sent done)`
+        error: `shellStreaming hit client-side safety timeout after ${timeoutMs}ms (worker never sent done)`
       });
     }, timeoutMs);
 
     // Send shell-start request
     const sent = wsService.sendShellStart(
       shellId,
-      params.conv_id || '',
+      params.convId || '',
       command,
       params.cwd,
       params.timeout,
@@ -235,13 +235,13 @@ export async function shellExecuteStreaming(params, onOutput, signal, workspaceI
 
 /**
  * Cancel a running streaming shell command. The socket must be the same
- * singleton shellExecuteStreaming started the shell on — a cancel sent anywhere
+ * singleton shellStreaming started the shell on — a cancel sent anywhere
  * else is a silent no-op, and the server-side process then runs on until its
  * timeout reaps it (up to 20 minutes). tool-cancellation-test.js test 5 guards
  * exactly that, by stubbing websocket.js and asserting the frame is sent.
  * @param {string} shellId - Shell ID to cancel
  * @returns {boolean} True if cancel request was sent
  */
-export function shellCancelStreaming(shellId) {
+export function cancelShellStreaming(shellId) {
   return wsService.sendShellCancel(shellId);
 }

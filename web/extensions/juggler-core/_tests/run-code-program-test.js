@@ -15,7 +15,7 @@
  */
 
 import { assert } from '../../../js-tests/utilities/test-helpers.js';
-import { writeFileOp, readFileLoad } from '../../../js/services/ops-api.js';
+import { writeFile, readFile } from '../../../js/services/ops-api.js';
 import { dropSnapshot } from '../context-items/run-code-context-item.js';
 import { programChangeReport } from '../../../js/utils/program-changes.js';
 import { runProgramSuite, waitUntil, runningSubCalls } from './run-code-program-helpers.js';
@@ -29,9 +29,9 @@ export async function runTests(_ctx) {
   return runProgramSuite(async ({ test, setup, displayOf, run, rowsOf, withDecision, seedHeld, snapshotOf, seedSnapshot, rowBrief }) => {
     await test('fs reads then tools.edit: admitted, applied, reported', async () => {
       const dir = `rc-edit-${Date.now()}`;
-      await writeFileOp({ path: `${dir}/a.txt`, content: 'alpha\n' });
-      await writeFileOp({ path: `${dir}/b.txt`, content: 'beta\n' });
-      await writeFileOp({ path: `${dir}/c.txt`, content: 'hello world\n' });
+      await writeFile({ path: `${dir}/a.txt`, content: 'alpha\n' });
+      await writeFile({ path: `${dir}/b.txt`, content: 'beta\n' });
+      await writeFile({ path: `${dir}/c.txt`, content: 'hello world\n' });
       const code = `
         const a = await fs.readFile("${dir}/a.txt");
         const b = await fs.readFile("${dir}/b.txt");
@@ -42,7 +42,7 @@ export async function runTests(_ctx) {
       const before = mt.items.length;
       const { out, text, wire } = await run(item, code);
       assert(out?.success !== false, `the program must succeed, got: ${text}`);
-      const after = await readFileLoad({ path: `${dir}/c.txt` });
+      const after = await readFile({ path: `${dir}/c.txt` });
       assert(String(after.content).includes('hello there'), `the edit must apply, file is: ${after.content}`);
       assert(wire.startsWith('23'), `the model reads the value first, got: ${wire}`);
       assert(wire.includes(`Changes the program made:\n- edit: ${dir}/c.txt`), `the change must be listed:\n${wire}`);
@@ -203,9 +203,9 @@ export async function runTests(_ctx) {
       assert(wire.includes(`Changes the program made:\n- bash: printf x > ${file}`), `the earlier run's change must be reported:\n${wire}`);
       const rows = rowBrief(mt, item.toolUseId);
       assert(rows === 'bash:ok,bash:ok', `one row per call, across runs: ${rows}`);
-      const written = await readFileLoad({ path: file }).catch(() => null);
+      const written = await readFile({ path: file }).catch(() => null);
       assert(written === null || written.exists === false, `bash must not run again, but ${file} exists`);
-      assert(String((await readFileLoad({ path: `held-${file}` })).content) === 'y', 'the held call ran');
+      assert(String((await readFile({ path: `held-${file}` })).content) === 'y', 'the held call ran');
       assert(!(await snapshotOf(item)), 'a completed program leaves no snapshot');
       const after = mt.getToolAction(item.toolUseId).toJSON();
       assert(!after.heldCall && !after.approvalOptions, `nor a held call: ${JSON.stringify(after)}`);
@@ -226,7 +226,7 @@ export async function runTests(_ctx) {
       const { out, text } = await run(item, code);
       assert(out?.success === false, `a divergence must not be catchable, got: ${text}`);
       assert(text.includes("Couldn't resume the program") && text.includes('step 1'), `got: ${text}`);
-      const written = await readFileLoad({ path: file }).catch(() => null);
+      const written = await readFile({ path: file }).catch(() => null);
       assert(written === null || written.exists === false, `bash must not run, but ${file} exists`);
       assert(!(await snapshotOf(item)), 'an ended program leaves no snapshot');
     });
@@ -249,7 +249,7 @@ export async function runTests(_ctx) {
         const { out, text } = await run(item, code);
         assert(out?.success === false && text.includes("Couldn't resume the program"),
           `it has no snapshot of its own, so it cannot resume, got: ${text}`);
-        const written = await readFileLoad({ path: file }).catch(() => null);
+        const written = await readFile({ path: file }).catch(() => null);
         assert(written === null || written.exists === false, 'nor does it run');
         assert(await snapshotOf(other.item), 'the other conversation\'s snapshot is untouched');
       } finally {
@@ -270,7 +270,7 @@ export async function runTests(_ctx) {
       const { out, text: got } = await run(item, code);
       assert(out?.success !== false, `must succeed, got: ${got}`);
       assert(got === `${text}|import(|import(`, `the strings are returned as written, got: ${got}`);
-      const written = await readFileLoad({ path: file });
+      const written = await readFile({ path: file });
       assert(String(written.content) === text, `the file holds what the program wrote: ${written.content}`);
     });
 
@@ -278,8 +278,8 @@ export async function runTests(_ctx) {
     // as it would through `fs`.
     await test('tools.read and tools.batch_read let the program edit what they read', async () => {
       const dir = `rc-toolread-${Date.now()}`;
-      await writeFileOp({ path: `${dir}/a.txt`, content: 'hello world\n' });
-      await writeFileOp({ path: `${dir}/b.txt`, content: 'hello world\n' });
+      await writeFile({ path: `${dir}/a.txt`, content: 'hello world\n' });
+      await writeFile({ path: `${dir}/b.txt`, content: 'hello world\n' });
       const code = `
         await tools.read({ file_path: "${dir}/a.txt" });
         await tools.edit({ file_path: "${dir}/a.txt", old_string: "world", new_string: "there" });
@@ -290,7 +290,7 @@ export async function runTests(_ctx) {
       const { out, text } = await run(item, code);
       assert(out?.success !== false && text === 'edited', `both edits must be admitted, got: ${text}`);
       for (const f of ['a.txt', 'b.txt']) {
-        const after = await readFileLoad({ path: `${dir}/${f}` });
+        const after = await readFile({ path: `${dir}/${f}` });
         assert(String(after.content) === 'hello there\n', `${f} must be edited: ${after.content}`);
       }
     });
@@ -324,7 +324,7 @@ export async function runTests(_ctx) {
       const { item } = await setup(code);
       const { text } = await run(item, code);
       assert(text.startsWith('ok'), `got: ${text}`);
-      const content = await readFileLoad({ path: file });
+      const content = await readFile({ path: file });
       assert(String(content.content) === '1\n2\n3\n', `writes ran out of order: ${JSON.stringify(content.content)}`);
     });
   });

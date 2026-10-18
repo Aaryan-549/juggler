@@ -20,6 +20,7 @@
  */
 
 import { textResponse } from '../utilities/integration-test-runner.js';
+import { tabFor } from '../utilities/conversation-tab-lookup.js';
 
 /** A path no fixture provides, so nothing here can open a real file. */
 const LINK_TARGET = 'no-such-file-link-click-test.md';
@@ -30,7 +31,7 @@ const LINK_TARGET = 'no-such-file-link-click-test.md';
  * @returns {{anchor: HTMLAnchorElement, message: Element}|null} Null outside UI mode.
  */
 function findLink(conversation) {
-  const tab = conversation.getTabElement?.();
+  const tab = tabFor(conversation);
   const area = tab ? tab.querySelector('conversation-area') : null;
   if (!area) return null;
   const anchor = /** @type {HTMLAnchorElement|null} */ (
@@ -59,7 +60,7 @@ export const linkClickInUnselectedMessage = {
   ],
 
   settleUntil: (conversation) => {
-    const tab = conversation.getTabElement?.();
+    const tab = tabFor(conversation);
     const area = tab ? tab.querySelector('conversation-area') : null;
     if (!area) return true; // Non-UI mode — nothing to wait for
     return !!area.querySelector(`assistant-message a[href="${LINK_TARGET}"]`);

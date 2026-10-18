@@ -30,7 +30,7 @@ import {
   assert
 } from '../../../js-tests/utilities/test-helpers.js';
 import contextItemRegistry from '../../../js/registries/context-item-registry.js';
-import { writeFileOp, readFileLoad } from '../../../js/services/ops-api.js';
+import { writeFile, readFile } from '../../../js/services/ops-api.js';
 import {
   recordWrittenHash,
   pathMatchKey,
@@ -155,7 +155,7 @@ export async function runTests(_ctx) {
   // =========================================================================
   await test('never-seen edit refused', async () => {
     const conversation = await createTestConversation(session);
-    await writeFileOp({ path: 'guard-never.txt', content: 'hello world\n' });
+    await writeFile({ path: 'guard-never.txt', content: 'hello world\n' });
 
     const edit = mkItem(EditClass, conversation);
     const res = await edit.validate({ file_path: 'guard-never.txt', old_string: 'world', new_string: 'there' });
@@ -172,7 +172,7 @@ export async function runTests(_ctx) {
   // =========================================================================
   await test('hash-less read allows edit', async () => {
     const conversation = await createTestConversation(session);
-    await writeFileOp({ path: 'guard-read.txt', content: 'hello world\n' });
+    await writeFile({ path: 'guard-read.txt', content: 'hello world\n' });
     seedSeen(conversation, 'read', 'guard-read.txt');
 
     const edit = mkItem(EditClass, conversation);
@@ -182,7 +182,7 @@ export async function runTests(_ctx) {
 
   await test('hash-less write allows edit', async () => {
     const conversation = await createTestConversation(session);
-    await writeFileOp({ path: 'guard-write.txt', content: 'hello world\n' });
+    await writeFile({ path: 'guard-write.txt', content: 'hello world\n' });
     seedSeen(conversation, 'write', 'guard-write.txt');
 
     const edit = mkItem(EditClass, conversation);
@@ -192,7 +192,7 @@ export async function runTests(_ctx) {
 
   await test('hash-less edit allows re-edit', async () => {
     const conversation = await createTestConversation(session);
-    await writeFileOp({ path: 'guard-reedit.txt', content: 'hello world\n' });
+    await writeFile({ path: 'guard-reedit.txt', content: 'hello world\n' });
     seedSeen(conversation, 'edit', 'guard-reedit.txt');
 
     const edit = mkItem(EditClass, conversation);
@@ -206,7 +206,7 @@ export async function runTests(_ctx) {
   // =========================================================================
   await test('pinned file allows edit', async () => {
     const conversation = await createTestConversation(session);
-    await writeFileOp({ path: 'guard-pin.txt', content: 'hello world\n' });
+    await writeFile({ path: 'guard-pin.txt', content: 'hello world\n' });
     await conversation.rootMessageThread.executeContextItem('file-content', { path: 'guard-pin.txt' });
 
     const edit = mkItem(EditClass, conversation);
@@ -218,7 +218,7 @@ export async function runTests(_ctx) {
   // was seen, so the edit is allowed as seen-but-unverifiable.
   await test('mentioned file allows edit', async () => {
     const conversation = await createTestConversation(session);
-    await writeFileOp({ path: 'guard-mention.txt', content: 'hello world\n' });
+    await writeFile({ path: 'guard-mention.txt', content: 'hello world\n' });
     await conversation.rootMessageThread.executeContextItem('file-content', { path: 'guard-mention.txt', frozen: true });
 
     const edit = mkItem(EditClass, conversation);
@@ -237,7 +237,7 @@ export async function runTests(_ctx) {
   // =========================================================================
   await test('stale hash still allows a matching targeted edit', async () => {
     const conversation = await createTestConversation(session);
-    await writeFileOp({ path: 'guard-stale.txt', content: 'hello world\n' });
+    await writeFile({ path: 'guard-stale.txt', content: 'hello world\n' });
     seedSeen(conversation, 'read', 'guard-stale.txt', BOGUS_HASH);
 
     const edit = mkItem(EditClass, conversation);
@@ -247,7 +247,7 @@ export async function runTests(_ctx) {
 
   await test('stale file with a non-matching old_str is refused (re-read)', async () => {
     const conversation = await createTestConversation(session);
-    await writeFileOp({ path: 'guard-stale-miss.txt', content: 'hello world\n' });
+    await writeFile({ path: 'guard-stale-miss.txt', content: 'hello world\n' });
     seedSeen(conversation, 'read', 'guard-stale-miss.txt', BOGUS_HASH);
 
     const edit = mkItem(EditClass, conversation);
@@ -259,9 +259,9 @@ export async function runTests(_ctx) {
 
   await test('matching hash allows edit', async () => {
     const conversation = await createTestConversation(session);
-    const writeRes = await writeFileOp({ path: 'guard-fresh.txt', content: 'hello world\n' });
+    const writeRes = await writeFile({ path: 'guard-fresh.txt', content: 'hello world\n' });
     assert(typeof writeRes.contentHash === 'string' && writeRes.contentHash,
-      'writeFileOp should report the written contentHash');
+      'writeFile should report the written contentHash');
     seedSeen(conversation, 'read', 'guard-fresh.txt', writeRes.contentHash);
 
     const edit = mkItem(EditClass, conversation);
@@ -275,7 +275,7 @@ export async function runTests(_ctx) {
   // =========================================================================
   await test('batch_read allows edit', async () => {
     const conversation = await createTestConversation(session);
-    const writeRes = await writeFileOp({ path: 'guard-batch.txt', content: 'hello world\n' });
+    const writeRes = await writeFile({ path: 'guard-batch.txt', content: 'hello world\n' });
     seedAction(conversation, 'batch_read',
       { files: [{ file_path: 'guard-other.txt' }, { file_path: 'guard-batch.txt' }] },
       {
@@ -293,7 +293,7 @@ export async function runTests(_ctx) {
 
   await test('failed batch_read entry does not count', async () => {
     const conversation = await createTestConversation(session);
-    await writeFileOp({ path: 'guard-batchfail.txt', content: 'hello world\n' });
+    await writeFile({ path: 'guard-batchfail.txt', content: 'hello world\n' });
     seedAction(conversation, 'batch_read',
       { files: [{ file_path: 'guard-batchfail.txt' }] },
       { _batchType: 'read', results: [{ file: 'guard-batchfail.txt', success: false, error: 'denied' }] });
@@ -311,7 +311,7 @@ export async function runTests(_ctx) {
   // =========================================================================
   await test('query_code read allows edit', async () => {
     const conversation = await createTestConversation(session);
-    const writeRes = await writeFileOp({ path: 'guard-explore.txt', content: 'hello world\n' });
+    const writeRes = await writeFile({ path: 'guard-explore.txt', content: 'hello world\n' });
     seedAction(conversation, 'query_code',
       { code: 'return (await fs.readFile("guard-explore.txt")).length' },
       { result: 12, filesRead: { 'guard-explore.txt': writeRes.contentHash } });
@@ -323,7 +323,7 @@ export async function runTests(_ctx) {
 
   await test('stale query_code read still allows a matching edit', async () => {
     const conversation = await createTestConversation(session);
-    await writeFileOp({ path: 'guard-explore-stale.txt', content: 'hello world\n' });
+    await writeFile({ path: 'guard-explore-stale.txt', content: 'hello world\n' });
     seedAction(conversation, 'query_code',
       { code: 'return null' },
       { result: null, filesRead: { 'guard-explore-stale.txt': BOGUS_HASH } });
@@ -356,7 +356,7 @@ export async function runTests(_ctx) {
 
   await test('a running program\'s live read allows its own edit', async () => {
     const conversation = await createTestConversation(session);
-    const writeRes = await writeFileOp({ path: 'guard-live.txt', content: 'hello world\n' });
+    const writeRes = await writeFile({ path: 'guard-live.txt', content: 'hello world\n' });
     const live = new Map([['guard-live.txt', writeRes.contentHash]]);
     const end = beginProgramReads(conversation, 'prog1', live);
     try {
@@ -377,7 +377,7 @@ export async function runTests(_ctx) {
 
   await test('a running program without the read is refused', async () => {
     const conversation = await createTestConversation(session);
-    await writeFileOp({ path: 'guard-live-unread.txt', content: 'hello world\n' });
+    await writeFile({ path: 'guard-live-unread.txt', content: 'hello world\n' });
     const end = beginProgramReads(conversation, 'prog2', new Map());
     try {
       const own = mkSubCallEdit(conversation, 'code_prog2_1');
@@ -390,7 +390,7 @@ export async function runTests(_ctx) {
 
   await test('a completed run_code read allows edit', async () => {
     const conversation = await createTestConversation(session);
-    const writeRes = await writeFileOp({ path: 'guard-runcode.txt', content: 'hello world\n' });
+    const writeRes = await writeFile({ path: 'guard-runcode.txt', content: 'hello world\n' });
     seedAction(conversation, 'run_code',
       { code: 'return 1' },
       { result: 1, filesRead: { 'guard-runcode.txt': writeRes.contentHash } });
@@ -406,7 +406,7 @@ export async function runTests(_ctx) {
   // silently loses every read its scripts made.
   await test('read stored under the legacy script tool name still credits an edit', async () => {
     const conversation = await createTestConversation(session);
-    const writeRes = await writeFileOp({ path: 'guard-explore-legacy.txt', content: 'hello world\n' });
+    const writeRes = await writeFile({ path: 'guard-explore-legacy.txt', content: 'hello world\n' });
     seedAction(conversation, 'explore_code',
       { code: 'return (await fs.readFile("guard-explore-legacy.txt")).length' },
       { result: 12, filesRead: { 'guard-explore-legacy.txt': writeRes.contentHash } });
@@ -418,7 +418,7 @@ export async function runTests(_ctx) {
 
   await test('stripped batch_read results fall back to input list', async () => {
     const conversation = await createTestConversation(session);
-    await writeFileOp({ path: 'guard-batchbig.txt', content: 'hello world\n' });
+    await writeFile({ path: 'guard-batchbig.txt', content: 'hello world\n' });
     // Large batches have their per-file results replaced by a count in
     // storage; the input list still proves the read covered this file.
     seedAction(conversation, 'batch_read',
@@ -437,7 +437,7 @@ export async function runTests(_ctx) {
   // =========================================================================
   await test('path form variance still matches', async () => {
     const conversation = await createTestConversation(session);
-    await writeFileOp({ path: 'guard-relform.txt', content: 'hello world\n' });
+    await writeFile({ path: 'guard-relform.txt', content: 'hello world\n' });
     seedSeen(conversation, 'read', './guard-relform.txt');
 
     const edit = mkItem(EditClass, conversation);
@@ -455,7 +455,7 @@ export async function runTests(_ctx) {
   // =========================================================================
   await test('never-read overwrite allowed', async () => {
     const conversation = await createTestConversation(session);
-    await writeFileOp({ path: 'guard-clobber.txt', content: 'precious\n' });
+    await writeFile({ path: 'guard-clobber.txt', content: 'precious\n' });
 
     const write = mkItem(WriteClass, conversation);
     const res = await write.validate({ file_path: 'guard-clobber.txt', content: 'gone\n' });
@@ -464,7 +464,7 @@ export async function runTests(_ctx) {
 
   await test('stale overwrite allowed', async () => {
     const conversation = await createTestConversation(session);
-    await writeFileOp({ path: 'guard-clobber-stale.txt', content: 'precious\n' });
+    await writeFile({ path: 'guard-clobber-stale.txt', content: 'precious\n' });
     seedSeen(conversation, 'read', 'guard-clobber-stale.txt', BOGUS_HASH);
 
     const write = mkItem(WriteClass, conversation);
@@ -474,7 +474,7 @@ export async function runTests(_ctx) {
 
   await test('never-read overwrite still diffs against current bytes', async () => {
     const conversation = await createTestConversation(session);
-    await writeFileOp({ path: 'guard-clobber-diff.txt', content: 'precious\n' });
+    await writeFile({ path: 'guard-clobber-diff.txt', content: 'precious\n' });
 
     const write = mkItem(WriteClass, conversation);
     const res = await write.validate({ file_path: 'guard-clobber-diff.txt', content: 'gone\n' });
@@ -496,7 +496,7 @@ export async function runTests(_ctx) {
 
   await test('read-then-overwrite allowed', async () => {
     const conversation = await createTestConversation(session);
-    const writeRes = await writeFileOp({ path: 'guard-clobber-ok.txt', content: 'precious\n' });
+    const writeRes = await writeFile({ path: 'guard-clobber-ok.txt', content: 'precious\n' });
     seedSeen(conversation, 'read', 'guard-clobber-ok.txt', writeRes.contentHash);
 
     const write = mkItem(WriteClass, conversation);
@@ -517,12 +517,12 @@ export async function runTests(_ctx) {
     __resetWrittenHashesForTest();
     const conversation = await createTestConversation(session);
     // The transcript only knows the v0 the model read.
-    const v0 = await writeFileOp({ path: 'guard-sibling.txt', content: 'hello world\n' });
+    const v0 = await writeFile({ path: 'guard-sibling.txt', content: 'hello world\n' });
     seedSeen(conversation, 'read', 'guard-sibling.txt', v0.contentHash);
 
     // An earlier edit this turn rewrote the file to v1, but its tool-action has
     // not surfaced in the transcript yet — only the in-memory record knows v1.
-    const v1 = await writeFileOp({ path: 'guard-sibling.txt', content: 'hello there\n' });
+    const v1 = await writeFile({ path: 'guard-sibling.txt', content: 'hello there\n' });
     recordWrittenHash(conversation, session, 'guard-sibling.txt', v1.contentHash);
 
     const edit = mkItem(EditClass, conversation);
@@ -533,12 +533,12 @@ export async function runTests(_ctx) {
   await test('out-of-band change with a non-matching edit is still refused', async () => {
     __resetWrittenHashesForTest();
     const conversation = await createTestConversation(session);
-    const v0 = await writeFileOp({ path: 'guard-oob.txt', content: 'hello world\n' });
+    const v0 = await writeFile({ path: 'guard-oob.txt', content: 'hello world\n' });
     seedSeen(conversation, 'read', 'guard-oob.txt', v0.contentHash);
 
     // The file changed on disk to bytes we never wrote and never recorded, and
     // the text the model wants to replace ('world') no longer exists in it.
-    await writeFileOp({ path: 'guard-oob.txt', content: 'hello there\n' });
+    await writeFile({ path: 'guard-oob.txt', content: 'hello there\n' });
 
     const edit = mkItem(EditClass, conversation);
     const res = await edit.validate({ file_path: 'guard-oob.txt', old_string: 'world', new_string: 'everyone' });
@@ -551,7 +551,7 @@ export async function runTests(_ctx) {
     __resetWrittenHashesForTest();
     const writerConversation = await createTestConversation(session);
     const otherConversation = await createTestConversation(session);
-    const written = await writeFileOp({ path: 'guard-conversation-isolation.txt', content: 'private\n' });
+    const written = await writeFile({ path: 'guard-conversation-isolation.txt', content: 'private\n' });
     recordWrittenHash(
       writerConversation,
       session,
@@ -584,7 +584,7 @@ export async function runTests(_ctx) {
   await test('parallel same-file edit batch all apply', async () => {
     __resetWrittenHashesForTest();
     const conversation = await createTestConversation(session);
-    const v0 = await writeFileOp({ path: 'guard-parallel.txt', content: 'AAA\nBBB\nCCC\n' });
+    const v0 = await writeFile({ path: 'guard-parallel.txt', content: 'AAA\nBBB\nCCC\n' });
     seedSeen(conversation, 'read', 'guard-parallel.txt', v0.contentHash);
 
     // Three edits to distinct, non-overlapping regions.
@@ -607,7 +607,7 @@ export async function runTests(_ctx) {
       assert(r && /** @type {any} */ (r).success !== false,
         `edit ${i} should apply, got ${JSON.stringify(r)}`));
 
-    const final = await readFileLoad({ path: 'guard-parallel.txt' });
+    const final = await readFile({ path: 'guard-parallel.txt' });
     assert(final.content === 'XXX\nYYY\nZZZ\n',
       `all three edits should be present, got ${JSON.stringify(final.content)}`);
   });
@@ -615,7 +615,7 @@ export async function runTests(_ctx) {
   await test('parallel same-file overwrite batch all apply', async () => {
     __resetWrittenHashesForTest();
     const conversation = await createTestConversation(session);
-    const v0 = await writeFileOp({ path: 'guard-parallel-w.txt', content: 'v0\n' });
+    const v0 = await writeFile({ path: 'guard-parallel-w.txt', content: 'v0\n' });
     seedSeen(conversation, 'read', 'guard-parallel-w.txt', v0.contentHash);
 
     const contents = ['one\n', 'two\n', 'three\n'];
@@ -632,7 +632,7 @@ export async function runTests(_ctx) {
         `overwrite ${i} should apply, got ${JSON.stringify(r)}`));
 
     // Serialized in dispatch order, so the last overwrite wins.
-    const final = await readFileLoad({ path: 'guard-parallel-w.txt' });
+    const final = await readFile({ path: 'guard-parallel-w.txt' });
     assert(final.content === 'three\n',
       `last overwrite should win, got ${JSON.stringify(final.content)}`);
   });

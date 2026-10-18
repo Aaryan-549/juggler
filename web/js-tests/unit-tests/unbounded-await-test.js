@@ -29,7 +29,7 @@
 
 import { assert } from '../utilities/test-helpers.js';
 import { __setOpCallTimeoutForTest } from '../../js/services/ops-api.js';
-import { readFileLoad } from '../../js/services/ops-api.js';
+import { readFile } from '../../js/services/ops-api.js';
 import { runInSandbox } from '../../sdk/lib/sandbox-runner.js';
 import { createSandboxBridge } from '../../js/engine-worker-sandbox.js';
 import { serverPath } from '../../js/utils/api-url.js';
@@ -104,7 +104,7 @@ export async function runTests(_ctx) {
       let threw = null;
       try {
         await within(
-          readFileLoad({ path: '/anything' }),
+          readFile({ path: '/anything' }),
           4000,
           'a dead /api/ops/call never settled — the request has no deadline, so the tool sits at running forever'
         );
@@ -137,7 +137,7 @@ export async function runTests(_ctx) {
     try {
       __setOpCallTimeoutForTest(60000);
       const controller = new AbortController();
-      const call = readFileLoad({ path: '/anything' }, controller.signal);
+      const call = readFile({ path: '/anything' }, controller.signal);
       controller.abort();
 
       let threw = null;
