@@ -640,12 +640,13 @@ func (w *ConversationWorker) queuedThreadIDExcept(exclude string) (string, bool)
 func (w *ConversationWorker) getProcessingThreadItemID() string {
 	ycrdtMu.Lock()
 	defer ycrdtMu.Unlock()
-	raw := w.doc.metadata.Get("processingState")
-	existing, _ := fromYcrdt(raw).(map[string]any)
-	if existing == nil {
-		return ""
-	}
-	threadItemID, _ := existing["threadItemId"].(string)
+	return w.processingThreadItemIDLocked()
+}
+
+// processingThreadItemIDLocked is getProcessingThreadItemID without the lock;
+// callers MUST already hold ycrdtMu.
+func (w *ConversationWorker) processingThreadItemIDLocked() string {
+	threadItemID, _ := w.readProcessingStateLocked()["threadItemId"].(string)
 	return threadItemID
 }
 

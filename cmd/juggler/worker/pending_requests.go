@@ -414,15 +414,18 @@ func (r *run) cancelPendingEntry(e pendingEntrySnapshot) {
 		return
 	}
 
-	if r.pendingThreadOwnsActiveWork(e.threadItemID) {
+	// The active thread is read once, and the cancel acts on the thread that read
+	// named: processingState.threadItemId is re-pointed by any sibling's status
+	// frame, so reading it again further down could stop an unrelated turn.
+	if processingID, owns := r.processingThreadWithin(e.threadItemID); owns {
 		// Nothing in the subtree is live, so this is the ambient turn: a pickup
 		// posted to the loop but not yet started, or a turn parked on its tools.
-		target, _ := r.cancelTarget()
+		target, _ := r.cancelTargetOn(processingID)
 		switch target.loadState() {
 		case StateProcessing:
 			// finishStrategyRun settles the active run and finalizeCancellation
 			// completes cleanup. A later scan publishes the pending result.
-			r.handleCancel(cancelReasonPendingRequest)
+			r.handleCancelOn(processingID, cancelReasonPendingRequest)
 			return
 		case StateCancelling:
 			return
@@ -430,7 +433,7 @@ func (r *run) cancelPendingEntry(e pendingEntrySnapshot) {
 		if r.getActivity() == ActivityAwaitingLLM {
 			// The parked-tool branch completes synchronously: tools are cancelled,
 			// the provider session is released, and activity is cleared first.
-			r.handleCancel(cancelReasonPendingRequest)
+			r.handleCancelOn(processingID, cancelReasonPendingRequest)
 		}
 	}
 
@@ -438,11 +441,17 @@ func (r *run) cancelPendingEntry(e pendingEntrySnapshot) {
 	r.writePendingEntryCancelled(e.ownerThreadID, e.id, cancelledThreadResult)
 }
 
-// pendingThreadOwnsActiveWork reports whether the worker's active thread is the
-// pending request's thread or one of its descendants. The ownership check gates
-// conversation-wide cancellation, so one request cannot stop an unrelated turn.
-func (w *ConversationWorker) pendingThreadOwnsActiveWork(pendingThreadID string) bool {
-	return w.threadWithin(w.getProcessingThreadItemID(), pendingThreadID)
+// processingThreadWithin returns the worker's active thread (the current
+// operation's target, processingState.threadItemId) and whether it is ancestorID
+// or one of its descendants. The ownership check gates conversation-wide
+// cancellation, so one request cannot stop an unrelated turn. The read and the
+// ancestry walk share one hold, and the caller acts on the thread returned
+// rather than reading it again.
+func (w *ConversationWorker) processingThreadWithin(ancestorID string) (threadID string, ok bool) {
+	ycrdtMu.Lock()
+	defer ycrdtMu.Unlock()
+	threadID = w.processingThreadItemIDLocked()
+	return threadID, w.threadWithinLocked(threadID, ancestorID)
 }
 
 // threadWithin reports whether threadID is ancestorID or one of its
@@ -453,6 +462,15 @@ func (w *ConversationWorker) threadWithin(threadID, ancestorID string) bool {
 	}
 	ycrdtMu.Lock()
 	defer ycrdtMu.Unlock()
+	return w.threadWithinLocked(threadID, ancestorID)
+}
+
+// threadWithinLocked is threadWithin without the lock; callers MUST already
+// hold ycrdtMu.
+func (w *ConversationWorker) threadWithinLocked(threadID, ancestorID string) bool {
+	if threadID == "" || ancestorID == "" {
+		return false
+	}
 	for ; threadID != ""; threadID = w.doc.findParentThreadID(threadID) {
 		if threadID == ancestorID {
 			return true

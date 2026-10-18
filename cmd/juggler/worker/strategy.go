@@ -482,9 +482,8 @@ func (r *run) finishStrategyRun() {
 		// whose last item is the summarization prompt — so a fold paused mid-summary
 		// would sit there with no summary and no way to ask for one. Re-arm the
 		// trigger it spent, which is what handleUnpause offers to the pickup again.
-		if r.t.thread.itemID != "" && r.isBoundedCompactionThread(r.t.thread.itemID) &&
-			!r.threadHasResult(r.t.thread.itemID) {
-			r.setThreadNeedsStrategyRun(r.t.thread.itemID)
+		if r.t.thread.itemID != "" {
+			r.rearmPausedFold(r.t.thread.itemID)
 		}
 
 		r.storeState(StateIdle)

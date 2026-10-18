@@ -53,7 +53,7 @@ func (r *run) runFoldedCompactionTurn() (verdict turnVerdict, handled bool) {
 	// sub-thread where the parent cannot show it, and cancellation
 	// writes nothing at all. Checked against the thread rather than
 	// against compactErr because a partial run may still have committed.
-	if compactErr != nil && !r.threadHasResult(threadID) {
+	if compactErr != nil && r.markFoldUnsummarized(threadID) {
 		// One message either way so the state is greppable by one string,
 		// but a fold the human cancelled is an outcome, not a fault: only a
 		// genuine failure is worth an ERROR in a log someone is scanning for
@@ -64,7 +64,6 @@ func (r *run) runFoldedCompactionTurn() (verdict turnVerdict, handled bool) {
 		} else {
 			r.log.Error(line, threadID, compactErr.Error())
 		}
-		r.setCompactionUnsummarized(threadID)
 	}
 	r.t.txnID = ""
 	return turnDone, true

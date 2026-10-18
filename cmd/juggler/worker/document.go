@@ -1203,6 +1203,33 @@ func (cd *ConversationDocument) setThreadFlag(threadItemID, key string, on bool,
 	})
 }
 
+// setFlagOnUnfinishedFold sets key on a thread only while it is a fold still
+// owed its summary (boundedCompaction set, no result), and reports whether it
+// was. The decision and the write share one ycrdtMu hold: decided in an earlier
+// one, a viewer's refold or a committed summary landing in between leaves the
+// flag on a thread the decision was never about. Like setThreadFlag, a flag that
+// already reads true is not rewritten.
+func (cd *ConversationDocument) setFlagOnUnfinishedFold(threadItemID, key string, transact func(func(*ycrdt.Transaction))) bool {
+	ycrdtMu.Lock()
+	defer ycrdtMu.Unlock()
+	m := findThreadYMap(cd.getItems(), threadItemID)
+	if m == nil {
+		return false
+	}
+	if fold, _ := m.Get("boundedCompaction").(bool); !fold {
+		return false
+	}
+	if result, _ := m.Get("result").(string); result != "" {
+		return false
+	}
+	if current, _ := m.Get(key).(bool); !current {
+		transact(func(_ *ycrdt.Transaction) {
+			m.Set(key, true)
+		})
+	}
+	return true
+}
+
 // GetMetadata returns a metadata value.
 func (cd *ConversationDocument) GetMetadata(key string) any {
 	ycrdtMu.Lock()

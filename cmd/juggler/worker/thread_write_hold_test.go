@@ -245,6 +245,35 @@ func TestThreadFieldReadsTakeOneHold(t *testing.T) {
 	}
 }
 
+// A paused fold's re-arm and a failed summarizer's marker each decide from the
+// thread (a fold, still owed its summary) and then write a flag onto it. A
+// viewer's refold landing between the decision and the write puts the flag on a
+// thread the decision was never about, so each decides and writes in one hold.
+func TestFoldFlagsDecideAndWriteInOneHold(t *testing.T) {
+	w := newHoldTestWorker(t)
+	foldID := insertThreadWithOpts(w, threadOpts{goal: "fold", boundedCompaction: true})
+	plainID := insertThreadWithOpts(w, threadOpts{goal: "plain"})
+	summarizedID := insertThreadWithOpts(w, threadOpts{goal: "done", boundedCompaction: true, result: "summary"})
+
+	for _, c := range []struct {
+		name, key string
+		write     func(string) bool
+	}{
+		{"rearmPausedFold", "needsStrategyRun", w.rearmPausedFold},
+		{"markFoldUnsummarized", "compactionUnsummarized", w.markFoldUnsummarized},
+	} {
+		for threadID, want := range map[string]bool{foldID: true, plainID: false, summarizedID: false} {
+			var wrote bool
+			if holds := ycrdtHolds(func() { wrote = c.write(threadID) }); holds != 1 {
+				t.Errorf("%s took ycrdtMu %d times, want 1", c.name, holds)
+			}
+			if wrote != want || threadFlag(w, threadID, c.key) != want {
+				t.Errorf("%s on %q: wrote=%v, %s=%v, want both %v", c.name, threadID, wrote, c.key, threadFlag(w, threadID, c.key), want)
+			}
+		}
+	}
+}
+
 func TestSendFollowsItsThreadByID(t *testing.T) {
 	w := newHoldTestWorker(t)
 	threadID, err := w.currentRun().spawnThread(threadSpec{Goal: "work", Prompt: "do the work"}, toolSpawn{})

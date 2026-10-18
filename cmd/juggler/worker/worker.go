@@ -1674,6 +1674,13 @@ func (w *ConversationWorker) setThreadNeedsStrategyRun(threadItemID string) {
 	w.writeThreadNeedsStrategyRun(threadItemID, true)
 }
 
+// rearmPausedFold re-arms the run trigger on a fold a pause stopped before its
+// summary, and reports whether the thread was such a fold. Decided and written
+// in one hold (setFlagOnUnfinishedFold); tracked like writeThreadNeedsStrategyRun.
+func (w *ConversationWorker) rearmPausedFold(threadItemID string) bool {
+	return w.doc.setFlagOnUnfinishedFold(threadItemID, "needsStrategyRun", w.doc.transactTracked)
+}
+
 // clearThreadNeedsStrategyRun consumes the one-shot trigger, so a run that is
 // cancelled or completed isn't restarted on the next observer tick.
 //
@@ -1693,8 +1700,11 @@ func (w *ConversationWorker) writeThreadNeedsStrategyRun(threadItemID string, ne
 	w.doc.setThreadFlag(threadItemID, "needsStrategyRun", needed, w.doc.transactTracked)
 }
 
-// setCompactionUnsummarized records that a folded-compaction thread's
-// summarizer run ended without writing a summary.
+// markFoldUnsummarized records that a folded-compaction thread's summarizer run
+// ended without writing a summary, and reports whether the thread was still such
+// a fold. It asks that of the thread in the same hold as the write
+// (setFlagOnUnfinishedFold), so a summary committed or a refold applied after
+// the run ended is answered for rather than marked over.
 //
 // This state has to be explicit because the fold has already committed by the
 // time the summarizer runs: the transcript is inside the sub-thread and the
@@ -1705,21 +1715,17 @@ func (w *ConversationWorker) writeThreadNeedsStrategyRun(threadItemID string, ne
 // the next observer tick — and cancellation writes no error item either. Without
 // this flag the outcome is indistinguishable from a fold whose summarizer never
 // started, and the viewer's Re-summarise affordance has nothing to key on.
-func (w *ConversationWorker) setCompactionUnsummarized(threadItemID string) {
-	w.writeCompactionUnsummarized(threadItemID, true)
+//
+// Written untracked, as is its clearing: this is derived state about a run's
+// outcome, not an edit the user made, so it must not be what an undo peels off.
+func (w *ConversationWorker) markFoldUnsummarized(threadItemID string) bool {
+	return w.doc.setFlagOnUnfinishedFold(threadItemID, "compactionUnsummarized", w.doc.transactInternal)
 }
 
 // clearCompactionUnsummarized drops the marker once a summary exists again, or
 // when one is about to be attempted.
 func (w *ConversationWorker) clearCompactionUnsummarized(threadItemID string) {
-	w.writeCompactionUnsummarized(threadItemID, false)
-}
-
-// writeCompactionUnsummarized writes the marker through setThreadFlag. Written
-// untracked: this is derived state about a run's outcome, not an edit the user
-// made, so it must not be what an undo peels off.
-func (w *ConversationWorker) writeCompactionUnsummarized(threadItemID string, unsummarized bool) {
-	w.doc.setThreadFlag(threadItemID, "compactionUnsummarized", unsummarized, w.doc.transactInternal)
+	w.doc.setThreadFlag(threadItemID, "compactionUnsummarized", false, w.doc.transactInternal)
 }
 
 // hasIncompleteThreads returns true if any thread item in the current target

@@ -695,14 +695,15 @@ func (r *run) abortTurn(threadID string) {
 	}
 }
 
-// cancelTarget resolves the run a cancel applies to, and the thread it was
-// resolved from. A turn executes on a goroutine of its own, so the run handling
-// a cancel is never the one streaming; the live-run registry is what names it.
-// With nothing live — between turns, or a pickup posted to the loop but not yet
-// started — this run is its own target.
-func (r *run) cancelTarget() (target *run, threadID string) {
+// cancelTargetOn resolves the run a cancel applies to, and the thread it was
+// resolved from, given processingID: the thread the document named as the
+// current operation's target when the cancel was decided. A turn executes on a
+// goroutine of its own, so the run handling a cancel is never the one streaming;
+// the live-run registry is what names it. With nothing live — between turns, or
+// a pickup posted to the loop but not yet started — this run is its own target.
+func (r *run) cancelTargetOn(processingID string) (target *run, threadID string) {
 	target = r
-	threadID = r.getProcessingThreadItemID()
+	threadID = processingID
 	if threadID == "" {
 		threadID = r.t.thread.itemID
 	}
@@ -712,19 +713,31 @@ func (r *run) cancelTarget() (target *run, threadID string) {
 	return target, threadID
 }
 
+// handleCancel stops the current operation: the thread processingState names
+// right now. A caller that has already decided which thread a cancel is for
+// uses handleCancelOn, so the decision and the cancel cannot name different
+// threads.
 func (r *run) handleCancel(reason cancelReason) {
-	target, threadID := r.cancelTarget()
+	r.handleCancelOn(r.getProcessingThreadItemID(), reason)
+}
+
+// handleCancelOn is handleCancel for the operation on processingID, which the
+// caller read from processingState.threadItemId once. Nothing here reads that
+// field again: any sibling's status frame re-points it, and a second read could
+// stop an unrelated turn.
+func (r *run) handleCancelOn(processingID string, reason cancelReason) {
+	target, threadID := r.cancelTargetOn(processingID)
 	target.logCancel(reason)
 
 	// The thread this cancel applies to. A cancel frame carries no thread of its
 	// own — the browser decides whose Stop it is and only sends one when that
 	// thread owns the active work — so the worker resolves it from the run it is
 	// about to stop: that run's own thread while it is processing, otherwise the
-	// thread the document names as the current operation's target. Everything
+	// thread the document named as the current operation's target. Everything
 	// below is scoped to it, so stopping one thread leaves a sibling's tools,
 	// provider session and turn alone.
 	if target.loadState() != StateProcessing {
-		threadID = r.getProcessingThreadItemID()
+		threadID = processingID
 	}
 
 	// A hard cancel supersedes any polite stop (Pause) inside what it stops: the

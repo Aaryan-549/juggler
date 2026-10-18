@@ -408,6 +408,79 @@ func TestPendingRequests_CancelClaimedDoesNotCancelUnrelatedProcessing(t *testin
 	}
 }
 
+// TestPendingRequests_CancelActsOnTheThreadItOwns pins the cancel to the thread
+// the ownership check resolved. processingState.threadItemId is re-pointed by
+// every sibling's status frame, so a cancel that read it again after deciding
+// the request owned the active work would stop whichever sibling the frame
+// named by then. Here the frame already names the sibling: the cancel handed
+// the owned thread must stop that thread's tools and leave the sibling's alone.
+func TestPendingRequests_CancelActsOnTheThreadItOwns(t *testing.T) {
+	w := NewConversationWorker("test-conv", "user:test")
+	defer w.doc.Destroy()
+
+	ownedID := insertThreadWithOpts(w, threadOpts{goal: "Cancel me", userMessage: "first"})
+	siblingID := insertThreadWithOpts(w, threadOpts{goal: "Keep working", userMessage: "second"})
+	for threadID, toolUseID := range map[string]string{ownedID: "owned-tool", siblingID: "sibling-tool"} {
+		arr := w.doc.GetThreadItemsArray(threadID)
+		w.doc.InsertMessageIntoArray(arr, w.doc.GetItemsLengthFromArray(arr), ConversationItem{
+			Type: ItemTypeToolAction, ItemID: toolUseID + "-item", ToolUseID: toolUseID,
+			ToolName: "bash", State: StateRunning,
+		})
+	}
+	parked := func(threadID string) map[string]any {
+		return map[string]any{"activity": ActivityAwaitingLLM, "threadItemId": threadID}
+	}
+	w.doc.SetMetadata("processingState", map[string]any{
+		"activity":     ActivityAwaitingLLM,
+		"threadItemId": siblingID,
+		"status":       "processing_tools",
+		"runs":         map[string]any{runKey(ownedID): parked(ownedID), runKey(siblingID): parked(siblingID)},
+	})
+	w.currentRun().storeState(StateIdle)
+
+	w.currentRun().handleCancelOn(ownedID, cancelReasonPendingRequest)
+
+	for threadID, c := range map[string]struct {
+		toolUseID string
+		want      string
+	}{ownedID: {"owned-tool", StateCancelled}, siblingID: {"sibling-tool", StateRunning}} {
+		tool, ok := findToolItem(w.doc.GetItemsFromArray(w.doc.GetThreadItemsArray(threadID)), c.toolUseID)
+		if !ok {
+			t.Fatalf("tool %q disappeared", c.toolUseID)
+		}
+		if tool.State != c.want {
+			t.Errorf("tool %q state = %q, want %q", c.toolUseID, tool.State, c.want)
+		}
+	}
+}
+
+// TestProcessingThreadWithinTakesOneHold pins the ownership read to one hold:
+// the thread it names is the one it checked, not one a later frame named.
+func TestProcessingThreadWithinTakesOneHold(t *testing.T) {
+	w := NewConversationWorker("test-conv", "user:test")
+	defer w.doc.Destroy()
+
+	ownerID := insertThreadWithOpts(w, threadOpts{goal: "Owner", userMessage: "first"})
+	otherID := insertThreadWithOpts(w, threadOpts{goal: "Other", userMessage: "second"})
+	w.doc.InsertThreadIntoArray(w.doc.GetThreadItemsArray(ownerID), 1, "Nested")
+	childID := w.doc.GetItemsFromArray(w.doc.GetThreadItemsArray(ownerID))[1].ItemID
+
+	for _, c := range []struct {
+		processing string
+		wantOwns   bool
+	}{{childID, true}, {ownerID, true}, {otherID, false}, {"", false}} {
+		w.doc.SetMetadata("processingState", map[string]any{"activity": ActivityCallingLLM, "threadItemId": c.processing})
+		var got string
+		var owns bool
+		if holds := ycrdtHolds(func() { got, owns = w.processingThreadWithin(ownerID) }); holds != 1 {
+			t.Errorf("processingThreadWithin took ycrdtMu %d times, want 1", holds)
+		}
+		if owns != c.wantOwns || got != c.processing {
+			t.Errorf("processing %q: got (%q, %v), want (%q, %v)", c.processing, got, owns, c.processing, c.wantOwns)
+		}
+	}
+}
+
 // TestPendingRequests_GCSweepsOldCompleted confirms that terminal entries
 // older than pendingRequestsGCMs are removed by the scan, but recent ones
 // are kept.
