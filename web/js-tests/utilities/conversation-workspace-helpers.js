@@ -600,17 +600,17 @@ export function promptFor(session, conversation) {
  * The top of a column's item list, as `conversation-area` builds it: the
  * normal-order inner container with the footer the item diff anchors on.
  * @param {any} conversation - The conversation the column shows.
- * @param {object} [state] - Column state the banner asks about (`_threadYMap`).
+ * @param {object} [state] - Column state the banner asks about (`threadYMap`).
  * @returns {{area: any, list: HTMLElement}} A stub column and its list.
  */
 export function columnFor(conversation, state = {}) {
   const list = document.createElement('div');
   list.appendChild(document.createElement('conversation-footer'));
   const area = {
-    _conversation: conversation,
-    _messageThread: conversation?.rootMessageThread,
-    _threadYMap: null,
-    _isGroupColumn: false,
+    conversation,
+    getMessageThread: () => conversation?.rootMessageThread,
+    threadYMap: null,
+    isGroupColumn: false,
     ...state
   };
   return { area, list };

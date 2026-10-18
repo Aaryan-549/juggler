@@ -17,7 +17,7 @@
 import { MAX_CONVERSATIONS } from '../model/session.js';
 import { showConversationLimitAlert } from '../services/app-notices.js';
 import { displayConversationName } from '../model/conversation-naming.js';
-import { BIN_LARGE_BYTES, MAX_CONVERSATION_NAME_LENGTH, MAX_WORKSPACE_LABEL_LENGTH } from '../utils/constants.js';
+import { BIN_LARGE_BYTES, MAX_WORKSPACE_LABEL_LENGTH } from '../utils/constants.js';
 import { setupColumnResize, applyColumnWidthPx } from '../utils/column-resize.js';
 import { startReorderDrag, settledRect, holdGestureLive } from '../utils/reorder-drag.js';
 import { openInlineRename } from '../utils/inline-rename.js';
@@ -46,6 +46,7 @@ import {
 } from '../services/workspace-provisioning.js';
 import { openWorkspaceMove } from './workspace-move-dialog.js';
 import { openWorkspaceCreate } from './workspace-create-dialog.js';
+import { openConversationRename } from './conversation-rename.js';
 import JugglerElement from './juggler-element.js';
 import { showAlert, showConfirm, showNotice } from './modal-dialog.js';
 import { whyNotRebind, moveNeedsConfirmation, rebindConversation } from '../services/workspace-rebinding.js';
@@ -61,11 +62,6 @@ import './workspace-box-header.js';
 
 // What a tab says while the model is naming it, in place of its name.
 const AUTO_NAMING_LABEL = markForTranslation('Auto-naming…');
-
-// How long a press of Auto-name shows the label on its own say-so. The server's
-// `naming-started` replaces the mark with one of its own within a moment; this
-// only bounds a request the worker quietly declined (Session.setAutoNaming).
-const AUTO_NAME_PRESS_TIMEOUT_MS = 15_000;
 
 // Leading-edge debounce window for new-conversation creation. Guards against
 // accidental double-activation — most commonly a double-click on the "+"
@@ -914,57 +910,113 @@ class ConversationBar extends JugglerElement {
       return;
     }
 
-    // Get or create nav container (only created once)
-    let nav = /** @type {HTMLElement|null} */ (this._cachedElements.get('nav'));
-    if (!nav) {
-      nav = document.createElement('nav');
-      nav.className = 'conversation-bar';
-      this._cachedElements.set('nav', nav);
-      this.innerHTML = '';
-      this.appendChild(nav);
+    const { tabsMenu, infoRail, binButton, addButton, newWorkspace } = this._ensureChrome();
+    infoRail.setSession(this._session);
+    this._refreshBinButton(binButton);
 
-      // Resize handle on the right edge of the sidebar (reuses miller-column logic)
-      const handle = document.createElement('col-resize-handle');
-      this.appendChild(handle);
+    const conversations = Array.from(this._session.conversations.values());
+    // The strip draws what the session says is selected, and asks it once: a
+    // box holding the selection is already why there is no visible
+    // conversation, so there is nothing to reconcile between the two answers.
+    // A keyboard cycle still settling is drawn as the selection already: the
+    // highlight follows every press, and only showing the conversation waits.
+    const cycling = this._cycleTargetId !== null && this._session.conversations.has(this._cycleTargetId);
+    const selectedWorkspaceId = cycling ? null : (selectedWorkspace(this._session)?.id ?? null);
+    const visibleId = cycling ? this._cycleTargetId : this._session.visibleConversationId;
 
-      // Detect double-tap/double-click via timing so it works for both mouse
-      // and touch (dblclick doesn't fire reliably on touch devices).
-      let lastTapTime = 0;
-      handle.addEventListener('pointerdown', (e) => {
-        const now = Date.now();
-        if (now - lastTapTime < 300) {
-          e.preventDefault();
-          e.stopImmediatePropagation();
-          this._autoFitWidth();
-          lastTapTime = 0;
-        } else {
-          lastTapTime = now;
-        }
-      }, true);
+    // The "+" is pinned to the top of the strip. With no tabs below it, it is
+    // the only way out of an empty column, and is emphasised as such.
+    if (addButton.parentNode !== tabsMenu || tabsMenu.firstChild !== addButton) {
+      tabsMenu.insertBefore(addButton, tabsMenu.firstChild);
+    }
+    addButton.querySelector('.conversation-add')
+      ?.classList.toggle('conversation-add-labelled', conversations.length === 0);
 
-      setupColumnResize(this, 'juggler-tab-sidebar-width', 8);
+    /** @type {Set<string>} */
+    const currentConversationIds = new Set(conversations.map(c => c.id));
+
+    // Forget the last-scrolled tab once its conversation is gone (binned or
+    // deleted), so restoring it and selecting it again scrolls to it afresh.
+    // Done here rather than in the bin path because _flyTabToBin drops out
+    // early under prefers-reduced-motion and never runs.
+    if (this._lastScrolledTabId && !currentConversationIds.has(this._lastScrolledTabId)) {
+      this._lastScrolledTabId = null;
     }
 
-    // Get or create the box the tabs menu scrolls inside. It draws the menu's
-    // bottom fade, which cannot go on the menu itself (see
-    // .conversation-tabs-viewport in conversation-bar.css).
-    let tabsViewport = /** @type {HTMLElement|null} */ (this._cachedElements.get('tabs-viewport'));
-    if (!tabsViewport) {
-      tabsViewport = document.createElement('div');
-      tabsViewport.className = 'conversation-tabs-viewport';
-      this._cachedElements.set('tabs-viewport', tabsViewport);
-      nav.appendChild(tabsViewport);
-    }
+    // Where each conversation is drawn. A conversation working in a workspace
+    // goes inside that workspace's box; everything else stays flat in the strip
+    // — the project's conversations, and any whose binding names a place that
+    // cannot be worked in, which the stranded banner explains rather than this.
+    // A conversation's place is the Map order above; a box's is its own row's
+    // `after` field. `workspaceGroups` reads the two together.
+    const groups = workspaceGroups(this._session);
+    this._drawStrip(groups, tabsMenu, visibleId, selectedWorkspaceId);
+    this._orderStrip(groups, tabsMenu, addButton);
+    this._dropStaleRows(currentConversationIds, groups);
 
-    // Get or create tabs menu container (only created once, preserves scroll position)
-    let tabsMenu = /** @type {HTMLElement|null} */ (this._cachedElements.get('tabs-menu'));
-    if (!tabsMenu) {
-      tabsMenu = document.createElement('menu');
-      tabsMenu.className = 'conversation-tabs u-scrollbar-thin';
-      this._cachedElements.set('tabs-menu', tabsMenu);
-      tabsViewport.appendChild(tabsMenu);
-      tabsMenu.addEventListener('scroll', () => this._updateTabListOverflow(), { passive: true });
+    // Last in the strip, under the boxes it makes. Placed after the
+    // reconciliation pass rather than in it: the pass walks a cursor through the
+    // tabs and boxes it knows about, and this belongs to none of those runs — it
+    // simply comes after all of them, however they end up ordered.
+    if (tabsMenu.lastChild !== newWorkspace) tabsMenu.appendChild(newWorkspace);
+
+    // Rows arriving or leaving change how much list there is below the fold
+    // without changing the menu's own box, so the observer would not notice.
+    this._updateTabListOverflow();
+
+    // The info rail is NOT reconciled from here. It measures itself off its own
+    // ResizeObserver, and its height is this column's leftover space (flex: 1 1 0),
+    // so laying out the tabs is exactly what makes it resize — the observer fires
+    // after layout and before paint, catching every case a call from here would.
+    // Reconciling it per render would be a poll: render() runs on every doc
+    // change, and each reconcile tears down and rebuilds every card that doesn't
+    // fit, so the cards would remount (and refetch) once a frame while streaming.
+  }
+
+  /**
+   * The cached element under `key`, made by `create` the first time it is
+   * asked for. The bar's furniture is built once and kept, so a render never
+   * replaces a node the user may be scrolled in, hovering or pressing.
+   * @template {HTMLElement} T
+   * @param {string} key - One of CHROME_ELEMENT_KEYS.
+   * @param {() => T} create - Builds (and places) the element.
+   * @returns {T} The element.
+   * @private
+   */
+  _cached(key, create) {
+    let el = /** @type {T|undefined} */ (this._cachedElements.get(key));
+    if (!el) {
+      el = create();
+      this._cachedElements.set(key, el);
     }
+    return el;
+  }
+
+  /**
+   * The bar's furniture, built on the first render and reused by every later
+   * one: the nav and its resize handle, the scrolling tab list, the info rail,
+   * and the footer holding the Restore offer and the Bin — plus the two create
+   * rows, which render() places in the strip itself.
+   * @returns {{tabsMenu: HTMLElement, infoRail: any, binButton: HTMLButtonElement, addButton: HTMLElement, newWorkspace: HTMLElement}} The pieces render() still writes to.
+   * @private
+   */
+  _ensureChrome() {
+    const nav = this._cached('nav', () => this._createNav());
+    // The box the tabs menu scrolls inside. It draws the menu's bottom fade,
+    // which cannot go on the menu itself (see .conversation-tabs-viewport in
+    // conversation-bar.css).
+    const viewport = this._cached('tabs-viewport', () => {
+      const el = document.createElement('div');
+      el.className = 'conversation-tabs-viewport';
+      return nav.appendChild(el);
+    });
+    // Created once, so it keeps its scroll position across renders.
+    const tabsMenu = this._cached('tabs-menu', () => {
+      const el = document.createElement('menu');
+      el.className = 'conversation-tabs u-scrollbar-thin';
+      el.addEventListener('scroll', () => this._updateTabListOverflow(), { passive: true });
+      return viewport.appendChild(el);
+    });
     // The observer catches the menu's own box changing — the window resizing,
     // the info rail below taking more or less of the column. It is dropped on
     // disconnect, so it is re-made here rather than alongside the menu.
@@ -972,70 +1024,149 @@ class ConversationBar extends JugglerElement {
       this._tabListObserver = new ResizeObserver(() => this._updateTabListOverflow());
       this._tabListObserver.observe(tabsMenu);
     }
-
     // Ambient info cards (Usage, Git status, …), parked in the empty space above
-    // the Bin. Created once and cached; it manages its own visibility and measures
-    // the sidebar's free space to decide how many cards fit, reconciling off its
-    // own ResizeObserver rather than anything here. Sits between the flex:1 tabs
-    // menu and the Bin, resting above it.
-    let infoRail = /** @type {any} */ (this._cachedElements.get('info-rail'));
-    if (!infoRail) {
-      infoRail = document.createElement('info-rail');
-      this._cachedElements.set('info-rail', infoRail);
-      nav.appendChild(infoRail);
-    }
-    infoRail.setSession(this._session);
-
+    // the Bin. It manages its own visibility and measures the sidebar's free
+    // space to decide how many cards fit, reconciling off its own ResizeObserver
+    // rather than anything here. Sits between the flex:1 tabs menu and the Bin,
+    // resting above it.
+    const infoRail = this._cached('info-rail', () => nav.appendChild(document.createElement('info-rail')));
     // Footer holding the Restore offer and the Bin. It draws the divider along
     // its top, so the pair reads as one unit set apart from the cards above —
     // and from the tab list when no card is showing.
-    let footer = /** @type {HTMLElement|null} */ (this._cachedElements.get('footer'));
-    if (!footer) {
-      footer = document.createElement('div');
-      footer.className = 'conversation-bar-footer';
-      this._cachedElements.set('footer', footer);
-      nav.appendChild(footer);
-    }
+    const footer = this._cached('footer', () => {
+      const el = document.createElement('div');
+      el.className = 'conversation-bar-footer';
+      return nav.appendChild(el);
+    });
+    this._cached('bin-undo', () => footer.appendChild(this._createBinUndo()));
+    const binButton = this._cached('bin-button', () => footer.appendChild(this._createBinButton()));
+    const addButton = this._cached('add-button', () => this._createAddRow());
+    const newWorkspace = this._cached('new-workspace', () => this._createNewWorkspaceRow());
+    return { tabsMenu, infoRail, binButton, addButton, newWorkspace };
+  }
 
-    // Restore button, docked directly above the Bin — the conversation it
-    // restores went in there, so that's where the way back belongs. It names
-    // the Bin rather than offering a bare "Undo" for two reasons: nothing was
-    // deleted, and this button lasts a few seconds while the Bin below it holds
-    // the conversation indefinitely, so the label has to leave the reader
-    // knowing where it went even when they miss the click. "Undo" would also
-    // promise a Ctrl+Z that belongs to the conversation's own edit history.
-    // Created once and cached, hidden except for the few seconds after a bin
-    // (see _showBinUndo).
-    let undoToast = /** @type {HTMLButtonElement|null} */ (this._cachedElements.get('bin-undo'));
-    if (!undoToast) {
-      undoToast = document.createElement('button');
-      undoToast.className = 'conversation-bin-undo';
-      undoToast.type = 'button';
-      undoToast.title = t('Put the conversation you just binned back');
-      undoToast.setAttribute('aria-label', t('Restore the conversation from the bin'));
-      undoToast.hidden = true;
-      undoToast.innerHTML = `${UNDO_SVG}<span>${escapeHtml(t('Restore from Bin'))}</span>`;
-      undoToast.addEventListener('click', () => this._undoBin());
-      this._cachedElements.set('bin-undo', undoToast);
-      footer.appendChild(undoToast);
-    }
+  /**
+   * The sidebar's nav, appended to a bar emptied of anything drawn before a
+   * session arrived, with the resize handle on its right edge (which reuses the
+   * miller-column logic).
+   * @returns {HTMLElement} The nav.
+   * @private
+   */
+  _createNav() {
+    const nav = document.createElement('nav');
+    nav.className = 'conversation-bar';
+    this.innerHTML = '';
+    this.appendChild(nav);
 
-    // Bottom-of-bar "Bin" button — opens the bin modal.
-    let binBtn = /** @type {HTMLButtonElement|null} */ (this._cachedElements.get('bin-button'));
-    if (!binBtn) {
-      binBtn = document.createElement('button');
-      binBtn.className = 'btn-ghost conversation-bin-button';
-      binBtn.title = t('View binned conversations');
-      binBtn.setAttribute('aria-label', t('Open bin'));
-      binBtn.innerHTML = `${BIN_ICON_SVG}<span class="conversation-bin-label">${escapeHtml(t('Bin'))}</span><span class="conversation-bin-size" hidden></span><span class="conversation-bin-count" hidden></span>`;
-      binBtn.addEventListener('click', () => this._openBinModal());
-      this._cachedElements.set('bin-button', binBtn);
-      footer.appendChild(binBtn);
-    }
+    const handle = document.createElement('col-resize-handle');
+    this.appendChild(handle);
 
-    // Refresh the count badge + size hint from session state on every render.
-    const count = this._session.bin.count || 0;
-    const sizeBytes = this._session.bin.sizeBytes || 0;
+    // Detect double-tap/double-click via timing so it works for both mouse
+    // and touch (dblclick doesn't fire reliably on touch devices).
+    let lastTapTime = 0;
+    handle.addEventListener('pointerdown', (e) => {
+      const now = Date.now();
+      if (now - lastTapTime < 300) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        this._autoFitWidth();
+        lastTapTime = 0;
+      } else {
+        lastTapTime = now;
+      }
+    }, true);
+
+    setupColumnResize(this, 'juggler-tab-sidebar-width', 8);
+    return nav;
+  }
+
+  /**
+   * The Restore button, docked directly above the Bin — the conversation it
+   * restores went in there, so that's where the way back belongs. It names the
+   * Bin rather than offering a bare "Undo" for two reasons: nothing was deleted,
+   * and this button lasts a few seconds while the Bin below it holds the
+   * conversation indefinitely, so the label has to leave the reader knowing
+   * where it went even when they miss the click. "Undo" would also promise a
+   * Ctrl+Z that belongs to the conversation's own edit history. Hidden except
+   * for the few seconds after a bin (see _showBinUndo).
+   * @returns {HTMLButtonElement} The button, not yet placed.
+   * @private
+   */
+  _createBinUndo() {
+    const undoToast = document.createElement('button');
+    undoToast.className = 'conversation-bin-undo';
+    undoToast.type = 'button';
+    undoToast.title = t('Put the conversation you just binned back');
+    undoToast.setAttribute('aria-label', t('Restore the conversation from the bin'));
+    undoToast.hidden = true;
+    undoToast.innerHTML = `${UNDO_SVG}<span>${escapeHtml(t('Restore from Bin'))}</span>`;
+    undoToast.addEventListener('click', () => this._undoBin());
+    return undoToast;
+  }
+
+  /**
+   * The bottom-of-bar "Bin" button, which opens the bin modal. Its count, size
+   * and title are filled in by _refreshBinButton on every render.
+   * @returns {HTMLButtonElement} The button, not yet placed.
+   * @private
+   */
+  _createBinButton() {
+    const binBtn = document.createElement('button');
+    binBtn.className = 'btn-ghost conversation-bin-button';
+    binBtn.title = t('View binned conversations');
+    binBtn.setAttribute('aria-label', t('Open bin'));
+    binBtn.innerHTML = `${BIN_ICON_SVG}<span class="conversation-bin-label">${escapeHtml(t('Bin'))}</span><span class="conversation-bin-size" hidden></span><span class="conversation-bin-count" hidden></span>`;
+    binBtn.addEventListener('click', () => this._openBinModal());
+    return binBtn;
+  }
+
+  /**
+   * The "+" row at the top of the strip, which makes a conversation. Drawn as a
+   * row of the list it adds to: the "+" in the status circle's column and the
+   * words where tab names start.
+   * @returns {HTMLElement} The row, not yet placed.
+   * @private
+   */
+  _createAddRow() {
+    const addButton = document.createElement('li');
+    addButton.className = 'conversation-add-item';
+    addButton.innerHTML = `
+      <button class="conversation-add" type="button"
+              title="${escapeHtml(t('New conversation'))}" data-shortcut-id="new-conversation"
+              aria-label="${escapeHtml(t('Create new conversation'))}">${ADD_ICON_SVG}<span class="conversation-box-new-label"><span class="conversation-box-new-label-full">${escapeHtml(t('New conversation'))}</span><span class="conversation-box-new-label-short">${escapeHtml(t('Conversation'))}</span></span></button>
+    `;
+    addButton.querySelector('.conversation-add')?.addEventListener('click', () => this._createConversation());
+    return addButton;
+  }
+
+  /**
+   * The way to make a workspace: the last row of the strip, standing where the
+   * boxes it makes will stand. Drawn as the "+" at the top is — a row of the
+   * list, on the tabs' grid — so the two read as the ends of one list.
+   * @returns {HTMLElement} The row, not yet placed.
+   * @private
+   */
+  _createNewWorkspaceRow() {
+    const newWorkspace = document.createElement('li');
+    newWorkspace.className = 'conversation-box-new';
+    newWorkspace.innerHTML = `
+      <button class="conversation-box-new-button" type="button"
+               title="${escapeHtml(t('Create a new workspace, or a group to keep conversations together'))}"
+               aria-label="${escapeHtml(t('New workspace or group'))}">${ADD_ICON_SVG}<span class="conversation-box-new-label"><span class="conversation-box-new-label-full">${escapeHtml(t('New workspace or group'))}</span><span class="conversation-box-new-label-short">${escapeHtml(t('Workspace/Group'))}</span></span></button>
+    `;
+    newWorkspace.querySelector('button')?.addEventListener('click', () => { void this._createWorkspace(); });
+    return newWorkspace;
+  }
+
+  /**
+   * Refresh the Bin button's count badge, size hint and title from session state.
+   * @param {HTMLButtonElement} binBtn - The Bin button.
+   * @private
+   */
+  _refreshBinButton(binBtn) {
+    const bin = /** @type {NonNullable<typeof this._session>} */ (this._session).bin;
+    const count = bin.count || 0;
+    const sizeBytes = bin.sizeBytes || 0;
     const countEl = /** @type {HTMLElement|null} */ (binBtn.querySelector('.conversation-bin-count'));
     if (countEl) {
       // Compared before writing, like every other text in this pass: render()
@@ -1064,81 +1195,18 @@ class ConversationBar extends JugglerElement {
           { count });
     }
     if (binBtn.title !== binTitle) binBtn.title = binTitle;
+  }
 
-    // Convert Map to array for rendering
-    const conversations = Array.from(this._session.conversations.values());
-    // The strip draws what the session says is selected, and asks it once: a
-    // box holding the selection is already why there is no visible
-    // conversation, so there is nothing to reconcile between the two answers.
-    // A keyboard cycle still settling is drawn as the selection already: the
-    // highlight follows every press, and only showing the conversation waits.
-    const cycling = this._cycleTargetId !== null && this._session.conversations.has(this._cycleTargetId);
-    const selectedWorkspaceId = cycling ? null : (selectedWorkspace(this._session)?.id ?? null);
-    const visibleId = cycling ? this._cycleTargetId : this._session.visibleConversationId;
-
-    // Get or create add button (only created once) and pin it to the top
-    let addButton = /** @type {HTMLElement|null} */ (this._cachedElements.get('add-button'));
-    if (!addButton) {
-      addButton = document.createElement('li');
-      addButton.className = 'conversation-add-item';
-      // Drawn as a row of the list it adds to: the "+" in the status circle's
-      // column and the words where tab names start.
-      addButton.innerHTML = `
-        <button class="conversation-add" type="button"
-                title="${escapeHtml(t('New conversation'))}" data-shortcut-id="new-conversation"
-                aria-label="${escapeHtml(t('Create new conversation'))}">${ADD_ICON_SVG}<span class="conversation-box-new-label"><span class="conversation-box-new-label-full">${escapeHtml(t('New conversation'))}</span><span class="conversation-box-new-label-short">${escapeHtml(t('Conversation'))}</span></span></button>
-      `;
-      this._cachedElements.set('add-button', addButton);
-
-      const addBtn = addButton.querySelector('.conversation-add');
-      if (addBtn) {
-        addBtn.addEventListener('click', () => this._createConversation());
-      }
-    }
-    if (addButton.parentNode !== tabsMenu || tabsMenu.firstChild !== addButton) {
-      tabsMenu.insertBefore(addButton, tabsMenu.firstChild);
-    }
-
-    // With no tabs below it, the button is the only way out of an empty column,
-    // and is emphasised as such.
-    const addBtn = /** @type {HTMLElement|null} */ (addButton.querySelector('.conversation-add'));
-    if (addBtn) addBtn.classList.toggle('conversation-add-labelled', conversations.length === 0);
-
-    // The way to make a workspace: the last row of the strip, standing where
-    // the boxes it makes will stand. Drawn as the "+" at the top is — a row of
-    // the list, on the tabs' grid — so the two read as the ends of one list.
-    let newWorkspace = /** @type {HTMLElement|null} */ (this._cachedElements.get('new-workspace'));
-    if (!newWorkspace) {
-      newWorkspace = document.createElement('li');
-      newWorkspace.className = 'conversation-box-new';
-      newWorkspace.innerHTML = `
-        <button class="conversation-box-new-button" type="button"
-                 title="${escapeHtml(t('Create a new workspace, or a group to keep conversations together'))}"
-                 aria-label="${escapeHtml(t('New workspace or group'))}">${ADD_ICON_SVG}<span class="conversation-box-new-label"><span class="conversation-box-new-label-full">${escapeHtml(t('New workspace or group'))}</span><span class="conversation-box-new-label-short">${escapeHtml(t('Workspace/Group'))}</span></span></button>
-      `;
-      this._cachedElements.set('new-workspace', newWorkspace);
-      newWorkspace.querySelector('button')?.addEventListener('click', () => { void this._createWorkspace(); });
-    }
-
-    // Track which conversation IDs are still present
-    /** @type {Set<string>} */
-    const currentConversationIds = new Set(conversations.map(c => c.id));
-
-    // Forget the last-scrolled tab once its conversation is gone (binned or
-    // deleted), so restoring it and selecting it again scrolls to it afresh.
-    // Done here rather than in the bin path because _flyTabToBin drops out
-    // early under prefers-reduced-motion and never runs.
-    if (this._lastScrolledTabId && !currentConversationIds.has(this._lastScrolledTabId)) {
-      this._lastScrolledTabId = null;
-    }
-
-    // Where each conversation is drawn. A conversation working in a workspace
-    // goes inside that workspace's box; everything else stays flat in the strip
-    // — the project's conversations, and any whose binding names a place that
-    // cannot be worked in, which the stranded banner explains rather than this.
-    // A conversation's place is the Map order above; a box's is its own row's
-    // `after` field. `workspaceGroups` reads the two together.
-    const groups = workspaceGroups(this._session);
+  /**
+   * Draw (or update in place) every box and every tab, each in the container it
+   * belongs in. Order is _orderStrip's.
+   * @param {ReturnType<typeof workspaceGroups>} groups - The strip's groups, in order.
+   * @param {HTMLElement} tabsMenu - The strip.
+   * @param {string|null} visibleId - The conversation drawn as selected.
+   * @param {string|null} selectedWorkspaceId - The workspace drawn as selected.
+   * @private
+   */
+  _drawStrip(groups, tabsMenu, visibleId, selectedWorkspaceId) {
     for (const group of groups) {
       const container = group.workspace
         ? this._renderWorkspaceBox(group.workspace, tabsMenu, selectedWorkspaceId)
@@ -1147,15 +1215,23 @@ class ConversationBar extends JugglerElement {
         this._renderOrUpdateTab(conv, visibleId, container);
       }
     }
+  }
 
-    // Reorder boxes and the tabs within them to match, but only move what is
-    // out of place — re-inserting a node restarts CSS animations on it (used by
-    // the tab status bar pulse), so we skip moves that don't change position.
-    // A tab already in the right box is left alone; only one that has changed
-    // workspace is ever re-parented.
-    //
-    // A drag never reaches here — render() returns early for the whole of one —
-    // so this always reconciles against a strip nobody is holding.
+  /**
+   * Reorder boxes and the tabs within them to match, but only move what is out
+   * of place — re-inserting a node restarts CSS animations on it (used by the tab
+   * status bar pulse), so we skip moves that don't change position. A tab
+   * already in the right box is left alone; only one that has changed workspace
+   * is ever re-parented.
+   *
+   * A drag never reaches here — render() returns early for the whole of one —
+   * so this always reconciles against a strip nobody is holding.
+   * @param {ReturnType<typeof workspaceGroups>} groups - The strip's groups, in order.
+   * @param {HTMLElement} tabsMenu - The strip.
+   * @param {HTMLElement} addButton - The "+" row the strip starts after.
+   * @private
+   */
+  _orderStrip(groups, tabsMenu, addButton) {
     let expected = addButton.nextSibling;
     for (const group of groups) {
       const box = group.workspace ? this._workspaceBoxes.get(group.workspace.id) : null;
@@ -1179,8 +1255,18 @@ class ConversationBar extends JugglerElement {
       // the strip, and a cursor read early would name a node no longer here.
       expected = box.nextSibling;
     }
+  }
 
-    // Remove tabs for deleted conversations
+  /**
+   * Remove the tabs of conversations that are gone, and the boxes of workspaces
+   * that no longer get one — finished with, or gone. Their conversations, if
+   * any, were moved out to the flat strip by _orderStrip, so this takes nothing
+   * with it that is still being drawn.
+   * @param {Set<string>} currentConversationIds - The conversations still present.
+   * @param {ReturnType<typeof workspaceGroups>} groups - The strip's groups.
+   * @private
+   */
+  _dropStaleRows(currentConversationIds, groups) {
     for (const [id, element] of this._cachedElements) {
       if (!CHROME_ELEMENT_KEYS.has(id) && !currentConversationIds.has(id)) {
         element.remove();
@@ -1188,33 +1274,12 @@ class ConversationBar extends JugglerElement {
       }
     }
 
-    // And boxes for workspaces that no longer get one — finished with, or gone.
-    // Their conversations, if any, were moved out to the flat strip by the pass
-    // above, so this takes nothing with it that is still being drawn.
     const boxed = new Set(groups.map(group => group.workspace?.id).filter(Boolean));
     for (const [id, box] of this._workspaceBoxes) {
       if (boxed.has(id)) continue;
       box.remove();
       this._workspaceBoxes.delete(id);
     }
-
-    // Last in the strip, under the boxes it makes. Placed after the
-    // reconciliation pass rather than in it: the pass walks a cursor through the
-    // tabs and boxes it knows about, and this belongs to none of those runs — it
-    // simply comes after all of them, however they end up ordered.
-    if (tabsMenu.lastChild !== newWorkspace) tabsMenu.appendChild(newWorkspace);
-
-    // Rows arriving or leaving change how much list there is below the fold
-    // without changing the menu's own box, so the observer would not notice.
-    this._updateTabListOverflow();
-
-    // The info rail is NOT reconciled from here. It measures itself off its own
-    // ResizeObserver, and its height is this column's leftover space (flex: 1 1 0),
-    // so laying out the tabs is exactly what makes it resize — the observer fires
-    // after layout and before paint, catching every case a call from here would.
-    // Reconciling it per render would be a poll: render() runs on every doc
-    // change, and each reconcile tears down and rebuilds every card that doesn't
-    // fit, so the cards would remount (and refetch) once a frame while streaming.
   }
 
   /**
@@ -2314,15 +2379,10 @@ class ConversationBar extends JugglerElement {
 
 
   /**
-   * Rename the tab for the given conversation, in place.
-   *
-   * The editor itself is the shared one (utils/inline-rename.js), opened over
-   * the tab `<li>`; what is here is everything true of a conversation and not
-   * of anything else that gets renamed — when a rename is allowed at all, how
-   * long a name may be, what the server says when it refuses one, and the offer
-   * to hand naming back to the model. When the editor closes, however it
-   * closes, keyboard focus moves to the visible conversation's message input so
-   * the user can type straight after naming.
+   * Rename the tab for the given conversation, in place (see
+   * conversation-rename.js for what a conversation's rename allows). When the
+   * editor closes, however it closes, keyboard focus moves to the visible
+   * conversation's message input so the user can type straight after naming.
    * @param {string} conversationId
    * @param {object} [options]
    * @param {string} [options.initialValue] - Seed value for the input,
@@ -2331,87 +2391,19 @@ class ConversationBar extends JugglerElement {
    * @private
    */
   _enterRenameMode(conversationId, { initialValue } = {}) {
-    if (!this._session) return;
+    const session = this._session;
+    if (!session) return;
 
-    const conv = this._session.getConversation(conversationId);
-    if (!conv) return;
-
-    // Renaming a stub would race the worker's metadata: the rename writes to
-    // the doc, then the worker's first metadata observer fires and clobbers
-    // the new name with the disk-loaded one. Force the user to wait until
-    // hydration finishes (panel spinner makes this state visible).
-    if (conv.loadState !== 'loaded') return;
+    const conversation = session.getConversation(conversationId);
+    if (!conversation) return;
 
     const tab = /** @type {HTMLElement|null} */ (this._cachedElements.get(conversationId));
     if (!tab) return;
 
-    openInlineRename(tab, {
-      value: initialValue ?? conv.name,
-      // UI-level enforcement of the shared name-length cap: the browser blocks
-      // further typed input at the limit. This editor backs both rename and the
-      // "name a new conversation" flow, so both paths are covered here. The data
-      // level (Session.renameConversation) is the backstop for paste/programmatic
-      // input that can exceed maxlength.
-      maxLength: MAX_CONVERSATION_NAME_LENGTH,
-
-      commit: async (newName) => {
-        try {
-          await /** @type {NonNullable<typeof this._session>} */ (this._session).renameConversation(conv.id, newName);
-          return '';
-        } catch (e) {
-          const code = /** @type {any} */ (e)?.code;
-          // A name already taken is the one refusal the user can answer, so it
-          // is the one that keeps the editor open. A name the server calls
-          // invalid closes it: the editor has nothing to add that the empty
-          // result doesn't already say.
-          if (code === 'COLLISION') {
-            return t('“{name}” is already used by another conversation.', { name: newName });
-          }
-          if (code !== 'INVALID') {
-            await showAlert(
-              t("Couldn't rename the conversation: {error}", { error: errorText(e) }),
-              t('Rename failed')
-            );
-          }
-          return '';
-        }
-      },
-
-      // "Auto-name": hand off to the model to name the tab from the first
-      // message instead of typing a name. Only offered once the conversation has
-      // a first user message to derive from — for a brand-new empty tab there's
-      // nothing to name, and the request would be a server-side no-op, so the
-      // button is omitted entirely (the empty actions row then collapses).
-      // pointerdown preventDefault keeps focus on the input so the button press
-      // doesn't trigger a blur→commit of the current (unchanged) value first. The
-      // server renames + broadcasts, which updates the tab; we mark the tab as
-      // being named and close the editor.
-      actions: ({ close }) => {
-        if (!conv.hasAutoNameSource()) return null;
-        const autoNameBtn = document.createElement('button');
-        autoNameBtn.type = 'button';
-        autoNameBtn.className = 'conversation-tab-auto-name';
-        autoNameBtn.textContent = t('Auto-name');
-        autoNameBtn.title = t('Let the model name this conversation from your first message');
-        autoNameBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); });
-        autoNameBtn.addEventListener('click', (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          const session = /** @type {NonNullable<typeof this._session>} */ (this._session);
-          // The user handed naming back to the model, so the tab's name is
-          // provisional again — mark it before requesting, so a later /handoff of
-          // this conversation stays eligible for a derived title.
-          session.setNameIsProvisional(conv.id, true);
-          // Say so before the server does: its round trip is long enough for the
-          // press to look like it did nothing. Marked ahead of close(), whose
-          // render is the one that paints it.
-          session.setAutoNaming(conv.id, true, { timeoutMs: AUTO_NAME_PRESS_TIMEOUT_MS });
-          session.requestAutoName(conv.id);
-          close();
-        });
-        return autoNameBtn;
-      },
-
+    openConversationRename(tab, {
+      session,
+      conversation,
+      initialValue,
       // A tab being renamed is left alone by every repaint (_renderOrUpdateTab
       // will not write a name under an open field), so the tab is still showing
       // the old name until a render lands after the editor has gone. This is

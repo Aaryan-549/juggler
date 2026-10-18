@@ -155,31 +155,31 @@ export async function runTests() {
     })();
 
     list.scrollTo({ top: sign * range * 0.5, behavior: 'instant' });
-    rootCol._recordReaderAnchor();
-    assert(!!rootCol._readerAnchor,
+    rootCol._scroll.recordAnchor();
+    assert(!!rootCol._scroll.anchor,
       'test setup: a reader anchor should be recorded away from the end');
 
-    rootCol._beginProgrammaticScroll();
+    rootCol._scroll.beginProgrammaticScroll();
     list.scrollTo({ top: sign * range * 0.9, behavior: 'instant' });
     const travelled = list.scrollTop;
-    rootCol._holdReaderAnchor();
+    rootCol._scroll.holdAnchor();
     assert(list.scrollTop === travelled,
       `the reader anchor must not undo a scroll the reader asked for, but hauled ` +
       `${travelled} back to ${list.scrollTop}`);
 
     // …and hands the view back once the scroll settles, rather than staying off.
-    for (let i = 0; i < 40 && rootCol._programmaticScroll; i++) {
+    for (let i = 0; i < 40 && rootCol._scroll.programmatic; i++) {
       await new Promise((r) => setTimeout(r, 50));
     }
-    assert(!rootCol._programmaticScroll,
+    assert(!rootCol._scroll.programmatic,
       'the programmatic-scroll window must close once the view settles');
 
     // The control: with no scroll of ours in flight the anchor still corrects, so
     // the guard above is specific rather than a blanket disable.
-    rootCol._recordReaderAnchor();
+    rootCol._scroll.recordAnchor();
     const anchoredAt = list.scrollTop;
     list.scrollTo({ top: sign * range * 0.6, behavior: 'instant' });
-    rootCol._holdReaderAnchor();
+    rootCol._scroll.holdAnchor();
     assert(Math.abs(list.scrollTop - anchoredAt) < Math.abs(range * 0.3),
       `with no scroll of ours in flight the anchor must still hold the reader's ` +
       `place, but left the view at ${list.scrollTop} instead of near ${anchoredAt}`);
@@ -192,12 +192,12 @@ export async function runTests() {
     // can arrive here, long after the reader has taken the view somewhere of their
     // own, where landing it would be an automatic jump to the end and away from
     // the place being held for them.
-    assert(!!rootCol._readerAnchor,
+    assert(!!rootCol._scroll.anchor,
       'test setup: the reader should have a place held here, or a late restore has ' +
       'nothing to land on top of');
     // As if this load's restore were still outstanding, whether or not this
     // engine has already delivered the frame carrying it.
-    rootCol._initialScrollRestored = false;
+    rootCol._scroll._restored = false;
     const beforeRestore = list.scrollTop;
     rootCol.restoreScrollPosition();
     assert(list.scrollTop === beforeRestore,

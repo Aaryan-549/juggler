@@ -123,7 +123,7 @@ export async function runTests() {
     // Stand in for the selected pending approval that _engageSelectedApproval
     // scans for: an element carrying a message-id, holding an
     // action-confirmation, which the column reports as its selection.
-    // _localSelectedItemId is set directly rather than through selectItem()
+    // The selection is preset directly rather than through selectItem()
     // because that path validates the id against the model, and this row
     // deliberately has no model item behind it — the behaviour under test is
     // where focus lands, not how the row got selected.

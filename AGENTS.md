@@ -220,10 +220,11 @@ Key invariants:
   handlers on the latter stay read-only and unbatched: `session.js`.
 - **An automatic scroll may never increase `|scrollTop|`** (distance from the
   end) in the column-reverse `#message-list`; auto-selection can land on a
-  non-tail row and yank the view backwards. `conversation-area`'s reader anchor
+  non-tail row and yank the view backwards. The column's reader anchor
+  (`ColumnScroll`, `conversation-area-scroll.js`)
   reads "content changed size" as evidence of drift — which a streaming turn
   satisfies — and its `scrollTo` cancels an in-flight smooth scroll, so any new
-  programmatic scroll calls `_beginProgrammaticScroll()` first and targets a
+  programmatic scroll calls `beginProgrammaticScroll()` first and targets a
   clamped extreme rather than a measured delta, so an interrupted trip still
   converges. Lanes barely paint; test these by calling the guard directly.
 - **A "new" conversation is not empty in the doc** — items are seeded with

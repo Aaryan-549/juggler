@@ -1023,9 +1023,9 @@ class ConversationTab extends JugglerElement {
   /**
    * Fan accumulated-while-hidden insertedItemIds into each conversation-area
    * column's onItemsInserted, so the standard auto-selection policy
-   * (pickAutoSelectCandidate: error > pending-approval > shouldAutoSelect >
+   * (ColumnSelection's _pickAutoSelectCandidate: error > pending-approval > shouldAutoSelect >
    * fallback) evaluates them exactly as it would have if the tab had been
-   * visible. The user-override gate (_selectionOrigin === 'user') still
+   * visible. The user-override gate (selectionOrigin === 'user') still
    * applies, so a manual selection made before switching away is preserved.
    * @private
    */

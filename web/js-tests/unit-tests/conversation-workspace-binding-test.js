@@ -712,7 +712,7 @@ export async function runTests() {
 
         // A sub-thread column is a lens on part of the same conversation, so it
         // works in the same tree; saying so again in every thread would be noise.
-        assert(bannerFor(bound, { _threadYMap: {} }) === null,
+        assert(bannerFor(bound, { threadYMap: {} }) === null,
           'and only once — a sub-thread column shares the conversation it hangs off');
       } finally {
         session.workspaces = saved;

@@ -181,7 +181,7 @@ export async function runTests() {
       `the read content must stay put as items are appended below it, drifted ${drift}px`);
     // The bound is the insert itself, not the settled layout. A row that keeps
     // growing after the mutation returns (this one fills in its body later) is
-    // held by the ResizeObserver in _setupReaderAnchor instead — and this window
+    // held by ColumnScroll's reader-anchor ResizeObserver instead — and this window
     // is an offscreen pool lane that never paints, so the browser delivers no
     // resize observations in it at all, only the initial one. Tightening this
     // bound would be asserting the harness rather than the behaviour.

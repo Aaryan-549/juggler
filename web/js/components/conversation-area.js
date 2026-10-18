@@ -48,8 +48,9 @@ import {
   ensureConversationChrome,
   getItemId,
 } from './conversation-area-rendering.js';
-import * as scroll from './conversation-area-scroll.js';
-import * as selection from './conversation-area-selection.js';
+import { ColumnScroll } from './conversation-area-scroll.js';
+import { ColumnSelection } from './conversation-area-selection.js';
+import JugglerElement from './juggler-element.js';
 import { StatusMessageBuilder } from '../services/status-message-builder.js';
 import { guarded } from '../utils/fault-report.js';
 import { emptyHintStackMarkup } from './empty-hint-stack.js';
@@ -109,14 +110,6 @@ function emptyHintMarkup() {
  */
 
 /**
- * Idle gap (ms) after a scroll this component asked for stops moving before the
- * reader anchor takes charge of the view again. Comfortably longer than the frame
- * gap of a smooth scroll, so a glide still in flight keeps pushing it out. See
- * _beginProgrammaticScroll.
- */
-const PROGRAMMATIC_SCROLL_SETTLE_MS = 150;
-
-/**
  * The item ids whose own Y.Map fields changed in one observeDeep batch, or
  * null when the batch can't be attributed to specific rows.
  *
@@ -156,67 +149,49 @@ const INTERACTIVE_SELECTOR =
   'button, a, input, textarea, select, summary, [role="button"], [contenteditable="true"]';
 
 /**
- * ConversationArea - Fixed conversation panel at bottom of viewport
+ * ConversationArea - one column of a conversation tab: a thread's transcript
+ * over its composer.
+ *
+ * Drawn once, on first connect, and kept: a move or a put-back re-binds the
+ * listeners and re-attaches the observers the disconnect released, and leaves
+ * the transcript — and the conversation, thread and thread context the tab
+ * handed it — exactly as they were. Selection and scrolling are owned by
+ * {@link ColumnSelection} and {@link ColumnScroll}; this class holds what
+ * neither of them does.
  */
-class ConversationArea extends HTMLElement {
+class ConversationArea extends JugglerElement {
   constructor() {
     super();
-    /** @type {() => void} @private - See _handleNewConversationHintChanged */
-    this._onNewConversationHintChanged = () => this._handleNewConversationHintChanged();
     /** @type {import('../model/conversation.js').default|null} @private */
     this._conversation = null;
-    /** @type {number|null} @private */
-    this._scrollAnimationFrame = null;
-    /** @type {boolean} @private - Track if initial scroll restore has happened */
-    this._initialScrollRestored = false;
-    /** @type {boolean} @private - This column has been pointed at a sub-thread it has yet to land on (rule 12, see restoreScrollPosition) */
-    this._threadLandingPending = false;
-    /** @type {((event: any, transaction: any) => void)|null} @private - Metadata observer for nextSteps */
-    this._metadataObserver = null;
-    /** @type {((event: any, transaction: any) => void)|null} @private - Items observer for streaming scroll */
-    this._streamingScrollObserver = null;
-    /** @type {'user'|'auto'|null} @private - Origin of current selection */
-    this._selectionOrigin = null;
-    /** @type {boolean} @private - Whether the last pointer press began inside an action-confirmation widget */
-    this._mousedownInApproval = false;
-    /** @type {boolean} @private - Whether the last pointer press began on a control inside a tile */
-    this._mousedownOnControl = false;
-    /** @type {boolean} @private - Whether the click being handled is an approval action rather than navigation */
-    this._clickIsApprovalAction = false;
-    /** @type {boolean} @private - Whether the click being handled landed on a control inside a tile */
-    this._clickOnControl = false;
     /** @type {import('../model/message-thread.js').MessageThread|null} @private */
     this._messageThread = null;
-    /** @type {string|null} @private - Locally tracked selected item ID (per-column) */
-    this._localSelectedItemId = null;
     /** @type {*} @private - Thread Y.Map this column represents (null for root). FOR READS AND OBSERVATION ONLY — use messageThread methods for mutations. */
     this._threadYMap = null;
-    /** @type {((event: any) => void)|null} @private - Yjs observer on thread Y.Map */
+    /** @type {boolean} @private - Set by the first render; a later connect keeps the DOM it drew */
+    this._rendered = false;
+    /** @type {ColumnScroll} @private - Every piece of this column's scroll state */
+    this._scroll = new ColumnScroll(this);
+    /** @type {ColumnSelection} @private - Which row is selected, by whom, and what auto-selects */
+    this._selection = new ColumnSelection(this, this._scroll);
+    /** @type {((event: any, transaction: any) => void)|null} @private - Metadata observer for nextSteps, set while the conversation is followed */
+    this._metadataObserver = null;
+    /** @type {((events: any[]) => void)|null} @private - Deep observer on the thread container, for streaming growth */
+    this._streamingScrollObserver = null;
+    /** @type {any} @private - The container _streamingScrollObserver is attached to */
+    this._observedContainer = null;
+    /** @type {((event: any) => void)|null} @private - Yjs observer on thread Y.Map, set while connected */
     this._threadStatusObserver = null;
-    /** @type {IntersectionObserver|null} @private - Watches selected element visibility while origin='user' */
-    this._selectedVisibilityObserver = null;
-    /** @type {number|null} @private - Pending timer to demote origin after offscreen dwell */
-    this._offscreenResumeTimer = null;
     /** @type {boolean} @private - True once this column has done its initial bulk render, so later structural inserts/removals animate (FLIP) while the first populate stays instant. */
     this._animationsPrimed = false;
-    /** @type {boolean} @private - Guards the once-only file-drop listeners on `this`, which outlive render() (see _setupFileDrop) */
-    this._fileDropBound = false;
+    /** @type {boolean} @private - Reentrancy guard for renderFromItems */
+    this._isRendering = false;
     /** @type {ResizeObserver|null} @private - Re-positions the starting hint as the clear band between content and composer changes (see _positionEmptyHint) */
     this._emptyHintObserver = null;
-    /** @type {ResizeObserver|null} @private - Recomputes scroll-control visibility on viewport/content resize */
-    this._scrollControlsResizeObserver = null;
     /** @type {string[]} @private - Suggested replies currently on offer above this column's composer */
     this._replySuggestions = [];
     /** @type {import('../services/reply-suggestions-controller.js').ReplySuggestionsController|null} @private - Decides when to ask the cheap model for those */
     this._replySuggestionsCtl = null;
-    /** @type {ResizeObserver|null} @private - Holds the reader's place when content resizes while they are scrolled away (see _setupReaderAnchor) */
-    this._readerAnchorObserver = null;
-    /** @type {{el: HTMLElement, top: number, contentHeight: number}|null} @private - The row the reader's place is measured from, where it sat when last recorded, and the content height it was recorded against */
-    this._readerAnchor = null;
-    /** @type {boolean} @private - True while a scroll this component asked for is still travelling, so the reader anchor doesn't read it as drift and undo it (see _beginProgrammaticScroll) */
-    this._programmaticScroll = false;
-    /** @type {number|null} @private - Settle timer that ends the programmatic-scroll window */
-    this._programmaticScrollTimer = null;
     /** @type {boolean} @private - True when this column IS a group's contents, so its rows are never re-folded */
     this._isGroupColumn = false;
     /** @type {any[]|null} @private - The folded rows this column shows, when it is a group column (null otherwise) */
@@ -230,72 +205,97 @@ class ConversationArea extends HTMLElement {
   }
 
   /**
-   * Set conversation reference
+   * Set conversation reference. Its observers are attached while the column is
+   * in the document (see _attachConversationObservers); a column handed one
+   * while detached follows it from its next connect.
    * @param {import('../model/conversation.js').default|null} conversation
    */
   set conversation(conversation) {
     // Skip if same conversation (avoids tearing down observers on every sync)
     if (conversation === this._conversation) return;
 
-    // Clean up old observers
+    this._detachConversationObservers();
+    this._selection.stopWatching();
+    this._conversation = conversation;
+    if (this.isConnected) this._attachConversationObservers();
+  }
+
+  /**
+   * Follow the conversation: its metadata, the session feed the workspace
+   * banner rides, the reply-suggestions controller, and — once there is a
+   * thread — the thread container's streaming growth. A no-op while already
+   * following, so connect and the setter can both call it.
+   * @private
+   */
+  _attachConversationObservers() {
+    const conversation = this._conversation;
+    if (!conversation || this._metadataObserver) return;
+
+    this._metadataObserver = (/** @type {any} */ event) => {
+      // Conversation metadata holds only the ROOT thread's plan; a sub-thread
+      // column reads its own plan off its thread Y.Map (see the thread
+      // observer in setThreadContext). Refreshing here is harmless for a
+      // sub-thread column (it re-reads its own Y.Map, not this key).
+      if (event.keysChanged.has('nextSteps')) {
+        this._refreshNextStepsIndicator();
+      }
+      // The binding is written once, when the conversation is initialised —
+      // which for a blank tab is its first send, long after this column was
+      // built around it. The flag beside it is what decides between the setup
+      // panel and the banner, and it moves on the same hop.
+      if (event.keysChanged.has(WORKSPACE_ID_KEY) || event.keysChanged.has(INITIALISED_KEY)) {
+        this._refreshConversationTop();
+      }
+      // Selection is local per-column, held by ColumnSelection.
+    };
+    conversation.observeMetadata(this._metadataObserver);
+
+    // The other half of what the banner reads: the session's workspace table,
+    // replaced whole by every `workspaces-changed` broadcast. A binding can
+    // become resolvable (a provision finishing) or stop being one (a peer
+    // closing the workspace) with nothing in this conversation's doc moving,
+    // so the item path would never hear about it.
+    const unsubscribe = conversation.session?.subscribe((event) => {
+      if (event.type === 'session:workspaces-changed') this._refreshConversationTop();
+    });
+    this._unsubscribeSession = unsubscribe || null;
+
+    this._getReplySuggestionsController().attach(conversation);
+
+    // Check initial state
+    this._refreshNextStepsIndicator();
+
+    // Follow streaming growth if the message thread is already available.
+    // Otherwise it starts when setMessageThread() is called.
+    if (this._messageThread) this._setupStreamingScrollObserver(conversation);
+  }
+
+  /**
+   * Stop following the conversation, keeping the reference: a disconnect drops
+   * the observers, which hold strong references back to this column, and the
+   * next connect takes them up again.
+   * @private
+   */
+  _detachConversationObservers() {
     if (this._conversation && this._metadataObserver) {
       this._conversation.unobserveMetadata(this._metadataObserver);
-      this._metadataObserver = null;
     }
-    if (this._streamingScrollObserver && this._observedContainer) {
-      this._observedContainer.unobserveDeep(this._streamingScrollObserver);
-      this._streamingScrollObserver = null;
-      this._observedContainer = null;
-    }
+    this._metadataObserver = null;
+    this._unobserveContainer();
     if (this._unsubscribeSession) {
       this._unsubscribeSession();
       this._unsubscribeSession = null;
     }
-    selection.teardownSelectionVisibilityWatcher(this);
     if (this._replySuggestionsCtl) this._replySuggestionsCtl.detach();
-    this._conversation = conversation;
+  }
 
-    // Set up new observer for nextSteps metadata
-    if (conversation) {
-      this._metadataObserver = (/** @type {any} */ event) => {
-        // Conversation metadata holds only the ROOT thread's plan; a sub-thread
-        // column reads its own plan off its thread Y.Map (see the thread
-        // observer in setThreadContext). Refreshing here is harmless for a
-        // sub-thread column (it re-reads its own Y.Map, not this key).
-        if (event.keysChanged.has('nextSteps')) {
-          this._refreshNextStepsIndicator();
-        }
-        // The binding is written once, when the conversation is initialised —
-        // which for a blank tab is its first send, long after this column was
-        // built around it. The flag beside it is what decides between the setup
-        // panel and the banner, and it moves on the same hop.
-        if (event.keysChanged.has(WORKSPACE_ID_KEY) || event.keysChanged.has(INITIALISED_KEY)) {
-          this._refreshConversationTop();
-        }
-        // Selection is local per-column, tracked in _localSelectedItemId.
-      };
-      conversation.observeMetadata(this._metadataObserver);
-
-      // The other half of what the banner reads: the session's workspace table,
-      // replaced whole by every `workspaces-changed` broadcast. A binding can
-      // become resolvable (a provision finishing) or stop being one (a peer
-      // closing the workspace) with nothing in this conversation's doc moving,
-      // so the item path would never hear about it.
-      this._unsubscribeSession = conversation.session?.subscribe((event) => {
-        if (event.type === 'session:workspaces-changed') this._refreshConversationTop();
-      }) || null;
-
-      this._getReplySuggestionsController().attach(conversation);
-
-      // Check initial state
-      this._refreshNextStepsIndicator();
-
-      // Set up streaming scroll observer if message thread is already available.
-      // Otherwise, it will be set up when setMessageThread() is called.
-      if (this._messageThread) {
-        this._setupStreamingScrollObserver(conversation);
-      }
+  /** @private */
+  _unobserveContainer() {
+    if (this._streamingScrollObserver && this._observedContainer) {
+      this._observedContainer.unobserveDeep(this._streamingScrollObserver);
     }
+    this._streamingScrollObserver = null;
+    this._observedContainer = null;
   }
 
   /**
@@ -344,16 +344,11 @@ class ConversationArea extends HTMLElement {
     // Columns are reused across thread navigations (the same conversation-area
     // element is repurposed for a different sub-thread), and without this
     // retarget the observer would stay attached to the previous container and
-    // miss streaming chunks on the new one.
-    if (this._conversation && containerChanged) {
-      if (this._streamingScrollObserver && this._observedContainer) {
-        this._observedContainer.unobserveDeep(this._streamingScrollObserver);
-        this._streamingScrollObserver = null;
-        this._observedContainer = null;
-      }
-      if (messageThread) {
-        this._setupStreamingScrollObserver(this._conversation);
-      }
+    // miss streaming chunks on the new one. Only while the conversation is
+    // being followed: otherwise the next attach observes the new container.
+    if (this._metadataObserver && this._conversation && containerChanged) {
+      this._unobserveContainer();
+      if (messageThread) this._setupStreamingScrollObserver(this._conversation);
     }
 
     // The next-steps (`<plan>`) indicator is thread-scoped; columns are reused
@@ -411,7 +406,7 @@ class ConversationArea extends HTMLElement {
    * @param {string|null} itemId - The selected item, or null for none.
    */
   presetSelectedItemId(itemId) {
-    this._localSelectedItemId = itemId;
+    this._selection.preset(itemId);
   }
 
   /**
@@ -420,7 +415,7 @@ class ConversationArea extends HTMLElement {
    * @returns {'user'|'auto'|null} The selection's origin.
    */
   get selectionOrigin() {
-    return this._selectionOrigin;
+    return this._selection.origin;
   }
 
   /**
@@ -441,43 +436,54 @@ class ConversationArea extends HTMLElement {
     if (threadYMap !== this._threadYMap) {
       // A different thread context means a fresh bulk populate — don't FLIP it in.
       this._animationsPrimed = false;
-      // A column pointed at a sub-thread owes it a landing (rule 12), and owes
-      // it EVERY time: columns are reused across thread navigations, so a flag
-      // spent once per element would land the first thread opened here and
-      // never another. The reader's place goes with the thread it was a place
-      // in — holding it would make the incoming thread's landing stand down for
-      // a reader who is not there (see restoreScrollPosition).
-      this._threadLandingPending = !!threadYMap;
-      this.releaseReaderAnchor();
+      // A column pointed at a sub-thread owes it a landing (rule 12).
+      this._scroll.pointAt(!!threadYMap);
     }
 
-    // Clean up old observer
-    if (this._threadStatusObserver && this._threadYMap) {
-      this._threadYMap.unobserve(this._threadStatusObserver);
-      this._threadStatusObserver = null;
-    }
-
+    this._unobserveThreadContext();
     this._threadYMap = threadYMap;
-
-    if (threadYMap) {
-      // Observe thread Y.Map for header button visibility AND this thread's own
-      // `nextSteps` (<plan>) — both are per-thread state on this Y.Map.
-      this._threadStatusObserver = () => {
-        this._refreshThreadFooter(threadYMap);
-        this._refreshNextStepsIndicator();
-      };
-      // Guarded before registering, and stored guarded so unobserve still
-      // matches: Yjs calls this mid-transaction, so a throw here would abandon
-      // the observers queued behind it rather than reaching a caller.
-      this._threadStatusObserver = guarded(
-        'conversation-area:thread-status', this._threadStatusObserver);
-      threadYMap.observe(this._threadStatusObserver);
-    }
+    if (this.isConnected) this._observeThreadContext();
 
     // Re-evaluate the plan indicator for this column's (possibly new) thread:
     // columns are reused across thread navigations, and root vs sub-thread read
     // the plan from different sources.
     this._refreshNextStepsIndicator();
+  }
+
+  /**
+   * The thread Y.Map this column represents, or null for the root (and for a
+   * group column). For reads only — mutations go through the message thread.
+   * @returns {*} The thread Y.Map, or null.
+   */
+  get threadYMap() {
+    return this._threadYMap;
+  }
+
+  /**
+   * Observe the thread Y.Map for header button visibility AND this thread's own
+   * `nextSteps` (<plan>) — both are per-thread state on this Y.Map. A no-op for
+   * the root, and while already observing.
+   * @private
+   */
+  _observeThreadContext() {
+    const threadYMap = this._threadYMap;
+    if (!threadYMap || this._threadStatusObserver) return;
+    // Guarded before registering, and stored guarded so unobserve still
+    // matches: Yjs calls this mid-transaction, so a throw here would abandon
+    // the observers queued behind it rather than reaching a caller.
+    this._threadStatusObserver = guarded('conversation-area:thread-status', () => {
+      this._refreshThreadFooter(threadYMap);
+      this._refreshNextStepsIndicator();
+    });
+    threadYMap.observe(this._threadStatusObserver);
+  }
+
+  /** @private */
+  _unobserveThreadContext() {
+    if (this._threadStatusObserver && this._threadYMap) {
+      this._threadYMap.unobserve(this._threadStatusObserver);
+    }
+    this._threadStatusObserver = null;
   }
 
   /**
@@ -515,10 +521,10 @@ class ConversationArea extends HTMLElement {
       // growth would be measured as drift and undone, walking the view backwards
       // out of the band one relayout at a time until the anchor locks it there.
       // Testing that with `pinned` puts any reader a stray pixel off the bottom
-      // on the wrong side of it, and disagrees with _recordReaderAnchor, which
+      // on the wrong side of it, and disagrees with ColumnScroll.recordAnchor, which
       // keeps no anchor in the band at all — so the two anchor paths would hold
       // a place only one of them believes in.
-      const nearEnd = scroll.isFollowingEnd(this);
+      const nearEnd = this._scroll.isFollowingEnd();
 
       // Only the rows this batch actually touched can have grown, and measuring
       // a row costs a forced layout — so never measure the whole transcript on
@@ -532,11 +538,11 @@ class ConversationArea extends HTMLElement {
       // is its in-flight animated height) before the content update lands.
       const fromHeights = growEls.map((el) => /** @type {HTMLElement} */ (el).offsetHeight);
 
-      // Hold the reader's place across this mutation (see _holdReaderAnchorOver).
+      // Hold the reader's place across this mutation (see ColumnScroll.holdAnchorOver).
       // Near the end we don't: native column-reverse anchoring keeps the newest
       // text in view, and the height glide below smooths it. Auto-follow of new
       // items / approvals comes from onItemsInserted, never from here.
-      this._holdReaderAnchorOver(() => {
+      this._scroll.holdAnchorOver(() => {
         this._notifyChangedElements(events, conversation, changed);
 
         growEls.forEach((el, i) => {
@@ -578,9 +584,8 @@ class ConversationArea extends HTMLElement {
    * right row either way.
    * @param {string|null|undefined} itemId - A document itemId (or a display id already).
    * @returns {string} The id present in this column's DOM.
-   * @private
    */
-  _displayIdFor(itemId) {
+  displayIdFor(itemId) {
     if (!itemId) return '';
     return this._memberToGroup.get(itemId) || itemId;
   }
@@ -620,7 +625,7 @@ class ConversationArea extends HTMLElement {
     // Notify all streamable message elements with their current item data
     // Elements that support streaming (assistant, thinking) implement updateFromItem()
     const streamableElements = Array.from(messageList.querySelectorAll('assistant-message, thinking-message, thread-message'));
-    const live = this._snapshotLiveStatus();
+    const live = this.snapshotLiveStatus();
     for (const element of streamableElements) {
       const itemId = element.getAttribute('message-id');
       if (!itemId) continue;
@@ -740,11 +745,11 @@ class ConversationArea extends HTMLElement {
   /**
    * Snapshot every running thread's live LLM status the same way the footer
    * reads it. A thread mirrors the message filed under its own `itemId`, so a
-   * parent and its read-only children each report their own work.
+   * parent and its read-only children each report their own work. The
+   * rendering helpers ask it too, when they build a tile that shows it.
    * @returns {import('../utils/thread-display.js').ThreadLiveStatus|null} Live status snapshot, or null when nothing is running.
-   * @private
    */
-  _snapshotLiveStatus() {
+  snapshotLiveStatus() {
     const conv = this._conversation;
     const llmState = conv?.llmState;
     if (!llmState || !conv?.id) return null;
@@ -778,17 +783,23 @@ class ConversationArea extends HTMLElement {
   }
 
   connectedCallback() {
-    this.render();
-    this.setupEventListeners();
-    window.addEventListener(REPLY_SUGGESTIONS_SETTING_EVENT, this._onNewConversationHintChanged);
-    window.addEventListener(TIPS_CHANGED_EVENT, this._onNewConversationHintChanged);
+    // Drawn once. A later connect — a move, or a put-back — keeps the transcript
+    // and the composer (with whatever is typed in it), and takes up again the
+    // listeners and observers the disconnect released.
+    if (!this._rendered) this.render();
+    this._bindListeners();
+    this._scroll.attach();
+    this._attachConversationObservers();
+    this._observeThreadContext();
+    // A starting hint already on show lost the observer that keeps it fitted.
+    const hint = this.querySelector('conversation-empty-hint');
+    if (hint && !hint.classList.contains('hidden')) this._positionEmptyHint();
   }
 
   /**
    * The tip or starter-prompt switch in Settings › Defaults moved: re-offer
    * the suggestions row, and re-fit a starting hint that is on show, whose
-   * stack just changed height. Bound in the constructor, so it can be removed
-   * on disconnect.
+   * stack just changed height.
    * @private
    */
   _handleNewConversationHintChanged() {
@@ -799,36 +810,15 @@ class ConversationArea extends HTMLElement {
   }
 
   disconnectedCallback() {
-    window.removeEventListener(REPLY_SUGGESTIONS_SETTING_EVENT, this._onNewConversationHintChanged);
-    window.removeEventListener(TIPS_CHANGED_EVENT, this._onNewConversationHintChanged);
-    // Tear down all observers attached via setters. The Yjs observers hold
-    // strong references back to `this`, so leaving them attached prevents
-    // the element (and its captured Conversation) from being collected.
-    this.conversation = null;
-    this.setThreadContext(null);
-    selection.teardownSelectionVisibilityWatcher(this);
-    if (this._scrollAnimationFrame !== null) {
-      cancelAnimationFrame(this._scrollAnimationFrame);
-      this._scrollAnimationFrame = null;
-    }
-    if (this._scrollControlsResizeObserver) {
-      this._scrollControlsResizeObserver.disconnect();
-      this._scrollControlsResizeObserver = null;
-    }
-    if (this._emptyHintObserver) {
-      this._emptyHintObserver.disconnect();
-      this._emptyHintObserver = null;
-    }
-    if (this._readerAnchorObserver) {
-      this._readerAnchorObserver.disconnect();
-      this._readerAnchorObserver = null;
-      this._readerAnchor = null;
-    }
-    if (this._programmaticScrollTimer !== null) {
-      clearTimeout(this._programmaticScrollTimer);
-      this._programmaticScrollTimer = null;
-    }
-    this._programmaticScroll = false;
+    // Every listener, the scroll controller's observers, frame and timer.
+    super.disconnectedCallback();
+    // The Yjs observers hold strong references back to `this`, so leaving them
+    // attached would keep the element (and its captured Conversation) alive.
+    // The references themselves stay: a column put back follows them again.
+    this._detachConversationObservers();
+    this._unobserveThreadContext();
+    this._selection.stopWatching();
+    this._teardownEmptyHintObserver();
   }
 
   get composer() {
@@ -846,7 +836,13 @@ class ConversationArea extends HTMLElement {
     );
   }
 
+  /**
+   * Draw the column. Runs once, on first connect (or earlier, when a test draws
+   * an unconnected column); every listener on what it draws is bound per
+   * connection, by _bindListeners.
+   */
   render() {
+    this._rendered = true;
     // Any observer from a previous DOM is now watching detached nodes; the
     // next _positionEmptyHint re-attaches to the elements this render builds.
     this._teardownEmptyHintObserver();
@@ -888,23 +884,8 @@ class ConversationArea extends HTMLElement {
 
     // A window with no persisted width starts as wide as it can while still
     // leaving a properties panel room to open beside it (startingColumnWidth).
+    // Its listeners live on the handle this render drew, and go with it.
     setupColumnResize(this, 'juggler-column-width', undefined, startingColumnWidth());
-
-    // A suggestion is DRAFTED, never sent: the words go into the composer with
-    // the caret after them, so nothing is ever sent that the user did not read,
-    // and the first click teaches the whole feature without an explainer.
-    this.addEventListener('reply-suggestion-chosen', (/** @type {any} */ e) => {
-      e.stopPropagation();
-      /** @type {any} */ (this.composer)?.setDraft?.(e.detail?.text || '');
-      this._replySuggestionsCtl?.notifyTyping();
-    });
-
-    // Their own words beat ours the moment there are any.
-    this.addEventListener('input', (/** @type {Event} */ e) => {
-      if (/** @type {HTMLElement} */ (e.target)?.tagName === 'TEXTAREA') {
-        this._replySuggestionsCtl?.notifyTyping();
-      }
-    });
   }
 
   /**
@@ -1075,6 +1056,47 @@ class ConversationArea extends HTMLElement {
   }
 
   /**
+   * Bind every listener the column needs, for the length of one connection:
+   * each goes through JugglerElement's helpers, so the disconnect releases the
+   * set and the next connect binds a fresh one — however many times the column
+   * is moved, it hears each event once.
+   * @private
+   */
+  _bindListeners() {
+    this._bindSuggestionDrafting();
+    this._bindFileDrop();
+    this._bindTranscriptClicks();
+    this.on(this, 'select-item-requested', (e) => {
+      const { messageId } = /** @type {CustomEvent} */ (e).detail;
+      if (messageId) this._selectItem(messageId, 'user');
+    });
+    // The tip or starter-prompt switch in Settings › Defaults.
+    const hintChanged = () => this._handleNewConversationHintChanged();
+    this.onWindow(REPLY_SUGGESTIONS_SETTING_EVENT, hintChanged);
+    this.onWindow(TIPS_CHANGED_EVENT, hintChanged);
+  }
+
+  /**
+   * A suggestion is DRAFTED, never sent: the words go into the composer with
+   * the caret after them, so nothing is ever sent that the user did not read,
+   * and the first click teaches the whole feature without an explainer. And
+   * their own words beat ours the moment there are any.
+   * @private
+   */
+  _bindSuggestionDrafting() {
+    this.on(this, 'reply-suggestion-chosen', (/** @type {any} */ e) => {
+      e.stopPropagation();
+      /** @type {any} */ (this.composer)?.setDraft?.(e.detail?.text || '');
+      this._replySuggestionsCtl?.notifyTyping();
+    });
+    this.on(this, 'input', (/** @type {Event} */ e) => {
+      if (/** @type {HTMLElement} */ (e.target)?.tagName === 'TEXTAREA') {
+        this._replySuggestionsCtl?.notifyTyping();
+      }
+    });
+  }
+
+  /**
    * Make the whole column a drop zone, not just its composer.
    *
    * A file dropped on a conversation is meant for the message being written
@@ -1086,15 +1108,10 @@ class ConversationArea extends HTMLElement {
    * column's area.
    * @private
    */
-  _setupFileDrop() {
-    // These listeners live on the host, which outlives render() — and
-    // setupEventListeners runs again on every re-connect, so binding twice
-    // would stage every dropped file twice.
-    if (this._fileDropBound) return;
-    this._fileDropBound = true;
+  _bindFileDrop() {
     installFileDropGuard();
 
-    this.addEventListener('dragover', (e) => {
+    this.on(this, 'dragover', (e) => {
       if (!isFileDrag(/** @type {DragEvent} */ (e).dataTransfer)) return;
       if (!this._dropTargetComposer()) return;
       e.preventDefault();
@@ -1102,7 +1119,7 @@ class ConversationArea extends HTMLElement {
       this.classList.add('file-drag-over');
     });
 
-    this.addEventListener('dragleave', (e) => {
+    this.on(this, 'dragleave', (e) => {
       // dragleave also fires for every crossing between the column's own
       // children; the element being entered tells the two apart.
       const entering = /** @type {DragEvent} */ (e).relatedTarget;
@@ -1110,7 +1127,7 @@ class ConversationArea extends HTMLElement {
       this.classList.remove('file-drag-over');
     });
 
-    this.addEventListener('drop', (e) => {
+    this.on(this, 'drop', (e) => {
       this.classList.remove('file-drag-over');
       // The composer's own handler cancels the drop it has taken, and it has
       // already run by the time this does.
@@ -1122,437 +1139,160 @@ class ConversationArea extends HTMLElement {
     });
   }
 
-  setupEventListeners() {
+  /**
+   * Clicks in the transcript: selecting a row, clearing the selection from the
+   * background, and telling either apart from an action on a row's own
+   * controls.
+   * @private
+   */
+  _bindTranscriptClicks() {
     const wrapper = this.querySelector('conversation-message-list-wrapper');
     const composer = this.querySelector('#composer-box');
+    if (!wrapper || !composer) return;
 
-    this._setupFileDrop();
+    // Where the last pointer press began, and what the click being handled
+    // turned out to be — read by the bubble-phase handler below.
+    let mousedownInApproval = false;
+    let mousedownOnControl = false;
+    let clickIsApprovalAction = false;
+    let clickOnControl = false;
 
-    if (wrapper && composer) {
-      // Capture-phase pre-check: detect clicks that originate inside an
-      // action-confirmation widget. The bubble-phase handler below can't do
-      // this with closest() because the approve/deny resolve callback mutates
-      // Yjs synchronously, which re-renders the tool-action-message and
-      // orphans the clicked button before bubbling completes. By the time
-      // closest('action-confirmation') runs at bubble, the ancestor is gone.
-      // Capture runs before _resolve, so the DOM is still intact.
-      //
-      // Clicks inside an action-confirmation are *actions on* the item, not
-      // navigation. We must NOT mark them as 'user'-origin selection — that
-      // would suppress rule 2b's auto-handoff to the next pending approval.
-      // Track where a pointer press BEGINS. A native `click` fires on the
-      // nearest common ancestor of the mousedown and mouseup targets; if the
-      // approval box shifts between press and release (autoscroll while
-      // streaming, or a pending re-render), the click target can resolve onto
-      // the selectable item ABOVE even though the user pressed an approval
-      // button. Keying the approval-action decision off the press location
-      // makes it immune to that shift, so a press that began on a button is
-      // never mistaken for navigation onto a neighbour.
-      wrapper.addEventListener('mousedown', (e) => {
-        const target = /** @type {HTMLElement} */ (e.target);
-        this._mousedownInApproval = !!target?.closest?.('action-confirmation');
-        this._mousedownOnControl = !!target?.closest?.(INTERACTIVE_SELECTOR);
-      }, true);
+    // Capture-phase pre-check: detect clicks that originate inside an
+    // action-confirmation widget. The bubble-phase handler below can't do
+    // this with closest() because the approve/deny resolve callback mutates
+    // Yjs synchronously, which re-renders the tool-action-message and
+    // orphans the clicked button before bubbling completes. By the time
+    // closest('action-confirmation') runs at bubble, the ancestor is gone.
+    // Capture runs before _resolve, so the DOM is still intact.
+    //
+    // Clicks inside an action-confirmation are *actions on* the item, not
+    // navigation. We must NOT mark them as 'user'-origin selection — that
+    // would suppress rule 2b's auto-handoff to the next pending approval.
+    // Track where a pointer press BEGINS. A native `click` fires on the
+    // nearest common ancestor of the mousedown and mouseup targets; if the
+    // approval box shifts between press and release (autoscroll while
+    // streaming, or a pending re-render), the click target can resolve onto
+    // the selectable item ABOVE even though the user pressed an approval
+    // button. Keying the approval-action decision off the press location
+    // makes it immune to that shift, so a press that began on a button is
+    // never mistaken for navigation onto a neighbour.
+    this.on(wrapper, 'mousedown', (e) => {
+      const target = /** @type {HTMLElement} */ (e.target);
+      mousedownInApproval = !!target?.closest?.('action-confirmation');
+      mousedownOnControl = !!target?.closest?.(INTERACTIVE_SELECTOR);
+    }, true);
 
-      wrapper.addEventListener('click', (e) => {
-        const target = /** @type {HTMLElement} */ (e.target);
-        // The press location is authoritative: a click whose target shifted off
-        // the button onto a neighbour after a layout move is still an approval
-        // action, not navigation.
-        const insideApproval = !!target.closest?.('action-confirmation') || this._mousedownInApproval;
-        this._clickIsApprovalAction = insideApproval;
-        // Same press-location reasoning for controls that live outside an
-        // approval widget — an extension's custom form (the question options),
-        // a retry button, a link. Decided here, while the DOM the press landed
-        // on is still intact, and consumed by the bubble handler below.
-        this._clickOnControl = !!target.closest?.(INTERACTIVE_SELECTOR) || this._mousedownOnControl;
-        this._mousedownInApproval = false;
-        this._mousedownOnControl = false;
-        // Approving / denying is an act of "advance, I'm done with this
-        // item", not navigation. Clear the user-origin pin so rule 2b can
-        // hand selection to the next pending approval. Otherwise users
-        // who clicked to select an item before approving would see
-        // selection stay glued to the now-completed item.
-        if (insideApproval && this._selectionOrigin === 'user') {
-          this._selectionOrigin = null;
-          selection.teardownSelectionVisibilityWatcher(this);
-        }
-      }, true);
+    this.on(wrapper, 'click', (e) => {
+      const target = /** @type {HTMLElement} */ (e.target);
+      // The press location is authoritative: a click whose target shifted off
+      // the button onto a neighbour after a layout move is still an approval
+      // action, not navigation.
+      const insideApproval = !!target.closest?.('action-confirmation') || mousedownInApproval;
+      clickIsApprovalAction = insideApproval;
+      // Same press-location reasoning for controls that live outside an
+      // approval widget — an extension's custom form (the question options),
+      // a retry button, a link. Decided here, while the DOM the press landed
+      // on is still intact, and consumed by the bubble handler below.
+      clickOnControl = !!target.closest?.(INTERACTIVE_SELECTOR) || mousedownOnControl;
+      mousedownInApproval = false;
+      mousedownOnControl = false;
+      // Approving / denying is an act of "advance, I'm done with this
+      // item", not navigation. Clear the user-origin pin so rule 2b can
+      // hand selection to the next pending approval. Otherwise users
+      // who clicked to select an item before approving would see
+      // selection stay glued to the now-completed item.
+      if (insideApproval && this._selection.origin === 'user') {
+        this._selection.releasePin();
+      }
+    }, true);
 
-      // Click handling for item selection. Listener lives on the wrapper (not
-      // the inner #message-list) so background clicks that miss the list —
-      // e.g. the scrollbar-gap margin, list padding, footer whitespace — still
-      // count as "click on the background of the column" and deselect.
-      wrapper.addEventListener('click', (e) => {
-        const wasApprovalAction = this._clickIsApprovalAction;
-        const onControl = this._clickOnControl;
-        this._clickIsApprovalAction = false;
-        this._clickOnControl = false;
-        if (wasApprovalAction) return;
+    // Click handling for item selection. Listener lives on the wrapper (not
+    // the inner #message-list) so background clicks that miss the list —
+    // e.g. the scrollbar-gap margin, list padding, footer whitespace — still
+    // count as "click on the background of the column" and deselect.
+    this.on(wrapper, 'click', (e) => {
+      const wasApprovalAction = clickIsApprovalAction;
+      const onControl = clickOnControl;
+      clickIsApprovalAction = false;
+      clickOnControl = false;
+      if (wasApprovalAction) return;
 
-        const target = /** @type {HTMLElement} */ (e.target);
+      const target = /** @type {HTMLElement} */ (e.target);
 
-        // Check if user has selected any text
-        const textSelection = window.getSelection();
-        if (textSelection && textSelection.toString().length > 0) {
-          // User is selecting text, don't steal focus or select
-          return;
-        }
+      // Check if user has selected any text
+      const textSelection = window.getSelection();
+      if (textSelection && textSelection.toString().length > 0) {
+        // User is selecting text, don't steal focus or select
+        return;
+      }
 
-        // Check if clicked on a selectable item (any message element)
-        const selectableItem = target.closest(
-          'user-message, assistant-message, thinking-message, context-item-message, ' +
-          'error-message, notice-message, tool-action-message, thread-message, tool-group-message'
-        );
-        if (selectableItem) {
-          const itemId = selectableItem.getAttribute('message-id');
-          if (itemId) {
-            if (this._localSelectedItemId === itemId) {
-              // Already selected — interactive controls inside the tile still own
-              // their clicks (let those pass through untouched). But a plain
-              // repeat click is a deliberate "show me more about this" gesture:
-              // ask the tab to reveal this item's details column if it's drifted
-              // mostly off-screen. The reveal only scrolls, so even a click that
-              // also hits some other handler is unaffected. User/assistant
-              // messages are exempt: a repeat click on prose is almost always the
-              // start of a text selection, not a request to see details.
-              const tag = selectableItem.tagName;
-              const isProse = tag === 'USER-MESSAGE' || tag === 'ASSISTANT-MESSAGE';
-              if (!isProse && !onControl) {
-                selection.dispatchItemSelected(this, itemId, 'user', true);
-              }
-              return;
-            }
-            // A click on a control inside an unselected tile still selects it —
-            // the action belongs to that item — but it is not a request to see
-            // the item's details, so it must not reveal the child column. Same
-            // rule as the repeat click above: without it, answering a question
-            // on a narrow viewport pages the columns away mid-answer.
-            this._selectItem(itemId, 'user', { allowReveal: !onControl });
-            // Move focus out of textarea so keyboard navigation works
-            if (document.activeElement?.tagName === 'TEXTAREA') {
-              /** @type {HTMLElement} */ (document.activeElement).blur();
-            }
-            // A click on a link selects the item AND follows the link: the
-            // app's link safety net is a delegated handler on document, so
-            // stopping propagation here would leave the anchor to its default
-            // same-window navigation — off the app's page, with no way back.
-            if (!target.closest?.('a[href]')) {
-              e.stopPropagation();
+      // Check if clicked on a selectable item (any message element)
+      const selectableItem = target.closest(
+        'user-message, assistant-message, thinking-message, context-item-message, ' +
+        'error-message, notice-message, tool-action-message, thread-message, tool-group-message'
+      );
+      if (selectableItem) {
+        const itemId = selectableItem.getAttribute('message-id');
+        if (itemId) {
+          if (this._selection.selectedId === itemId) {
+            // Already selected — interactive controls inside the tile still own
+            // their clicks (let those pass through untouched). But a plain
+            // repeat click is a deliberate "show me more about this" gesture:
+            // ask the tab to reveal this item's details column if it's drifted
+            // mostly off-screen. The reveal only scrolls, so even a click that
+            // also hits some other handler is unaffected. User/assistant
+            // messages are exempt: a repeat click on prose is almost always the
+            // start of a text selection, not a request to see details.
+            const tag = selectableItem.tagName;
+            const isProse = tag === 'USER-MESSAGE' || tag === 'ASSISTANT-MESSAGE';
+            if (!isProse && !onControl) {
+              this._selection.dispatchItemSelected(itemId, 'user', true);
             }
             return;
           }
+          // A click on a control inside an unselected tile still selects it —
+          // the action belongs to that item — but it is not a request to see
+          // the item's details, so it must not reveal the child column. Same
+          // rule as the repeat click above: without it, answering a question
+          // on a narrow viewport pages the columns away mid-answer.
+          this._selectItem(itemId, 'user', { allowReveal: !onControl });
+          // Move focus out of textarea so keyboard navigation works
+          if (document.activeElement?.tagName === 'TEXTAREA') {
+            /** @type {HTMLElement} */ (document.activeElement).blur();
+          }
+          // A click on a link selects the item AND follows the link: the
+          // app's link safety net is a delegated handler on document, so
+          // stopping propagation here would leave the anchor to its default
+          // same-window navigation — off the app's page, with no way back.
+          if (!target.closest?.('a[href]')) {
+            e.stopPropagation();
+          }
+          return;
         }
+      }
 
-        // A control that belongs to the column rather than to an item — the
-        // setup card's fields and rows, the workspace banner — is not the
-        // background, and owns its click. The press has already put the caret
-        // where the user aimed it, so treating this as a background click would
-        // take the keyboard straight back out of the field they clicked into.
-        if (onControl) return;
+      // A control that belongs to the column rather than to an item — the
+      // setup card's fields and rows, the workspace banner — is not the
+      // background, and owns its click. The press has already put the caret
+      // where the user aimed it, so treating this as a background click would
+      // take the keyboard straight back out of the field they clicked into.
+      if (onControl) return;
 
-        // Clicked on the background — deselect any current item in this column,
-        // then focus the input so the next keystroke starts composing.
-        selection.clearSelection(this);
-        const textarea = composer.querySelector('textarea');
-        if (textarea) {
-          textarea.focus();
-        }
-      });
-
-      // Rule B: focusing the prompt textarea re-arms auto-follow. The user is
-      // composing the next turn, not inspecting a pinned item. Use delegated
-      // focusin so we survive any re-creation of the textarea inside composer-box.
-      composer.addEventListener('focusin', (e) => {
-        const focused = /** @type {HTMLElement} */ (e.target);
-        if (focused && focused.tagName === 'TEXTAREA') {
-          this._selectionOrigin = null;
-          selection.teardownSelectionVisibilityWatcher(this);
-        }
-      });
-    }
-
-    this.addEventListener('select-item-requested', (e) => {
-      const { messageId } = /** @type {CustomEvent} */ (e).detail;
-      if (messageId) this._selectItem(messageId, 'user');
+      // Clicked on the background — deselect any current item in this column,
+      // then focus the input so the next keystroke starts composing.
+      this._selection.clear();
+      const textarea = composer.querySelector('textarea');
+      if (textarea) {
+        textarea.focus();
+      }
     });
 
-    this._setupScrollControls();
-  }
-
-  /**
-   * Wire the subtle scroll-to-top / scroll-to-bottom controls overlaid on the
-   * top-right of the message list. Each button smooth-scrolls to its end and is
-   * shown only when the list overflows AND there's further to travel in that
-   * direction (so a short, fully-visible thread shows neither, and the end you're
-   * already at hides its own button). Visibility is recomputed on scroll and on
-   * any size change of the viewport or its content.
-   * @private
-   */
-  _setupScrollControls() {
-    const messageList = /** @type {HTMLElement|null} */ (this.querySelector('#message-list'));
-    const controls = /** @type {HTMLElement|null} */ (this.querySelector('#scroll-controls'));
-    if (!messageList || !controls) return;
-
-    controls.querySelector('[data-scroll="top"]')?.addEventListener('click', (e) => {
-      e.stopPropagation();
-      this._scrollToConversationStart();
-    });
-    controls.querySelector('[data-scroll="bottom"]')?.addEventListener('click', (e) => {
-      e.stopPropagation();
-      this._beginProgrammaticScroll();
-      scroll.scrollEndIntoView(this, true);
-    });
-
-    messageList.addEventListener('scroll', () => {
-      this._updateScrollControls();
-      // Wherever the reader has just put the view is their place to hold — unless
-      // this scroll is one we asked for, which owns the view until it lands.
-      if (this._programmaticScroll) this._armProgrammaticScrollSettle();
-      else this._recordReaderAnchorFromScroll();
-    }, { passive: true });
-
-    // Recompute on content growth (streaming, inserts) and viewport resize, both
-    // of which change whether — and how far — the list can scroll.
-    this._scrollControlsResizeObserver = new ResizeObserver(() => this._updateScrollControls());
-    this._scrollControlsResizeObserver.observe(messageList);
-    const inner = this.querySelector('#message-list-inner');
-    if (inner) this._scrollControlsResizeObserver.observe(inner);
-
-    this._updateScrollControls();
-    this._setupReaderAnchor();
-  }
-
-  /**
-   * Reader anchor: while the reader is scrolled away from the end, hold the
-   * lines under their eyes still, whatever arrives below them.
-   *
-   * The scroller is column-reverse, which anchors the BOTTOM edge: anything
-   * added at the end — an appended row, a streaming bubble growing, a tool row
-   * that fills in its body a tick later, the footer changing height — shoves the
-   * content above it up, and a reader who has scrolled up to read watches their
-   * place walk off the top with nothing they can do about it while a turn runs.
-   *
-   * Why an observer rather than a correction around each mutation: the content
-   * does not settle when the mutation returns. Rendering a row can land in a
-   * later task, so an anchor scoped to one DOM write holds only the part of the
-   * growth that happened inside it. A ResizeObserver on the content column sees
-   * every layout change however it arrives, and its callback runs in the
-   * rendering steps BEFORE paint, so the correction is never a visible jump.
-   *
-   * Nothing to do while near the end — there, being pinned to the bottom is the
-   * point, native anchoring does it for free, and the streaming height glide
-   * (_animateStreamingResize, which only runs while pinned) smooths the rest.
-   * @private
-   */
-  _setupReaderAnchor() {
-    const inner = this.querySelector('#message-list-inner');
-    if (!inner || typeof ResizeObserver === 'undefined') return;
-    this._recordReaderAnchor();
-    this._readerAnchorObserver = new ResizeObserver(() => this._holdReaderAnchor());
-    this._readerAnchorObserver.observe(inner);
-  }
-
-  /**
-   * Record where the reader's place currently is, so a later layout change can
-   * be measured against it. Called whenever the scroll position changes: after
-   * the user scrolls, the top-visible row IS their new place.
-   * @private
-   */
-  _recordReaderAnchor() {
-    if (scroll.isFollowingEnd(this)) {
-      this._readerAnchor = null;
-      return;
-    }
-    const el = scroll.topVisibleMessageElement(this);
-    const inner = /** @type {HTMLElement|null} */ (this.querySelector('#message-list-inner'));
-    this._readerAnchor = el
-      ? { el, top: el.getBoundingClientRect().top, contentHeight: inner?.offsetHeight ?? 0 }
-      : null;
-  }
-
-  /**
-   * Run a DOM mutation with the reader's place held across it: measure a visible
-   * row before, and afterwards nudge the scroll by however far that row moved.
-   *
-   * The observer above is the general mechanism, but it can only correct what it
-   * is told about, one frame later. This closes the mutation itself, where the
-   * bulk of the movement happens and where the correction can land in the same
-   * task the content changed in — measured, corrected, and never painted apart.
-   * Rect-derived and relative, so it is sign-agnostic in the reversed scroller,
-   * and instant: a glide here would be the very movement it prevents.
-   * @param {() => void} mutate - The DOM mutation to run.
-   * @param {{skip?: boolean}} [opts] - `skip`: the caller is following the end of
-   *   the conversation, where native bottom-anchoring is what's wanted and there
-   *   is no reader's place to keep.
-   * @private
-   */
-  _holdReaderAnchorOver(mutate, { skip = false } = {}) {
-    const scroller = /** @type {HTMLElement|null} */ (this.querySelector('#message-list'));
-    const el = (skip || !scroller) ? null : scroll.topVisibleMessageElement(this);
-    const before = el ? el.getBoundingClientRect().top : 0;
-
-    mutate();
-
-    // A row the mutation removed is no anchor; the observer picks the reader's
-    // place up again from the next scroll or resize.
-    if (!el || !scroller || !el.isConnected) return;
-    const shift = el.getBoundingClientRect().top - before;
-    if (Math.abs(shift) <= 0.5) return;
-    scroller.scrollTo({ top: scroller.scrollTop + shift, behavior: 'instant' });
-    this._recordReaderAnchor();
-  }
-
-  /**
-   * Record the reader's place from a scroll event — unless the content is what
-   * moved, in which case this scroll is the drift we exist to undo.
-   *
-   * A scroll event is not evidence that the reader scrolled. Growing the content
-   * of this bottom-anchored scroller moves the scroll offset by itself, and the
-   * browser fires the scroll steps BEFORE it delivers resize observations: take
-   * that event at face value and the anchor is re-recorded at the drifted
-   * position, so the correction that follows measures a shift of zero and the
-   * reader is left where the content put them. Content size is what tells the
-   * two apart — the reader moving the view doesn't change it.
-   * @private
-   */
-  _recordReaderAnchorFromScroll() {
-    const inner = /** @type {HTMLElement|null} */ (this.querySelector('#message-list-inner'));
-    if (this._readerAnchor && inner && inner.offsetHeight !== this._readerAnchor.contentHeight) return;
-    this._recordReaderAnchor();
-  }
-
-  /**
-   * Put the anchored row back where it was, by nudging the scroll position by
-   * however far it drifted. Relative and rect-derived, so it is sign-agnostic
-   * across the reversed scroller, and instant — a glide here would be the very
-   * movement it exists to prevent.
-   * @private
-   */
-  _holdReaderAnchor() {
-    // A scroll this component asked for is not drift, however much the content
-    // resizes under it; leave it alone until it lands (_beginProgrammaticScroll).
-    if (this._programmaticScroll) return;
-    const anchor = this._readerAnchor;
-    if (!anchor) return;
-    // An anchor whose row the rebuild removed can't be measured; take the new
-    // top-visible row as the place instead, from this position on.
-    if (!anchor.el.isConnected || scroll.isFollowingEnd(this)) {
-      this._recordReaderAnchor();
-      return;
-    }
-    const scroller = /** @type {HTMLElement|null} */ (this.querySelector('#message-list'));
-    if (!scroller) return;
-    const shift = anchor.el.getBoundingClientRect().top - anchor.top;
-    if (Math.abs(shift) <= 0.5) return;
-    scroller.scrollTo({ top: scroller.scrollTop + shift, behavior: 'instant' });
-    // Re-measure rather than assume the nudge landed in full: scrollTop clamps
-    // at both ends of the range, and a clamped correction is the true new place.
-    anchor.top = anchor.el.getBoundingClientRect().top;
-    anchor.contentHeight = /** @type {HTMLElement} */ (this.querySelector('#message-list-inner'))?.offsetHeight ?? 0;
-  }
-
-  /**
-   * Declare that the scroll about to be issued is one this component asked for,
-   * so the reader anchor leaves it alone until it lands.
-   *
-   * The anchor undoes movement the reader did not ask for, and its cue is "the
-   * content changed size" (_recordReaderAnchorFromScroll). A long glide is
-   * indistinguishable by that test: rows render as it brings them into range and
-   * the content genuinely does change size, so the anchor keeps the place from
-   * before the click, measures the whole journey as drift, and scrolls back to
-   * cancel it — which also cancels the glide, because a scrollTo interrupts one
-   * in flight. The trip dies part-way and the next click starts over from wherever
-   * it stopped. A turn streaming underneath does the same with no row-skipping
-   * involved at all. So a scroll we issued is marked as ours while it travels.
-   * @private
-   */
-  _beginProgrammaticScroll() {
-    this._programmaticScroll = true;
-    this._armProgrammaticScrollSettle();
-  }
-
-  /**
-   * (Re)arm the timer that ends the programmatic-scroll window. Every scroll event
-   * the glide emits pushes it out, so it fires only once the view has been still
-   * for PROGRAMMATIC_SCROLL_SETTLE_MS — at which point where the scroll landed IS
-   * the reader's new place, and the anchor is recorded there.
-   * @private
-   */
-  _armProgrammaticScrollSettle() {
-    if (this._programmaticScrollTimer !== null) clearTimeout(this._programmaticScrollTimer);
-    this._programmaticScrollTimer = window.setTimeout(() => {
-      this._programmaticScrollTimer = null;
-      this._programmaticScroll = false;
-      this._recordReaderAnchor();
-    }, PROGRAMMATIC_SCROLL_SETTLE_MS);
-  }
-
-  /**
-   * Toggle each scroll-control button's visibility from the live scroll metrics.
-   * In the reversed scroller the bottom (newest) is scrollTop 0 and the magnitude
-   * grows toward the top, so |scrollTop| is the distance from the bottom and the
-   * max magnitude is scrollHeight − clientHeight — both sign-agnostic.
-   * @private
-   */
-  _updateScrollControls() {
-    const messageList = /** @type {HTMLElement|null} */ (this.querySelector('#message-list'));
-    const controls = /** @type {HTMLElement|null} */ (this.querySelector('#scroll-controls'));
-    if (!messageList || !controls) return;
-
-    const topBtn = controls.querySelector('[data-scroll="top"]');
-    const bottomBtn = controls.querySelector('[data-scroll="bottom"]');
-    if (!topBtn || !bottomBtn) return;
-
-    // Distance from the bottom (0) to the top, always >= 0.
-    const range = messageList.scrollHeight - messageList.clientHeight;
-    // "Long enough to be useful" — don't clutter a thread that barely overflows.
-    const USEFUL_OVERFLOW_PX = 48;
-    // Hide a direction's button once we're within a couple of rems of that end —
-    // close enough that a flick finishes the trip.
-    const EDGE_PX = 32;
-    const fromBottom = Math.abs(messageList.scrollTop);
-
-    if (range <= USEFUL_OVERFLOW_PX) {
-      topBtn.classList.add('hidden');
-      bottomBtn.classList.add('hidden');
-      return;
-    }
-
-    // Hide the button for the end we're already resting near.
-    topBtn.classList.toggle('hidden', fromBottom >= range - EDGE_PX);
-    bottomBtn.classList.toggle('hidden', fromBottom <= EDGE_PX);
-  }
-
-  /**
-   * Smooth-scroll to the very start (oldest message) of the conversation.
-   *
-   * Rects give the DIRECTION only, taken from the content column itself and never
-   * its first child: the column leads with `thread-column-actions`, which is
-   * `display: none` in a root conversation (it only appears in a thread column),
-   * and a rect from a box-less element reads as all zeros — a delta of a few dozen
-   * pixels of chrome, whatever the length of the conversation. The column's own
-   * top is the top of the content by construction, whatever leads it.
-   *
-   * The DISTANCE is then the whole scrollable range rather than that measured
-   * delta, because scrollTo clamps: overshooting lands exactly at the top, and a
-   * trip that doesn't measure its own length can't be left short when rows change
-   * height on the way (rendering as the glide brings them into range) after the
-   * target was computed. Sign-agnostic, so the reversed scroller needs no special
-   * case.
-   * @private
-   */
-  _scrollToConversationStart() {
-    const messageList = /** @type {HTMLElement|null} */ (this.querySelector('#message-list'));
-    const content = /** @type {HTMLElement|null} */ (this.querySelector('#message-list-inner'));
-    if (!messageList || !content) return;
-    const delta = content.getBoundingClientRect().top - messageList.getBoundingClientRect().top;
-    if (Math.abs(delta) < 1) return; // already at the start
-    const range = messageList.scrollHeight - messageList.clientHeight;
-    this._beginProgrammaticScroll();
-    messageList.scrollTo({
-      top: messageList.scrollTop + Math.sign(delta) * range,
-      behavior: 'smooth'
+    // Rule B: focusing the prompt textarea re-arms auto-follow. The user is
+    // composing the next turn, not inspecting a pinned item. Use delegated
+    // focusin so we survive any re-creation of the textarea inside composer-box.
+    this.on(composer, 'focusin', (e) => {
+      const focused = /** @type {HTMLElement} */ (e.target);
+      if (focused && focused.tagName === 'TEXTAREA') this._selection.releasePin();
     });
   }
 
@@ -1560,12 +1300,12 @@ class ConversationArea extends HTMLElement {
 
   /** Select the next item in the list */
   selectNextItem() {
-    selection.selectNextItem(this);
+    this._selection.selectNext();
   }
 
   /** Select the previous item in the list */
   selectPreviousItem() {
-    selection.selectPreviousItem(this);
+    this._selection.selectPrevious();
   }
 
   /**
@@ -1578,23 +1318,24 @@ class ConversationArea extends HTMLElement {
 
   /** Clear the current selection */
   clearSelection() {
-    selection.clearSelection(this);
+    this._selection.clear();
   }
 
   /** @returns {string[]} List of selectable item IDs */
   getSelectableItemIds() {
-    return selection.getSelectableItemIds(this);
+    return this._selection.selectableIds();
   }
 
   /** @returns {string|null} Currently selected item ID */
   getSelectedItemId() {
-    return this._localSelectedItemId;
+    return this._selection.selectedId;
   }
 
   /** @returns {HTMLElement|null} The currently selected item's DOM element */
   getSelectedElement() {
-    if (!this._localSelectedItemId) return null;
-    return this.querySelector(`[message-id="${this._localSelectedItemId}"]`);
+    const selectedId = this._selection.selectedId;
+    if (!selectedId) return null;
+    return this.querySelector(`[message-id="${selectedId}"]`);
   }
 
   /**
@@ -1604,28 +1345,29 @@ class ConversationArea extends HTMLElement {
    * @returns {boolean} True if the selected item can be navigated into
    */
   isSelectedItemDrillable() {
-    if (!this._localSelectedItemId) return false;
+    const selectedId = this._selection.selectedId;
+    if (!selectedId) return false;
     const el = this.querySelector(
-      `thread-message[message-id="${this._localSelectedItemId}"], ` +
-      `tool-group-message[message-id="${this._localSelectedItemId}"]`
+      `thread-message[message-id="${selectedId}"], ` +
+      `tool-group-message[message-id="${selectedId}"]`
     );
     return el !== null;
   }
 
   // ── Selection & scrolling ────────────────────────────────────────
   //
-  // Both engines live in companion modules: the selection rules (1-5b) in
-  // conversation-area-selection.js, the scroll rules (6-11) in
-  // conversation-area-scroll.js. The UX rules they implement, and why each
-  // scroll is clamped scrollTop math rather than scrollIntoView, are written up
-  // in those two module docs. What stays here are the entry points other files
-  // call.
+  // Both engines live in companion modules, each a class owning its own state:
+  // the selection rules (1-5b) in ColumnSelection
+  // (conversation-area-selection.js), the scroll rules (6-12) and the reader
+  // anchor in ColumnScroll (conversation-area-scroll.js). The UX rules they
+  // implement, and why each scroll is clamped scrollTop math rather than
+  // scrollIntoView, are written up in those two module docs. What stays here
+  // are the entry points other files call.
   //
-  // The companion modules are this class's own implementation, split across
-  // files, and they read its private fields freely. Nothing else does. The
-  // owning tab drives a column through the methods and accessors declared
-  // public here, and the type checker holds it to that (`@private` is enforced
-  // on the column the tab holds).
+  // Neither engine touches this class's private fields: they read the column
+  // through its public surface, and the owning tab drives a column through the
+  // methods and accessors declared public here — the type checker holds it to
+  // that (`@private` is enforced on the column the tab holds).
   // ────────────────────────────────────────────────────────────────
 
   /**
@@ -1635,7 +1377,7 @@ class ConversationArea extends HTMLElement {
    * @param {Array<any>} items - Current full items array
    */
   onItemsInserted(insertedItemIds, items) {
-    selection.onItemsInserted(this, insertedItemIds, items);
+    this._selection.onItemsInserted(insertedItemIds, items);
   }
 
   /**
@@ -1644,7 +1386,7 @@ class ConversationArea extends HTMLElement {
    * @returns {string|null} itemId to auto-select, or null
    */
   getNextPendingApprovalToSelect() {
-    return selection.getNextPendingApprovalToSelect(this);
+    return this._selection.nextPendingApproval();
   }
 
   /**
@@ -1654,7 +1396,7 @@ class ConversationArea extends HTMLElement {
    * @private
    */
   _selectItem(itemId, origin = 'user', opts = {}) {
-    selection.selectItem(this, itemId, origin, opts);
+    this._selection.select(itemId, origin, opts);
   }
 
   /**
@@ -1663,16 +1405,16 @@ class ConversationArea extends HTMLElement {
    * @param {string|null} selectedId
    */
   applySelectedClass(selectedId) {
-    selection.applySelectedClass(this, selectedId);
+    this._selection.applyClass(selectedId);
   }
 
   /**
    * @param {string} itemId
    * @param {{smooth?: boolean, automatic?: boolean}} [opts] - See
-   *   conversation-area-scroll.scrollItemIntoView.
+   *   ColumnScroll.itemIntoView.
    */
   scrollItemIntoView(itemId, opts = {}) {
-    scroll.scrollItemIntoView(this, itemId, opts);
+    this._scroll.itemIntoView(itemId, opts);
   }
 
   /**
@@ -1682,17 +1424,15 @@ class ConversationArea extends HTMLElement {
    * @returns {boolean} True when the view is within ~20rem of the end.
    */
   isScrolledNearBottom() {
-    return scroll.isScrolledNearBottom(this);
+    return this._scroll.isNearBottom();
   }
 
   /**
    * Let go of the reader's place: the view is being moved on purpose, so there
-   * is no place left to keep. Without this the anchor observer would measure the
-   * move as drift and undo it (_holdReaderAnchor). The next scroll or resize
-   * records wherever the reader ends up.
+   * is no place left to keep (ColumnScroll.releaseAnchor).
    */
   releaseReaderAnchor() {
-    this._readerAnchor = null;
+    this._scroll.releaseAnchor();
   }
 
   /**
@@ -1700,7 +1440,7 @@ class ConversationArea extends HTMLElement {
    * Called on pagehide.
    */
   saveScrollPositionImmediately() {
-    scroll.saveScrollPositionImmediately(this);
+    this._scroll.saveImmediately();
   }
 
   /**
@@ -1708,7 +1448,7 @@ class ConversationArea extends HTMLElement {
    * after messages are rendered. Only restores once per conversation load.
    */
   restoreScrollPosition() {
-    scroll.restoreScrollPosition(this);
+    this._scroll.restore();
   }
 
   /**
@@ -1716,20 +1456,16 @@ class ConversationArea extends HTMLElement {
    * @param {boolean} [force=false] - If true, scroll regardless of user position
    */
   scrollToBottom(force = false) {
-    scroll.scrollToBottom(this, force);
+    this._scroll.toBottom(force);
   }
 
   /**
-   * Reset scroll restore flag (called when conversation changes).
-   *
-   * The reader's place goes with it: it was a place in the conversation this
-   * column is leaving, and holding it would make the incoming conversation's
-   * restore stand down for a reader who is not there (see restoreScrollPosition).
+   * Reset scroll restore flag (called when conversation changes), along with
+   * the reader's place in the conversation the column is leaving.
    */
   resetScrollRestoreFlag() {
-    this._initialScrollRestored = false;
+    this._scroll.forgetRestore();
     this._animationsPrimed = false;
-    this.releaseReaderAnchor();
   }
 
   // ============================================================
@@ -1807,14 +1543,14 @@ class ConversationArea extends HTMLElement {
     // what let an arriving item carry a pinned sub-thread tile off the top —
     // native column-reverse pinning keeps the newest content in view, so the
     // tile leaves the viewport with no scroll of ours to blame.
-    const nearBottom = scroll.isFollowingEnd(this);
+    const nearBottom = this._scroll.isFollowingEnd();
     const animate = structuralChange
       && this._animationsPrimed
       && !prefersReducedMotion()
       && nearBottom;
     const beforeTops = animate ? this._captureItemTops(content) : null;
 
-    this._holdReaderAnchorOver(() => {
+    this._scroll.holdAnchorOver(() => {
       removeDeletedElements(currentElements, elementsToKeep);
       positionElements(this, content, footer, items, currentElements);
 
@@ -1830,16 +1566,7 @@ class ConversationArea extends HTMLElement {
       // Re-apply .selected class after DOM reconciliation. If the selected item
       // was removed, silently clear — the tab owns selection state. Never
       // dispatch item-selected here (it would loop back via conversation-tab).
-      if (this._localSelectedItemId) {
-        if (!selection.isItemVisible(this, this._localSelectedItemId)) {
-          this._localSelectedItemId = null;
-          this._selectionOrigin = null;
-          selection.teardownSelectionVisibilityWatcher(this);
-          this.applySelectedClass(null);
-        } else {
-          this.applySelectedClass(this._localSelectedItemId);
-        }
-      }
+      this._selection.reconcileAfterRender();
 
       this.updateFooter();
     }, { skip: nearBottom });
@@ -2132,7 +1859,7 @@ class ConversationArea extends HTMLElement {
     // the same `live` object to drive footer copy AND to push into tiles via
     // setLiveStatus — that way the parent tile's status string is literally
     // the same string the sub-thread's footer would render.
-    const live = this._snapshotLiveStatus();
+    const live = this.snapshotLiveStatus();
     this._broadcastLiveStatusToTiles(live);
 
     // Footer source 1: the LLM status of THIS column's own thread (so a running

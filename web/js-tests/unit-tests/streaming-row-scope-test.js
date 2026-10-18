@@ -119,8 +119,11 @@ export async function runTests(_ctx) {
       },
       _memberToGroup: new Map(),
       querySelector: (/** @type {string} */ sel) => root.querySelector(sel),
-      _holdReaderAnchorOver: (/** @type {() => void} */ fn) => fn(),
-      _snapshotLiveStatus: () => null,
+      _scroll: {
+        holdAnchorOver: (/** @type {() => void} */ fn) => fn(),
+        isFollowingEnd: () => true,
+      },
+      snapshotLiveStatus: () => null,
       _computeDisplay: () => ({ entries: [], memberToGroup: new Map() }),
       _animateStreamingResize: (/** @type {HTMLElement} */ el) => {
         measured.push(el.getAttribute('message-id') || '');

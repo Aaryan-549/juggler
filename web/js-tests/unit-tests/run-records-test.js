@@ -346,7 +346,7 @@ export async function runTests() {
       const messageList = document.createElement('div');
       const footer = document.createElement('conversation-footer');
       messageList.appendChild(footer);
-      ensureThreadResult({ _threadYMap: t, _conversation: null }, messageList, footer);
+      ensureThreadResult({ threadYMap: t, conversation: null }, messageList, footer);
       return messageList;
     };
 
@@ -416,7 +416,7 @@ export async function runTests() {
     // summary, so clear it the way production does.
     unsummarized.set('result', 'What the folded transcript said.');
     unsummarized.delete('compactionUnsummarized');
-    ensureThreadResult({ _threadYMap: unsummarized, _conversation: null },
+    ensureThreadResult({ threadYMap: unsummarized, conversation: null },
       unsummarizedList, /** @type {any} */ (unsummarizedList.querySelector('conversation-footer')));
     const settled = unsummarizedList.querySelector('.thread-result-final');
     assert(/** @type {HTMLElement} */ (settled).dataset.resultState === 'summary',

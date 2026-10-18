@@ -101,7 +101,7 @@ function isManagedNonItem(child) {
  * the existing selection/properties/delete machinery treats it like any item.
  * Diffs by message-id within the zone so unchanged bubbles are preserved, and
  * removes the zone entirely when the queue drains.
- * @param {any} area - ConversationArea instance (provides _messageThread)
+ * @param {any} area - ConversationArea instance (provides getMessageThread())
  * @param {HTMLElement} messageList
  */
 export function ensurePendingMessages(area, messageList) {
@@ -109,7 +109,7 @@ export function ensurePendingMessages(area, messageList) {
   // parent's queue — messages typed against a thread, with nothing to do with
   // the run of tool rows this column shows. Treated as empty, which also clears
   // the zone from a column reused as a group column.
-  const thread = area?._isGroupColumn ? null : area?._messageThread;
+  const thread = area?.isGroupColumn ? null : area?.getMessageThread?.();
   const pending = (thread && 'pendingItems' in thread) ? thread.pendingItems : [];
 
   let zone = /** @type {HTMLElement|null} */ (messageList.querySelector(`.${PENDING_ZONE_CLASS}`));
@@ -164,7 +164,7 @@ export function ensurePendingMessages(area, messageList) {
  * Ensure a queued message has its inline remove-from-queue affordance. Kept
  * outside `<article>` so user-message can keep rendering/copy behavior exactly
  * like a normal user bubble while the pending zone adds queue-only controls.
- * @param {any} area - ConversationArea instance (provides _messageThread)
+ * @param {any} area - ConversationArea instance (provides getMessageThread())
  * @param {HTMLElement} el - The queued user-message element
  * @param {string} itemId - Pending item id
  */
@@ -180,7 +180,7 @@ function ensureQueuedDeleteButton(area, el, itemId) {
     button.addEventListener('click', (event) => {
       event.preventDefault();
       event.stopPropagation();
-      area?._messageThread?.removeItemById?.(itemId);
+      area?.getMessageThread?.()?.removeItemById?.(itemId);
     });
     el.appendChild(button);
   }
@@ -244,7 +244,7 @@ function getElementId(element) {
  * stranded banner, which can also offer the rebind that fixes it. And a
  * sub-thread or group column is a lens on part of the same conversation, working
  * in the same tree, so repeating it per column would be noise.
- * @param {any} area - ConversationArea instance (provides `_conversation`, `_threadYMap`, `_isGroupColumn`).
+ * @param {any} area - ConversationArea instance (provides `conversation`, `threadYMap`, `isGroupColumn`).
  * @param {HTMLElement} messageList - The column's normal-order inner list.
  */
 export function ensureConversationChrome(area, messageList) {
@@ -254,15 +254,15 @@ export function ensureConversationChrome(area, messageList) {
 /**
  * The banner half of {@link ensureConversationChrome}, which is also the whole
  * of it for every conversation that has already been asked.
- * @param {any} area - ConversationArea instance (provides `_conversation`, `_threadYMap`, `_isGroupColumn`).
+ * @param {any} area - ConversationArea instance (provides `conversation`, `threadYMap`, `isGroupColumn`).
  * @param {HTMLElement} messageList - The column's normal-order inner list.
  */
 export function ensureWorkspaceBanner(area, messageList) {
   const existing = /** @type {HTMLElement|null} */ (
     messageList.querySelector(`.${WORKSPACE_BANNER_CLASS}`));
 
-  const isRootColumn = !area?._threadYMap && !area?._isGroupColumn;
-  const conversation = isRootColumn ? area?._conversation : null;
+  const isRootColumn = !area?.threadYMap && !area?.isGroupColumn;
+  const conversation = isRootColumn ? area?.conversation : null;
   const id = conversation?.workspaceId || '';
   // The root, not merely the row: `workspaceRoot` makes the same four refusals
   // the server makes, so a banner exists exactly when an op would be honoured.
@@ -449,7 +449,7 @@ function ensureStrandedBanner(conversation, binding, existing, messageList) {
 
 /**
  * Ensure footer element exists in message list. Creates it if missing.
- * @param {any} area - ConversationArea instance (provides _messageThread)
+ * @param {any} area - ConversationArea instance (provides getMessageThread())
  * @param {HTMLElement} messageList
  * @returns {HTMLElement} Footer element
  */
@@ -457,7 +457,7 @@ export function ensureFooterExists(area, messageList) {
   let footer = /** @type {import('./conversation-footer.js').default|null} */ (messageList.querySelector('conversation-footer'));
   if (!footer) {
     footer = /** @type {import('./conversation-footer.js').default} */ (document.createElement('conversation-footer'));
-    /** @type {any} */ (footer).setMessageThread(area._messageThread);
+    /** @type {any} */ (footer).setMessageThread(area?.getMessageThread?.());
     messageList.appendChild(footer);
   }
   return footer;
@@ -514,7 +514,7 @@ function renderThreadResultBody(body, text) {
  */
 function summaryOnItsWay(area, threadYMap) {
   if (threadYMap?.get?.('needsStrategyRun') === true) return true;
-  const live = area?._snapshotLiveStatus?.() ?? null;
+  const live = area?.snapshotLiveStatus?.() ?? null;
   return !!liveMessageForThread(live, threadYMap?.get?.('itemId'));
 }
 
@@ -532,7 +532,7 @@ function summaryOnItsWay(area, threadYMap) {
  * Every other thread answers its caller through its runs and ends on the reply
  * its last run came to rest on, so a block underneath that message would say the
  * same thing twice.
- * @param {any} area - ConversationArea instance (provides `_threadYMap`).
+ * @param {any} area - ConversationArea instance (provides `threadYMap`).
  * @param {HTMLElement} messageList
  * @param {HTMLElement} footer
  */
@@ -540,7 +540,7 @@ export function ensureThreadResult(area, messageList, footer) {
   const existing = /** @type {HTMLElement|null} */ (
     messageList.querySelector(`.${THREAD_RESULT_CLASS}`));
 
-  const threadYMap = area?._threadYMap;
+  const threadYMap = area?.threadYMap;
   const isFold = threadYMap?.get?.('boundedCompaction') === true;
   const result = threadYMap?.get?.('result');
   const text = (isFold && typeof result === 'string') ? result : '';
@@ -620,8 +620,8 @@ export function ensureThreadResult(area, messageList, footer) {
   resummariseBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     const tid = threadYMap?.get?.('itemId');
-    if (!tid || !area?._conversation) return;
-    void area._conversation.resolveMessageThread(tid).resummariseFold();
+    if (!tid || !area?.conversation) return;
+    void area.conversation.resolveMessageThread(tid).resummariseFold();
   });
   headerActions.appendChild(resummariseBtn);
 
@@ -708,7 +708,7 @@ function markFinalItem(element, isFinal) {
 /**
  * Position elements in correct order (backwards iteration, insert before next).
  * Elements handle their own updates via Yjs observers - this just creates/removes/positions.
- * @param {any} area - ConversationArea instance (passed to bubble creators that need _messageThread)
+ * @param {any} area - ConversationArea instance (passed to bubble creators that need getMessageThread())
  * @param {HTMLElement} messageList
  * @param {HTMLElement} footer
  * @param {Array<any>} items
@@ -757,7 +757,7 @@ export function positionElements(area, messageList, footer, items, currentElemen
 
 /**
  * Create message element(s) for a single message.
- * @param {any} area - ConversationArea instance (provides _messageThread for context items)
+ * @param {any} area - ConversationArea instance (provides getMessageThread() for context items)
  * @param {Message} message
  * @param {number} [itemIndex]
  * @returns {HTMLElement[]} Created elements (zero or more).
@@ -771,7 +771,7 @@ function createBubblesForEvent(area, message, itemIndex) {
   const elements = [];
 
   if (isGroupEntry(message)) {
-    const live = area?._snapshotLiveStatus?.() || null;
+    const live = area?.snapshotLiveStatus?.() || null;
     elements.push(createToolGroupTile(/** @type {any} */ (message), itemIndex, live));
   } else if (isUserMessage(message)) {
     const el = createUserBubble(message, itemIndex);
@@ -789,7 +789,7 @@ function createBubblesForEvent(area, message, itemIndex) {
     const el = createNoticeBubble(message, itemIndex);
     if (el) elements.push(el);
   } else if (isThreadMessage(message)) {
-    const live = area?._snapshotLiveStatus?.() || null;
+    const live = area?.snapshotLiveStatus?.() || null;
     const el = createThreadBubble(message, itemIndex, live);
     if (el) elements.push(el);
   } else {
@@ -967,7 +967,7 @@ function createNoticeBubble(message, itemIndex) {
 /**
  * Create a context item message element with enhanced preview.
  * Renders for all context items to provide inline visibility.
- * @param {any} area - ConversationArea instance (for _messageThread lookup)
+ * @param {any} area - ConversationArea instance (for getMessageThread() lookup)
  * @param {Message} message
  * @param {number} [itemIndex]
  * @returns {HTMLElement|null} Created element, or null if the item has no visible body.
@@ -976,7 +976,7 @@ function createContextItemBubble(area, message, itemIndex) {
   const msg = /** @type {import('../../sdk/lib/message.js').ContextItemMessage} */ (message);
 
   // Only render items with a registered context item plugin
-  const contextItem = msg.get('itemId') ? area._messageThread?.getContextItem(msg.get('itemId')) : null;
+  const contextItem = msg.get('itemId') ? area?.getMessageThread?.()?.getContextItem(msg.get('itemId')) : null;
   if (!contextItem) return null;
   // Items may opt out of a standing transcript card while still contributing
   // to LLM context and persisting their data (e.g. the todo list, whose live

@@ -517,7 +517,7 @@ export async function runTests() {
   try {
     const { items } = build([item({ type: 'user', content: 'go' }), tool('read'), tool('bash'), tool('read')]);
     /** @type {any} */
-    const area = { _snapshotLiveStatus: () => null };
+    const area = { snapshotLiveStatus: () => null };
 
     /**
      * @param {any[]} entries - Display entries to paint.

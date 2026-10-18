@@ -41,7 +41,7 @@ function item(fields) {
  */
 function boundArea(row, root) {
   return {
-    _conversation: {
+    conversation: {
       workspaceId: 'ws_rendering_xa',
       workspaceRoot: root,
       session: { getWorkspace: () => row, selectWorkspace: () => {} },
@@ -91,7 +91,8 @@ export async function runTests() {
       // The queued-messages zone: its label and each bubble's remove button.
       {
         const list = document.createElement('div');
-        const area = { _messageThread: { pendingItems: [item({ type: MESSAGE_TYPES.USER, itemId: 'q1', content: '7' })] } };
+        const thread = { pendingItems: [item({ type: MESSAGE_TYPES.USER, itemId: 'q1', content: '7' })] };
+        const area = { getMessageThread: () => thread };
         ensurePendingMessages(area, list);
         const label = list.querySelector('.pending-messages-label');
         const button = list.querySelector('.queued-message-delete-btn');
@@ -131,8 +132,8 @@ export async function runTests() {
         const footer = document.createElement('div');
         list.appendChild(footer);
         const area = {
-          _threadYMap: item({ boundedCompaction: true, result, itemId: 't1' }),
-          _snapshotLiveStatus: () => null,
+          threadYMap: item({ boundedCompaction: true, result, itemId: 't1' }),
+          snapshotLiveStatus: () => null,
         };
         ensureThreadResult(area, list, footer);
         assert(!!list.querySelector('.thread-result-label'), `fold (result ${JSON.stringify(result)}): drew nothing`);

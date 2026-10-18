@@ -28,7 +28,7 @@
 
     /* Disable the browser's own scroll anchoring. This component does all its own
        anchoring — column-reverse pins the bottom natively, and the reader anchor
-       (conversation-area's _setupReaderAnchor) holds a mid-scroll read position by
+       (ColumnScroll, conversation-area-scroll.js) holds a mid-scroll read position by
        hand — so the built-in mechanism is redundant, and two mechanisms correcting
        the same drift fight each other: the browser nudges scrollTop mid-relayout
        and undoes it when the real layout lands, a visible bump against the reader's
@@ -258,7 +258,7 @@ conversation-empty-hint.no-room-for-tips .empty-hint-tips {
 
 /* Subtle jump-to-top / jump-to-bottom controls, overlaid top-right of the
    message list. Each button hides itself when there's nowhere to travel in its
-   direction (see _updateScrollControls), so the group only ever shows the moves
+   direction (see ColumnScroll.updateControls), so the group only ever shows the moves
    that are actually available. */
 .scroll-controls {
     position: absolute;

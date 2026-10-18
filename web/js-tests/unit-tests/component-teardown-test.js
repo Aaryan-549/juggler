@@ -57,6 +57,10 @@
  *   hears each click and cache-impact event once, and follows its
  *   conversation's metadata exactly once — however many times its listeners
  *   were bound — and hears none of it once it has left.
+ * - A conversation column moved or put back keeps the transcript it drew and
+ *   the conversation, thread and thread context it was handed, follows each of
+ *   them exactly once, hears each click and request once — and none of it once
+ *   it has left.
  * @module unit-tests/component-teardown
  */
 
@@ -89,6 +93,8 @@ import '../../js/components/modal-dialog.js';
 import '../../js/components/update-notice.js';
 import '../../js/components/action-confirmation.js';
 import '../../js/components/composer.js';
+import '../../js/components/conversation-area.js';
+import { TIPS_CHANGED_EVENT } from '../../js/services/tips-manager.js';
 import { CONTEXT_CACHE_IMPACT_CHANGED } from '../../js/services/context-cache-impact.js';
 import fileViewerRegistry from '../../js/registries/file-viewer-registry.js';
 import { closeAllPopups } from '../../js/utils/popup-manager.js';
@@ -995,6 +1001,98 @@ export async function runTests() {
       elsewhere.remove();
     }
   } catch (e) { failed++; errors.push(`composer-box re-parented: ${e.message}`); }
+
+  try {
+    const metadata = new Set();
+    const session = new Set();
+    const threadMap = new Set();
+    const container = countingYArray();
+    const conversation = {
+      id: 'teardown-area-conv',
+      getMetadata: () => '',
+      observeMetadata: (/** @type {Function} */ fn) => { metadata.add(fn); },
+      unobserveMetadata: (/** @type {Function} */ fn) => { metadata.delete(fn); },
+      onStatusChange: () => () => {},
+      session: { subscribe: (/** @type {Function} */ fn) => { session.add(fn); return () => session.delete(fn); } },
+    };
+    const thread = {
+      container,
+      items: [],
+      threadItemId: 'teardown-area-thread',
+      conversation,
+      isProcessing: false,
+      lastActivityAt: 0,
+      getMessages: () => [],
+      hasBusyItems: () => false,
+      getPendingApprovalMessages: () => [],
+    };
+    const threadYMap = {
+      get: (/** @type {string} */ key) => (key === 'itemId' ? 'teardown-area-thread' : undefined),
+      observe: (/** @type {Function} */ fn) => { threadMap.add(fn); },
+      unobserve: (/** @type {Function} */ fn) => { threadMap.delete(fn); },
+    };
+    const area = /** @type {any} */ (document.createElement('conversation-area'));
+    const elsewhere = document.createElement('div');
+    document.body.appendChild(elsewhere);
+    try {
+      // The order the tab's column builder uses: mount, then configure.
+      column.appendChild(area);
+      area.setMessageThread(thread);
+      area.conversation = conversation;
+      area.setThreadContext(threadYMap);
+      // Its footer and suggestions controller follow the same conversation, so
+      // what a mounted column holds is the baseline rather than a constant.
+      const mountedMetadata = metadata.size;
+      const mountedSession = session.size;
+      if (mountedMetadata === 0) throw new Error('a mounted column does not follow its conversation\'s metadata');
+      if (mountedSession === 0) throw new Error('a mounted column does not follow its session');
+
+      let selects = 0, hints = 0;
+      area._selectItem = () => { selects++; };
+      area._handleNewConversationHintChanged = () => { hints++; };
+      const wrapper = area.querySelector('conversation-message-list-wrapper');
+      const heard = () => {
+        const before = [selects, hints];
+        area.dispatchEvent(new CustomEvent('select-item-requested', { detail: { messageId: 'x' } }));
+        window.dispatchEvent(new Event(TIPS_CHANGED_EVENT));
+        const background = countEvents(area, 'item-selected', () => {
+          area.querySelector('conversation-message-list-wrapper')
+            ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        });
+        return `${selects - before[0]} selection request(s), ${hints - before[1]} tips change(s), `
+          + `${background} background click(s), ${metadata.size}/${mountedMetadata} metadata, `
+          + `${session.size}/${mountedSession} session, ${container.observers.size} container and ${threadMap.size} thread observer(s)`;
+      };
+      const holdsOne = `1 selection request(s), 1 tips change(s), 1 background click(s), `
+        + `${mountedMetadata}/${mountedMetadata} metadata, ${mountedSession}/${mountedSession} session, 1 container and 1 thread observer(s)`;
+      let now = heard();
+      if (now !== holdsOne) throw new Error(`a mounted column hears ${now}, want ${holdsOne}`);
+
+      elsewhere.appendChild(area);
+      // The transcript is redrawn only when the tab hands the column new items,
+      // so a move that rebuilt the markup would show an empty column until then.
+      if (area.querySelector('conversation-message-list-wrapper') !== wrapper) {
+        throw new Error('a move threw away the transcript the column had drawn');
+      }
+      if (area.conversation !== conversation) throw new Error('a move dropped the column\'s conversation');
+      now = heard();
+      if (now !== holdsOne) throw new Error(`after a move it hears ${now}, want ${holdsOne}`);
+
+      area.remove();
+      now = heard();
+      const holdsNone = `0 selection request(s), 0 tips change(s), 0 background click(s), `
+        + `0/${mountedMetadata} metadata, 0/${mountedSession} session, 0 container and 0 thread observer(s)`;
+      if (now !== holdsNone) throw new Error(`after removal it hears ${now}, want ${holdsNone}`);
+
+      elsewhere.appendChild(area);
+      now = heard();
+      if (now !== holdsOne) throw new Error(`reinserted after a removal it hears ${now}, want ${holdsOne}`);
+      passed++;
+    } finally {
+      area.remove();
+      elsewhere.remove();
+    }
+  } catch (e) { failed++; errors.push(`conversation-area re-parented: ${e.message}`); }
 
   column.remove();
   return { passed, failed, errors };
