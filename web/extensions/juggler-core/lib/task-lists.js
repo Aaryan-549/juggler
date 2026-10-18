@@ -60,11 +60,12 @@ injectStylesOnce('task-progress-styles', `
 .task-progress {
   display: flex;
   height: 0.375rem;
-  margin: -0.25rem 0 0.625rem;
   border-radius: var(--radius-pill);
   background: var(--bg-tertiary);
   overflow: hidden;
 }
+.markdown > .task-progress { margin: -0.25rem 0 0.625rem; }
+.task-progress__segment { transition: width 200ms ease; }
 .task-progress__segment--completed { background: var(--task-done-box); }
 .task-progress__segment--in-progress { background: var(--task-progress-box); }
 .task-progress__segment--failed { background: var(--task-failed-box); }
@@ -121,7 +122,7 @@ function indentContinuation(text, indent) {
 
 /**
  * How much of a list is done. The pins show this as a tab badge, where there is
- * room for a count and not for a list.
+ * room for a count and not for a list; the progress card shows it beside its bar.
  * @param {Array<{status?: string}>} items - Plan steps or todo items.
  * @returns {{completed: number, total: number}} Completed against total.
  */
@@ -226,13 +227,18 @@ export function renderTodoMarkdown(todos, opts = {}) {
  * A list's progress as a bar: one segment per state in {@link BAR_STATES}, sized
  * to its share of the items, against a track the rest leaves bare.
  *
- * It is `aria-hidden`: the line it sits under gives the same count in words, and
- * every item below it carries its state in its tick box's label, so a reader who
- * cannot see the bar has already been told everything it draws.
+ * Every surface that draws a list's progress draws this bar — the plan and todo
+ * blocks here, and the progress info card — so they cannot disagree about what
+ * a colour means. Where it sits is the caller's business; the bar carries no
+ * margin of its own.
+ *
+ * It is `aria-hidden`: every caller puts the same count in words beside it, and
+ * in the blocks every item below it carries its state in its tick box's label,
+ * so a reader who cannot see the bar has already been told everything it draws.
  * @param {Array<Record<string, any>>} items - Plan steps or todo items.
  * @returns {HTMLElement|null} The bar, or null when there is nothing to measure.
  */
-function createProgressBar(items) {
+export function createProgressBar(items) {
   const list = Array.isArray(items) ? items : [];
   if (list.length === 0) return null;
 

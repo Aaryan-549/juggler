@@ -23,7 +23,7 @@
 import InfoCardType from 'juggler/info-card-type';
 import { translator, markForTranslation } from 'juggler/i18n';
 import { pinSource, canPinSource, findReaderContextItem, onReaderThreadChange } from 'juggler/ui';
-import { taskProgress } from '../lib/task-lists.js';
+import { taskProgress, createProgressBar } from '../lib/task-lists.js';
 
 const t = translator('@juggler/core');
 
@@ -71,12 +71,17 @@ const KINDS = [
 ];
 
 /**
+ * A list the card is showing: its kind, its items, and how many are done.
+ * @typedef {{spec: TaskListKind, items: Array<Record<string, any>>, completed: number, total: number}} ActiveList
+ */
+
+/**
  * The lists with work still in them, plan first, in the conversation on screen.
  * @param {import('../../../js/model/session.js').default|undefined} session - The window's session.
- * @returns {Array<{spec: TaskListKind, completed: number, total: number}>} One entry per active list.
+ * @returns {ActiveList[]} One entry per active list.
  */
 export function activeLists(session) {
-  /** @type {Array<{spec: TaskListKind, completed: number, total: number}>} */
+  /** @type {ActiveList[]} */
   const lists = [];
   for (const spec of KINDS) {
     const found = findReaderContextItem(session, spec.kind);
@@ -84,7 +89,7 @@ export function activeLists(session) {
     const data = found.item.data || {};
     const items = spec.itemsOf(data);
     if (!spec.active(data, items)) continue;
-    lists.push({ spec, ...taskProgress(items) });
+    lists.push({ spec, items, ...taskProgress(items) });
   }
   return lists;
 }
@@ -138,11 +143,14 @@ function follow(session, onChange) {
 /**
  * One list as a row: its name, the strip, and the count. A button that opens the
  * list's pin when there is a pin to open; otherwise just the reading.
- * @param {{spec: TaskListKind, completed: number, total: number}} list - The list to draw.
+ *
+ * The strip is the plan and todo pins' own bar ({@link createProgressBar}), so
+ * the card and the pin it opens colour the same states the same way.
+ * @param {ActiveList} list - The list to draw.
  * @returns {HTMLElement} The row.
  */
 function row(list) {
-  const { spec, completed, total } = list;
+  const { spec, items, completed, total } = list;
   const source = { kind: spec.kind };
   const summary = t(spec.summary, { completed, total });
   /** @type {HTMLElement} */
@@ -170,13 +178,8 @@ function row(list) {
   name.className = 'info-card__task-name';
   name.textContent = t(spec.label);
 
-  const strip = document.createElement('span');
-  strip.className = 'info-card__task-strip';
-  strip.setAttribute('aria-hidden', 'true');
-  const fill = document.createElement('span');
-  fill.className = 'info-card__task-fill';
-  fill.style.width = `${total ? (completed / total) * 100 : 0}%`;
-  strip.appendChild(fill);
+  // An active list always has items, so there is always a bar.
+  const strip = /** @type {HTMLElement} */ (createProgressBar(items));
 
   const count = document.createElement('span');
   count.className = 'info-card__task-count';
@@ -241,7 +244,8 @@ export default class TaskProgressCard extends InfoCardType {
     const render = () => {
       const lists = activeLists(session);
       const signature = JSON.stringify([
-        lists.map((l) => [l.spec.kind, l.completed, l.total]),
+        // Every status, not just the count done: a step starting changes the bar.
+        lists.map((l) => [l.spec.kind, l.items.map((item) => item?.status)]),
         canPinSource({ kind: 'plan' }),
         canPinSource({ kind: 'todo' }),
       ]);

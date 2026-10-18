@@ -1340,20 +1340,12 @@ conversation-bar .info-card__task-name {
     color: var(--text-primary);
 }
 
-conversation-bar .info-card__task-strip {
+/* The strip is the plan/todo pins' bar (juggler-core lib/task-lists.js), which
+   owns its segments and colours; the row only sizes it and lifts its track off
+   the flat panel. */
+conversation-bar .info-card__task-row .task-progress {
     flex: 1 1 auto;
-    height: 0.3125rem;
-    border-radius: var(--radius-sm);
     background: var(--bg-raised);
-    overflow: hidden;
-}
-
-conversation-bar .info-card__task-fill {
-    display: block;
-    height: 100%;
-    border-radius: var(--radius-sm);
-    background: var(--accent-green);
-    transition: width 200ms ease;
 }
 
 conversation-bar .info-card__task-count {

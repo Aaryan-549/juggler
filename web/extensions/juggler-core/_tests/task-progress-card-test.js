@@ -145,8 +145,11 @@ export async function runTests(_ctx) {
     return {
       contentEl,
       rows: () => /** @type {HTMLElement[]} */ ([...contentEl.querySelectorAll('.info-card__task-row')]),
-      fill: (/** @type {string} */ kind) => /** @type {HTMLElement|null} */ (
-        contentEl.querySelector(`.info-card__task-row[data-kind="${kind}"] .info-card__task-fill`)),
+      // The strip is the plan/todo pins' own bar (lib/task-lists.js), one
+      // segment per state; a state with no items draws no segment.
+      width: (/** @type {string} */ kind, /** @type {string} */ state) => /** @type {HTMLElement|null} */ (
+        contentEl.querySelector(`.info-card__task-row[data-kind="${kind}"] .task-progress__segment--${state}`))
+        ?.style.width ?? 'none',
     };
   }
 
@@ -225,8 +228,11 @@ export async function runTests(_ctx) {
     ]));
     const kinds = m.rows().map((r) => r.dataset.kind);
     assert(JSON.stringify(kinds) === '["plan","todo"]', `expected plan then todo, got ${JSON.stringify(kinds)}`);
-    assert(m.fill('plan')?.style.width === '50%', `plan is half done, got ${m.fill('plan')?.style.width}`);
-    assert(m.fill('todo')?.style.width === '25%', `todos a quarter, got ${m.fill('todo')?.style.width}`);
+    assert(m.width('plan', 'completed') === '50%', `plan is half done, got ${m.width('plan', 'completed')}`);
+    assert(m.width('plan', 'in-progress') === '25%',
+      `the step under way has its own segment, got ${m.width('plan', 'in-progress')}`);
+    assert(m.width('todo', 'completed') === '25%', `todos a quarter, got ${m.width('todo', 'completed')}`);
+    assert(m.width('todo', 'in-progress') === 'none', `nothing under way, got ${m.width('todo', 'in-progress')}`);
     assert((m.rows()[0]?.textContent || '').includes('2/4'), `the count is shown, got ${m.rows()[0]?.textContent}`);
     assert(m.rows()[0]?.getAttribute('aria-label') === 'Plan: 2 of 4 steps done',
       `and read out whole, got ${JSON.stringify(m.rows()[0]?.getAttribute('aria-label'))}`);
@@ -263,13 +269,19 @@ export async function runTests(_ctx) {
   // --- following the conversation -------------------------------------------
 
   await test('the strips follow a list as it moves', async () => {
-    const session = fakeSession([{ type: 'plan', data: plan(['in_progress', 'pending']) }]);
+    const session = fakeSession([{ type: 'plan', data: plan(['completed', 'pending', 'pending', 'pending']) }]);
     const m = mount(session);
-    assert(m.fill('plan')?.style.width === '0%', `starts empty, got ${m.fill('plan')?.style.width}`);
-    session.items[0].data = plan(['completed', 'in_progress']);
+    assert(m.width('plan', 'completed') === '25%', `one step done, got ${m.width('plan', 'completed')}`);
+    assert(m.width('plan', 'in-progress') === 'none', `nothing under way, got ${m.width('plan', 'in-progress')}`);
+    // A step starting leaves the done count where it was; the bar still moves.
+    session.items[0].data = plan(['completed', 'in_progress', 'pending', 'pending']);
     session.emit('conversation:changed', { conversationId: 'c1' });
-    await waitFor(() => m.fill('plan')?.style.width === '50%',
-      { timeoutMs: FOLLOW_MS * 20, description: 'the strip to reach half' });
+    await waitFor(() => m.width('plan', 'in-progress') === '25%',
+      { timeoutMs: FOLLOW_MS * 20, description: 'the started step to show' });
+    session.items[0].data = plan(['completed', 'completed', 'in_progress', 'pending']);
+    session.emit('conversation:changed', { conversationId: 'c1' });
+    await waitFor(() => m.width('plan', 'completed') === '50%' && m.width('plan', 'in-progress') === '25%',
+      { timeoutMs: FOLLOW_MS * 20, description: 'the strip to move on a step' });
   });
 
   await test('the rail is told only when the card should come or go', async () => {
