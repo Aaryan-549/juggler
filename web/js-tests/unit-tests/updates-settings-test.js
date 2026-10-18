@@ -110,20 +110,42 @@ export async function runTests(_ctx) {
     // already done at boot, against the real server. Forget that read so this
     // case's backend is the one the panel sees.
     __resetPrefsForTests();
+    // The real server still broadcasts its own settings.json to this page, and
+    // every lane on a pool server shares that file, so a write anywhere on it
+    // lands here mid-case carrying the real mode. The fake backend is the server
+    // for the length of the case, so its socket route is held shut too; the
+    // cases that test broadcasts emit theirs straight onto the service.
+    const routes = /** @type {any} */ (wsService.constructor).TYPED_MESSAGE_ROUTES;
+    const serverRoute = routes['settings-changed'];
+    routes['settings-changed'] = () => {};
     const el = /** @type {any} */ (document.createElement('settings-panel'));
     document.body.appendChild(el);
     try {
       await body(el, backend);
     } finally {
       el.remove();
+      routes['settings-changed'] = serverRoute;
       backend.restore();
     }
+  };
+
+  /**
+   * The real server's broadcast of its own settings.json, as this lane receives
+   * it whenever anything on the shared test server writes that file — another
+   * lane's suite, or this page's own preference writes. Its mode is the real
+   * file's, not the fake backend's.
+   * @returns {void}
+   */
+  const foreignBroadcast = () => {
+    wsService._handleMessageData(JSON.stringify({ type: 'settings-changed', settings: { updates: { mode: 'automatic' } } }));
   };
 
   await run('radio reflects the loaded mode from /api/settings', async () => {
     await withPanel({ mode: 'off' }, async (el) => {
       el._tabs.updates.show();
       await settle();
+      // Delivered every run rather than left to a sibling lane's timing.
+      foreignBroadcast();
       const radios = [...el.querySelectorAll('.updates-mode-radio')];
       assert(radios.length === 3, `three modes; got ${radios.length}`);
       const checked = radios.find((r) => r.checked);

@@ -115,11 +115,11 @@ export function machineLoadLines(load, grid) {
   /** @type {string[]} */
   const lines = [];
 
-  lines.push(`  ${load?.line || 'MACHINE LOAD: unreadable (the /api/test/machine probe did not answer)'}`);
+  lines.push(`  ${load?.line || 'MACHINE LOAD: unreadable (this page\'s /api/test/machine probe did not answer — a stalled server, or a page too busy to read the reply; a long TIMER GRID hop below points at the page)'}`);
 
   if (grid) {
     const verdict = grid.worstMs >= GRID_SUSPECT_MS
-      ? ` — a hop this long is a TIMER GRID, not load: every wait in this run is being charged a tick, and the page is ${window.innerWidth}x${window.innerHeight} (no size means the pool's web view never took one, a size means the hidden-page alignment is still on)`
+      ? ` — a hop this long means this lane's timers are not run on time: either a TIMER GRID charging every wait a tick, or a main thread (shared by every lane in this window) busy with something else. The page is ${window.innerWidth}x${window.innerHeight} (no size means the pool's web view never took one, a size means the hidden-page alignment is still on)`
       : ' (normal — this lane\'s clock is the one it asked for)';
     lines.push(`  TIMER GRID: slowest of ${grid.links} chained zero-delay timers was ${grid.worstMs}ms, ${grid.totalMs}ms for the chain${verdict}`);
   }

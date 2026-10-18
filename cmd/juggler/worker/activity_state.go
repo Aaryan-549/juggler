@@ -334,9 +334,20 @@ func (w *ConversationWorker) releaseLLM(threadItemID string) {
 // revoked the whole conversation's LLM intent rather than one thread's — undo,
 // redo, and the history-navigation suppression window — after which no thread's
 // pending dispatch still stands.
+//
+// It writes only when a claim is actually held. The recoil window calls it from
+// handleItemsChange, and the write is itself an items change: a release that
+// rewrote an already-released frame would re-enter itself for the whole window,
+// broadcasting tens of thousands of updates for every viewer to apply
+// (TestNavRecoilDoesNotFeedItsOwnObserver).
 func (w *ConversationWorker) releaseAllLLM() {
 	w.patchProcessingStateIf(
-		func(existing map[string]any) bool { return existing != nil },
+		func(existing map[string]any) bool {
+			_, hasRuns := existing["runs"]
+			_, hasActivity := existing["activity"]
+			_, hasClaimedAt := existing["claimedAt"]
+			return hasRuns || hasActivity || hasClaimedAt
+		},
 		func(updated map[string]any) {
 			delete(updated, "runs")
 			delete(updated, "activity")

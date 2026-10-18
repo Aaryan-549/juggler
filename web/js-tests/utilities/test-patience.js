@@ -57,9 +57,11 @@ import { testGeneration } from './test-deadline.js';
 const BUSY_PER_CPU = 0.9;
 
 /**
- * A timer hop at or past this is the hidden-page grid, not load — a fault to
- * report rather than wait out. Mirrors `GRID_SUSPECT_MS` in `machine-load.js`,
- * which is where the reading itself is explained.
+ * A timer hop at or past this is not load: either the hidden-page grid, or the
+ * main thread every lane in this window shares held by something else for that
+ * long. Both are faults to report rather than wait out. Mirrors
+ * `GRID_SUSPECT_MS` in `machine-load.js`, which is where the reading itself is
+ * explained.
  */
 const GRID_FAULT_MS = 250;
 
@@ -122,7 +124,7 @@ const MAX_RUN_EXTENSION_MS = 90_000;
  * @property {boolean} busy Machine was not serving this lane.
  * @property {number} stretch Multiple of the nominal the conditions justify (>= 1).
  * @property {string} why One clause naming what was read, for the failure line.
- * @property {boolean} gridFault The lane's timers are on a coarse grid — a fault, not load.
+ * @property {boolean} gridFault The lane's timers ran a hop late enough to be a grid or a held main thread — a fault, not load.
  */
 
 /** @type {{at: number, reading: MachineReading}|null} */
@@ -163,7 +165,7 @@ async function readMachine() {
   const clauses = [];
   clauses.push(perCpu ? `${perCpu.toFixed(2)}/CPU` : 'load unreadable');
   if (grid) clauses.push(`worst timer hop ${worstMs}ms`);
-  if (gridFault) clauses.push('a hop that long is the hidden-page TIMER GRID, not load');
+  if (gridFault) clauses.push('a hop that long is a TIMER GRID or a main thread busy with something else, not load');
 
   const reading = {
     busy: !gridFault && stretch >= 1,
@@ -222,7 +224,7 @@ export async function askForMoreTime(nominalMs, forGeneration = testGeneration()
  */
 export async function whyGivingUp() {
   const reading = await readMachine();
-  if (reading.gridFault) return `the machine was ${reading.why} — fix the grid, not the test`;
+  if (reading.gridFault) return `the machine was ${reading.why} — find what is holding this lane's timers (the grid, or another lane's work on the shared main thread), not the test`;
   if (runTotalMs >= MAX_RUN_EXTENSION_MS) {
     return `this lane has spent its whole run's patience (${Math.round(runTotalMs / 1000)}s) on a machine that will not settle (${reading.why}) — the run is too slow to mean anything, not necessarily wrong`;
   }

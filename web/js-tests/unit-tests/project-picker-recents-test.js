@@ -124,6 +124,11 @@ export async function runTests() {
       clickRecent(element, '/work/gone');
       const got = await pendingAfter(promise, 300);
       assert(got === 'pending', `picker resolved ${JSON.stringify(got)} for an invalid path`);
+      // The panel's delayed focus makes the field re-announce the value it
+      // already holds. Delivered here every run, not left to when that timer
+      // happens to fire: an unchanged path keeps the answer it already has.
+      const field = /** @type {HTMLElement} */ (element.querySelector('path-input'));
+      field.dispatchEvent(new CustomEvent('path-change', { bubbles: true, detail: { value: '/work/gone' } }));
       const status = element.querySelector('.pp-status')?.textContent || '';
       assert(status.includes('No such folder'), `status was "${status}"`);
     } finally {

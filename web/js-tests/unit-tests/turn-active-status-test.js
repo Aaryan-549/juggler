@@ -23,6 +23,7 @@
 
 import { assert } from '../utilities/test-helpers.js';
 import Conversation from '../../js/model/conversation.js';
+import actionExecutor from '../../js/services/action-executor.js';
 import Session from '../../js/model/session.js';
 import { isConversationBusy } from '../../js/registries/reload-registries.js';
 import { inspectTurn, observeUntil, waitForTurnOutcome } from '../../js/model/turn-completion.js';
@@ -37,16 +38,23 @@ const RESTING = ['idle', 'error', 'validation-error'];
 /**
  * A Conversation carrying only what isTurnActive reads: the real prototype,
  * a processingState frame, and an action executor.
+ *
+ * The executor is the real one's shape — one page-wide registry of running
+ * actions, each naming its conversation — because the question is which of
+ * them this conversation may count.
  * @param {string|undefined} status - The frame's status, or undefined for no frame.
- * @param {boolean} [runningActions] - Whether a frontend tool action is mid-flight.
- * @returns {any} The stand-in conversation.
+ * @param {string[]} [runningIn] - The conversations a frontend tool action is mid-flight in.
+ * @returns {any} The stand-in conversation, id 'c1'.
  */
-function makeConversation(status, runningActions = false) {
+function makeConversation(status, runningIn = []) {
   const conv = Object.create(Conversation.prototype);
   Object.defineProperty(conv, 'processingState', {
     value: status === undefined ? undefined : { status },
   });
-  conv._actionExecutor = { hasRunningActions: () => runningActions };
+  Object.defineProperty(conv, 'id', { value: 'c1' });
+  const executor = Object.create(Object.getPrototypeOf(actionExecutor));
+  executor._runningActions = new Map(runningIn.map((id, i) => [`exec-${i}`, { conversationId: id, toolUseId: `t${i}` }]));
+  conv._actionExecutor = executor;
   return conv;
 }
 
@@ -84,8 +92,14 @@ export async function runTests() {
         `a frame resting at '${status}' is not a turn in flight`);
     }
     assert(makeConversation(undefined).isTurnActive() === false, 'no frame is not a turn');
-    assert(makeConversation('validation-error', true).isTurnActive() === true,
+    assert(makeConversation('validation-error', ['c1']).isTurnActive() === true,
       'a frontend tool action still running is a turn in flight whatever the frame says');
+    // The registry is the page's, and a page holds many conversations — the
+    // engine every conversation's tools, a lane whatever an earlier suite left
+    // running. Another conversation's action is not a turn here: counting it
+    // refuses New Thread and asks to stop a turn that does not exist.
+    assert(makeConversation('idle', ['c2']).isTurnActive() === false,
+      'an action running in another conversation is not a turn in flight here');
   });
 
   check('session-tab-busy-barrier', () => {

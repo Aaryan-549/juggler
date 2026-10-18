@@ -1113,6 +1113,12 @@ func (w *ConversationWorker) reply(msg any) {
 		w.log.Error("Failed to marshal reply: %v", err)
 		return
 	}
+	// The worker's half of every round trip a viewer waits on. The viewer's
+	// tape has the send and the arrival; this is the moment between, so an ack
+	// timeout reads as a late worker or a late page instead of a guess.
+	if m, ok := msg.(map[string]any); ok && m["type"] == "ack" {
+		w.tape.Record("ack-sent", map[string]any{"ackId": m["ackId"], "to": w.inbox.origin()})
+	}
 	w.replyWS(data)
 }
 

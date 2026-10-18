@@ -66,7 +66,7 @@ export async function continueThread(conversation, messageThread, beforeContinue
   // Asked of THIS thread, not the whole conversation: a sibling being driven is
   // no reason to refuse a continue here — the worker admits an idle thread while
   // others run.
-  if (messageThread.isProcessing || actionExecutor.hasRunningActions() || messageThread.hasBusyItems()) {
+  if (messageThread.isProcessing || actionExecutor.hasRunningActionsFor(conversation.id) || messageThread.hasBusyItems()) {
     return false;
   }
 

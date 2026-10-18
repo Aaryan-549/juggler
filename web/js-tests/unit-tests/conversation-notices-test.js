@@ -169,7 +169,7 @@ async function walk() {
     swap(providersCache, 'hasAvailableProvider', () => anyAvailable),
     swap(providersCache, 'get', () => providers),
     swap(workerManager, 'isWorkerReady', (/** @type {string} */ id) => workerReady(id)),
-    swap(actionExecutor, 'hasRunningActions', () => false),
+    swap(actionExecutor, 'hasRunningActionsFor', () => false),
     swap(win, 'showConfirm', async (/** @type {string} */ message, /** @type {string} */ title, /** @type {any} */ opts) => {
       confirms.push({ message, title, confirmText: opts?.confirmText, cancelText: opts?.cancelText });
       return false;

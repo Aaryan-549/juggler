@@ -2327,7 +2327,7 @@ class Conversation {
    *   tool action is still running.
    */
   isTurnActive() {
-    return statusHoldsTurn(this.processingState?.status) || this._actionExecutor.hasRunningActions();
+    return statusHoldsTurn(this.processingState?.status) || this._actionExecutor.hasRunningActionsFor(this.id);
   }
 
   /**
@@ -2347,8 +2347,8 @@ class Conversation {
    *      production statuses, so we cannot use it alone — e.g. it does not
    *      recognise the test-only `mock-paused` status and would report
    *      "idle" while the worker is actually parked.
-   *   2. `_actionExecutor.hasRunningActions()` — any frontend-driven tool
-   *      action (bash/edit/etc.) still mid-flight.
+   *   2. `_actionExecutor.hasRunningActionsFor(this.id)` — any frontend-driven
+   *      tool action (bash/edit/etc.) of this conversation still mid-flight.
    *
    * Resolves once both are quiet. Idempotent — if nothing is in flight it
    * resolves on the next microtask. Reactive on the Yjs metadata observer

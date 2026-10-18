@@ -155,6 +155,7 @@ export function buildPickerPanel({
           return;
         }
         if (debounceTimer !== null) { clearTimeout(debounceTimer); debounceTimer = null; }
+        checkedValue = path.trim();
         setStatus('checking', t('Checking…'));
         const gen = ++validationGen;
         try {
@@ -185,6 +186,12 @@ export function buildPickerPanel({
   /** @type {ReturnType<typeof setTimeout>|null} */
   let debounceTimer = null;
   let validationGen = 0;
+  // The path the status speaks for, whether its check has answered or is still
+  // running. The field re-announces the value it holds when it takes focus, and
+  // the panel focuses it shortly after opening — by when a recent may already
+  // have been clicked and answered. That repeat has nothing new to check.
+  /** @type {string|null} */
+  let checkedValue = null;
 
   /**
    * @param {'idle'|'checking'|'valid'|'invalid'} state
@@ -215,6 +222,7 @@ export function buildPickerPanel({
    */
   function triggerValidation(raw) {
     const val = raw.trim();
+    checkedValue = val;
     if (!val) { setStatus('idle', ''); return; }
     setStatus('checking', t('Checking…'));
     if (debounceTimer !== null) clearTimeout(debounceTimer);
@@ -245,6 +253,7 @@ export function buildPickerPanel({
   pathInputEl.addEventListener('path-change', (e) => {
     const val = /** @type {CustomEvent<{value:string}>} */ (e).detail.value;
     if (validate) {
+      if (val.trim() === checkedValue) return;
       triggerValidation(val);
     } else {
       openBtn.disabled = val.trim().length === 0;

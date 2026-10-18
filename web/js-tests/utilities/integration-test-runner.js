@@ -962,7 +962,7 @@ export async function runIntegrationTest(testDef, ctx) {
         harness
       }),
       5000,
-      `[${testDef.name}] ${rawMsg}\n  (failure diagnostics unavailable — the diagnostics build timed out; the server/worker may be unresponsive)`,
+      `[${testDef.name}] ${rawMsg}\n  (failure diagnostics unavailable — this page could not build them in 5s: the server stopped answering it, or this page's main thread was too busy to read the answers; ask the server from outside the page before believing the first)`,
       `failure-diagnostics build for ${testDef.name}`
     );
     return { passed: false, error: errorWithDiag, durationMs };

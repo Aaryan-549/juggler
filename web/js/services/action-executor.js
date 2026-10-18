@@ -885,6 +885,23 @@ class ActionExecutor {
     return this._runningActions.size > 0;
   }
 
+  /**
+   * Whether any action is running for one conversation.
+   *
+   * The registry belongs to the page, and a page holds many conversations — the
+   * engine runs every conversation's tools — so "is a turn running here?" must
+   * not count another conversation's action. Conversation-scoped for the same
+   * reason as {@link cancelByToolUseId}.
+   * @param {string} conversationId - The conversation asking
+   * @returns {boolean} True if an action of that conversation is in flight
+   */
+  hasRunningActionsFor(conversationId) {
+    for (const a of this._runningActions.values()) {
+      if (a.conversationId === conversationId) return true;
+    }
+    return false;
+  }
+
 }
 
 // Export singleton instance
