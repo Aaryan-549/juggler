@@ -296,21 +296,20 @@ export async function runTests() {
     ['actions sheet', '_actionsPopup', '#actions-sheet', '#more-actions-button'],
     ['schedule picker', '_schedulePopup', '#schedule-send-menu', '.schedule-send-btn'],
   ])) {
-    // A reattach re-renders the box, so the trigger the open began with is gone
-    // by the time it presents: the surface must anchor to the button there is now.
-    await run(`the ${label} opened across a detach and reattach anchors to the live button`, async () => {
+    // A reattach keeps the box's DOM, so an open begun before the detach
+    // presents once, against the trigger the box still has.
+    await run(`the ${label} opened across a detach and reattach presents against its button`, async () => {
       const { box, container } = mountComposer();
       try {
-        const stale = box.querySelector(button);
+        const trigger = box.querySelector(button);
         const pending = box[popup].open();
         container.remove();
         document.body.appendChild(container);
         await pending;
-        const live = box.querySelector(button);
-        assert(!!live && live !== stale, 'the reattach did not re-render the trigger');
+        assert(box.querySelector(button) === trigger, 'the reattach replaced the trigger');
         assert(document.querySelectorAll(selector).length === 1, `the ${label} did not present`);
-        assert(live.getAttribute('aria-expanded') === 'true',
-          `the live trigger reads aria-expanded=${live.getAttribute('aria-expanded')}, want true`);
+        assert(trigger.getAttribute('aria-expanded') === 'true',
+          `the trigger reads aria-expanded=${trigger.getAttribute('aria-expanded')}, want true`);
       } finally {
         box[popup].close();
         document.querySelectorAll(selector).forEach((el) => el.remove());

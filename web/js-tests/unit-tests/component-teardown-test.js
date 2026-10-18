@@ -53,6 +53,10 @@
  *   up when removed, and takes it back when reinserted.
  * - An approval widget moved mid-edit keeps the pattern being typed, and
  *   answers one click once.
+ * - A composer moved or put back keeps its textarea and what was typed in it,
+ *   hears each click and cache-impact event once, and follows its
+ *   conversation's metadata exactly once — however many times its listeners
+ *   were bound — and hears none of it once it has left.
  * @module unit-tests/component-teardown
  */
 
@@ -84,6 +88,8 @@ import '../../js/components/file-view.js';
 import '../../js/components/modal-dialog.js';
 import '../../js/components/update-notice.js';
 import '../../js/components/action-confirmation.js';
+import '../../js/components/composer.js';
+import { CONTEXT_CACHE_IMPACT_CHANGED } from '../../js/services/context-cache-impact.js';
 import fileViewerRegistry from '../../js/registries/file-viewer-registry.js';
 import { closeAllPopups } from '../../js/utils/popup-manager.js';
 
@@ -933,6 +939,62 @@ export async function runTests() {
       elsewhere.remove();
     }
   } catch (e) { failed++; errors.push(`action-confirmation re-parented: ${e.message}`); }
+
+  try {
+    const metadata = new Set();
+    const conversation = {
+      processingState: null,
+      isTurnActive: () => false,
+      observeMetadata: (/** @type {Function} */ fn) => { metadata.add(fn); },
+      unobserveMetadata: (/** @type {Function} */ fn) => { metadata.delete(fn); },
+    };
+    const box = /** @type {any} */ (document.createElement('composer-box'));
+    box._touchComposerOverride = false;
+    const elsewhere = document.createElement('div');
+    document.body.appendChild(elsewhere);
+    try {
+      column.appendChild(box);
+      box.querySelector('model-selector').setConversation = () => {};
+      box.setConversation(conversation);
+      // render() defers this a frame, which a macOS or Linux lane never
+      // delivers and a Windows one does — so a caller binding it as well must
+      // still leave one set.
+      box.setupListeners();
+      box.setupListeners();
+      let toggles = 0, impacts = 0;
+      box._commandsPopup.toggle = () => { toggles++; };
+      box._updateCacheWarningButton = () => { impacts++; };
+      const heard = () => {
+        const before = [toggles, impacts];
+        box.querySelector('#commands-button').click();
+        box.dispatchEvent(new CustomEvent(CONTEXT_CACHE_IMPACT_CHANGED, { detail: { busts: false } }));
+        return `${toggles - before[0]} click(s), ${impacts - before[1]} cache event(s) and ${metadata.size} metadata observer(s)`;
+      };
+      const holdsOne = '1 click(s), 1 cache event(s) and 1 metadata observer(s)';
+      let now = heard();
+      if (now !== holdsOne) throw new Error(`a mounted box hears ${now}, want 1 of each`);
+      const textarea = box.querySelector('textarea');
+      textarea.value = 'teardown draft';
+      elsewhere.appendChild(box);
+      // The draft is restored into the box once per thread, so a move that
+      // rebuilt the textarea would lose what was typed for good.
+      if (box.querySelector('textarea') !== textarea || textarea.value !== 'teardown draft') {
+        throw new Error('a move threw away the textarea and what was typed in it');
+      }
+      now = heard();
+      if (now !== holdsOne) throw new Error(`after a move it hears ${now}, want 1 of each`);
+      box.remove();
+      now = heard();
+      if (now !== '0 click(s), 0 cache event(s) and 0 metadata observer(s)') throw new Error(`after removal it hears ${now}, want none`);
+      elsewhere.appendChild(box);
+      now = heard();
+      if (now !== holdsOne) throw new Error(`reinserted after a removal it hears ${now}, want 1 of each`);
+      passed++;
+    } finally {
+      box.remove();
+      elsewhere.remove();
+    }
+  } catch (e) { failed++; errors.push(`composer-box re-parented: ${e.message}`); }
 
   column.remove();
   return { passed, failed, errors };

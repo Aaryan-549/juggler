@@ -3,6 +3,7 @@
 //   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
 
 import './permission-controls.js';
+import JugglerElement from './juggler-element.js';
 
 
 import { DRAFT_SAVE_DEBOUNCE_MS } from '../utils/constants.js';
@@ -101,7 +102,7 @@ const MAX_TEXTAREA_HEIGHT_PX = 400;
  */
 const MAX_MESSAGE_CHARS = 100_000;
 
-class Composer extends HTMLElement {
+class Composer extends JugglerElement {
   constructor() {
     super();
     /** @type {boolean} @private */
@@ -275,8 +276,19 @@ class Composer extends HTMLElement {
       dialog: true,
     });
 
-    /** @type {(() => void)|null} @private - Detaches the pointer-type listener that re-homes the config controls. */
-    this._pointerQueryCleanup = null;
+    // Disposers for the listeners setupListeners binds on the rendered children.
+    // Unlike the host-level ones (which ride JugglerElement's cleanups and are
+    // taken up again in connectedCallback), these belong to one binding of one
+    // render: each setupListeners releases the last set before binding its own,
+    // so the deferred call render() makes and a direct one leave a single set.
+    /** @type {Array<() => void>} @private */
+    this._renderBindings = [];
+
+    // Set by the first connect, which draws the box. A later connect (a move, or
+    // a put-back) keeps the DOM — and the text typed into it, which is restored
+    // from the draft only once per thread — and binds its listeners again.
+    /** @type {boolean} @private */
+    this._rendered = false;
 
     // Initialized in setupListeners after render
     /** @type {CompletionMenu|null} @private */
@@ -291,23 +303,22 @@ class Composer extends HTMLElement {
     /** @type {boolean|undefined} @private */
     this._touchComposerOverride = undefined;
 
-    // Guards the once-only context-cache-impact listener on `this` (setupListeners
-    // reruns on every render, but this listener rides child re-renders and must
-    // not stack). See setupListeners.
-    /** @type {boolean} @private */
-    this._impactListenerBound = false;
-    // Guards the once-only drag-and-drop listeners on `this`, for the same
-    // reason: they ride child re-renders, and a second set would stage every
-    // dropped file twice. See setupListeners.
-    /** @type {boolean} @private */
-    this._dragListenersBound = false;
     /** @type {boolean} @private */
     this._cacheImpactWarning = false;
   }
 
   connectedCallback() {
-    this.render();
-    this._watchPointerType();
+    if (!this._rendered) {
+      this._rendered = true;
+      this.render();
+    } else {
+      // A move or a put-back: the DOM is intact, but the disconnect released
+      // its listeners, the token mirror and the metadata observer.
+      this.setupListeners();
+      this._syncPasteMirror();
+      if (this._conversation) this.setConversation(this._conversation);
+    }
+    this._bindHostListeners();
     // Take an unclaimed keyboard on arrival — except in a sub-thread column,
     // whose box gets focus only through conversation-tab's Rule 15. That rule
     // stands down while the arrow keys are walking the item list, which is
@@ -321,11 +332,9 @@ class Composer extends HTMLElement {
   }
 
   disconnectedCallback() {
-    // Stop following the pointer type; the listener outlives the element.
-    if (this._pointerQueryCleanup) {
-      this._pointerQueryCleanup();
-      this._pointerQueryCleanup = null;
-    }
+    // The host-level listeners and the pointer-type watch.
+    super.disconnectedCallback();
+    this._releaseRenderBindings();
     // Drop a queued height measurement: it would resolve against a detached box
     // and measure nothing.
     this._cancelScheduledAutoResize();
@@ -337,6 +346,8 @@ class Composer extends HTMLElement {
     this._skillPopup.close();
     this._actionsPopup.close();
     this._schedulePopup.close();
+    // The completion menu is portaled to <body> too.
+    this._completions?.close();
     if (this._conversationMetadataObserver && this._conversation) {
       this._conversation.unobserveMetadata(this._conversationMetadataObserver);
       this._conversationMetadataObserver = null;
@@ -354,13 +365,106 @@ class Composer extends HTMLElement {
     }
   }
 
+  /**
+   * Bind the listeners the rendered box needs, releasing any an earlier call
+   * bound — render() defers this a frame, and a caller may also run it
+   * directly. The host-level listeners are not here: they live as long as the
+   * connection, in _bindHostListeners.
+   */
   setupListeners() {
     const textarea = /** @type {HTMLTextAreaElement} */ (this.querySelector('textarea'));
     if (!textarea) return;
+    this._releaseRenderBindings();
 
-    // Slash-command completions take precedence at the very start of a message;
-    // @-file mentions apply everywhere else. Both share the one caret-anchored
-    // CompletionMenu, which activates the first provider whose trigger matches.
+    this._bindCompletions(textarea);
+    this._bindAutoResize(textarea);
+    this._bindFocusRetention(textarea);
+    this._bindControlButtons();
+    this._bindPaste(textarea);
+    this._bindTextEditing(textarea);
+    this._bindTokenPills(textarea);
+
+    // Render any chips that survived a re-render.
+    renderAttachmentChips(this);
+    // A draft restored on mount may already carry a pending send — re-arm (or,
+    // if its target has passed, fire) it now that the controls exist.
+    syncScheduledSendFromDraft(this);
+    // Seed the Send button's empty/disabled state from any restored draft.
+    this._updateSendButtonState();
+  }
+
+  /**
+   * Add a listener to a rendered child, released by the next setupListeners or
+   * the disconnect.
+   * @param {EventTarget} target
+   * @param {string} type
+   * @param {(e: any) => void} handler
+   * @param {boolean|AddEventListenerOptions} [options]
+   * @private
+   */
+  _listen(target, type, handler, options) {
+    target.addEventListener(type, handler, options);
+    this._renderBindings.push(() => target.removeEventListener(type, handler, options));
+  }
+
+  /** @private */
+  _releaseRenderBindings() {
+    while (this._renderBindings.length) this._renderBindings.pop()?.();
+  }
+
+  /**
+   * The listeners on the host itself, which outlive every re-render of its
+   * children and so are bound once per connection rather than per
+   * setupListeners: a second set would stage every dropped file twice.
+   * @private
+   */
+  _bindHostListeners() {
+    // Drag-and-drop files anywhere onto the composer. The listeners live on the
+    // host element (`this`) so the whole component is a drop zone — including
+    // the padding around the bubble — not just the inner bubble. The drag-over
+    // highlight stays on the bubble for visual feedback, looked up per event
+    // because a re-render replaces it. The surrounding column is a drop zone
+    // too and hands its drops here (see conversation-area's
+    // _dropTargetComposer), so this path serves a drop that landed on the box
+    // itself.
+    installFileDropGuard();
+    const bubble = () => this.querySelector('composer-box-wrapper');
+    this.on(this, 'dragover', (e) => {
+      if (!isFileDrag(/** @type {DragEvent} */ (e).dataTransfer)) return;
+      e.preventDefault();
+      markFileDropAccepted(e);
+      bubble()?.classList.add('drag-over');
+    });
+    this.on(this, 'dragleave', (e) => {
+      // Only clear when the pointer actually leaves the host, not when it
+      // crosses between the host's children (which also fire dragleave).
+      if (e.target === this) bubble()?.classList.remove('drag-over');
+    });
+    this.on(this, 'drop', (e) => {
+      bubble()?.classList.remove('drag-over');
+      if (this.acceptDroppedFiles(/** @type {DragEvent} */ (e).dataTransfer)) e.preventDefault();
+    });
+
+    // Context-cache warning — the round alert just before Send. The strategy
+    // selector owns detection and fires a bubbling event when its classification
+    // flips; mirror that onto the button's visibility.
+    this.on(this, CONTEXT_CACHE_IMPACT_CHANGED, (e) => {
+      this._cacheImpactWarning = !!(/** @type {CustomEvent} */ (e).detail?.busts);
+      this._updateCacheWarningButton();
+    });
+
+    this._watchPointerType();
+  }
+
+  /**
+   * Slash-command completions take precedence at the very start of a message;
+   * `@` file mentions apply everywhere else. Both share the one caret-anchored
+   * CompletionMenu, which activates the first provider whose trigger matches.
+   * @param {HTMLTextAreaElement} textarea
+   * @private
+   */
+  _bindCompletions(textarea) {
+    this._completions?.close();
     this._completions = new CompletionMenu({
       textarea,
       getWrapper: () => this.querySelector('composer-box-wrapper'),
@@ -379,15 +483,21 @@ class Composer extends HTMLElement {
         createSkillMentionProvider(() => getThreadSkillSnapshot(this._messageThread)),
       ],
     });
+  }
 
-    // Re-run autoResize whenever the textarea's width changes (e.g. column
-    // drag-resize reflowing multi-line text to a different line count).
-    // Two guards keep this from emitting "ResizeObserver loop completed with
-    // undelivered notifications": (1) act on width only, since autoResize
-    // mutates height and reacting to that would feed back into the observer;
-    // (2) defer the height write to the next frame — _scheduleAutoResize, whose
-    // deferral this depends on — so it lands outside the observer's own
-    // delivery cycle rather than mutating layout mid-delivery.
+  /**
+   * Re-run autoResize whenever the textarea's width changes (e.g. column
+   * drag-resize reflowing multi-line text to a different line count).
+   * Two guards keep this from emitting "ResizeObserver loop completed with
+   * undelivered notifications": (1) act on width only, since autoResize
+   * mutates height and reacting to that would feed back into the observer;
+   * (2) defer the height write to the next frame — _scheduleAutoResize, whose
+   * deferral this depends on — so it lands outside the observer's own
+   * delivery cycle rather than mutating layout mid-delivery.
+   * @param {HTMLTextAreaElement} textarea
+   * @private
+   */
+  _bindAutoResize(textarea) {
     /** @type {number|null|undefined} */
     let lastWidth = null;
     const resizeObserver = new ResizeObserver((entries) => {
@@ -397,7 +507,16 @@ class Composer extends HTMLElement {
       this._scheduleAutoResize(textarea);
     });
     resizeObserver.observe(textarea);
+    this._renderBindings.push(() => resizeObserver.disconnect());
+  }
 
+  /**
+   * Keep keyboard focus where the pointer type wants it while the controls
+   * around the textarea are used.
+   * @param {HTMLTextAreaElement} textarea
+   * @private
+   */
+  _bindFocusRetention(textarea) {
     // Click on the empty wrapper area focuses the textarea. Skip clicks that
     // land on a control button (or anywhere in input-controls): those must not
     // programmatically focus the textarea, because on mobile that pops the
@@ -406,7 +525,7 @@ class Composer extends HTMLElement {
     // here changes nothing there — focus still "remains" on the composer.
     const wrapper = this.querySelector('composer-box-wrapper');
     if (wrapper) {
-      wrapper.addEventListener('click', (e) => {
+      this._listen(wrapper, 'click', (e) => {
         const target = /** @type {Element|null} */ (e.target);
         if (target && target.closest('button, .input-ctrl-btn, input-controls')) return;
         textarea.focus();
@@ -431,63 +550,93 @@ class Composer extends HTMLElement {
     const inputControls = this.querySelector('input-controls');
     if (inputControls) {
       let lastPointerType = 'mouse';
-      inputControls.addEventListener('pointerdown', (e) => {
+      this._listen(inputControls, 'pointerdown', (e) => {
         lastPointerType = /** @type {PointerEvent} */ (e).pointerType || 'mouse';
       }, true);
-      inputControls.addEventListener('mousedown', (e) => {
+      this._listen(inputControls, 'mousedown', (e) => {
         const target = /** @type {Element|null} */ (e.target);
         if (lastPointerType === 'mouse' && target && target.closest('button, .input-ctrl-btn')) {
           e.preventDefault();
         }
       }, true);
     }
+  }
 
-    // Commands menu button
-    const commandsButton = this.querySelector('#commands-button');
-    if (commandsButton) {
-      commandsButton.addEventListener('click', (e) => {
+  /**
+   * The buttons in the controls row. Each click stays with its button, so it
+   * never reaches the wrapper's click-to-focus.
+   * @private
+   */
+  _bindControlButtons() {
+    /**
+     * @param {string} selector
+     * @param {() => void} action
+     * @param {{preventDefault?: boolean}} [opts]
+     */
+    const onClick = (selector, action, { preventDefault = true } = {}) => {
+      const button = this.querySelector(selector);
+      if (!button) return;
+      this._listen(button, 'click', (e) => {
+        if (preventDefault) e.preventDefault();
         e.stopPropagation();
-        this._commandsPopup.toggle();
+        action();
       });
-    }
+    };
+
+    onClick('#commands-button', () => this._commandsPopup.toggle(), { preventDefault: false });
 
     // Skill picker button: a mouse-first alternative to typing `$`, mirroring the
     // commands (`/`) button. It opens a menu of this thread's skills and inserts
     // NOTHING on open or dismissal — only SELECTING a skill splices `$name ` into
     // the composer, which then flows through the identical send-time activation
     // path.
-    const skillButton = this.querySelector('#skill-button');
-    if (skillButton) {
-      skillButton.addEventListener('click', (e) => {
-        e.stopPropagation();
-        this._skillPopup.toggle();
-      });
-    }
+    onClick('#skill-button', () => this._skillPopup.toggle(), { preventDefault: false });
 
-    // Attachments: the file-picker button, paste, and drag-and-drop. The
-    // picker takes any file and routes it exactly as a drop would
+    // The file picker. It takes any file and routes it exactly as a drop would
     // (acceptFiles): images through _handleFiles, which validates size /
     // capability and uploads to the asset store, and everything else through
     // _handleTextFiles as a text snapshot. A browser picker reads the CLIENT's
     // disk, which is the right machine whether or not the server is local.
-    const attachBtn = this.querySelector('#attach-button');
     const fileInput = /** @type {HTMLInputElement|null} */ (this.querySelector('.attach-file-input'));
-    if (attachBtn && fileInput) {
-      attachBtn.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        fileInput.click();
-      });
-      fileInput.addEventListener('change', () => {
+    if (fileInput) {
+      onClick('#attach-button', () => fileInput.click());
+      this._listen(fileInput, 'change', () => {
         this.acceptFiles(fileInput.files);
         // Reset so selecting the same file again re-fires change.
         fileInput.value = '';
       });
     }
 
-    // Paste image data (screenshot, copied image) — upload it and suppress the
-    // default paste of those image items (avoids also pasting a filename).
-    textarea.addEventListener('paste', (e) => {
+    // New thread button - creates thread immediately
+    onClick('.new-thread-btn', () => this._createThread());
+
+    // Schedule-send ("send after a delay") button — opens the delay picker.
+    onClick('.schedule-send-btn', () => this._schedulePopup.toggle());
+
+    // Send button (always visible). Send-only — cancelling a running turn is
+    // the footer Stop button's job, so this never morphs into a Stop control.
+    onClick('#send-button', () => this.sendMessage());
+
+    // Clicking (or tapping) the context-cache warning surfaces its explanation —
+    // touch has no hover, so the native-title tooltip would otherwise never
+    // appear there.
+    const cacheWarnBtn = /** @type {HTMLElement|null} */ (this.querySelector('#context-cache-warning'));
+    if (cacheWarnBtn) onClick('#context-cache-warning', () => tooltipManager.showFor(cacheWarnBtn));
+
+    // Touch-only "⋮" overflow button: opens the actions sheet (commands, attach
+    // image, new thread) so those affordances need no inline row on a phone.
+    onClick('#more-actions-button', () => this._actionsPopup.toggle());
+  }
+
+  /**
+   * Paste image data (screenshot, copied image) — upload it and suppress the
+   * default paste of those image items (avoids also pasting a filename) — and
+   * collapse a large text paste into a placeholder token.
+   * @param {HTMLTextAreaElement} textarea
+   * @private
+   */
+  _bindPaste(textarea) {
+    this._listen(textarea, 'paste', (e) => {
       /** @type {File[]} */
       const imageFiles = [];
       for (const item of Array.from(e.clipboardData?.items || [])) {
@@ -522,130 +671,19 @@ class Composer extends HTMLElement {
       try { hasText = !!e.clipboardData?.getData('text/plain'); } catch { /* restricted */ }
       if (!hasText) void this._pasteImagesFromAsyncClipboard();
     });
+  }
 
-    // Drag-and-drop files anywhere onto the composer. The listeners live on the
-    // host element (`this`) so the whole component is a drop zone — including
-    // the padding around the bubble — not just the inner bubble. The drag-over
-    // highlight stays on the bubble for visual feedback. The
-    // surrounding column is a drop zone too and hands its drops here (see
-    // conversation-area's _dropTargetComposer), so this path serves a drop that
-    // landed on the box itself.
-    //
-    // Bound once: these ride on the host, which survives the re-renders that
-    // rebuild the bubble, so a second binding would stage every dropped file
-    // twice. The bubble is therefore looked up per event rather than captured.
-    installFileDropGuard();
-    if (!this._dragListenersBound) {
-      this._dragListenersBound = true;
-      const bubble = () => this.querySelector('composer-box-wrapper');
-      this.addEventListener('dragover', (e) => {
-        if (!isFileDrag(/** @type {DragEvent} */ (e).dataTransfer)) return;
-        e.preventDefault();
-        markFileDropAccepted(e);
-        bubble()?.classList.add('drag-over');
-      });
-      this.addEventListener('dragleave', (e) => {
-        // Only clear when the pointer actually leaves the host, not when it
-        // crosses between the host's children (which also fire dragleave).
-        if (e.target === this) bubble()?.classList.remove('drag-over');
-      });
-      this.addEventListener('drop', (e) => {
-        bubble()?.classList.remove('drag-over');
-        if (this.acceptDroppedFiles(/** @type {DragEvent} */ (e).dataTransfer)) e.preventDefault();
-      });
-    }
+  /**
+   * Typing in the box: the keys it acts on, keeping the size, the draft, the
+   * Send button and the completion menu in step with the text, and committing
+   * the draft when focus leaves.
+   * @param {HTMLTextAreaElement} textarea
+   * @private
+   */
+  _bindTextEditing(textarea) {
+    this._listen(textarea, 'keydown', (e) => this._onTextareaKeydown(e, textarea));
 
-    // Render any chips that survived a re-render.
-    renderAttachmentChips(this);
-
-    textarea.addEventListener('keydown', (e) => {
-      // Completion menu (@ mentions / slash commands) owns navigation keys while
-      // open — it consumes Arrow/Enter/Tab/Escape as needed and reports back.
-      if (this._completions?.handleKeydown(e)) return;
-
-      // Paste-placeholder atomicity: a token is many characters but acts like a
-      // single object under Backspace/Delete/Arrow. Skipped while composing (IME
-      // safety) and a fast no-op when the box holds no tokens.
-      if (!e.isComposing && this._handleTokenKeydown(e, textarea)) return;
-
-      // Enter to send (without Shift, Alt/Option, or Meta/Command). On a touch
-      // composer Enter is the onscreen keyboard's return key, so a plain Enter
-      // inserts a newline (handled by the branch below) and the Send button is
-      // the send affordance instead.
-      if (e.key === 'Enter' && !e.shiftKey && !e.altKey && !e.metaKey && !this._isTouchComposer()) {
-        e.preventDefault();
-        this.sendMessage();
-        return;
-      }
-
-      // Insert a newline: Alt+Enter / Cmd+Enter on any composer, plus a plain
-      // (unmodified) Enter on a touch composer.
-      if (e.key === 'Enter' && (e.altKey || e.metaKey || (this._isTouchComposer() && !e.shiftKey))) {
-        e.preventDefault();
-        const start = textarea.selectionStart;
-        const end = textarea.selectionEnd;
-        const value = textarea.value;
-        textarea.value = value.substring(0, start) + '\n' + value.substring(end);
-        textarea.selectionStart = textarea.selectionEnd = start + 1;
-        this.autoResize(textarea);
-        // Direct value writes don't fire input; keep the token mirror and the
-        // reconciler's known-good base in step so a later edit isn't misjudged.
-        this._syncPasteMirror();
-        this._pasteLastValue = textarea.value;
-        this._pasteLastCaret = textarea.selectionStart;
-        return;
-      }
-
-      // Escape to stop the turn or clear the input
-      if (e.key === 'Escape') {
-        // A popup/modal open over the input owns Escape — it dismisses
-        // itself via its own handler / popup-manager. Don't let the key
-        // leak through to cancel a running turn or clear the input.
-        if (isAnyPopupOpen()) {
-          return;
-        }
-
-        e.preventDefault();
-
-        // What Escape MEANS on a running/idle conversation is the user's choice
-        // (Settings ▸ Keyboard shortcuts ▸ Escape key), so the whole decision —
-        // stop, pause, two-step, clear — lives in escape-behaviour.js and is
-        // shared with the conversation-area Escape. All this box contributes is
-        // the vantage: a sub-thread box (threadItemId set) interrupts that
-        // thread without closing it; the root box (null) stops everything.
-        handleEscapeKey(e, {
-          focusedThreadId: this.threadItemId ?? null,
-          getComposer: () => this,
-        });
-        return;
-      }
-
-      // ArrowUp/Down: navigate history, but only when cursor is stuck at
-      // the top/bottom. Let the browser move the cursor first, then check
-      // in a microtask whether it actually moved. Any modifier (Shift for
-      // selection, Alt/Ctrl/Meta for word/line jumps) means the user is
-      // navigating/selecting text, so leave the keypress alone.
-      if ((e.key === 'ArrowUp' || e.key === 'ArrowDown')
-                && (e.shiftKey || e.altKey || e.ctrlKey || e.metaKey)) {
-        return;
-      }
-
-      if (e.key === 'ArrowUp') {
-        const prevStart = textarea.selectionStart;
-        const prevEnd = textarea.selectionEnd;
-        setTimeout(() => this._navigateHistoryUp(textarea, prevStart, prevEnd), 0);
-        return;
-      }
-
-      if (e.key === 'ArrowDown') {
-        const prevStart = textarea.selectionStart;
-        const prevEnd = textarea.selectionEnd;
-        setTimeout(() => this._navigateHistoryDown(textarea, prevStart, prevEnd), 0);
-        return;
-      }
-    });
-
-    textarea.addEventListener('input', (e) => {
+    this._listen(textarea, 'input', (e) => {
       // Token reconciler: reject any edit that damaged a placeholder's interior
       // (revert to the last good value) and strip orphaned delimiters, BEFORE
       // anything else reads the value. Reachable only by paths that dodge the
@@ -664,48 +702,7 @@ class Composer extends HTMLElement {
     });
     // Paste in WKWebView updates value after the input event fires, so
     // re-run detection on the next tick to read the final pasted value.
-    textarea.addEventListener('paste', () => setTimeout(() => this._completions?.handleInput(), 0));
-
-    // IME safety: caret-snapping and the token reconciler stand down while a
-    // composition is in flight (they would fight the input method).
-    textarea.addEventListener('compositionstart', () => { this._pasteComposing = true; });
-    textarea.addEventListener('compositionend', () => {
-      this._pasteComposing = false;
-      this._reconcileTokens(textarea);
-      this._syncPasteMirror();
-    });
-
-    // Click on a token pill expands it back to its full content (undoable). The
-    // hit-test is against the mirror's rendered pill geometry, not the caret,
-    // because a click that lands inside a token is snapped to a boundary before
-    // this fires — so a caret-based test would never see the interior.
-    textarea.addEventListener('click', (e) => {
-      if (this._pasteBlobs.size === 0 || !this._pasteMirror) return;
-      const hit = tokenAtPoint(this, e.clientX, e.clientY);
-      if (hit) expandTokenWithFeedback(this, textarea, hit.token, hit.span);
-    });
-
-    // Show a pointer cursor while hovering a pill. The transparent textarea sits
-    // above the (pointer-events:none) mirror, so its own cursor must be swapped;
-    // only meaningful while a mirror exists.
-    textarea.addEventListener('mousemove', (e) => {
-      if (this._pasteBlobs.size === 0 || !this._pasteMirror) {
-        if (textarea.style.cursor) textarea.style.cursor = '';
-        return;
-      }
-      const want = tokenAtPoint(this, e.clientX, e.clientY) ? 'pointer' : '';
-      if (textarea.style.cursor !== want) textarea.style.cursor = want;
-    });
-
-    // Copy/cut of a selection that contains any token writes the EXPANDED text
-    // to the clipboard — the sentinel characters never leave the composer.
-    textarea.addEventListener('copy', (e) => this._onClipboardCopyCut(e, textarea, false));
-    textarea.addEventListener('cut', (e) => this._onClipboardCopyCut(e, textarea, true));
-
-    // Keep the mirror's scroll aligned with the textarea's.
-    textarea.addEventListener('scroll', () => {
-      if (this._pasteMirror) this._pasteMirror.scrollTop = textarea.scrollTop;
-    });
+    this._listen(textarea, 'paste', () => setTimeout(() => this._completions?.handleInput(), 0));
 
     // Losing focus dismisses the completion menu. It is non-modal with no
     // outside-click handling — typing in the textarea is what drives it — so
@@ -718,80 +715,151 @@ class Composer extends HTMLElement {
     // stopped typing — waiting out the remaining delay only widens the window
     // where the text lives nowhere but this textarea, which is what a crash or
     // a force-quit takes with it.
-    textarea.addEventListener('blur', () => {
+    this._listen(textarea, 'blur', () => {
       this._completions?.close();
       this.flushDraft();
     });
+  }
 
-    // New thread button - creates thread immediately
-    const threadBtn = this.querySelector('.new-thread-btn');
-    if (threadBtn) {
-      threadBtn.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        this._createThread();
-      });
+  /**
+   * @param {KeyboardEvent} e
+   * @param {HTMLTextAreaElement} textarea
+   * @private
+   */
+  _onTextareaKeydown(e, textarea) {
+    // Completion menu (@ mentions / slash commands) owns navigation keys while
+    // open — it consumes Arrow/Enter/Tab/Escape as needed and reports back.
+    if (this._completions?.handleKeydown(e)) return;
+
+    // Paste-placeholder atomicity: a token is many characters but acts like a
+    // single object under Backspace/Delete/Arrow. Skipped while composing (IME
+    // safety) and a fast no-op when the box holds no tokens.
+    if (!e.isComposing && this._handleTokenKeydown(e, textarea)) return;
+
+    // Enter to send (without Shift, Alt/Option, or Meta/Command). On a touch
+    // composer Enter is the onscreen keyboard's return key, so a plain Enter
+    // inserts a newline (handled by the branch below) and the Send button is
+    // the send affordance instead.
+    if (e.key === 'Enter' && !e.shiftKey && !e.altKey && !e.metaKey && !this._isTouchComposer()) {
+      e.preventDefault();
+      this.sendMessage();
+      return;
     }
 
-    // Schedule-send ("send after a delay") button — opens the delay picker.
-    const scheduleBtn = this.querySelector('.schedule-send-btn');
-    if (scheduleBtn) {
-      scheduleBtn.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        this._schedulePopup.toggle();
-      });
-    }
-    // A draft restored on mount may already carry a pending send — re-arm (or,
-    // if its target has passed, fire) it now that the controls exist.
-    syncScheduledSendFromDraft(this);
-
-    // Send button (always visible). Send-only — cancelling a running turn is
-    // the footer Stop button's job, so this never morphs into a Stop control.
-    const sendBtn = this.querySelector('#send-button');
-    if (sendBtn) {
-      sendBtn.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        this.sendMessage();
-      });
+    // Insert a newline: Alt+Enter / Cmd+Enter on any composer, plus a plain
+    // (unmodified) Enter on a touch composer.
+    if (e.key === 'Enter' && (e.altKey || e.metaKey || (this._isTouchComposer() && !e.shiftKey))) {
+      e.preventDefault();
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      const value = textarea.value;
+      textarea.value = value.substring(0, start) + '\n' + value.substring(end);
+      textarea.selectionStart = textarea.selectionEnd = start + 1;
+      this.autoResize(textarea);
+      // Direct value writes don't fire input; keep the token mirror and the
+      // reconciler's known-good base in step so a later edit isn't misjudged.
+      this._syncPasteMirror();
+      this._pasteLastValue = textarea.value;
+      this._pasteLastCaret = textarea.selectionStart;
+      return;
     }
 
-    // Context-cache warning — the round alert just before Send. The strategy
-    // selector owns detection and fires a bubbling event when its classification
-    // flips; mirror that onto the button's visibility. Bound once on `this`: the
-    // event rides up through the child re-renders, so the listener must not stack.
-    if (!this._impactListenerBound) {
-      this._impactListenerBound = true;
-      this.addEventListener(CONTEXT_CACHE_IMPACT_CHANGED, (e) => {
-        this._cacheImpactWarning = !!(/** @type {CustomEvent} */ (e).detail?.busts);
-        this._updateCacheWarningButton();
+    // Escape to stop the turn or clear the input
+    if (e.key === 'Escape') {
+      // A popup/modal open over the input owns Escape — it dismisses
+      // itself via its own handler / popup-manager. Don't let the key
+      // leak through to cancel a running turn or clear the input.
+      if (isAnyPopupOpen()) {
+        return;
+      }
+
+      e.preventDefault();
+
+      // What Escape MEANS on a running/idle conversation is the user's choice
+      // (Settings ▸ Keyboard shortcuts ▸ Escape key), so the whole decision —
+      // stop, pause, two-step, clear — lives in escape-behaviour.js and is
+      // shared with the conversation-area Escape. All this box contributes is
+      // the vantage: a sub-thread box (threadItemId set) interrupts that
+      // thread without closing it; the root box (null) stops everything.
+      handleEscapeKey(e, {
+        focusedThreadId: this.threadItemId ?? null,
+        getComposer: () => this,
       });
-    }
-    // Clicking (or tapping) the warning surfaces its explanation — touch has no
-    // hover, so the native-title tooltip would otherwise never appear there.
-    const cacheWarnBtn = this.querySelector('#context-cache-warning');
-    if (cacheWarnBtn) {
-      cacheWarnBtn.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        tooltipManager.showFor(/** @type {HTMLElement} */ (cacheWarnBtn));
-      });
+      return;
     }
 
-    // Touch-only "⋮" overflow button: opens the actions sheet (commands, attach
-    // image, new thread) so those affordances need no inline row on a phone.
-    const moreBtn = this.querySelector('#more-actions-button');
-    if (moreBtn) {
-      moreBtn.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        this._actionsPopup.toggle();
-      });
+    // ArrowUp/Down: navigate history, but only when cursor is stuck at
+    // the top/bottom. Let the browser move the cursor first, then check
+    // in a microtask whether it actually moved. Any modifier (Shift for
+    // selection, Alt/Ctrl/Meta for word/line jumps) means the user is
+    // navigating/selecting text, so leave the keypress alone.
+    if ((e.key === 'ArrowUp' || e.key === 'ArrowDown')
+              && (e.shiftKey || e.altKey || e.ctrlKey || e.metaKey)) {
+      return;
     }
 
-    // Seed the Send button's empty/disabled state from any restored draft.
-    this._updateSendButtonState();
+    if (e.key === 'ArrowUp') {
+      const prevStart = textarea.selectionStart;
+      const prevEnd = textarea.selectionEnd;
+      setTimeout(() => this._navigateHistoryUp(textarea, prevStart, prevEnd), 0);
+      return;
+    }
+
+    if (e.key === 'ArrowDown') {
+      const prevStart = textarea.selectionStart;
+      const prevEnd = textarea.selectionEnd;
+      setTimeout(() => this._navigateHistoryDown(textarea, prevStart, prevEnd), 0);
+      return;
+    }
+  }
+
+  /**
+   * The placeholder-token pills: IME safety, click-to-expand, the hover cursor,
+   * expanded clipboard text, and keeping the mirror's scroll aligned.
+   * @param {HTMLTextAreaElement} textarea
+   * @private
+   */
+  _bindTokenPills(textarea) {
+    // IME safety: caret-snapping and the token reconciler stand down while a
+    // composition is in flight (they would fight the input method).
+    this._listen(textarea, 'compositionstart', () => { this._pasteComposing = true; });
+    this._listen(textarea, 'compositionend', () => {
+      this._pasteComposing = false;
+      this._reconcileTokens(textarea);
+      this._syncPasteMirror();
+    });
+
+    // Click on a token pill expands it back to its full content (undoable). The
+    // hit-test is against the mirror's rendered pill geometry, not the caret,
+    // because a click that lands inside a token is snapped to a boundary before
+    // this fires — so a caret-based test would never see the interior.
+    this._listen(textarea, 'click', (e) => {
+      if (this._pasteBlobs.size === 0 || !this._pasteMirror) return;
+      const hit = tokenAtPoint(this, e.clientX, e.clientY);
+      if (hit) expandTokenWithFeedback(this, textarea, hit.token, hit.span);
+    });
+
+    // Show a pointer cursor while hovering a pill. The transparent textarea sits
+    // above the (pointer-events:none) mirror, so its own cursor must be swapped;
+    // only meaningful while a mirror exists.
+    this._listen(textarea, 'mousemove', (e) => {
+      if (this._pasteBlobs.size === 0 || !this._pasteMirror) {
+        if (textarea.style.cursor) textarea.style.cursor = '';
+        return;
+      }
+      const want = tokenAtPoint(this, e.clientX, e.clientY) ? 'pointer' : '';
+      if (textarea.style.cursor !== want) textarea.style.cursor = want;
+    });
+
+    // Copy/cut of a selection that contains any token writes the EXPANDED text
+    // to the clipboard — the sentinel characters never leave the composer.
+    this._listen(textarea, 'copy', (e) => this._onClipboardCopyCut(e, textarea, false));
+    this._listen(textarea, 'cut', (e) => this._onClipboardCopyCut(e, textarea, true));
+
+    // Keep the mirror's scroll aligned with the textarea's.
+    this._listen(textarea, 'scroll', () => {
+      if (this._pasteMirror) this._pasteMirror.scrollTop = textarea.scrollTop;
+    });
   }
 
   /**
@@ -951,11 +1019,8 @@ class Composer extends HTMLElement {
    * @private
    */
   _watchPointerType() {
-    if (this._pointerQueryCleanup || typeof window.matchMedia !== 'function') return;
-    const query = window.matchMedia(COARSE_POINTER_QUERY);
-    const onChange = () => this._applyConfigPlacement();
-    query.addEventListener('change', onChange);
-    this._pointerQueryCleanup = () => query.removeEventListener('change', onChange);
+    if (typeof window.matchMedia !== 'function') return;
+    this.on(window.matchMedia(COARSE_POINTER_QUERY), 'change', () => this._applyConfigPlacement());
   }
 
   /**
@@ -2456,8 +2521,11 @@ class Composer extends HTMLElement {
     // Seed the placeholder synchronously: the textarea exists as of the write
     // above, and the box is on screen before the deferred setup below runs.
     this._updatePlaceholder();
-    // Defer listener setup a frame so the just-written DOM is laid out.
+    // Defer listener setup a frame so the just-written DOM is laid out. A box
+    // removed before the frame binds nothing: no disconnect is left to release
+    // it, and the next connect binds its own.
     requestAnimationFrame(() => {
+      if (!this.isConnected) return;
       this.setupListeners();
       // Pass conversation to strategy selector and permission controls if already set
       if (this._conversation) {
