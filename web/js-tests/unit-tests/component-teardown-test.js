@@ -28,6 +28,10 @@
  *   every disconnect — and still shows what it had drawn.
  * - A model selector moved or put back follows the provider list and the
  *   connection status exactly once.
+ * - A properties panel follows the thread it was last handed — a reused column
+ *   is handed a different one — and keeps that thread, its strategy feed and
+ *   what it had drawn across a move or a put-back.
+ * - A workspace panel moved or put back follows its session exactly once.
  * @module unit-tests/component-teardown
  */
 
@@ -41,6 +45,8 @@ import '../../js/components/strategy-selector.js';
 import '../../js/components/conversation-tab.js';
 import '../../js/components/settings-panel.js';
 import '../../js/components/model-selector.js';
+import '../../js/components/properties-panel.js';
+import '../../js/components/workspace-panel.js';
 
 /**
  * @typedef {object} TestResult
@@ -385,6 +391,76 @@ export async function runTests() {
       connectionStatus.subscribe = realSubscribe;
     }
   }
+
+  try {
+    const session = new Set();
+    const threadFor = () => ({
+      container: countingYArray(),
+      items: [],
+      pendingItems: [],
+      getContextItem: () => null,
+      conversation: { session: { subscribe: (/** @type {Function} */ fn) => { session.add(fn); return () => session.delete(fn); } } },
+    });
+    const first = threadFor();
+    const second = threadFor();
+    const panel = /** @type {any} */ (document.createElement('properties-panel'));
+    column.appendChild(panel);
+    panel.setConversation({ id: 'teardown-conv' });
+    panel.setMessageThread(first);
+    const elsewhere = document.createElement('div');
+    document.body.appendChild(elsewhere);
+    try {
+      const held = () => `${first.container.observers.size} on the first thread, ${second.container.observers.size} on the second and ${session.size} session subscription(s)`;
+      const onSecond = () => first.container.observers.size === 0 && second.container.observers.size === 1 && session.size === 1;
+      // The column builder hands a reused column the thread to its left, which
+      // changes when a different thread is opened beside it.
+      panel.setMessageThread(second);
+      if (!onSecond()) throw new Error(`handed another thread it holds ${held()}, want 0, 1 and 1`);
+      // The column builder draws a panel only when its selection changes, so a
+      // move that threw the drawing away would leave it blank.
+      const drawn = document.createElement('span');
+      drawn.className = 'teardown-drawn';
+      panel.querySelector('properties-panel-content').appendChild(drawn);
+      elsewhere.appendChild(panel);
+      if (!onSecond()) throw new Error(`after a move it holds ${held()}, want 0, 1 and 1`);
+      if (!panel.querySelector('.teardown-drawn')) throw new Error('a move threw away what the panel had drawn');
+      panel.remove();
+      if (second.container.observers.size !== 0 || session.size !== 0) throw new Error(`after removal it holds ${held()}, want none`);
+      elsewhere.appendChild(panel);
+      if (!onSecond()) throw new Error(`reinserted after a removal it holds ${held()}, want 0, 1 and 1`);
+      panel.remove();
+      passed++;
+    } finally {
+      panel.remove();
+      elsewhere.remove();
+    }
+  } catch (e) { failed++; errors.push(`properties-panel rebound and re-parented: ${e.message}`); }
+
+  try {
+    const subscribers = new Set();
+    const session = { subscribe: (/** @type {Function} */ fn) => { subscribers.add(fn); return () => subscribers.delete(fn); } };
+    const panel = /** @type {any} */ (document.createElement('workspace-panel'));
+    column.appendChild(panel);
+    panel.setSession(session);
+    const elsewhere = document.createElement('div');
+    document.body.appendChild(elsewhere);
+    try {
+      elsewhere.appendChild(panel);
+      if (subscribers.size !== 1) throw new Error(`after a move it holds ${subscribers.size} session subscription(s), want 1`);
+      panel.remove();
+      if (subscribers.size !== 0) throw new Error(`after removal it holds ${subscribers.size} session subscription(s), want none`);
+      elsewhere.appendChild(panel);
+      if (subscribers.size !== 1) throw new Error(`reinserted after a removal it holds ${subscribers.size} session subscription(s), want 1`);
+      panel.setSession(session);
+      if (subscribers.size !== 1) throw new Error(`handed its session again it holds ${subscribers.size} session subscription(s), want 1`);
+      panel.remove();
+      passed++;
+    } finally {
+      panel.remove();
+      elsewhere.remove();
+      document.body.classList.remove('workspace-selected');
+    }
+  } catch (e) { failed++; errors.push(`workspace-panel re-parented: ${e.message}`); }
 
   column.remove();
   return { passed, failed, errors };

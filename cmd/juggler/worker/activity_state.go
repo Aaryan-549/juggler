@@ -224,8 +224,19 @@ func (w *ConversationWorker) patchRunIf(
 	cond func(entry map[string]any) bool,
 	mutate func(entry, state map[string]any),
 ) bool {
+	ycrdtMu.Lock()
+	defer ycrdtMu.Unlock()
+	return w.patchRunIfLocked(threadItemID, cond, mutate)
+}
+
+// patchRunIfLocked is patchRunIf for a caller already holding ycrdtMu.
+func (w *ConversationWorker) patchRunIfLocked(
+	threadItemID string,
+	cond func(entry map[string]any) bool,
+	mutate func(entry, state map[string]any),
+) bool {
 	key := runKey(threadItemID)
-	return w.patchProcessingStateIf(
+	return w.patchProcessingStateIfLocked(
 		func(existing map[string]any) bool { return cond(runEntryOf(existing, threadItemID)) },
 		func(updated map[string]any) {
 			runs := copyRuns(updated)

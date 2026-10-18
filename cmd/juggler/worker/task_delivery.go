@@ -215,9 +215,17 @@ func (r *run) handleInjectThreadMessage(payload json.RawMessage) {
 	}
 
 	// Busy: queue it; the strategy loop drains at its next boundary. Asked of the
-	// target thread, so delivery into an idle thread isn't held up by a sibling.
-	if r.threadBusy(msg.ThreadItemID) {
-		r.enqueuePendingMessage(msg.ThreadItemID, input)
+	// target thread, so delivery into an idle thread isn't held up by a sibling,
+	// and in the same hold as the enqueue (queueIfBusy).
+	var item ConversationItem
+	busy, queued := r.queueIfBusy(msg.ThreadItemID, func() []ConversationItem {
+		item = newUserItem(input)
+		return []ConversationItem{item}
+	})
+	if busy {
+		if queued {
+			r.recordPendingEnqueue(msg.ThreadItemID, item.ItemID)
+		}
 		return
 	}
 

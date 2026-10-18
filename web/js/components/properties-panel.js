@@ -14,6 +14,8 @@
  * Auto-fills remaining horizontal space via flex: 1.
  */
 
+import JugglerElement from './juggler-element.js';
+import { guarded } from '../utils/fault-report.js';
 import { createIconBadge, createTypeBadge } from '../utils/icon-message-renderer.js';
 import { FORK_SVG, INFO_SVG, RETRY_SVG, UNDO_SVG } from '../utils/icons.js';
 import { appendDeleteControls } from '../utils/panel-delete-controls.js';
@@ -127,7 +129,7 @@ function paintReportedChip(chip, tokens) {
     + t("This round-trip produced nothing else, so the count is this item's alone."));
 }
 
-class PropertiesPanel extends HTMLElement {
+class PropertiesPanel extends JugglerElement {
   constructor() {
     super();
 
@@ -146,14 +148,13 @@ class PropertiesPanel extends HTMLElement {
     /** @type {import('../model/message-thread.js').default|null} @private - MessageThread for finding/mutating items */
     this._messageThread = null;
 
-    /** @type {((event: any, transaction: any) => void)|null} @private */
-    this._itemsObserver = null;
-
-    /** @type {((event: any, transaction: any) => void)|null} @private */
-    this._contextItemsObserver = null;
-
-    /** @type {(() => void)|null} @private - Session feed unsubscribe, for strategy changes */
-    this._strategyUnsubscribe = null;
+    /**
+     * Drops the bound thread's items observer and the session's strategy feed,
+     * or null when not listening. A field rather than an addCleanup
+     * registration because the thread is re-assigned mid-life.
+     * @type {(() => void)|null} @private
+     */
+    this._unlisten = null;
 
     /** @type {{state: string|undefined, hasResult: boolean, contentSnippet: string, type: string|undefined}|null} @private */
     this._lastSnapshot = null;
@@ -190,11 +191,21 @@ class PropertiesPanel extends HTMLElement {
   }
 
   connectedCallback() {
-    this.render();
+    // A panel put back in the document keeps what it had drawn: the column
+    // builder redraws one only when its selection changes, so a fresh shell
+    // here would stay empty. It takes back the feeds the disconnect dropped,
+    // since nothing hands it its thread again.
+    if (this.querySelector('properties-panel-content')) {
+      this._listen();
+      this._refreshElapsedTicker();
+    } else {
+      this.render();
+    }
   }
 
   disconnectedCallback() {
-    this._cleanupObservers();
+    super.disconnectedCallback();
+    this._stopListening();
     this._stopElapsedTicker();
   }
 
@@ -205,8 +216,10 @@ class PropertiesPanel extends HTMLElement {
   setConversation(conversation) {
     if (this._conversation === conversation) return;
 
-    // Clean up old observers
-    this._cleanupObservers();
+    // The bound thread belongs to the old conversation; the caller hands over
+    // the new one's next.
+    this._stopListening();
+    this._messageThread = null;
 
     this._conversation = conversation;
     this._selectedItemId = null;
@@ -217,25 +230,23 @@ class PropertiesPanel extends HTMLElement {
     // answer a question about the new one.
     this._blobOutputTokens.clear();
 
-    if (conversation) {
-      this._setupObservers();
-    }
-
     this._renderContent();
   }
 
   /**
    * Set the message thread for finding and mutating items.
+   *
+   * A reused column is handed the thread to its left on every render, as a
+   * fresh wrapper each time, so the panel rebinds only when the wrapper names a
+   * different container — opening another thread beside the panel is a
+   * different one.
    * @param {import('../model/message-thread.js').default} messageThread
    */
   setMessageThread(messageThread) {
+    const rebind = messageThread?.container !== this._messageThread?.container;
+    if (rebind) this._stopListening();
     this._messageThread = messageThread;
-
-    // Set up observers if conversation is set but observers weren't
-    // created yet (conversation was set before messageThread was available)
-    if (this._conversation && !this._itemsObserver) {
-      this._setupObservers();
-    }
+    if (rebind && this.isConnected) this._listen();
   }
 
   /**
@@ -300,17 +311,21 @@ class PropertiesPanel extends HTMLElement {
   }
 
   /**
-   * Set up Yjs observers for real-time updates
+   * Follow the bound thread's items and the session's strategy changes. A
+   * no-op while already listening, or until both a conversation and a thread
+   * are bound.
    * @private
    */
-  _setupObservers() {
-    if (!this._conversation || !this._messageThread) return;
+  _listen() {
+    if (this._unlisten || !this._conversation || !this._messageThread) return;
 
     // Selection comes via selectItem() from conversation-tab — no Yjs observer for selectedItemId.
 
     // Observe items for content changes to selected item (delta-aware)
-    // observeDeep passes an array of Y.Event objects; find the array-level event
-    this._itemsObserver = (/** @type {any[]} */ events) => {
+    // observeDeep passes an array of Y.Event objects; find the array-level event.
+    // Guarded as JugglerElement.observeDeep guards its own: Yjs runs it part way
+    // through an update, and a throw would abandon every later observer's turn.
+    const itemsObserver = guarded('observeDeep:properties-panel', (/** @type {any[]} */ events) => {
       if (!this._selectedItemId) return;
 
       const arrayEvent = Array.isArray(events) ? events.find(e => e.changes?.delta?.length) : events;
@@ -359,44 +374,34 @@ class PropertiesPanel extends HTMLElement {
           this.clearSelection();
         }
       }
-    };
+    });
     const container = /** @type {import('../model/message-thread.js').MessageThread} */ (this._messageThread).container;
-    this._observedContainer = container;
-    container.observeDeep(this._itemsObserver);
+    container.observeDeep(itemsObserver);
     // Unified storage: context items are in items array, so items observer handles changes too
 
     // Re-render when this conversation's strategy changes (system prompt panel
     // shows strategy content).
     const conversation = this._messageThread?.conversation;
-    const session = conversation?.session;
-    if (session) {
-      this._strategyUnsubscribe = session.subscribe((event) => {
-        if (event.type !== 'conversation:strategy-changed' || event.data?.conversation !== conversation) return;
-        if (this._selectedItemId) {
-          // Force full re-render by clearing snapshot
-          this._lastSnapshot = null;
-          this._renderedItemId = null;
-          this._renderContent();
-        }
-      });
-    }
+    const unsubscribe = conversation?.session?.subscribe((event) => {
+      if (event.type !== 'conversation:strategy-changed' || event.data?.conversation !== conversation) return;
+      if (this._selectedItemId) {
+        // Force full re-render by clearing snapshot
+        this._lastSnapshot = null;
+        this._renderedItemId = null;
+        this._renderContent();
+      }
+    });
+
+    this._unlisten = () => {
+      container.unobserveDeep(itemsObserver);
+      unsubscribe?.();
+    };
   }
 
-  /**
-   * Clean up Yjs observers
-   * @private
-   */
-  _cleanupObservers() {
-    if (this._observedContainer && this._itemsObserver) {
-      this._observedContainer.unobserveDeep(this._itemsObserver);
-    }
-    this._observedContainer = null;
-    this._itemsObserver = null;
-
-    if (this._strategyUnsubscribe) {
-      this._strategyUnsubscribe();
-      this._strategyUnsubscribe = null;
-    }
+  /** @private */
+  _stopListening() {
+    this._unlisten?.();
+    this._unlisten = null;
   }
 
   /**

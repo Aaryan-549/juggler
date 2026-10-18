@@ -527,6 +527,19 @@ func (r *run) finishStrategyRun() {
 		return
 	}
 
+	// The loop decided to stop with this thread's queue empty, but the thread
+	// read as busy until the release above, so a send in that window was queued
+	// (queueIfBusy) where nothing will drain it. Look once more, after every exit
+	// below has written its frames — the root's idle frame drops the root entry,
+	// so a dispatch requested before it would be swept away. A second look from
+	// requestLLMIfQueued is the last one needed: a send after the release takes
+	// the idle path itself.
+	defer func() {
+		if r.requestLLMIfQueued(completedThreadID) {
+			r.requestReconcile()
+		}
+	}()
+
 	// signalParentThread fires for a child whose run has settled, whatever it
 	// settled as: the parent asked a question and is owed the answer, and
 	// "the run errored" is an answer it can act on. The child stays exactly
@@ -860,7 +873,7 @@ func (w *ConversationWorker) signalParentThread(completedThreadID string) bool {
 // newUserItem builds a user ConversationItem from the inseparable submission
 // unit. This is the ONLY constructor of a user item from input — both the
 // immediate send (addUserMessage) and the queued "type while busy" path
-// (enqueuePendingMessage) route through it — so the text and its attachments
+// (queueIfBusy's callers) route through it — so the text and its attachments
 // can never be split apart on the way into the doc. Empty attachments serialize
 // to no "attachments" key (conversationItemToYMap omits empty slices), so a
 // plain text message stays byte-identical to the legacy shape.

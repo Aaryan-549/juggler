@@ -34,7 +34,8 @@ package worker
 //     starts a run of its own asks.
 //   - threadBusy(id): both records, for one thread. The intake gate: a send or
 //     an injected message for this thread queues if either says it is busy, and
-//     a sibling's run is no reason to.
+//     a sibling's run is no reason to. The gate itself asks it in the same hold
+//     as the enqueue (queueIfBusy, pending_items.go).
 //
 // Whether a thread may START is a different question with a different answer
 // (a read-only child may join a live writer), and it is canAdmitThread's, in
@@ -140,7 +141,16 @@ func (w *ConversationWorker) anyRunState() WorkerState {
 // Asked of the target thread only: a run streaming on a sibling is not a reason
 // to hold up a send or an injected message (a delivered task result) here.
 func (w *ConversationWorker) threadBusy(threadItemID string) bool {
-	if w.threadActivity(threadItemID) != ActivityNone {
+	ycrdtMu.Lock()
+	defer ycrdtMu.Unlock()
+	return w.threadBusyLocked(threadItemID)
+}
+
+// threadBusyLocked is threadBusy for a caller already holding ycrdtMu. The
+// live-turn half reads the scheduler's lock-free snapshot and atomic states, so
+// it takes no lock of its own.
+func (w *ConversationWorker) threadBusyLocked(threadItemID string) bool {
+	if w.threadActivityLocked(threadItemID) != ActivityNone {
 		return true
 	}
 	for _, e := range w.sched.runs() {

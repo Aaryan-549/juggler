@@ -285,22 +285,40 @@ func (r *run) handleSendMessage(payload json.RawMessage) {
 	// and above it there is nothing for it to queue.
 	carriesIntent := msg.IsContinuation || !input.isEmpty() || len(skillsToLoad) > 0
 	// Asked of the TARGET thread (threadBusy): a message for an idle thread must
-	// not queue behind an unrelated sibling's run.
-	if r.threadBusy(msg.ThreadItemID) {
-		if !msg.IsContinuation {
-			// Skills chosen while a turn is in flight ride the pending queue ahead
-			// of the message, so they promote and execute before its turn.
-			for _, name := range skillsToLoad {
-				r.enqueuePendingSkill(msg.ThreadItemID, name)
+	// not queue behind an unrelated sibling's run. The ask and the enqueue are one
+	// hold (queueIfBusy).
+	//
+	// Skills chosen while a turn is in flight ride the pending queue ahead of the
+	// message, so they promote and execute before its turn.
+	var userItem ConversationItem
+	busy, queued := r.queueIfBusy(msg.ThreadItemID, func() []ConversationItem {
+		if msg.IsContinuation {
+			return nil
+		}
+		var queue []ConversationItem
+		for _, name := range skillsToLoad {
+			queue = append(queue, newSkillToolAction(name))
+		}
+		if !input.isEmpty() {
+			userItem = newUserItem(input)
+			queue = append(queue, userItem)
+		}
+		return queue
+	})
+	if busy {
+		if queued {
+			if userItem.ItemID != "" {
+				r.recordPendingEnqueue(msg.ThreadItemID, userItem.ItemID)
+			} else {
+				r.batcher.Flush()
 			}
-			if !input.isEmpty() {
-				r.enqueuePendingMessage(msg.ThreadItemID, input)
-				// A run backing off between LLM attempts has no boundary coming to
-				// drain that queue — the wait is dead time on a request this message
-				// has already superseded. Tell it so; every other busy run drains the
-				// queue at its next turn boundary on its own.
-				r.sched.nudgeRetryWait(msg.ThreadItemID)
-			}
+		}
+		if userItem.ItemID != "" {
+			// A run backing off between LLM attempts has no boundary coming to
+			// drain that queue — the wait is dead time on a request this message
+			// has already superseded. Tell it so; every other busy run drains the
+			// queue at its next turn boundary on its own.
+			r.sched.nudgeRetryWait(msg.ThreadItemID)
 		}
 
 		// Busy is not always working. A thread whose child rested on a usage cap is

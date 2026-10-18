@@ -65,28 +65,9 @@ func TestQueuedMessageJoinsToolResultContinuation(t *testing.T) {
 		{Blocks: []LLMResponseBlock{{Type: "text", Content: "reply to tools and follow-up"}}, StopReason: "end_turn"},
 	})
 
-	// Supply context/tools on demand so each dispatched turn completes. Two
-	// independent feeders avoid any ctx-vs-tools ordering dependency.
 	stop := make(chan struct{})
 	defer close(stop)
-	ctxResp, _ := json.Marshal(map[string]any{
-		"type": "render-context-items-result", "systemPrompt": "sys", "contexts": []any{},
-	})
-	toolsResp, _ := json.Marshal(map[string]any{"type": "tools-result", "tools": []any{}})
-	go func() {
-		for {
-			if !w.engine.contextReply.inject(stop, ctxResp) {
-				return
-			}
-		}
-	}()
-	go func() {
-		for {
-			if !w.engine.toolsReply.inject(stop, toolsResp) {
-				return
-			}
-		}
-	}()
+	feedEngine(w, stop)
 
 	// Drive the reducer exactly as the event loop would after the tool completes.
 	w.sched.markReconcile()
@@ -130,6 +111,80 @@ func TestQueuedMessageJoinsToolResultContinuation(t *testing.T) {
 	}
 	if w.hasPendingItems("") {
 		t.Errorf("pending queue should be drained after the queued message was promoted")
+	}
+}
+
+// feedEngine answers the engine's context and tools requests until stop closes,
+// so each dispatched turn completes. Two independent feeders avoid any
+// ctx-vs-tools ordering dependency.
+func feedEngine(w *ConversationWorker, stop chan struct{}) {
+	ctxResp, _ := json.Marshal(map[string]any{
+		"type": "render-context-items-result", "systemPrompt": "sys", "contexts": []any{},
+	})
+	toolsResp, _ := json.Marshal(map[string]any{"type": "tools-result", "tools": []any{}})
+	go func() {
+		for {
+			if !w.engine.contextReply.inject(stop, ctxResp) {
+				return
+			}
+		}
+	}()
+	go func() {
+		for {
+			if !w.engine.toolsReply.inject(stop, toolsResp) {
+				return
+			}
+		}
+	}()
+}
+
+// TestMessageQueuedAsATurnEndsIsAnswered pins the intake gate against the end of
+// a turn. The loop decides to stop when its queue is empty, but it keeps its
+// claim for a while after that, until finishStrategyRun releases it. A send that
+// arrives in that window sees the thread busy and is queued, and the loop will
+// not look at its queue again. The finishing run's last look, taken after the
+// release, is what answers it.
+func TestMessageQueuedAsATurnEndsIsAnswered(t *testing.T) {
+	w := NewConversationWorker("conv-queued-at-turn-end", "user:test")
+	defer w.doc.Destroy()
+	r := w.currentRun()
+	r.storeState(StateIdle)
+	w.doc.SetMetadata("defaultModelConfig", map[string]any{"provider": "test", "model": "test"})
+	w.setMockResponses([]MockResponse{
+		{Blocks: []LLMResponseBlock{{Type: "text", Content: "answer to the late message"}}, StopReason: "end_turn"},
+	})
+	stop := make(chan struct{})
+	defer close(stop)
+	feedEngine(w, stop)
+
+	if !r.claimLLM("") {
+		t.Fatal("could not claim the root")
+	}
+	tr := r.beginTurn("")
+	tr.storeState(StateProcessing)
+	r.runTurn(tr, func(tr *run) {
+		// The loop has already found its queue empty and returned. The send lands
+		// now, through the intake gate exactly as handleSendMessage asks it.
+		busy, queued := tr.queueIfBusy("", func() []ConversationItem {
+			return []ConversationItem{newUserItem(UserMessageInput{Text: "late message"})}
+		})
+		if !busy || !queued {
+			t.Errorf("queueIfBusy on a claimed root = busy %v, queued %v; want both", busy, queued)
+		}
+		tr.finishStrategyRun()
+	})
+	w.quiesce(t)
+
+	if w.hasPendingItems("") {
+		t.Fatal("the late message is still queued under an idle conversation")
+	}
+	if n := w.mock.remaining(); n != 0 {
+		t.Fatalf("%d scripted turn(s) left; the late message was never answered", n)
+	}
+	items := w.doc.GetItems()
+	if len(items) < 2 || items[len(items)-2].Content != "late message" ||
+		items[len(items)-1].Content != "answer to the late message" {
+		t.Errorf("transcript does not end with the late message and its answer: %+v", items)
 	}
 }
 

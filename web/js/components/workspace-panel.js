@@ -22,6 +22,7 @@
  * @module components/workspace-panel
  */
 
+import JugglerElement from './juggler-element.js';
 import {
   selectedWorkspace,
   workspaceStatus,
@@ -45,7 +46,7 @@ import { sameTree } from '../services/workspace-rebinding.js';
 /**
  * WorkspacePanel - the workspace the tab strip has selected, written out.
  */
-class WorkspacePanel extends HTMLElement {
+class WorkspacePanel extends JugglerElement {
   constructor() {
     super();
 
@@ -71,9 +72,21 @@ class WorkspacePanel extends HTMLElement {
     this._running = '';
   }
 
+  connectedCallback() {
+    // A panel put back in the document already has its session and is not
+    // handed it again: take back the feed the disconnect dropped, and redraw,
+    // which asks again about a tree whose status read the disconnect abandoned.
+    if (this._session && !this._unsubscribe) {
+      this._listen();
+      this._refresh();
+    }
+  }
+
   disconnectedCallback() {
-    this._unsubscribe?.();
-    this._unsubscribe = null;
+    super.disconnectedCallback();
+    // Re-assignable (setSession drops and re-takes it mid-life), so it stays a
+    // field rather than an addCleanup registration.
+    this._stopListening();
     this._probe?.abort();
     this._probe = null;
   }
@@ -83,13 +96,28 @@ class WorkspacePanel extends HTMLElement {
    * @returns {void}
    */
   setSession(session) {
-    this._unsubscribe?.();
-    this._unsubscribe = null;
+    this._stopListening();
     this._session = session;
     this._refresh();
-    if (!session) return;
+    if (this.isConnected) this._listen();
+  }
 
-    this._unsubscribe = session.subscribe((event) => {
+  /** @private */
+  _stopListening() {
+    this._unsubscribe?.();
+    this._unsubscribe = null;
+  }
+
+  /**
+   * Follow the session's selection and workspace table. A no-op without a
+   * session or while already listening.
+   * @private
+   */
+  _listen() {
+    const session = this._session;
+    if (!session || this._unsubscribe) return;
+
+    this._unsubscribe = session.subscribe((/** @type {{type: string}} */ event) => {
       // Nothing here is about a conversation except the selection: going to one
       // is what takes this panel off screen. What the conversations are called
       // and how many there are belongs to the tab strip, which is drawing them.

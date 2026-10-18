@@ -68,10 +68,6 @@ func (cd *ConversationDocument) ensurePendingArrayLocked(threadItemID string) *y
 // writes nothing) when the thread is gone. Untracked (txOrigin): the queue is
 // plumbing the strategy loop drains, not an undoable edit — the promotion into
 // the thread is what the user undoes.
-//
-// The two enqueue paths differ only in the item they build and what they record
-// afterwards, so the doc write lives here and each caller keeps its own tape
-// record and flush.
 func (w *ConversationWorker) appendPendingItem(threadItemID string, item ConversationItem) bool {
 	ycrdtMu.Lock()
 	defer ycrdtMu.Unlock()
@@ -79,16 +75,56 @@ func (w *ConversationWorker) appendPendingItem(threadItemID string, item Convers
 	if arr == nil {
 		return false
 	}
-	w.doc.doc.Transact(func(_ *ycrdt.Transaction) {
-		arr.Insert(arr.GetLength(), ycrdt.ArrayAny{conversationItemToYMap(item)})
-	}, w.doc.txOrigin())
+	w.appendPendingItemsLocked(arr, item)
 	return true
 }
 
+// appendPendingItemsLocked appends items, in order, to a pending queue in one
+// untracked transaction. Caller MUST hold ycrdtMu.
+func (w *ConversationWorker) appendPendingItemsLocked(arr *ycrdt.YArray, items ...ConversationItem) {
+	w.doc.doc.Transact(func(_ *ycrdt.Transaction) {
+		for _, item := range items {
+			arr.Insert(arr.GetLength(), ycrdt.ArrayAny{conversationItemToYMap(item)})
+		}
+	}, w.doc.txOrigin())
+}
+
+// queueIfBusy is the intake gate and the enqueue in one hold: it reports whether
+// threadItemID is busy (threadBusy) and, when it is, appends what build returns
+// to its pending queue. build runs only for a busy thread, under ycrdtMu, so it
+// must not take the lock. queued is false when build returned nothing or the
+// thread is gone.
+//
+// One hold because the turn that makes the thread busy can end between a
+// separate check and the append. It decides to stop with its queue empty, then
+// releases its claim. A message that saw the claim and was appended after that
+// decision would sit in the queue under an idle thread, with no boundary left to
+// drain it. Here the append either lands before the release, where the turn's
+// last look (requestLLMIfQueued) finds it, or the gate sees the thread idle and
+// the send takes the idle path itself.
+func (w *ConversationWorker) queueIfBusy(threadItemID string, build func() []ConversationItem) (busy, queued bool) {
+	ycrdtMu.Lock()
+	defer ycrdtMu.Unlock()
+	if !w.threadBusyLocked(threadItemID) {
+		return false, false
+	}
+	items := build()
+	if len(items) == 0 {
+		return true, false
+	}
+	arr := w.doc.ensurePendingArrayLocked(threadItemID)
+	if arr == nil {
+		return true, false
+	}
+	w.appendPendingItemsLocked(arr, items...)
+	return true, true
+}
+
 // enqueuePendingMessage appends a user message (text + attachments, as one
-// inseparable unit) to the thread's pending queue. Called when a send arrives
-// while a turn is already in flight; the strategy loop drains the queue at its
-// next boundary, promoting the item verbatim — attachments included.
+// inseparable unit) to the thread's pending queue. The strategy loop drains the
+// queue at its next boundary, promoting the item verbatim — attachments
+// included. Intake asks queueIfBusy instead, which decides and appends in one
+// hold.
 func (w *ConversationWorker) enqueuePendingMessage(threadItemID string, input UserMessageInput) {
 	if input.isEmpty() {
 		return
@@ -97,12 +133,36 @@ func (w *ConversationWorker) enqueuePendingMessage(threadItemID string, input Us
 	if !w.appendPendingItem(threadItemID, item) {
 		return
 	}
+	w.recordPendingEnqueue(threadItemID, item.ItemID)
+}
 
+// recordPendingEnqueue tapes a queued user message and flushes, so the queued
+// bubble surfaces in the UI immediately.
+func (w *ConversationWorker) recordPendingEnqueue(threadItemID, itemID string) {
 	w.tape.Record("pending-enqueue", map[string]any{
 		"threadItemId": threadItemID,
-		"itemId":       item.ItemID,
+		"itemId":       itemID,
 	})
-	w.batcher.Flush() // surface the queued bubble in the UI immediately
+	w.batcher.Flush()
+}
+
+// requestLLMIfQueued queues threadItemID for dispatch when its pending queue
+// holds anything, reading the queue and writing the claim in one hold. It is a
+// finishing run's last look at its own thread, taken after its claim is
+// released and its idle frame is out: from then on the intake gate sees the
+// thread idle, so nothing can be queued there that this look misses (see
+// queueIfBusy). Reports whether it queued a dispatch.
+func (w *ConversationWorker) requestLLMIfQueued(threadItemID string) bool {
+	ycrdtMu.Lock()
+	defer ycrdtMu.Unlock()
+	arr := w.doc.getPendingArrayLocked(threadItemID)
+	if arr == nil || arr.GetLength() == 0 {
+		return false
+	}
+	return w.patchRunIfLocked(threadItemID,
+		func(entry map[string]any) bool { return entryActivity(entry) != ActivityCallingLLM },
+		func(entry, _ map[string]any) { entry["activity"] = ActivityAwaitingLLM },
+	)
 }
 
 // HasPendingItems reports whether the thread ("" => root) has any queued

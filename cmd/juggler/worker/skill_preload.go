@@ -76,12 +76,3 @@ func (r *run) injectSkillPreloadsInto(dest threadContext, names []string) {
 		r.appendMessageTo(dest, item)
 	}
 }
-
-// enqueuePendingSkill parks a `skill` tool-action in the thread's pending queue,
-// so a skill chosen while a turn is in flight promotes ahead of the queued user
-// message and executes before that message's turn (mirrors enqueuePendingMessage).
-func (w *ConversationWorker) enqueuePendingSkill(threadItemID, name string) {
-	if w.appendPendingItem(threadItemID, newSkillToolAction(name)) {
-		w.batcher.Flush()
-	}
-}
