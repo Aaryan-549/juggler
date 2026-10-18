@@ -11,6 +11,7 @@ of changes; this project follows semantic versioning.
 - Slow startups, like logging in with apps reopening, no longer shut the server down
 - Extension ops `stat`, `mkdir`, `getTree`, `expandDirectory` and `fileHash` accept an AbortSignal
 - Extension shell ops take camelCase ids (`taskId`, `shellId`, `convId`); snake_case still works
+- Resizing a column no longer resizes every other column; widths are kept per depth
 
 ## [0.7.7] - 2026-10-17
 

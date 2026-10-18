@@ -417,8 +417,8 @@ column-viewport.overflow-end {
 /* The columns that stand where a conversation stands: the conversation itself,
    and the workspace panel shown instead of one when a box in the tab strip
    holds the selection. One rule, because they are one width — the panel opens
-   exactly where and as wide as the conversation it replaces, and both are
-   resized together by the same `juggler-column-width` preference. */
+   exactly where and as wide as the root conversation it replaces, and both are
+   resized together by depth 0 of the `juggler-column-width` preference. */
 column-container conversation-area,
 column-container workspace-panel {
     flex: 0 0 30rem;

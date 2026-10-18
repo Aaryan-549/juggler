@@ -254,9 +254,9 @@ class WorkspacePanel extends JugglerElement {
    * `setupColumnResize` looks for that child before it wires anything — so it
    * is built first, and only ever wired once.
    *
-   * Under `juggler-column-width`, the conversation column's own preference,
-   * with the conversation column's own default: the panel stands exactly where
-   * a conversation stands, so it is the same column at the same width, and
+   * Under `juggler-column-width` at depth 0, the root conversation column's own
+   * width, with its own default: the panel stands exactly where a root
+   * conversation stands, so it is the same column at the same width, and
    * widening either widens both. A width of its own would be a second answer to
    * a question that already has one.
    * @returns {HTMLElement} The handle.
@@ -266,7 +266,7 @@ class WorkspacePanel extends JugglerElement {
     if (this._resizeHandle) return this._resizeHandle;
     this._resizeHandle = document.createElement('col-resize-handle');
     this.appendChild(this._resizeHandle);
-    setupColumnResize(this, 'juggler-column-width', undefined, startingColumnWidth());
+    setupColumnResize(this, 'juggler-column-width', undefined, startingColumnWidth(), 0);
     return this._resizeHandle;
   }
 

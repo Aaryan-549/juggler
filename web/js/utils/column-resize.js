@@ -11,6 +11,14 @@
  * a width. Storing in rem means widths track the app zoom level (root
  * font-size) automatically.
  *
+ * A column wired with a depth — a conversation column's position in its tab's
+ * chain, or a workspace panel standing at the root — shares its width only with
+ * the columns at that depth: the preference holds one width per depth, and a
+ * depth with none stored copies the deepest one that has (`columnWidthAtDepth`).
+ * A single stored number is every depth's width. Widening a depth restyles the
+ * columns beside it that copy it, so a chain on screen always shows exactly what
+ * a rebuild of it would.
+ *
  * The width belongs to the window (services/prefs.js), which is what makes it
  * survive a relaunch: it is kept in the project's session rather than in a
  * localStorage partitioned by a port that changes. A mount applies the cached
@@ -18,7 +26,7 @@
  * waits on a round trip to have a width.
  *
  * Hiding the handle on the rightmost column is handled by CSS
- * (`column-container > *:last-child col-resize-handle`), not here.
+ * (`properties-panel.column-rightmost col-resize-handle`), not here.
  * @module utils/column-resize
  */
 
@@ -143,14 +151,77 @@ function _styleColumnWidth(element, rem, minWidthRem) {
 }
 
 /**
- * Apply a width (in rem) to `element` and store it under `prefName`.
+ * @typedef {object} DepthColumn
+ * @property {string} prefName - The preference holding the widths by depth.
+ * @property {number} depth - The column's position in its chain.
+ * @property {number} minWidthRem - The narrowest it may be dragged to.
+ * @property {number|undefined} defaultWidthRem - Unstored fallback width.
+ */
+
+/**
+ * The columns wired with a depth, so a width stored for one depth can reach the
+ * columns beside it that copy it.
+ * @type {WeakMap<HTMLElement, DepthColumn>}
+ */
+const _depthColumns = new WeakMap();
+
+/**
+ * The width a column at `depth` takes from what is stored: that depth's own,
+ * else the deepest stored above it. A single number is every depth's width.
+ * @param {any} stored - The preference's value: a number, or widths by depth
+ *   with null where a depth has none.
+ * @param {number} depth
+ * @returns {number|null} The width in rem, or null when nothing applies.
+ */
+export function columnWidthAtDepth(stored, depth) {
+  if (!Array.isArray(stored)) return _storedWidthRem(stored);
+  for (let d = Math.min(depth, stored.length - 1); d >= 0; d--) {
+    const rem = _storedWidthRem(stored[d]);
+    if (rem !== null) return rem;
+  }
+  return null;
+}
+
+/**
+ * Apply a width (in rem) to `element` and store it under `prefName` — as its
+ * depth's width, when it was wired with one.
  * @param {HTMLElement} element
  * @param {string} prefName
  * @param {number} rem
  * @param {number} [minWidthRem]
  */
 export function applyColumnWidthRem(element, prefName, rem, minWidthRem = COL_MIN_WIDTH_REM) {
-  void setWindowPref(prefName, _styleColumnWidth(element, rem, minWidthRem));
+  const clamped = _styleColumnWidth(element, rem, minWidthRem);
+  const column = _depthColumns.get(element);
+  if (!column || column.prefName !== prefName) {
+    void setWindowPref(prefName, clamped);
+    return;
+  }
+  const stored = cachedWindowPref(prefName, null);
+  const widths = Array.isArray(stored) ? [...stored] : [_storedWidthRem(stored)];
+  while (widths.length <= column.depth) widths.push(null);
+  widths[column.depth] = clamped;
+  void setWindowPref(prefName, widths);
+  _restyleSiblings(element, prefName, widths);
+}
+
+/**
+ * Give the columns beside `element` that share its preference the widths their
+ * depths now resolve to — a deeper one copying the depth just widened follows
+ * it, and one with a width of its own is unchanged.
+ * @param {HTMLElement} element
+ * @param {string} prefName
+ * @param {any[]} widths
+ * @private
+ */
+function _restyleSiblings(element, prefName, widths) {
+  for (const sibling of Array.from(element.parentElement?.children ?? [])) {
+    const column = _depthColumns.get(/** @type {HTMLElement} */ (sibling));
+    if (sibling === element || !column || column.prefName !== prefName) continue;
+    if (sibling.querySelector('col-resize-handle.dragging')) continue;
+    const rem = columnWidthAtDepth(widths, column.depth) ?? column.defaultWidthRem;
+    if (typeof rem === 'number') _styleColumnWidth(/** @type {HTMLElement} */ (sibling), rem, column.minWidthRem);
+  }
 }
 
 /**
@@ -175,17 +246,22 @@ export function applyColumnWidthPx(element, prefName, px, minWidthRem = COL_MIN_
  * @param {number} [defaultWidthRem] - Initial width (rem) to apply when this
  *   window has stored none. Applied as an inline style only (never stored), so
  *   the first drag is what a window remembers.
+ * @param {number} [depth] - The column's position in its chain, when the
+ *   preference holds one width per depth (see the module header). Without it
+ *   the preference is a single width.
  */
 export function setupColumnResize(
   element,
   prefName,
   minWidthRem = COL_MIN_WIDTH_REM,
   defaultWidthRem = undefined,
+  depth = undefined,
 ) {
   const handle = element.querySelector('col-resize-handle');
   if (!handle) return;
 
-  _loadColumnWidth(element, prefName, minWidthRem, defaultWidthRem);
+  if (typeof depth === 'number') _depthColumns.set(element, { prefName, depth, minWidthRem, defaultWidthRem });
+  _loadColumnWidth(element, prefName, minWidthRem, defaultWidthRem, depth);
 
   // Prevent resize-handle clicks from bubbling to the column-container's
   // click handler, which would change active column and scroll into view.
@@ -259,9 +335,17 @@ function _storedWidthRem(value) {
  * @param {number} minWidthRem
  * @param {number} [defaultWidthRem] - Unstored fallback width (rem) when nothing
  *   is stored for this window.
+ * @param {number} [depth] - The column's depth, when widths are stored by depth.
  */
-function _loadColumnWidth(element, prefName, minWidthRem, defaultWidthRem = undefined) {
-  const cached = _storedWidthRem(cachedWindowPref(prefName, null));
+function _loadColumnWidth(element, prefName, minWidthRem, defaultWidthRem = undefined, depth = undefined) {
+  /**
+   * @param {any} stored
+   * @returns {number|null} This column's width in rem, or null.
+   */
+  const widthOf = (stored) => (typeof depth === 'number'
+    ? columnWidthAtDepth(stored, depth)
+    : _storedWidthRem(stored));
+  const cached = widthOf(cachedWindowPref(prefName, null));
   if (cached !== null) {
     _styleColumnWidth(element, cached, minWidthRem);
   } else if (typeof defaultWidthRem === 'number') {
@@ -272,7 +356,7 @@ function _loadColumnWidth(element, prefName, minWidthRem, defaultWidthRem = unde
   }
 
   void getWindowPref(prefName, null).then((stored) => {
-    const rem = _storedWidthRem(stored);
+    const rem = widthOf(stored);
     if (rem === null || rem === cached) return;
     if (element.querySelector('col-resize-handle.dragging')) return;
     _styleColumnWidth(element, rem, minWidthRem);

@@ -102,6 +102,8 @@ export class ColumnBuilder {
     if (!col) {
       if (existing) existing.remove();
       col = document.createElement('conversation-area');
+      // Before it connects: the first render takes the width stored for its depth.
+      col.columnDepth = index;
       if (index > 0) col.classList.add('thread-column');
       container.appendChild(col);
     }

@@ -170,6 +170,8 @@ class ConversationArea extends JugglerElement {
     this._threadYMap = null;
     /** @type {boolean} @private - Set by the first render; a later connect keeps the DOM it drew */
     this._rendered = false;
+    /** @type {number} - Position in the tab's column chain, which picks the stored width it takes; set before the column is connected */
+    this.columnDepth = 0;
     /** @type {ColumnScroll} @private - Every piece of this column's scroll state */
     this._scroll = new ColumnScroll(this);
     /** @type {ColumnSelection} @private - Which row is selected, by whom, and what auto-selects */
@@ -884,8 +886,9 @@ class ConversationArea extends JugglerElement {
 
     // A window with no persisted width starts as wide as it can while still
     // leaving a properties panel room to open beside it (startingColumnWidth).
+    // The width is this column's depth's, not every conversation column's.
     // Its listeners live on the handle this render drew, and go with it.
-    setupColumnResize(this, 'juggler-column-width', undefined, startingColumnWidth());
+    setupColumnResize(this, 'juggler-column-width', undefined, startingColumnWidth(), this.columnDepth);
   }
 
   /**

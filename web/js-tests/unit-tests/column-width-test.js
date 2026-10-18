@@ -38,7 +38,8 @@ export async function runTests(_ctx) {
   /** @type {string[]} */
   const errors = [];
 
-  const { setupColumnResize, startingColumnWidthRem } = await import('../../js/utils/column-resize.js');
+  const { setupColumnResize, startingColumnWidthRem, columnWidthAtDepth, applyColumnWidthRem } =
+    await import('../../js/utils/column-resize.js');
   const { setDevicePref, __resetPrefsForTests } = await import('../../js/services/prefs.js');
 
   /**
@@ -192,6 +193,106 @@ export async function runTests(_ctx) {
       // its floor rather than holding the 50rem it had at 100%.
       const zoomed = startingColumnWidthRem(1520, 32);
       if (zoomed !== 30) throw new Error(`at 1520px/32px rem: ${zoomed}rem, want 30rem`);
+    });
+
+    // Conversation columns keep one width per depth in the chain — the root, the
+    // thread opened from it, the thread opened from that — and a depth nothing
+    // has been stored for copies the deepest one that has.
+    await run('a stored width is read per depth, a deeper one copying the deepest stored', () => {
+      const cases = /** @type {Array<[any, number, number|null]>} */ ([
+        [42, 0, 42], [42, 3, 42],
+        [[30, 45], 0, 30], [[30, 45], 1, 45], [[30, 45], 4, 45],
+        [[null, null, 40], 1, null], [[null, null, 40], 2, 40], [[null, null, 40], 5, 40],
+        [[30, null, 40], 1, 30],
+        [null, 0, null], [[], 2, null],
+      ]);
+      for (const [stored, depth, want] of cases) {
+        const got = columnWidthAtDepth(stored, depth);
+        if (got !== want) {
+          throw new Error(`${JSON.stringify(stored)} at depth ${depth}: ${got}, want ${want}`);
+        }
+      }
+    });
+
+    /**
+     * Columns at depths 0..n-1, side by side in one container as a tab holds them.
+     * @param {string} name
+     * @param {number} n
+     * @returns {{columns: HTMLElement[], remove: () => void}} The columns, and their teardown.
+     */
+    const mountChain = (name, n) => {
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+      const columns = [];
+      for (let depth = 0; depth < n; depth++) {
+        const column = document.createElement('div');
+        column.appendChild(document.createElement('col-resize-handle'));
+        container.appendChild(column);
+        setupColumnResize(column, name, 12.5, 30, depth);
+        columns.push(column);
+      }
+      return { columns, remove: () => container.remove() };
+    };
+
+    await run('widening one depth leaves the columns at the others alone', () => {
+      __resetPrefsForTests();
+      realm = {};
+      const name = uniqueName();
+      const { columns: [root, thread], remove } = mountChain(name, 2);
+      try {
+        applyColumnWidthRem(thread, name, 44);
+        if (root.style.width !== '30rem') {
+          throw new Error(`root = ${root.style.width} after the thread was widened, want its 30rem`);
+        }
+        if (thread.style.width !== '44rem') throw new Error(`thread = ${thread.style.width}, want 44rem`);
+      } finally {
+        remove();
+      }
+      // Nor does it reach a root column built later — another conversation's,
+      // or this one's when its tab is shown again.
+      const again = mountChain(name, 3);
+      try {
+        const widths = again.columns.map((c) => c.style.width);
+        if (widths.join() !== '30rem,44rem,44rem') {
+          throw new Error(`rebuilt chain = ${widths.join()}, want 30rem,44rem,44rem`);
+        }
+      } finally {
+        again.remove();
+      }
+    });
+
+    await run('a deeper column that copies a depth follows it, one with its own width does not', () => {
+      __resetPrefsForTests();
+      realm = {};
+      const name = uniqueName();
+      const { columns: [, thread, inner], remove } = mountChain(name, 3);
+      try {
+        applyColumnWidthRem(thread, name, 44);
+        if (inner.style.width !== '44rem') {
+          throw new Error(`inner = ${inner.style.width} after its parent depth was widened, want 44rem`);
+        }
+        applyColumnWidthRem(inner, name, 50);
+        applyColumnWidthRem(thread, name, 40);
+        if (inner.style.width !== '50rem') {
+          throw new Error(`inner = ${inner.style.width} after being given its own width, want 50rem`);
+        }
+      } finally {
+        remove();
+      }
+    });
+
+    await run('a single stored width is every depth\'s, as a window that stored one before has', () => {
+      __resetPrefsForTests();
+      realm = {};
+      const name = uniqueName();
+      setDevicePref(name, 42);
+      const { columns, remove } = mountChain(name, 3);
+      try {
+        const widths = columns.map((c) => c.style.width);
+        if (widths.join() !== '42rem,42rem,42rem') throw new Error(`chain = ${widths.join()}, want 42rem each`);
+      } finally {
+        remove();
+      }
     });
   } finally {
     // Each case used a preference name of its own, so nothing is left behind
