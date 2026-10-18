@@ -19,13 +19,14 @@
  * @module components/workspace-box-header
  */
 
+import JugglerElement from './juggler-element.js';
 import { workspaceStatus } from '../services/workspace-provisioning.js';
 import { t } from '../../sdk/lib/i18n.js';
 
 /**
  * WorkspaceBoxHeader - a workspace, named above the conversations working in it.
  */
-class WorkspaceBoxHeader extends HTMLElement {
+class WorkspaceBoxHeader extends JugglerElement {
   constructor() {
     super();
 
@@ -43,10 +44,20 @@ class WorkspaceBoxHeader extends HTMLElement {
   }
 
   /**
+   * Ask again about a workspace whose status read a disconnect abandoned. A box
+   * the bar moves is not handed its context again until the bar next draws,
+   * which on a quiet window may be never.
+   */
+  connectedCallback() {
+    if (this._workspace && !this._status && !this._probe) void this.refreshStatus();
+  }
+
+  /**
    * Let go of the probe. The bar removes a box when its workspace stops being
    * one, which can happen with a question outstanding.
    */
   disconnectedCallback() {
+    super.disconnectedCallback();
     this._probe?.abort();
     this._probe = null;
   }

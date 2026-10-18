@@ -39,6 +39,7 @@
  * owner scopes to the run's own rows — and disappears entirely when the run is
  * settled.
  */
+import JugglerElement from './juggler-element.js';
 import { findAssistantTxnIds, findLastAssistantItemId } from '../utils/transaction-anchor.js';
 import { formatRelativeDateTime } from '../utils/format.js';
 import providersCache from '../services/providers-cache.js';
@@ -89,7 +90,7 @@ const MAX_ANCHOR_LOOKBACK = 5;
 /** Magnifier over a document: inspect this conversation's log file. */
 const LOG_ICON_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true"><path d="M458-280q18 0 35.5-4.5T526-298l98 98 56-56-98-98q9-15 13.5-32.5T600-422q0-58-41-98t-99-40q-58 0-99 41t-41 99q0 58 40 99t98 41Zm2-80q-25 0-42.5-17.5T400-420q0-25 17.5-42.5T460-480q25 0 42.5 17.5T520-420q0 25-17.5 42.5T460-360ZM240-80q-33 0-56.5-23.5T160-160v-640q0-33 23.5-56.5T240-880h320l240 240v480q0 33-23.5 56.5T720-80H240Zm280-520v-200H240v640h480v-440H520ZM240-800v200-200 640-640Z"/></svg>';
 
-class ConversationFooter extends HTMLElement {
+class ConversationFooter extends JugglerElement {
   /** @type {import('../model/message-thread.js').default} */
   _messageThread = /** @type {any} */ (null);
   /** @type {(() => void)|null} */
@@ -222,21 +223,30 @@ class ConversationFooter extends HTMLElement {
    */
   _wasProcessing = false;
 
+  /**
+   * Whether the markup has been written. See connectedCallback.
+   * @type {boolean}
+   * @private
+   */
+  _built = false;
+
   disconnectedCallback() {
-    if (this._unsubscribe) { this._unsubscribe(); this._unsubscribe = null; }
-    if (this._statusUnsubscribe) { this._statusUnsubscribe(); this._statusUnsubscribe = null; }
+    super.disconnectedCallback();
+    // Re-assignable (setMessageThread drops and re-takes them), so fields rather
+    // than addCleanup registrations.
+    this._stopListening();
     this._hideUndoOffer();
     this._cancelDeferredTokenDisplayUpdate();
     this._cancelBlobRetry();
   }
 
   /**
-   * Set the message thread and subscribe to session events for token refresh.
+   * Set the message thread, and follow its session and status feeds for token
+   * refresh while the footer is in the document.
    * @param {import('../model/message-thread.js').default} mt
    */
   setMessageThread(mt) {
-    if (this._unsubscribe) { this._unsubscribe(); this._unsubscribe = null; }
-    if (this._statusUnsubscribe) { this._statusUnsubscribe(); this._statusUnsubscribe = null; }
+    this._stopListening();
     // Only a real change of thread retires the Undo offer or discards what the
     // meter has measured. A column re-hands its footer the thread it already
     // has on every rebuild — and a sub-thread column re-hands it in a NEW
@@ -265,41 +275,58 @@ class ConversationFooter extends HTMLElement {
     // sit somewhere else in the tree entirely.
     this._threadModelConfig = undefined;
     this._messageThread = mt;
-    if (mt) {
-      const conversation = mt.conversation;
-      const session = conversation?.session;
-      if (session) {
-        this._unsubscribe = session.subscribe((event) => {
-          if (event.type === 'conversation:context-window-updated' && event.data === conversation) {
-            this._scheduleTokenDisplayUpdate();
-          } else if (event.type === 'conversation:changed') {
-            // A model override lives in the document, so a document change is
-            // the event that can invalidate the resolved model.
-            this._threadModelConfig = undefined;
-            this._scheduleTokenDisplayUpdate();
-          } else if (event.type === 'conversation:items-removed'
-            && this._isOwnThread(event.data?.messageThread)) {
-            // The delete happened in THIS column, whose end is now exactly
-            // where the removed items used to be.
-            this._showUndoOffer(event.data.removed);
-          }
-        });
-      }
-      // Mid-turn usage updates arrive on the LLMState status feed (one tick per
-      // usage chunk). For a provider that streams authoritative per-step usage
-      // we refresh the meter immediately — not through the 2s event debounce —
-      // so the bar visibly grows as the turn proceeds. The callback is cheap
-      // when nothing changed (token-display.setUsage no-ops on equal input).
-      if (conversation) {
-        this._statusUnsubscribe = conversation.onStatusChange(() => {
-          // Only models that stream authoritative per-step usage drive the meter
-          // from this feed; for the rest the meter stays on the blob anchor
-          // refreshed by the (debounced) session events, so skip the per-tick work.
-          if (this._modelStreamsLiveUsage()) this._updateTokenDisplay();
-        });
-      }
-    }
+    if (this.isConnected) this._listen();
     this._updateTokenDisplay();
+  }
+
+  /** @private */
+  _stopListening() {
+    this._unsubscribe?.();
+    this._unsubscribe = null;
+    this._statusUnsubscribe?.();
+    this._statusUnsubscribe = null;
+  }
+
+  /**
+   * Follow the thread's session events and its conversation's status feed. A
+   * no-op without a thread or while already listening.
+   * @private
+   */
+  _listen() {
+    const mt = this._messageThread;
+    if (!mt || this._unsubscribe || this._statusUnsubscribe) return;
+    const conversation = mt.conversation;
+    const session = conversation?.session;
+    if (session) {
+      this._unsubscribe = session.subscribe((/** @type {any} */ event) => {
+        if (event.type === 'conversation:context-window-updated' && event.data === conversation) {
+          this._scheduleTokenDisplayUpdate();
+        } else if (event.type === 'conversation:changed') {
+          // A model override lives in the document, so a document change is
+          // the event that can invalidate the resolved model.
+          this._threadModelConfig = undefined;
+          this._scheduleTokenDisplayUpdate();
+        } else if (event.type === 'conversation:items-removed'
+          && this._isOwnThread(event.data?.messageThread)) {
+          // The delete happened in THIS column, whose end is now exactly
+          // where the removed items used to be.
+          this._showUndoOffer(event.data.removed);
+        }
+      });
+    }
+    // Mid-turn usage updates arrive on the LLMState status feed (one tick per
+    // usage chunk). For a provider that streams authoritative per-step usage
+    // we refresh the meter immediately — not through the 2s event debounce —
+    // so the bar visibly grows as the turn proceeds. The callback is cheap
+    // when nothing changed (token-display.setUsage no-ops on equal input).
+    if (conversation) {
+      this._statusUnsubscribe = conversation.onStatusChange(() => {
+        // Only models that stream authoritative per-step usage drive the meter
+        // from this feed; for the rest the meter stays on the blob anchor
+        // refreshed by the (debounced) session events, so skip the per-tick work.
+        if (this._modelStreamsLiveUsage()) this._updateTokenDisplay();
+      });
+    }
   }
 
   /**
@@ -702,6 +729,22 @@ class ConversationFooter extends HTMLElement {
   }
 
   connectedCallback() {
+    // Built once, with the footer: what update() last drew is all the footer has
+    // to show until the next update, so a move must not rebuild it blank.
+    if (!this._built) {
+      this._built = true;
+      this._build();
+    }
+    this._applyStatusOnly();
+    this._listen();
+    if (this._messageThread) this._updateTokenDisplay();
+  }
+
+  /**
+   * Write the footer's markup and wire its controls.
+   * @private
+   */
+  _build() {
     this.innerHTML = `
             <footer-processing class="hidden">
                 <juggler-spinner live></juggler-spinner>
@@ -877,10 +920,6 @@ class ConversationFooter extends HTMLElement {
         this._resumeOwnColumn();
       });
     }
-
-    this._applyStatusOnly();
-
-    if (this._messageThread) this._updateTokenDisplay();
   }
 
   /**

@@ -22,6 +22,7 @@
  *                  own event, bubbling out) and on a path taken from the menu
  */
 
+import JugglerElement from './juggler-element.js';
 import { fetchPathCompletions, fetchFileCompletions } from '../services/completions-api.js';
 import { applyListboxRoles, linkListbox, setActiveOption } from '../utils/listbox-roles.js';
 import { t } from '../../sdk/lib/i18n.js';
@@ -58,7 +59,7 @@ export function stripSurroundingQuotes(text) {
   return trimmed;
 }
 
-class PathInput extends HTMLElement {
+class PathInput extends JugglerElement {
   constructor() {
     super();
     /** @type {HTMLInputElement|null} @private */
@@ -93,6 +94,23 @@ class PathInput extends HTMLElement {
   }
 
   connectedCallback() {
+    // The inner field is built once, on the first connect: a move (the
+    // permissions popup re-parents its rows) keeps what was typed in it.
+    if (!this._input) this._build();
+    this.on(this, 'keydown', (e) => this._onKeydown(/** @type {KeyboardEvent} */ (e)), { capture: true });
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    this._closeMenu();
+  }
+
+  /**
+   * Write the inner field, seeded from the attributes, and wire it. Its own
+   * listeners go with it, so they need no removing.
+   * @private
+   */
+  _build() {
     const placeholder = this.getAttribute('placeholder') || '';
     const initial = this.getAttribute('value') || '';
 
@@ -104,10 +122,10 @@ class PathInput extends HTMLElement {
 
     this._input.addEventListener('input', () => this._onInput());
     this._input.addEventListener('paste', (e) => this._onPaste(e));
-    this.addEventListener('keydown', (e) => this._onKeydown(e), { capture: true });
     this._input.addEventListener('blur', () => {
-      // Small delay so mousedown on a menu item fires first.
-      setTimeout(() => this._closeMenu(), 150);
+      // Small delay so mousedown on a menu item fires first. Cleared by a
+      // disconnect, which closes the menu itself.
+      this.setTimeout(() => this._closeMenu(), 150);
     });
     this._input.addEventListener('focus', () => {
       // Don't auto-open completions when focusing a field that only holds an
@@ -115,10 +133,6 @@ class PathInput extends HTMLElement {
       if (this._pristinePrefill) return;
       this._onInput();
     });
-  }
-
-  disconnectedCallback() {
-    this._closeMenu();
   }
 
   /**

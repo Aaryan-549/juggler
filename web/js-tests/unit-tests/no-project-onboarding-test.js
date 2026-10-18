@@ -282,8 +282,9 @@ export async function runTests() {
     // --- 12: it lets go of the provider feed when it goes ------------------
     // A detached element still holding a subscription re-renders markup nobody
     // can see, for as long as the page lives.
+    const feedBefore = /** @type {any} */ (wsService)._listeners['providers-update'].length;
     returning.remove();
-    assert(returning._providersUpdateOff === null,
+    assert(/** @type {any} */ (wsService)._listeners['providers-update'].length === feedBefore - 1,
       'the overlay kept its providers-update subscription after being removed');
     passed++;
 

@@ -15,10 +15,11 @@
  * show together: that one needs a project absent, this one needs it present.
  */
 
+import JugglerElement from './juggler-element.js';
 import { t } from '../../sdk/lib/i18n.js';
 import { escapeHtml } from '../../sdk/lib/html.js';
 
-class NoConversationsOverlay extends HTMLElement {
+class NoConversationsOverlay extends JugglerElement {
   constructor() {
     super();
     /** @type {import('../model/session.js').default|null} @private */
@@ -29,34 +30,55 @@ class NoConversationsOverlay extends HTMLElement {
     this._rendered = false;
   }
 
-  disconnectedCallback() {
-    if (this._unsubscribe) {
-      this._unsubscribe();
-      this._unsubscribe = null;
+  connectedCallback() {
+    // Put back with the session it already has, which nobody hands it again:
+    // take back the feed the disconnect dropped, and catch up on what it missed.
+    if (this._session && !this._unsubscribe) {
+      this._listen();
+      this._refresh();
     }
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    // Re-assignable (setSession drops and re-takes it), so a field rather than
+    // an addCleanup registration.
+    this._stopListening();
   }
 
   /**
    * @param {import('../model/session.js').default} session
    */
   setSession(session) {
-    if (this._unsubscribe) {
-      this._unsubscribe();
-      this._unsubscribe = null;
-    }
+    this._stopListening();
     this._session = session;
     this._refresh();
-    if (session) {
-      this._unsubscribe = session.subscribe((event) => {
-        if (
-          event.type === 'session:loaded'
-          || event.type === 'conversation:created'
-          || event.type === 'conversation:deleted'
-        ) {
-          this._refresh();
-        }
-      });
-    }
+    if (this.isConnected) this._listen();
+  }
+
+  /** @private */
+  _stopListening() {
+    this._unsubscribe?.();
+    this._unsubscribe = null;
+  }
+
+  /**
+   * Follow the events that can empty or fill the project. A no-op without a
+   * session or while already listening.
+   * @private
+   */
+  _listen() {
+    const session = this._session;
+    if (!session || this._unsubscribe) return;
+    this._unsubscribe = session.subscribe((/** @type {{type: string}} */ event) => {
+      if (
+        event.type === 'session:loaded'
+        || event.type === 'conversation:created'
+        || event.type === 'conversation:deleted'
+      ) {
+        this._refresh();
+      }
+    });
   }
 
   /** @private */

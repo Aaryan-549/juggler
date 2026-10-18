@@ -32,6 +32,14 @@
  *   is handed a different one — and keeps that thread, its strategy feed and
  *   what it had drawn across a move or a put-back.
  * - A workspace panel moved or put back follows its session exactly once.
+ * - So do the no-project and no-conversations overlays; the no-project one also
+ *   holds the provider feed, the folder-drop listener and the native drag hooks
+ *   while it is in the document and none of them once it has left.
+ * - A conversation footer moved or put back follows its thread's session and
+ *   status feeds exactly once, and keeps the status line it had drawn.
+ * - A path field moved keeps what was typed in it and hears each key once.
+ * - A workspace box header moved while its status read was outstanding asks
+ *   again; one that already has its answer does not.
  * @module unit-tests/component-teardown
  */
 
@@ -47,6 +55,10 @@ import '../../js/components/settings-panel.js';
 import '../../js/components/model-selector.js';
 import '../../js/components/properties-panel.js';
 import '../../js/components/workspace-panel.js';
+import '../../js/components/no-conversations-overlay.js';
+import '../../js/components/no-project-overlay.js';
+import '../../js/components/conversation-footer.js';
+import '../../js/components/workspace-box-header.js';
 
 /**
  * @typedef {object} TestResult
@@ -461,6 +473,183 @@ export async function runTests() {
       document.body.classList.remove('workspace-selected');
     }
   } catch (e) { failed++; errors.push(`workspace-panel re-parented: ${e.message}`); }
+
+  for (const tag of ['no-conversations-overlay', 'no-project-overlay']) {
+    const hadClasses = ['no-project', 'no-conversations'].filter((c) => document.body.classList.contains(c));
+    const subscribers = new Set();
+    const session = {
+      projectPath: '/teardown',
+      conversations: new Map([['teardown-conv', {}]]),
+      subscribe: (/** @type {Function} */ fn) => { subscribers.add(fn); return () => subscribers.delete(fn); },
+    };
+    const overlay = /** @type {any} */ (document.createElement(tag));
+    const elsewhere = document.createElement('div');
+    document.body.appendChild(elsewhere);
+    try {
+      column.appendChild(overlay);
+      overlay.setSession(session);
+      elsewhere.appendChild(overlay);
+      if (subscribers.size !== 1) throw new Error(`after a move it holds ${subscribers.size} session subscription(s), want 1`);
+      overlay.remove();
+      if (subscribers.size !== 0) throw new Error(`after removal it holds ${subscribers.size} session subscription(s), want none`);
+      elsewhere.appendChild(overlay);
+      if (subscribers.size !== 1) throw new Error(`reinserted after a removal it holds ${subscribers.size} session subscription(s), want 1`);
+      overlay.setSession(session);
+      if (subscribers.size !== 1) throw new Error(`handed its session again it holds ${subscribers.size} session subscription(s), want 1`);
+      overlay.remove();
+      passed++;
+    } catch (e) {
+      failed++;
+      errors.push(`${tag} re-parented: ${e.message}`);
+    } finally {
+      overlay.remove();
+      elsewhere.remove();
+      document.body.classList.remove('no-project', 'no-conversations');
+      document.body.classList.add(...hadClasses);
+    }
+  }
+
+  {
+    const hadNoProject = document.body.classList.contains('no-project');
+    const baseline = socketListeners(['providers-update']);
+    const overlay = /** @type {any} */ (document.createElement('no-project-overlay'));
+    let opened = 0;
+    overlay._open = async () => { opened++; };
+    const dropped = () => {
+      const before = opened;
+      window.dispatchEvent(new CustomEvent('juggler:folder-dropped', { detail: { path: '/teardown' } }));
+      return opened - before;
+    };
+    const hooked = () => /** @type {any} */ (window)._wails?.handleDragEnter !== undefined;
+    const elsewhere = document.createElement('div');
+    document.body.appendChild(elsewhere);
+    try {
+      const held = () => `${socketDelta(['providers-update'], baseline)}, ${dropped()} drop handler(s) and drag hooks ${hooked() ? 'installed' : 'absent'}`;
+      const holdsOne = 'providers-update +1, 1 drop handler(s) and drag hooks installed';
+      column.appendChild(overlay);
+      elsewhere.appendChild(overlay);
+      let now = held();
+      if (now !== holdsOne) throw new Error(`after a move it holds ${now}, want +1, 1 and installed`);
+      overlay.remove();
+      now = held();
+      if (now !== 'providers-update +0, 0 drop handler(s) and drag hooks absent') throw new Error(`after removal it holds ${now}, want none`);
+      elsewhere.appendChild(overlay);
+      now = held();
+      if (now !== holdsOne) throw new Error(`reinserted after a removal it holds ${now}, want +1, 1 and installed`);
+      overlay.remove();
+      passed++;
+    } catch (e) {
+      failed++;
+      errors.push(`no-project-overlay window feeds re-parented: ${e.message}`);
+    } finally {
+      overlay.remove();
+      elsewhere.remove();
+      document.body.classList.toggle('no-project', hadNoProject);
+    }
+  }
+
+  try {
+    const session = new Set();
+    const status = new Set();
+    const thread = {
+      container: countingYArray(),
+      items: [],
+      threadItemId: null,
+      conversation: {
+        id: 'teardown-conv',
+        onStatusChange: (/** @type {Function} */ fn) => { status.add(fn); return () => status.delete(fn); },
+        session: { subscribe: (/** @type {Function} */ fn) => { session.add(fn); return () => session.delete(fn); } },
+      },
+    };
+    const footer = /** @type {any} */ (document.createElement('conversation-footer'));
+    footer._updateTokenDisplay = () => {};
+    const elsewhere = document.createElement('div');
+    document.body.appendChild(elsewhere);
+    try {
+      const held = () => `${session.size} session and ${status.size} status subscription(s)`;
+      // A column hands its footer the thread before mounting it.
+      footer.setMessageThread(thread);
+      column.appendChild(footer);
+      if (session.size !== 1 || status.size !== 1) throw new Error(`a mounted footer holds ${held()}, want 1 and 1`);
+      // Nothing redraws the status line until the next update, so a move that
+      // rebuilt the markup would blank a running turn's status until then.
+      footer.update({ isProcessing: true, canContinue: false, statusMessage: 'teardown-status' });
+      elsewhere.appendChild(footer);
+      if (session.size !== 1 || status.size !== 1) throw new Error(`after a move it holds ${held()}, want 1 and 1`);
+      if (footer.querySelector('.llm-busy-text')?.textContent !== 'teardown-status') throw new Error('a move threw away the status line the footer had drawn');
+      footer.remove();
+      if (session.size !== 0 || status.size !== 0) throw new Error(`after removal it holds ${held()}, want none`);
+      elsewhere.appendChild(footer);
+      if (session.size !== 1 || status.size !== 1) throw new Error(`reinserted after a removal it holds ${held()}, want 1 and 1`);
+      footer.setMessageThread(thread);
+      if (session.size !== 1 || status.size !== 1) throw new Error(`handed its thread again it holds ${held()}, want 1 and 1`);
+      footer.remove();
+      passed++;
+    } finally {
+      footer.remove();
+      elsewhere.remove();
+    }
+  } catch (e) { failed++; errors.push(`conversation-footer re-parented: ${e.message}`); }
+
+  try {
+    const field = /** @type {any} */ (document.createElement('path-input'));
+    let keydowns = 0;
+    field._onKeydown = () => { keydowns++; };
+    const heard = () => {
+      const before = keydowns;
+      field.querySelector('input').dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+      return keydowns - before;
+    };
+    const elsewhere = document.createElement('div');
+    document.body.appendChild(elsewhere);
+    try {
+      column.appendChild(field);
+      field.value = '/teardown/typed';
+      elsewhere.appendChild(field);
+      // The permissions popup re-parents its fields, so a move that rebuilt the
+      // inner input would put back the attribute's value over what was typed.
+      if (field.value !== '/teardown/typed') throw new Error(`a move left the field holding "${field.value}", want what was typed`);
+      let n = heard();
+      if (n !== 1) throw new Error(`after a move a key reached it ${n} time(s), want 1`);
+      field.remove();
+      elsewhere.appendChild(field);
+      n = heard();
+      if (n !== 1) throw new Error(`reinserted after a removal a key reached it ${n} time(s), want 1`);
+      field.remove();
+      passed++;
+    } finally {
+      field._closeMenu?.();
+      field.remove();
+      elsewhere.remove();
+    }
+  } catch (e) { failed++; errors.push(`path-input re-parented: ${e.message}`); }
+
+  try {
+    const header = /** @type {any} */ (document.createElement('workspace-box-header'));
+    let asked = 0;
+    header.refreshStatus = async () => { asked++; };
+    const elsewhere = document.createElement('div');
+    document.body.appendChild(elsewhere);
+    try {
+      column.appendChild(header);
+      header.setContext({ session: {}, workspace: { id: 'teardown-ws', label: 'teardown' } });
+      if (asked !== 1) throw new Error(`a header handed a workspace asked ${asked} time(s) about it, want 1`);
+      // The question the disconnect abandoned has to be asked again on the way
+      // back: nothing else hands the header its context until the bar next draws.
+      elsewhere.appendChild(header);
+      if (asked !== 2) throw new Error(`after a move with no answer yet it asked ${asked - 1} more time(s), want 1`);
+      header._status = { dirty: false };
+      header.remove();
+      elsewhere.appendChild(header);
+      if (asked !== 2) throw new Error(`reinserted with its answer it asked ${asked - 2} more time(s), want none`);
+      if (header.querySelector('.conversation-box-label-text')?.textContent !== 'teardown') throw new Error('a reinsert threw away the name the header had drawn');
+      header.remove();
+      passed++;
+    } finally {
+      header.remove();
+      elsewhere.remove();
+    }
+  } catch (e) { failed++; errors.push(`workspace-box-header re-parented: ${e.message}`); }
 
   column.remove();
   return { passed, failed, errors };

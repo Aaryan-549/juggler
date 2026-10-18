@@ -16,6 +16,7 @@
  * closed a project and gets their list, not a lecture.
  */
 
+import JugglerElement from './juggler-element.js';
 import apiService from '../services/api.js';
 import wsService from '../services/websocket.js';
 import providersCache from '../services/providers-cache.js';
@@ -33,7 +34,7 @@ const RECENTS_SHOWN = 5;
 /** How many providers are named before the rest become a count. */
 const PROVIDERS_NAMED = 2;
 
-class NoProjectOverlay extends HTMLElement {
+class NoProjectOverlay extends JugglerElement {
   constructor() {
     super();
     /** @type {import('../model/session.js').default|null} @private */
@@ -44,10 +45,6 @@ class NoProjectOverlay extends HTMLElement {
     this._rendered = false;
     /** @type {string[]} @private */
     this._recents = [];
-    /** @type {(() => void)|null} @private - Unsubscribes the providers-update listener. */
-    this._providersUpdateOff = null;
-    /** @type {((event: Event) => void)|null} @private */
-    this._folderDropHandler = null;
     /** @type {Record<string, Function>|null} @private */
     this._nativeDragHooks = null;
   }
@@ -55,34 +52,32 @@ class NoProjectOverlay extends HTMLElement {
   connectedCallback() {
     // The cache has no change event of its own, so the live feed it is built
     // from is what a status line subscribes to (same idiom as model-selector).
-    this._providersUpdateOff = wsService.on('providers-update', () => this._renderProviderStatus());
+    this.addCleanup(wsService.on('providers-update', () => this._renderProviderStatus()));
 
     // A folder dropped on an empty window. The native host reads the path off
     // the drag pasteboard and announces it here, because the page is never told
     // one: WebKit withholds the filesystem path from every file drag.
-    this._folderDropHandler = (/** @type {any} */ e) => {
+    this.onWindow('juggler:folder-dropped', (/** @type {any} */ e) => {
       const path = e?.detail?.path;
       if (typeof path === 'string' && path) void this._open(path);
-    };
-    window.addEventListener('juggler:folder-dropped', this._folderDropHandler);
+    });
 
     this._installNativeDragHooks();
+    this.addCleanup(() => this._removeNativeDragHooks());
+
+    // Put back with the session it already has, which nobody hands it again:
+    // take back the feed the disconnect dropped, and catch up on what it missed.
+    if (this._session && !this._unsubscribe) {
+      this._listen();
+      this._refresh();
+    }
   }
 
   disconnectedCallback() {
-    if (this._unsubscribe) {
-      this._unsubscribe();
-      this._unsubscribe = null;
-    }
-    if (this._providersUpdateOff) {
-      this._providersUpdateOff();
-      this._providersUpdateOff = null;
-    }
-    if (this._folderDropHandler) {
-      window.removeEventListener('juggler:folder-dropped', this._folderDropHandler);
-      this._folderDropHandler = null;
-    }
-    this._removeNativeDragHooks();
+    super.disconnectedCallback();
+    // Re-assignable (setSession drops and re-takes it), so a field rather than
+    // an addCleanup registration.
+    this._stopListening();
   }
 
   /**
@@ -158,23 +153,35 @@ class NoProjectOverlay extends HTMLElement {
    * @param {import('../model/session.js').default} session
    */
   setSession(session) {
-    if (this._unsubscribe) {
-      this._unsubscribe();
-      this._unsubscribe = null;
-    }
+    this._stopListening();
     this._session = session;
     this._refresh();
-    if (session) {
-      this._unsubscribe = session.subscribe((event) => {
-        if (
-          event.type === 'session:loaded'
-          || event.type === 'conversation:created'
-          || event.type === 'conversation:deleted'
-        ) {
-          this._refresh();
-        }
-      });
-    }
+    if (this.isConnected) this._listen();
+  }
+
+  /** @private */
+  _stopListening() {
+    this._unsubscribe?.();
+    this._unsubscribe = null;
+  }
+
+  /**
+   * Follow the events that can open or close the project. A no-op without a
+   * session or while already listening.
+   * @private
+   */
+  _listen() {
+    const session = this._session;
+    if (!session || this._unsubscribe) return;
+    this._unsubscribe = session.subscribe((/** @type {{type: string}} */ event) => {
+      if (
+        event.type === 'session:loaded'
+        || event.type === 'conversation:created'
+        || event.type === 'conversation:deleted'
+      ) {
+        this._refresh();
+      }
+    });
   }
 
   /** @private */
