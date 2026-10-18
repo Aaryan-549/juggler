@@ -18,6 +18,7 @@
  * The icon inherits `currentColor`, so it recolours with the surrounding theme.
  */
 
+import JugglerElement from './juggler-element.js';
 import { osRevealPath } from '../services/ops-api.js';
 import { showNotice } from './modal-dialog.js';
 import { extractErrorMessage } from '../../sdk/lib/error-utils.js';
@@ -46,7 +47,7 @@ export function revealLabel() {
   return t('Show in file manager');
 }
 
-class RevealButton extends HTMLElement {
+class RevealButton extends JugglerElement {
   constructor() {
     super();
     /** @type {HTMLButtonElement|null} @private */

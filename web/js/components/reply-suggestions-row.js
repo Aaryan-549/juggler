@@ -19,6 +19,7 @@
  * @module components/reply-suggestions-row
  */
 
+import JugglerElement from './juggler-element.js';
 import { t } from '../../sdk/lib/i18n.js';
 
 /**
@@ -26,7 +27,7 @@ import { t } from '../../sdk/lib/i18n.js';
  * (bubbling, composed) carrying `{ text }` — the column drafts those words into
  * the composer and sends nothing.
  */
-class ReplySuggestionsRow extends HTMLElement {
+class ReplySuggestionsRow extends JugglerElement {
   /**
    * The suggestions currently drawn, joined — the cheapest way to answer "has
    * anything changed?" before touching a row made entirely of click targets.

@@ -39,6 +39,7 @@
  * exactly the non-live appearance.
  */
 
+import JugglerElement from './juggler-element.js';
 import { t } from '../../sdk/lib/i18n.js';
 
 // The two paths from juggler-logo.svg, inlined into a single self-contained
@@ -192,7 +193,7 @@ function clubHTML(index, count) {
         + `<span class="js-orbit"><span class="js-club">${CLUB_SVG_HTML}</span></span></span>`;
 }
 
-class JugglerSpinner extends HTMLElement {
+class JugglerSpinner extends JugglerElement {
   constructor() {
     super();
     /** @type {number} @private Club count currently laid out. */
@@ -752,8 +753,10 @@ class JugglerSpinner extends HTMLElement {
   }
 
   disconnectedCallback() {
-    this._io?.disconnect();
-    this._io = null;
+    super.disconnectedCallback();
+    // Plain fields rather than this.setTimeout: the setters re-arm these on every
+    // streaming tick, and each JugglerElement timer holds a cleanup until the
+    // next disconnect.
     clearTimeout(this._shrinkTimer);
     this._shrinkTimer = 0;
     clearTimeout(this._rateTimer);
@@ -787,14 +790,15 @@ class JugglerSpinner extends HTMLElement {
   _observeVisibility() {
     if (typeof IntersectionObserver === 'undefined') return; // headless / ancient engine: no-op
     let wasVisible = false;
-    this._io = new IntersectionObserver((entries) => {
+    const io = new IntersectionObserver((entries) => {
       const last = entries[entries.length - 1];
       if (!last) return;
       const visible = last.isIntersecting;
       if (visible && !wasVisible) this.restart();
       wasVisible = visible;
     });
-    this._io.observe(this);
+    io.observe(this);
+    this.addCleanup(() => io.disconnect());
   }
 
   /**

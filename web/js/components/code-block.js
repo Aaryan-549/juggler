@@ -2,6 +2,7 @@
 //     ██ ██ ██ ██ ▄▄ ██ ▄▄ ██    ██▄▄  ██▄█▄   Copyright (c) 2026 Julian Storer
 //   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
 
+import JugglerElement from './juggler-element.js';
 import { registerContextMenuProvider, codeReferenceMenuItem } from '../services/context-menu-service.js';
 import { isAbsolutePath } from '../utils/code-selection.js';
 import { copyToClipboard } from '../../sdk/lib/clipboard.js';
@@ -16,21 +17,21 @@ import { escapeHtml } from '../../sdk/lib/html.js';
  * with a safe escaped-text fallback) — the same one used by tile summaries and
  * properties-panel subsections.
  */
-class CodeBlock extends HTMLElement {
-  constructor() {
-    super();
-  }
-
+class CodeBlock extends JugglerElement {
   static get observedAttributes() {
     return ['language', 'code'];
   }
 
   connectedCallback() {
-    this.render();
+    // Drawn on the first connect, in the UI language of that moment, and
+    // redrawn after that only by an attribute change: a move keeps the
+    // highlighting it did and a Copied! it is showing.
+    if (!this.firstElementChild) this.render();
   }
 
   attributeChangedCallback() {
-    this.render();
+    // A detached block waits for its first connect to draw.
+    if (this.isConnected) this.render();
   }
 
   get language() {

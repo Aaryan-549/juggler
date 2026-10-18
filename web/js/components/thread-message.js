@@ -2,6 +2,7 @@
 //     ██ ██ ██ ██ ▄▄ ██ ▄▄ ██    ██▄▄  ██▄█▄   Copyright (c) 2026 Julian Storer
 //   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
 
+import JugglerElement from './juggler-element.js';
 import { wrapWithIcon } from '../utils/icon-message-renderer.js';
 import { badgeForItem } from '../utils/item-badge.js';
 import { getThreadStatus, getThreadDisplayContent, paintThreadSummary, paintThreadStatusText, threadCostFigures,
@@ -29,7 +30,7 @@ const THREAD_SUMMARY_MAX_CHARS = 600;
  * tokens"), driven by an `llmState` snapshot the parent column hands in. Once
  * it is at rest with a summary, the tile shows that instead.
  */
-class ThreadMessage extends HTMLElement {
+class ThreadMessage extends JugglerElement {
   constructor() {
     super();
     /** @type {any|null} @private */

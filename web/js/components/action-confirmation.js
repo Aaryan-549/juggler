@@ -2,6 +2,7 @@
 //     ██ ██ ██ ██ ▄▄ ██ ▄▄ ██    ██▄▄  ██▄█▄   Copyright (c) 2026 Julian Storer
 //   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
 
+import JugglerElement from './juggler-element.js';
 import { escapeHtml } from '../../sdk/lib/html.js';
 import { t, htmlSlots, withHtml, formatList } from '../../sdk/lib/i18n.js';
 
@@ -54,9 +55,9 @@ const REVISE_DEBOUNCE_MS = 150;
  * The action details (diffs, commands, etc.) are displayed separately
  * by the parent container (tool-action-message).
  * @class
- * @augments HTMLElement
+ * @augments JugglerElement
  */
-class ActionConfirmation extends HTMLElement {
+class ActionConfirmation extends JugglerElement {
   constructor() {
     super();
 
@@ -98,21 +99,17 @@ class ActionConfirmation extends HTMLElement {
      * @type {Record<number, {rules?: any, allowedPaths?: string[], patterns?: string[], pattern?: string}>} @private
      */
     this._editSnapshots = {};
-
-    // Bind handlers for stable references (addEventListener/removeEventListener)
-    this._handleButtonClick = this._handleButtonClick.bind(this);
-    this._handleKeyDown = this._handleKeyDown.bind(this);
-    this._handleFocusOut = this._handleFocusOut.bind(this);
   }
 
   connectedCallback() {
     this.setAttribute('tabindex', '-1');
-    this._render();
-    this._attachEventListeners();
-  }
-
-  disconnectedCallback() {
-    this._removeEventListeners();
+    // setOptions draws the buttons, so a connect only draws ones that never
+    // were: a move keeps an edit in progress, its typed pattern and its focus
+    // ring.
+    if (!this.firstElementChild) this._render();
+    this.on(this, 'click', (e) => this._handleButtonClick(/** @type {MouseEvent} */ (e)));
+    this.on(this, 'keydown', (e) => this._handleKeyDown(/** @type {KeyboardEvent} */ (e)));
+    this.on(this, 'focusout', (e) => this._handleFocusOut(/** @type {FocusEvent} */ (e)));
   }
 
   /**
@@ -130,7 +127,6 @@ class ActionConfirmation extends HTMLElement {
     this._debounceTimers = {};
     this._editSnapshots = {};
     this._render();
-    this._attachEventListeners();
   }
 
   /**
@@ -271,26 +267,6 @@ class ActionConfirmation extends HTMLElement {
       ? t('and allow access to {patterns}', htmlSlots(slot))
       : t('for {patterns}', htmlSlots(slot));
     return ` ${withHtml(descriptor, slot)}`;
-  }
-
-  /**
-   * Attach event listeners
-   * @private
-   */
-  _attachEventListeners() {
-    this.addEventListener('click', this._handleButtonClick);
-    this.addEventListener('keydown', this._handleKeyDown);
-    this.addEventListener('focusout', this._handleFocusOut);
-  }
-
-  /**
-   * Remove event listeners
-   * @private
-   */
-  _removeEventListeners() {
-    this.removeEventListener('click', this._handleButtonClick);
-    this.removeEventListener('keydown', this._handleKeyDown);
-    this.removeEventListener('focusout', this._handleFocusOut);
   }
 
   /**
@@ -677,7 +653,10 @@ class ActionConfirmation extends HTMLElement {
       this._resolveCallback(value);
       this._resolveCallback = null;
     }
-    this._removeEventListeners();
+    // Stop listening now rather than at the disconnect below: handing the
+    // keyboard back blurs a button, and the focusout must not reach a widget
+    // that has already answered.
+    this._runCleanups();
     // Hand the keyboard back before removing ourselves: one of these buttons
     // holds focus, and taking it out of the DOM would strand focus on <body>.
     // The owning tab decides where it lands (conversation-tab Rule 20), so

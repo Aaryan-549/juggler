@@ -22,6 +22,7 @@
  * @module components/model-picker/model-tuning
  */
 
+import JugglerElement from '../juggler-element.js';
 import { escapeHtml } from '../../../sdk/lib/html.js';
 import { markForTranslation, t } from '../../../sdk/lib/i18n.js';
 
@@ -73,7 +74,7 @@ export function tierIds(modelEntry) {
   return (modelEntry?.serviceTiers || []).map(t => t.id);
 }
 
-class ModelTuning extends HTMLElement {
+class ModelTuning extends JugglerElement {
   constructor() {
     super();
     /** @type {TuningModelEntry|null} @private - What the model advertises. */

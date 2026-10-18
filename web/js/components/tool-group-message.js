@@ -2,6 +2,7 @@
 //     ██ ██ ██ ██ ▄▄ ██ ▄▄ ██    ██▄▄  ██▄█▄   Copyright (c) 2026 Julian Storer
 //   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
 
+import JugglerElement from './juggler-element.js';
 import { wrapWithIcon } from '../utils/icon-message-renderer.js';
 import { iconOptionsForItem } from '../utils/item-badge.js';
 import { paintThreadSummary, paintThreadStatusText } from '../utils/thread-display.js';
@@ -97,7 +98,7 @@ export function groupBadgeBackground(members) {
  *     holding a pending approval turns the same orange as a sub-thread would
  *     and the route from the tab to the action stays unbroken when folded.
  */
-class ToolGroupMessage extends HTMLElement {
+class ToolGroupMessage extends JugglerElement {
   constructor() {
     super();
     /** @type {import('../utils/item-grouping.js').ItemGroup|null} @private */

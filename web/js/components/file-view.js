@@ -2,6 +2,7 @@
 //     ██ ██ ██ ██ ▄▄ ██ ▄▄ ██    ██▄▄  ██▄█▄   Copyright (c) 2026 Julian Storer
 //   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
 
+import JugglerElement from './juggler-element.js';
 import fileViewerRegistry from '../registries/file-viewer-registry.js';
 import { toDescriptor } from '../../sdk/file-source.js';
 import { formatFileSizeForDisplay, injectFileContentStyles } from '../../sdk/lib/context-item-utils.js';
@@ -24,9 +25,9 @@ injectFileContentStyles();
  * element, so a future full-screen file surface can host the same viewers
  * unchanged.
  * @class
- * @augments HTMLElement
+ * @augments JugglerElement
  */
-class FileView extends HTMLElement {
+class FileView extends JugglerElement {
   constructor() {
     super();
     /** @type {import('../../sdk/file-source.js').FileSource|null} @private */
@@ -82,6 +83,7 @@ class FileView extends HTMLElement {
   }
 
   disconnectedCallback() {
+    super.disconnectedCallback();
     this._cleanup();
   }
 

@@ -2,6 +2,7 @@
 //     ██ ██ ██ ██ ▄▄ ██ ▄▄ ██    ██▄▄  ██▄█▄   Copyright (c) 2026 Julian Storer
 //   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
 
+import JugglerElement from './juggler-element.js';
 import { formatTokens as fmtTokens } from '../utils/format.js';
 import { t, htmlSlots, withHtml, formatNumber } from '../../sdk/lib/i18n.js';
 import { escapeHtml } from '../../sdk/lib/html.js';
@@ -39,7 +40,7 @@ const NEARLY_FULL_PCT = 95;
  * @property {boolean} [processing] - True while a turn is streaming
  * @property {boolean} [approximate] - Input total is a local fallback estimate
  */
-class TokenDisplay extends HTMLElement {
+class TokenDisplay extends JugglerElement {
   constructor() {
     super();
     /** @type {number}  @private */ this.total = 0;
@@ -48,19 +49,16 @@ class TokenDisplay extends HTMLElement {
     /** @type {boolean} @private */ this.processing = false;
     /** @type {boolean} @private */ this.approximate = false;
     /** @type {boolean} @private */ this._hasData = false;
-    /** @type {boolean} @private */ this._activationBound = false;
   }
 
   connectedCallback() {
-    if (!this._activationBound) {
-      this._activationBound = true;
-      this.addEventListener('click', () => this._activate());
-      this.addEventListener('keydown', (e) => {
-        if (e.key !== 'Enter' && e.key !== ' ') return;
-        e.preventDefault();
-        this._activate();
-      });
-    }
+    this.on(this, 'click', () => this._activate());
+    this.on(this, 'keydown', (e) => {
+      const key = /** @type {KeyboardEvent} */ (e).key;
+      if (key !== 'Enter' && key !== ' ') return;
+      e.preventDefault();
+      this._activate();
+    });
     this.render();
   }
 

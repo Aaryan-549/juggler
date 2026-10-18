@@ -2,6 +2,7 @@
 //     ██ ██ ██ ██ ▄▄ ██ ▄▄ ██    ██▄▄  ██▄█▄   Copyright (c) 2026 Julian Storer
 //   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
 
+import JugglerElement from './juggler-element.js';
 import { openExternalURL } from '../../sdk/lib/window-control.js';
 import { createButton } from '../../sdk/lib/html.js';
 import { markPopupOpen } from '../utils/popup-manager.js';
@@ -176,7 +177,7 @@ const REACTION_STATES = new Set(['downloading', 'verifying', 'installing', 'read
  * notice omits the dismissal affordances (no backdrop/Escape close, no Later).
  * Closing only hides it for this page session — the button stays in the header.
  */
-class UpdateNotice extends HTMLElement {
+class UpdateNotice extends JugglerElement {
   constructor() {
     super();
     /** @type {UpdateViewModel|null} @private — the model currently rendered */
@@ -193,9 +194,15 @@ class UpdateNotice extends HTMLElement {
 
   connectedCallback() {
     this.classList.add('modal-shell');
+    // An open dialog keeps what it drew across a move, so it takes back the
+    // Escape/Back registration the disconnect gave up.
+    if (this.isOpen() && !this._releasePopupOpen) {
+      this._registerDismissal(this._effectiveVm(/** @type {UpdateViewModel} */ (this._vm)));
+    }
   }
 
   disconnectedCallback() {
+    super.disconnectedCallback();
     this._teardownDismissal();
   }
 
@@ -212,12 +219,20 @@ class UpdateNotice extends HTMLElement {
     this._vm = vm;
     const ev = this._effectiveVm(vm);
     this._build(ev);
-    const dismissible = this._dismissible(ev);
+    this._registerDismissal(ev);
+  }
+
+  /**
+   * Register the open dialog with popup-manager, replacing any registration it
+   * already holds. Dismissible dialogs close via Escape and the browser/mobile
+   * Back button (routed through popup-manager); a required notice registers no
+   * close handler, so neither gesture can dismiss it.
+   * @private
+   * @param {UpdateViewModel} vm
+   */
+  _registerDismissal(vm) {
     this._teardownDismissal();
-    // Dismissible dialogs close via Escape and the browser/mobile Back button
-    // (routed through popup-manager); a required notice registers no close
-    // handler, so neither gesture can dismiss it.
-    this._releasePopupOpen = markPopupOpen(dismissible ? () => this._dismiss() : undefined);
+    this._releasePopupOpen = markPopupOpen(this._dismissible(vm) ? () => this._dismiss() : undefined);
   }
 
   /**

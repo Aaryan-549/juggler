@@ -2,6 +2,7 @@
 //     ██ ██ ██ ██ ▄▄ ██ ▄▄ ██    ██▄▄  ██▄█▄   Copyright (c) 2026 Julian Storer
 //   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
 
+import JugglerElement from './juggler-element.js';
 import { regroupHunks } from '../lib/diff-utils.js';
 import { cachedSnapshot, requestSnapshot } from '../lib/diff-snapshot-client.js';
 import {
@@ -223,9 +224,9 @@ function hunkLabel(hunk) {
  * it offers a comment anchor per line when it is not read-only, reports the line
  * the reader chose, and draws the comments it is handed back.
  * @class
- * @augments HTMLElement
+ * @augments JugglerElement
  */
-class DiffViewer extends HTMLElement {
+class DiffViewer extends JugglerElement {
   constructor() {
     super();
     /** @type {string} @private */
@@ -276,8 +277,6 @@ class DiffViewer extends HTMLElement {
     // been given is a width nothing was decided from.
     /** @type {boolean} @private */
     this._rendered = false;
-    /** @type {ResizeObserver|null} @private */
-    this._observer = null;
     /** @private */
     this._onPrefsChanged = () => {
       // A viewer the reader has set for themselves has stopped following the
@@ -306,25 +305,24 @@ class DiffViewer extends HTMLElement {
     // what stops a viewer that has been given no diff yet from drawing the empty
     // one it does not have.
     const roomChanged = this._measure();
-    if (typeof ResizeObserver !== 'undefined' && !this._observer) {
-      this._observer = new ResizeObserver(() => {
+    if (typeof ResizeObserver !== 'undefined') {
+      const observer = new ResizeObserver(() => {
         if (this._measure() && this._rendered) this.render();
       });
-      this._observer.observe(this);
+      observer.observe(this);
+      this.addCleanup(() => observer.disconnect());
     }
-    window.addEventListener(DIFF_VIEW_PREFS_EVENT, this._onPrefsChanged);
+    this.onWindow(DIFF_VIEW_PREFS_EVENT, this._onPrefsChanged);
     // A snapshot given while detached has had no job yet; mounting is when it
     // gets one, and the render that asks for it is the one a width change wants.
     if ((roomChanged && this._rendered) || !this._settled()) this.render();
   }
 
   disconnectedCallback() {
+    super.disconnectedCallback();
     // A viewer that has left the document no longer needs its diff. If it comes
     // back, mounting asks again, and a job that finished meanwhile is cached.
     this._dropRequest();
-    this._observer?.disconnect();
-    this._observer = null;
-    window.removeEventListener(DIFF_VIEW_PREFS_EVENT, this._onPrefsChanged);
   }
 
   /**

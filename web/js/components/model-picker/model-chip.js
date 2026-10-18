@@ -26,6 +26,7 @@
  * @module components/model-picker/model-chip
  */
 
+import JugglerElement from '../juggler-element.js';
 import { presentPopup } from '../../utils/popup-surface.js';
 import { modelLabelFromList } from '../../model/model-display.js';
 import { buildModelConfig } from '../../model/model-config.js';
@@ -39,7 +40,7 @@ import './model-tuning.js';
  * @typedef {import('./model-tuning.js').TuningModelEntry} TuningModelEntry
  */
 
-class ModelChip extends HTMLElement {
+class ModelChip extends JugglerElement {
   constructor() {
     super();
     /** @type {any[]} @private - The provider list the label and pills resolve against. */
@@ -69,10 +70,13 @@ class ModelChip extends HTMLElement {
   }
 
   connectedCallback() {
-    this.render();
+    // In place once the button exists, for the reason _update gives: a host
+    // that re-parents its chip keeps the node its open picker is anchored to.
+    this._update();
   }
 
   disconnectedCallback() {
+    super.disconnectedCallback();
     // The popover lives on document.body, so it outlives this element unless
     // released here.
     this.closeMini();

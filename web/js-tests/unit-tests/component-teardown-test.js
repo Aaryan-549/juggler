@@ -40,6 +40,19 @@
  * - A path field moved keeps what was typed in it and hears each key once.
  * - A workspace box header moved while its status read was outstanding asks
  *   again; one that already has its answer does not.
+ * - The leaf components — reply suggestions, reveal button, model tuning,
+ *   thread and tool-group tiles, code block, model chip — keep the nodes they
+ *   drew across a move or a put-back and hear each click on them once.
+ * - A token pill hears a click while it is in the document and not once it has
+ *   left.
+ * - A file view holds one mounted viewer while it is in the document and none
+ *   once it has left.
+ * - A dialog moved mid-question answers it and stops showing; put back, it
+ *   asks the next one normally.
+ * - An open update notice moved keeps its Escape/Back registration, gives it
+ *   up when removed, and takes it back when reinserted.
+ * - An approval widget moved mid-edit keeps the pattern being typed, and
+ *   answers one click once.
  * @module unit-tests/component-teardown
  */
 
@@ -59,6 +72,20 @@ import '../../js/components/no-conversations-overlay.js';
 import '../../js/components/no-project-overlay.js';
 import '../../js/components/conversation-footer.js';
 import '../../js/components/workspace-box-header.js';
+import '../../js/components/reply-suggestions-row.js';
+import '../../js/components/reveal-button.js';
+import '../../js/components/model-picker/model-tuning.js';
+import '../../js/components/model-picker/model-chip.js';
+import '../../js/components/thread-message.js';
+import '../../js/components/tool-group-message.js';
+import '../../js/components/code-block.js';
+import '../../js/components/token-display.js';
+import '../../js/components/file-view.js';
+import '../../js/components/modal-dialog.js';
+import '../../js/components/update-notice.js';
+import '../../js/components/action-confirmation.js';
+import fileViewerRegistry from '../../js/registries/file-viewer-registry.js';
+import { closeAllPopups } from '../../js/utils/popup-manager.js';
 
 /**
  * @typedef {object} TestResult
@@ -155,6 +182,35 @@ function socketListeners(events) {
 function socketDelta(events, baseline) {
   const now = socketListeners(events);
   return events.map((e) => `${e} ${now[e] - baseline[e] >= 0 ? '+' : ''}${now[e] - baseline[e]}`).join(', ');
+}
+
+/**
+ * How many `type` events reach `target` while `act` runs.
+ * @param {EventTarget} target
+ * @param {string} type
+ * @param {() => void} act
+ * @returns {number} The events heard.
+ */
+function countEvents(target, type, act) {
+  let n = 0;
+  const count = () => { n++; };
+  target.addEventListener(type, count);
+  try {
+    act();
+  } finally {
+    target.removeEventListener(type, count);
+  }
+  return n;
+}
+
+/**
+ * What `promise` has settled to by the next task, or `'pending'` — so a promise
+ * nothing will ever settle fails the case instead of hanging the suite.
+ * @param {Promise<any>} promise
+ * @returns {Promise<any>} Its value, or 'pending'.
+ */
+function settledBy(promise) {
+  return Promise.race([promise, new Promise((r) => setTimeout(() => r('pending'), 0))]);
 }
 
 /**
@@ -650,6 +706,233 @@ export async function runTests() {
       elsewhere.remove();
     }
   } catch (e) { failed++; errors.push(`workspace-box-header re-parented: ${e.message}`); }
+
+  /**
+   * Each leaf: how to make one that has drawn something, the node that drawing
+   * lives in, and — where it has one to offer — a click with the number of
+   * times it was heard.
+   * @type {Array<{tag: string, setup: (el: any) => void, node: (el: any) => Element|null, click?: (el: any) => number}>}
+   */
+  const leaves = [
+    {
+      tag: 'reply-suggestions',
+      setup: (el) => el.update(['teardown reply']),
+      node: (el) => el.querySelector('.reply-suggestion'),
+      click: (el) => countEvents(el, 'reply-suggestion-chosen', () => el.querySelector('.reply-suggestion').click()),
+    },
+    { tag: 'reveal-button', setup: (el) => { el.path = '/teardown'; }, node: (el) => el.querySelector('button') },
+    {
+      tag: 'model-tuning',
+      setup: (el) => { el.modelEntry = { thinkingLevels: ['low', 'high'] }; },
+      node: (el) => el.querySelector('.thinking-seg'),
+      click: (el) => countEvents(el, 'change', () => el.querySelector('.thinking-seg').click()),
+    },
+    { tag: 'thread-message', setup: () => {}, node: (el) => el.querySelector('article') },
+    { tag: 'tool-group-message', setup: () => {}, node: (el) => el.querySelector('article') },
+    {
+      tag: 'code-block',
+      setup: (el) => { el.setAttribute('language', 'js'); el.setAttribute('code', 'const teardown = 1;'); },
+      node: (el) => el.querySelector('pre'),
+      click: (el) => {
+        let n = 0;
+        el.copyCode = () => { n++; };
+        el.querySelector('.copy-btn').click();
+        return n;
+      },
+    },
+    {
+      tag: 'model-chip',
+      setup: (el) => { el.config = { provider: 'teardown', model: 'teardown-model' }; },
+      node: (el) => el.button,
+      click: (el) => countEvents(el, 'chip-toggle', () => el.button.click()),
+    },
+  ];
+  for (const leaf of leaves) {
+    const el = /** @type {any} */ (document.createElement(leaf.tag));
+    const elsewhere = document.createElement('div');
+    document.body.appendChild(elsewhere);
+    try {
+      try {
+        leaf.setup(el);
+        column.appendChild(el);
+        const drawn = leaf.node(el);
+        if (!drawn) throw new Error('a mounted one has drawn nothing');
+        elsewhere.appendChild(el);
+        if (leaf.node(el) !== drawn) throw new Error('a move redrew it');
+        let n = leaf.click ? leaf.click(el) : 1;
+        if (n !== 1) throw new Error(`after a move a click reached it ${n} time(s), want 1`);
+        el.remove();
+        elsewhere.appendChild(el);
+        if (leaf.node(el) !== drawn) throw new Error('a put-back redrew it');
+        n = leaf.click ? leaf.click(el) : 1;
+        if (n !== 1) throw new Error(`reinserted after a removal a click reached it ${n} time(s), want 1`);
+        passed++;
+      } finally {
+        el.remove();
+        elsewhere.remove();
+      }
+    } catch (e) { failed++; errors.push(`${leaf.tag} re-parented: ${e.message}`); }
+  }
+
+  try {
+    const pill = /** @type {any} */ (document.createElement('token-display'));
+    pill.setUsage({ total: 1000 });
+    const heard = () => countEvents(pill, 'token-display:show-transaction', () => pill.click());
+    const elsewhere = document.createElement('div');
+    document.body.appendChild(elsewhere);
+    try {
+      column.appendChild(pill);
+      elsewhere.appendChild(pill);
+      let n = heard();
+      if (n !== 1) throw new Error(`after a move a click reached it ${n} time(s), want 1`);
+      pill.remove();
+      n = heard();
+      if (n !== 0) throw new Error(`after removal a click still reached it ${n} time(s), want none`);
+      elsewhere.appendChild(pill);
+      n = heard();
+      if (n !== 1) throw new Error(`reinserted after a removal a click reached it ${n} time(s), want 1`);
+      passed++;
+    } finally {
+      pill.remove();
+      elsewhere.remove();
+    }
+  } catch (e) { failed++; errors.push(`token-display re-parented: ${e.message}`); }
+
+  {
+    const registry = /** @type {any} */ (fileViewerRegistry);
+    const realEnsure = registry.ensureInitialized;
+    const realResolve = registry.resolve;
+    let mounted = 0, torn = 0;
+    registry.ensureInitialized = async () => {};
+    registry.resolve = () => class { render() { mounted++; return () => { torn++; }; } };
+    const view = /** @type {any} */ (document.createElement('file-view'));
+    view.showPath = false;
+    const live = async () => {
+      await new Promise((r) => setTimeout(r, 0));
+      return mounted - torn;
+    };
+    const elsewhere = document.createElement('div');
+    document.body.appendChild(elsewhere);
+    try {
+      view.setSource({ path: 'teardown.txt', exists: true, size: 1 });
+      column.appendChild(view);
+      let n = await live();
+      if (n !== 1) throw new Error(`a mounted view holds ${n} live viewer(s), want 1`);
+      elsewhere.appendChild(view);
+      n = await live();
+      if (n !== 1) throw new Error(`after a move it holds ${n} live viewer(s), want 1`);
+      view.remove();
+      n = await live();
+      if (n !== 0) throw new Error(`after removal it holds ${n} live viewer(s), want none`);
+      elsewhere.appendChild(view);
+      n = await live();
+      if (n !== 1) throw new Error(`reinserted after a removal it holds ${n} live viewer(s), want 1`);
+      passed++;
+    } catch (e) {
+      failed++;
+      errors.push(`file-view re-parented: ${e.message}`);
+    } finally {
+      view.remove();
+      elsewhere.remove();
+      delete registry.ensureInitialized;
+      delete registry.resolve;
+      if (registry.ensureInitialized !== realEnsure) registry.ensureInitialized = realEnsure;
+      if (registry.resolve !== realResolve) registry.resolve = realResolve;
+    }
+  }
+
+  try {
+    const dialog = /** @type {any} */ (document.createElement('modal-dialog'));
+    const elsewhere = document.createElement('div');
+    document.body.appendChild(elsewhere);
+    try {
+      column.appendChild(dialog);
+      const asked = dialog.show({ type: 'confirm', title: 'Teardown', message: 'teardown?' });
+      elsewhere.appendChild(dialog);
+      const answer = await settledBy(asked);
+      if (answer !== null) throw new Error(`a move left its question ${answer === 'pending' ? 'unanswered' : `answered ${answer}`}, want null`);
+      // The connect rebuilds the panel empty, so a dialog still marked shown
+      // would be a blank modal over the app that nothing is waiting on.
+      if (dialog.classList.contains('show')) throw new Error('after a move it still shows a dialog nothing is asking');
+      dialog.remove();
+      elsewhere.appendChild(dialog);
+      const next = dialog.show({ type: 'alert', message: 'teardown again' });
+      if (!dialog.classList.contains('show')) throw new Error('reinserted after a removal it shows nothing when asked');
+      dialog.querySelector('.modal-backdrop-el').click();
+      const dismissed = await settledBy(next);
+      if (dismissed !== null) throw new Error(`reinserted, a backdrop click answered ${dismissed}, want null`);
+      passed++;
+    } finally {
+      dialog.remove();
+      elsewhere.remove();
+    }
+  } catch (e) { failed++; errors.push(`modal-dialog re-parented: ${e.message}`); }
+
+  try {
+    const notice = /** @type {any} */ (document.createElement('update-notice'));
+    const vm = {
+      present: false, updaterState: null, pct: null, error: null, errorStage: null,
+      currentVersion: '1.0.0', targetVersion: '9.9.9', appVersion: null,
+      appManagedServer: true, notice: null, serverUpdateAvailable: true, upToDate: false,
+    };
+    const elsewhere = document.createElement('div');
+    document.body.appendChild(elsewhere);
+    try {
+      column.appendChild(notice);
+      notice.open(vm);
+      elsewhere.appendChild(notice);
+      if (!notice.isOpen()) throw new Error('a move closed it');
+      // closeAllPopups is where Escape and Back both land.
+      closeAllPopups();
+      if (notice.isOpen()) throw new Error('after a move Escape no longer closes it');
+      notice.open(vm);
+      notice.remove();
+      closeAllPopups();
+      if (!notice.isOpen()) throw new Error('a removed notice still answered Escape');
+      elsewhere.appendChild(notice);
+      closeAllPopups();
+      if (notice.isOpen()) throw new Error('reinserted after a removal Escape no longer closes it');
+      passed++;
+    } finally {
+      notice.close();
+      notice.remove();
+      elsewhere.remove();
+    }
+  } catch (e) { failed++; errors.push(`update-notice re-parented: ${e.message}`); }
+
+  try {
+    const widget = /** @type {any} */ (document.createElement('action-confirmation'));
+    /** @type {string[]} */
+    const answers = [];
+    widget.setOptions({
+      options: [
+        { label: 'Yes', value: 'yes', style: 'primary' },
+        { label: "Yes, don't ask again", value: 'always', style: 'secondary', patterns: ['git push *'], rules: [{ tool: 'bash', pattern: 'git push *' }] },
+      ],
+    }, (/** @type {string} */ v) => answers.push(v), { onRevise: () => null });
+    const elsewhere = document.createElement('div');
+    document.body.appendChild(elsewhere);
+    try {
+      column.appendChild(widget);
+      widget.querySelector('.pattern-edit-btn').click();
+      const input = widget.querySelector('.pattern-edit-input');
+      if (!input || !widget.querySelector('.action-approval-option.editing')) throw new Error('the pencil did not open the pattern editor');
+      input.value = 'git pull *';
+      elsewhere.appendChild(widget);
+      if (widget.querySelector('.pattern-edit-input') !== input || input.value !== 'git pull *') {
+        throw new Error('a move threw away the pattern being typed');
+      }
+      if (!widget.querySelector('.action-approval-option.editing')) throw new Error('a move ended the edit');
+      widget.remove();
+      elsewhere.appendChild(widget);
+      widget.querySelector('.action-confirmation-button[data-value="yes"]').click();
+      if (answers.join(',') !== 'yes') throw new Error(`reinserted, one click answered ${JSON.stringify(answers)}, want ["yes"]`);
+      passed++;
+    } finally {
+      widget.remove();
+      elsewhere.remove();
+    }
+  } catch (e) { failed++; errors.push(`action-confirmation re-parented: ${e.message}`); }
 
   column.remove();
   return { passed, failed, errors };

@@ -53,13 +53,14 @@
  *   - 'confirm': Show message with Yes/No buttons
  *   - 'prompt': Show input field with OK/Cancel buttons
  */
+import JugglerElement from './juggler-element.js';
 import { markPopupOpen } from '../utils/popup-manager.js';
 import { createButton as makeButton, escapeHtml } from '../../sdk/lib/html.js';
 import { focusWhenShown } from '../utils/focus.js';
 import { fadeOutScrims } from '../utils/modal-scrim.js';
 import { t } from '../../sdk/lib/i18n.js';
 
-class ModalDialog extends HTMLElement {
+class ModalDialog extends JugglerElement {
   constructor() {
     super();
     /** @type {((value: unknown) => void)|null} @private */
@@ -98,10 +99,18 @@ class ModalDialog extends HTMLElement {
 
   connectedCallback() {
     this.classList.add('modal-shell');
+    // Rebuilt on every connect, deliberately: showModal re-appends the singleton
+    // before each show, and show() relies on the fresh markup that gives it
+    // rather than resetting what a previous dialog left behind (an "Other"
+    // field shown, a value typed into it).
     this.render();
   }
 
   disconnectedCallback() {
+    super.disconnectedCallback();
+    // A dialog that leaves the document has answered its question (below), so
+    // it must not come back showing the empty panel the next connect builds.
+    this.classList.remove('show', 'is-notice');
     this._runShowCleanups();
     if (this.handleKeydown) {
       document.removeEventListener('keydown', this.handleKeydown);
