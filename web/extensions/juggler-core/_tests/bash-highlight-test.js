@@ -195,8 +195,8 @@ export async function runTests(_ctx) {
 
   // === stripLeadingProjectCd: tile-only removal of a redundant leading `cd` ===
 
-  const PROJECT = '/Users/jules/code/juggler-pro';
-  const HOME = '/Users/jules';
+  const PROJECT = '/Users/dev/code/myapp';
+  const HOME = '/Users/dev';
 
   /**
    * @param {string} label
@@ -221,7 +221,7 @@ export async function runTests(_ctx) {
   tile('drops a single-quoted target',
     `cd '${PROJECT}' && ls`, 'ls');
   tile('drops a ~-form target',
-    'cd ~/code/juggler-pro && ls', 'ls');
+    'cd ~/code/myapp && ls', 'ls');
   tile('drops a relative no-op target',
     'cd . && ls', 'ls');
   tile('drops it regardless of spacing around the operator',

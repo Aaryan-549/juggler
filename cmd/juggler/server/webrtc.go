@@ -56,8 +56,8 @@ const dataChannelIngressKind = "datachannel"
 
 // RendezvousProtocolVersion is the http-over-DataChannel / signaling protocol
 // version the binary speaks. It is published by GET /api/version so a remote
-// bootstrap page (e.g. the juggler.studio rendezvous client) can refuse to
-// boot against a mismatched binary.
+// bootstrap page (a rendezvous client reaching the server over a DataChannel)
+// can refuse to boot against a mismatched binary.
 const RendezvousProtocolVersion = 2
 
 type webRTCChunk struct {
@@ -78,7 +78,7 @@ type webRTCChunkAssembly struct {
 // LAN HTTP path. Once ICE succeeds, all realtime protocol messages flow over the
 // browser-created DataChannel and the signaling path goes idle. It owns only HTTP
 // request parsing/validation; the peer-connection core is acceptWebRTCOffer,
-// shared with the juggler.studio rendezvous client.
+// shared with any registered WAN transport (server.TunnelHost).
 func (s *Server) handleWebRTCSignal(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		handlers.WriteMessageError(w, r, http.StatusMethodNotAllowed, msg.New("method not allowed"))
@@ -123,8 +123,8 @@ func (e *badOfferError) Unwrap() error { return e.err }
 // acceptWebRTCOffer builds the peer connection for one already-validated SDP
 // offer, wires the browser-created "juggler" DataChannel to the realtime loop,
 // and returns the local SDP answer. It is the shared core for both the LAN
-// /api/webrtc/signal HTTP handler and the outbound juggler.studio rendezvous
-// client. On any error it closes the peer connection before returning. ctx
+// /api/webrtc/signal HTTP handler and any registered WAN transport that
+// relays an offer (TunnelHost.AcceptWebRTCOffer). On any error it closes the peer connection before returning. ctx
 // bounds the synchronous setup/ICE-gathering phase only; the established
 // connection outlives ctx on its own pcCtx.
 func (s *Server) acceptWebRTCOffer(ctx context.Context, offer webrtc.SessionDescription) (*webrtc.SessionDescription, error) {

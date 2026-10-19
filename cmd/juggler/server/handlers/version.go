@@ -22,8 +22,8 @@ func NewVersionAPI(protocolVersion int) *VersionAPI {
 }
 
 // HandleVersion returns the server version and the rendezvous protocol version
-// (the juggler.studio bootstrap compares the latter against its own constant
-// and refuses to boot on a mismatch).
+// (a remote bootstrap page compares the latter against its own constant and
+// refuses to boot on a mismatch).
 func (api *VersionAPI) HandleVersion(w http.ResponseWriter, r *http.Request) {
 	WriteJSON(w, r, 0, map[string]any{
 		"version":         core.Version,

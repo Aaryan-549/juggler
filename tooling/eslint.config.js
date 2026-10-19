@@ -195,18 +195,18 @@ export default [
         // Session-wide flow (strategy onActivate/onWorkerIdle, tool execution)
         // runs in the ONE engine, decided by the worker — never in a per-iframe
         // "owner" elected by matching an iframe nonce stored in the doc. That
-        // trick silently stopped hooks firing for any conversation reopened in a
-        // fresh page. The worker now dispatches run-strategy-hook to the engine.
+        // trick silently stops hooks firing for any conversation reopened in a
+        // fresh page. The worker dispatches run-strategy-hook to the engine.
         {
           selector: "Literal[value='strategyOwnerIframeId']",
-          message: 'FORBIDDEN: strategyOwnerIframeId reintroduces per-viewer ownership election for session-wide flow. The worker drives strategy hooks in the engine (run-strategy-hook). See web/sdk/lib/client-role.js iframeId() docs.'
+          message: 'FORBIDDEN: strategyOwnerIframeId reintroduces per-viewer ownership election for session-wide flow. The worker drives strategy hooks in the engine (run-strategy-hook).'
         },
         {
-          selector: "AssignmentExpression[left.object.name='window'][left.property.name=/^(apiService|wsService|actionRegistry|llmParser|actionParser|dropParser|actionExecutor|TagParser|syntaxHighlighter|Session|Conversation|planMode|eventBus|escapeHtml)$/]",
+          selector: "AssignmentExpression[left.object.name='window'][left.property.name=/^(apiService|wsService|actionExecutor|Session|Conversation|eventBus|escapeHtml)$/]",
           message: 'Do not assign service/registry singletons to window. Use ES6 export default instead.'
         },
         {
-          selector: "MemberExpression[object.name='window'][property.name=/^(apiService|wsService|actionRegistry|llmParser|actionParser|dropParser|actionExecutor|TagParser|syntaxHighlighter|Session|Conversation|eventBus)$/]",
+          selector: "MemberExpression[object.name='window'][property.name=/^(apiService|wsService|actionExecutor|Session|Conversation|eventBus)$/]",
           message: 'Do not access services/registries via window globals. Import them using ES6 imports instead. Example: import apiService from \'./services/api.js\''
         },
         // ===================================================================
@@ -231,7 +231,7 @@ export default [
         // This prevents hardcoded formatting and ensures provider flexibility.
         {
           selector: "AssignmentExpression[operator='+='][left.name=/^(context|llmContext|llmMessage|currentMessage)$/]",
-          message: 'FORBIDDEN: Manual LLM context string concatenation detected. Use ContextBuilder semantic API instead. Import { ContextBuilder } from \'./services/context-builder.js\' and use the builder API. See CLAUDE.md Context Building Rules.'
+          message: 'FORBIDDEN: Manual LLM context string concatenation detected. Use ContextBuilder semantic API instead. Import { ContextBuilder } from \'./services/context-builder.js\' and use the builder API.'
         },
         // ===================================================================
         // Prevent dangerous String() coercion on error objects
@@ -387,7 +387,7 @@ export default [
         'error',
         {
           selector: "AssignmentExpression[left.property.name='items'][left.object.type='ThisExpression']",
-          message: 'FORBIDDEN: Direct assignment to this.items detected. Route through worker: workerManager.clearItems() or other worker commands.'
+          message: 'FORBIDDEN: Direct assignment to this.items detected. Route the mutation through a worker command.'
         },
         {
           selector: "AssignmentExpression[left.property.name='_contextItems'][left.object.type='ThisExpression']",

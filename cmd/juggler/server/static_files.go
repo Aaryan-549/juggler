@@ -402,8 +402,8 @@ func (s *Server) serveSandbox(w http.ResponseWriter, r *http.Request) {
 // serveFavicon serves the logo SVG directly as the favicon. Serving the bytes
 // (rather than 301-redirecting to the versioned asset path) is robust across
 // every transport: a fetch/service-worker context that doesn't follow a
-// cross-path redirect — e.g. a request proxied over the juggler.studio P2P
-// DataChannel — still gets the icon.
+// cross-path redirect — e.g. a request proxied over a WebRTC DataChannel —
+// still gets the icon.
 func (s *Server) serveFavicon(w http.ResponseWriter, r *http.Request) {
 	content, err := s.readWebAsset("resources/juggler-logo.svg", web.Files)
 	if err != nil {
