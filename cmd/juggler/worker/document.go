@@ -433,18 +433,19 @@ func (cd *ConversationDocument) foldFingerprintUnchangedLocked(arr *ycrdt.YArray
 	return current, start >= 0 && start+count <= len(current)
 }
 
-// refoldFromLive rebuilds summary's nested copy of the folded range, and its
-// FoldedRuns, from current: the array as read in the hold that splices it.
+// refoldFromLive refreshes summary's FoldedRuns from current, the array as read
+// in the hold that splices it, and checks that its nested items end in its
+// prompt item.
 //
 // The fingerprint only holds the range's wire form steady, and a thread's wire
 // form is its call and result, never its transcript. So a message sent into an
 // idle sub-thread inside the range while the reducer ran leaves the fingerprint
-// unmoved, and a nested copy built before the reduce would replace that thread
-// with one that never received it. The summary still stands — it was made from
-// exactly the wire form that is there now — so the fold commits, carrying the
-// live items. keep is spliceSummaryIntoPrefix's: indices left in the array, not
-// folded. The summary's own nested prompt item, its last, is kept as built.
-// Reports false when summary's nested items do not end in its prompt item.
+// unmoved. The summary still stands — it was made from exactly the wire form
+// that is there now — so the fold commits, carrying the live items: the nested
+// copy is taken from the live maps by spliceSummaryIntoPrefix, and only the run
+// pairing is recomputed here. keep is spliceSummaryIntoPrefix's: indices left
+// in the array, not folded. Reports false when summary's nested items do not
+// end in its prompt item.
 func refoldFromLive(summary ConversationItem, current []ConversationItem, start, count int, keep []int) (ConversationItem, bool) {
 	var built []ConversationItem
 	if err := json.Unmarshal(summary.Items, &built); err != nil || len(built) == 0 {
@@ -464,41 +465,76 @@ func refoldFromLive(summary ConversationItem, current []ConversationItem, start,
 			folded = append(folded, current[i])
 		}
 	}
-	nested := make([]ConversationItem, 0, len(folded)+1)
-	for _, it := range folded {
-		nested = append(nested, condenseForRefold(it))
-	}
-	nestedJSON, err := json.Marshal(append(nested, prompt))
-	if err != nil {
-		return summary, false
-	}
-	summary.Items = nestedJSON
 	summary.FoldedRuns = foldedRunsIn(folded)
 	return summary, true
 }
 
 // spliceSummaryIntoPrefix replaces count items at start with the single summary
-// item, preserving the summary's nested-item order via insertItemWithNested.
-// keep lists ascending array indices inside the range that stay in the array
-// untouched (standing context items a recovery fold steps around); they close
-// up, in order, at start, and the summary follows them. Callers must be inside
-// an active Transact and hold ycrdtMu.
+// item. keep lists ascending array indices inside the range that stay in the
+// array untouched (standing context items a recovery fold steps around); they
+// close up, in order, at start, and the summary follows them. Callers must be
+// inside an active Transact and hold ycrdtMu.
+//
+// The summary's nested copy of the folded items is taken from the live maps
+// being folded, read before they are deleted (foldedItemSnapshot) — not from
+// summary.Items, which went through ConversationItem and so holds only the
+// fields it declares. A fold moves history and must not edit it: a key a
+// plugin or the browser wrote, or a draft held as a Y.Map, nests as it stood.
+// Of summary.Items only the trailing prompt item is used; a summary carrying
+// no nested items gets none.
 func spliceSummaryIntoPrefix(arr *ycrdt.YArray, start, count int, keep []int, summary ConversationItem) {
-	if len(keep) == 0 {
-		arr.Delete(ycrdt.Number(start), ycrdt.Number(count))
-		insertItemWithNested(arr, start, summary)
-		return
-	}
 	kept := make(map[int]bool, len(keep))
 	for _, i := range keep {
 		kept[i] = true
 	}
-	for i := start + count - 1; i >= start; i-- {
-		if !kept[i] {
-			arr.Delete(ycrdt.Number(i), 1)
+	var folded []yNode
+	if summary.Items != nil {
+		for i := start; i < start+count; i++ {
+			if !kept[i] {
+				folded = append(folded, foldedItemSnapshot(arr.Get(ycrdt.Number(i))))
+			}
 		}
 	}
-	insertItemWithNested(arr, start+len(keep), summary)
+	if len(keep) == 0 {
+		arr.Delete(ycrdt.Number(start), ycrdt.Number(count))
+	} else {
+		for i := start + count - 1; i >= start; i-- {
+			if !kept[i] {
+				arr.Delete(ycrdt.Number(i), 1)
+			}
+		}
+	}
+	insertFoldSummary(arr, start+len(keep), summary, folded)
+}
+
+// insertFoldSummary inserts summary into arr at index with folded as its nested
+// items, followed by summary's prompt item (the last of summary.Items, when it
+// is the one CompactionPromptItemID names). A summary with no nested items goes
+// in as it is. Callers must be inside an active Transact and hold ycrdtMu.
+func insertFoldSummary(arr *ycrdt.YArray, index int, summary ConversationItem, folded []yNode) {
+	if summary.Items == nil {
+		insertItemWithNested(arr, index, summary)
+		return
+	}
+	var prompt *ConversationItem
+	var built []ConversationItem
+	if json.Unmarshal(summary.Items, &built) == nil && len(built) > 0 {
+		if last := built[len(built)-1]; summary.CompactionPromptItemID != "" && last.ItemID == summary.CompactionPromptItemID {
+			prompt = &last
+		}
+	}
+	stripped := summary
+	stripped.Items = nil
+	ymap := conversationItemToYMap(stripped)
+	arr.Insert(ycrdt.Number(index), ycrdt.ArrayAny{ymap})
+	nested := ycrdt.NewYArray()
+	ymap.Set("items", nested)
+	for _, n := range folded {
+		appendYNode(nested, n)
+	}
+	if prompt != nil {
+		nested.Insert(nested.GetLength(), ycrdt.ArrayAny{conversationItemToYMap(*prompt)})
+	}
 }
 
 func (cd *ConversationDocument) deleteMessages(indices []int) {

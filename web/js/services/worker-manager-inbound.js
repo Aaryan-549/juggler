@@ -160,6 +160,7 @@ import { setBootstrapSummarizationPrompt } from '../utils/compaction-utils.js';
  * @property {string} [message] - English text
  * @property {string} [code] - Machine-readable reason
  * @property {ServerTextField} [text] - The message, as a server message
+ * @property {string} [threadItemId] - The thread the transition was on; '' for the root
  */
 
 /**
@@ -352,7 +353,7 @@ function onError(wm, conversationId, data) {
 }
 
 /** @type {HandlerFor<'status'>} */
-function onStatus(wm, conversationId) {
+function onStatus(wm, conversationId, data) {
   // Processing state syncs via Yjs metadata (doc.metadata.processingState),
   // which LLMState observes directly — this message carries nothing of its
   // own. What it is, is the worker announcing a state transition, and the
@@ -361,7 +362,12 @@ function onStatus(wm, conversationId) {
   // metadata (llmState, the bin guard, the attention edges), so applying
   // the batch here is what keeps those answers from being one window out
   // of date. Transitions only — the streaming firehose stays batched.
-  conversationOf(wm, conversationId)?.flushPendingSyncs?.();
+  const conversation = conversationOf(wm, conversationId);
+  conversation?.flushPendingSyncs?.();
+  // A validation-error is a notice as well as a rest, and this event is where
+  // it is read: the frame can lose it to a sibling run (see
+  // Conversation.handleValidationNotice).
+  if (data.status === 'validation-error') conversation?.handleValidationNotice?.(data);
 }
 
 /** @type {HandlerFor<'ack'>} */

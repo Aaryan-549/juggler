@@ -7,6 +7,7 @@ package worker
 import (
 	"encoding/json"
 	"testing"
+	"time"
 
 	"juggler/cmd/juggler/providers/provider"
 )
@@ -534,6 +535,52 @@ func TestAwaitingToolsRepublishesRunStatus(t *testing.T) {
 	for _, field := range []string{"outputTokens", "inputTokens", "description", "phase"} {
 		if _, ok := entry[field]; ok {
 			t.Fatalf("%s survived the hand-off to tools: %v", field, entry[field])
+		}
+	}
+}
+
+// TestValidationErrorEventNamesItsThreadWhileASiblingRuns pins where a
+// validation-error's verdict reaches the client. A thread that rests while a
+// sibling is still live drops out of the run registry, and the frame's
+// top-level fields are then republished from the live sibling — so the frame
+// no longer says that anything was refused. The `status` event is the one
+// record of it, and it has to say which thread it was about.
+func TestValidationErrorEventNamesItsThreadWhileASiblingRuns(t *testing.T) {
+	w := NewConversationWorker("test-validation-sibling", "user:test")
+	if !w.claimLLM("msg_sibling") {
+		t.Fatal("the sibling's claim must succeed")
+	}
+	events := make(chan []byte, 32)
+	w.SetCallback("status-probe", func(b []byte) { events <- b })
+	w.turn.thread.itemID = "msg_refused"
+
+	w.currentRun().sendStatusWithCode("validation-error", "refused", nil, "no-model")
+
+	if got, _ := w.readProcessingState()["status"].(string); got == "validation-error" {
+		t.Fatalf("the frame kept the refused thread's status (%q) with a sibling live; this test assumes the projection replaces it", got)
+	}
+	deadline := time.After(5 * time.Second)
+	for {
+		select {
+		case b := <-events:
+			var ev struct {
+				Type         string  `json:"type"`
+				Status       string  `json:"status"`
+				Code         string  `json:"code"`
+				ThreadItemID *string `json:"threadItemId"`
+			}
+			if json.Unmarshal(b, &ev) != nil || ev.Type != "status" {
+				continue
+			}
+			if ev.Status != "validation-error" || ev.Code != "no-model" {
+				t.Fatalf("status event = %+v, want the validation-error with its code", ev)
+			}
+			if ev.ThreadItemID == nil || *ev.ThreadItemID != "msg_refused" {
+				t.Fatalf("the status event must name the refused thread; got %v", ev.ThreadItemID)
+			}
+			return
+		case <-deadline:
+			t.Fatal("no status event was broadcast")
 		}
 	}
 }

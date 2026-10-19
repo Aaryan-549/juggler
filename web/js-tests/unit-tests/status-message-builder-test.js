@@ -83,10 +83,8 @@ export async function runTests() {
       // LLMState's own fallbacks, through the frames that reach them.
       const llm = /** @type {any} */ (new LLMState());
       const convId = 'conv-status-builder-xa';
-      /** @type {string[]} */
-      const warnings = [];
       llm._conversations.set(convId, {
-        showWarning: (/** @type {string} */ m) => { warnings.push(m); },
+        showWarning: () => {},
         restorePendingMessage: () => {},
         trySelfHealMissingModel: () => false,
         armSelfHeal: () => {},
@@ -108,9 +106,6 @@ export async function runTests() {
         see('llm compacting fallback', llm.getStatusMessage(convId));
         llm.updateStatus(convId, 'error', {});
         see('llm unknown error', llm.getStatusMessage(convId));
-        publish({ status: 'validation-error' });
-        assert(warnings.length === 1, `validation-error showed ${warnings.length} warnings, want 1`);
-        see('llm validation fallback', warnings[0]);
       } finally {
         llm.stop(convId);
       }

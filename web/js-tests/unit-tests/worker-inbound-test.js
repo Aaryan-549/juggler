@@ -201,6 +201,26 @@ export async function runTests(_ctx) {
       `plain English under en-XA: ${outcome instanceof Error ? outcome.message : String(outcome)}`);
   });
 
+  await run('a validation-error status event reaches the conversation as a notice; other statuses do not', async () => {
+    const conv = 'conv_inbound_validation';
+    const wm = managerWithEntry(conv);
+    /** @type {any[]} */
+    const notices = [];
+    let flushes = 0;
+    const conversation = {
+      flushPendingSyncs: () => { flushes++; },
+      handleValidationNotice: (/** @type {any} */ n) => { notices.push(n); },
+    };
+    wm._session = { conversations: new Map([[conv, conversation]]) };
+    routeWorkerMessage(wm, conv, /** @type {any} */ ({ type: 'status', status: 'streaming', message: '' }));
+    routeWorkerMessage(wm, conv, /** @type {any} */ ({
+      type: 'status', status: 'validation-error', message: 'refused', code: 'no-model', threadItemId: 'msg_a',
+    }));
+    assert(flushes === 2, `every status event applies the pending sync batch; got ${flushes}`);
+    assert(notices.length === 1 && notices[0].code === 'no-model' && notices[0].threadItemId === 'msg_a',
+      `exactly the validation-error must reach the conversation, with its code and thread; got ${JSON.stringify(notices)}`);
+  });
+
   await run('create-thread-response settles its request, a cancelled one as an AbortError', async () => {
     const conv = 'conv_inbound_thread';
     const wm = managerWithEntry(conv);

@@ -282,6 +282,10 @@ func (s *Server) leaveViewerGroup(clientID string) {
 // registerClient atomically admits a client to the process-scoped client hub.
 func (s *Server) registerClient(client RealtimeClient) bool { return s.hub.register(client) }
 
+// reserveClientSlot holds a viewer slot for a client about to register; false
+// when the viewer limit is reached (see clientHub.reserve).
+func (s *Server) reserveClientSlot(client RealtimeClient) bool { return s.hub.reserve(client) }
+
 // unregisterClient removes a client from the process-scoped client hub.
 //
 // A viewer leaving empty-handed is told to the session: with no window left,

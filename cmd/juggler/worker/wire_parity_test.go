@@ -42,7 +42,13 @@ type wireManifest struct {
 			HoldsClaim bool   `json:"holdsClaim"`
 			Emitted    bool   `json:"emitted"`
 		} `json:"processingStatuses"`
-		Activities     []string `json:"activities"`
+		Activities      []string `json:"activities"`
+		ValidationCodes struct {
+			Codes []struct {
+				Code    string `json:"code"`
+				Bounced bool   `json:"bounced"`
+			} `json:"codes"`
+		} `json:"validationCodes"`
 		PendingRequest struct {
 			Statuses []string `json:"statuses"`
 			Kinds    []string `json:"kinds"`
@@ -577,4 +583,66 @@ func TestWireParityDocKeys(t *testing.T) {
 			t.Errorf("runProjectedFields has %q, which docKeys.processingState does not declare", f)
 		}
 	}
+}
+
+// TestWireParityValidationCodes pins the codes a validation-error status
+// carries, and which of them bounce the send. The client hands the message back
+// to the composer for a bounced code only (llm-state.js, held to the same
+// manifest by the JS half): handing it back after a turn that ran would put an
+// already-sent message in the box. A code is bounced when it is raised inside
+// handleSendMessage, which refuses before the user item is written; every
+// other site reports a turn that already holds the message.
+func TestWireParityValidationCodes(t *testing.T) {
+	m := loadWireManifest(t)
+	src := parseWorkerSource(t)
+
+	found := map[string]bool{} // code → bounced
+	for name := range src.files {
+		for _, decl := range src.files[name].Decls {
+			fn, ok := decl.(*ast.FuncDecl)
+			if !ok || fn.Body == nil {
+				continue
+			}
+			inSend := fn.Name.Name == "handleSendMessage"
+			ast.Inspect(fn.Body, func(n ast.Node) bool {
+				switch n := n.(type) {
+				case *ast.CallExpr:
+					sel, ok := n.Fun.(*ast.SelectorExpr)
+					if ok && sel.Sel.Name == "sendStatusWithCode" && len(n.Args) == 4 && strLit(n.Args[0]) == string(statusValidationError) {
+						if code := strLit(n.Args[3]); code != "" {
+							found[code] = inSend
+						}
+					}
+				case *ast.CompositeLit:
+					if id, ok := n.Type.(*ast.Ident); ok && id.Name == "userFixableFailure" {
+						for _, elt := range n.Elts {
+							if kv, ok := elt.(*ast.KeyValueExpr); ok {
+								if key, ok := kv.Key.(*ast.Ident); ok && key.Name == "code" {
+									if code := strLit(kv.Value); code != "" {
+										found[code] = false
+									}
+								}
+							}
+						}
+					}
+				}
+				return true
+			})
+		}
+	}
+	codes := stringSet{}
+	for code := range found {
+		codes[code] = true
+	}
+	requireAtLeast(t, "validation codes", codes, 3)
+
+	declared := stringSet{}
+	for _, c := range m.Worker.ValidationCodes.Codes {
+		declared[c.Code] = true
+		if bounced, ok := found[c.Code]; ok && bounced != c.Bounced {
+			t.Errorf("validation code %q: %s says bounced %v, but the worker raises it %s", c.Code, wireFixture, c.Bounced,
+				map[bool]string{true: "in handleSendMessage, before the user item is written", false: "after the turn has the message"}[bounced])
+		}
+	}
+	requireSameSet(t, "validation-error codes", codes, declared)
 }

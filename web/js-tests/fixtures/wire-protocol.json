@@ -66,6 +66,16 @@
 
     "activities": ["awaiting_llm", "calling_llm"],
 
+    "validationCodes": {
+      "$comment": "The `code` on a validation-error status. bounced: the worker refused the send before writing the user item (handleSendMessage), so the client owes the message back; otherwise the turn ran and failed with the message already in the transcript.",
+      "codes": [
+        { "code": "no-model", "bounced": true },
+        { "code": "provider-unavailable", "bounced": false },
+        { "code": "auth-required", "bounced": false },
+        { "code": "provider-setup", "bounced": false }
+      ]
+    },
+
     "pendingRequest": {
       "statuses": ["requested", "claimed", "completed", "error", "cancelled"],
       "kinds": ["createThread", "continue", "deliverTaskOutput"]

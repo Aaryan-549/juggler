@@ -37,6 +37,7 @@ const cancelFrame = typeof cancelAnimationFrame === 'function'
  */
 const THROUGHPUT_STALL_MS = 2000;
 
+
 /**
  * Weight given to the newest observation in the throughput moving average.
  * Low, because provider chunks arrive lumpily and an unsmoothed rate is mostly
@@ -835,8 +836,10 @@ class LLMState {
     switch (status) {
       case 'preparing': {
         // A turn was accepted, so the model divergence (if any) is resolved —
-        // re-arm the missing-model self-heal's one-shot latch.
+        // re-arm the missing-model self-heal's one-shot latch — and a message
+        // sent to this thread is in the transcript, so its record is spent.
         this._conversations.get(conversationId)?.armSelfHeal?.();
+        this._conversations.get(conversationId)?.settlePendingMessage?.(threadItemId);
         this.start(conversationId, frame.startedAt, threadItemId);
         this.updateStatus(conversationId, 'preparing', tokenData, threadItemId);
         break;
@@ -870,31 +873,14 @@ class LLMState {
         this._stopThread(conversationId, key);
         break;
 
-      case 'validation-error': {
-        const conversation = this._conversations.get(conversationId);
-
-        // The missing-model self-heal — recover from the "no-model"
-        // divergence: the worker's doc resolved no model, yet this client is
-        // displaying a real one. The conversation owns the resync + one-shot
-        // resend (see
-        // trySelfHealMissingModel); a true return means the turn is on its way
-        // again and there is nothing to warn about.
-        if (conversation && frame.code === 'no-model'
-            && conversation.trySelfHealMissingModel(threadItemId)) {
-          this._stopThread(conversationId, key);
-          break;
-        }
-
-        // Not self-healable (no code match, no local model, nothing pending, or
-        // the self-heal was already spent): surface the warning and restore the
-        // user's text so they can act on it.
-        if (conversation) {
-          conversation.showWarning(message || t('Validation error'));
-          conversation.restorePendingMessage();
-        }
+      case 'validation-error':
+        // A rest: the run is over. What the user is told — the warning, the
+        // message handed back, the missing-model self-heal — comes from the
+        // worker's `status` event (Conversation.handleValidationNotice), not
+        // from here: a thread that rests while a sibling is live leaves no trace
+        // of its verdict in the frame, whose top level is then the sibling's.
         this._stopThread(conversationId, key);
         break;
-      }
 
       default:
         console.warn(`[LLMState] Unknown status: ${status}`);

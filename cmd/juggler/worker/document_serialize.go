@@ -307,6 +307,93 @@ func cloneContextItemYMap(src *ycrdt.YMap, newID string) *ycrdt.YMap {
 	return ycrdt.NewYMap(entries)
 }
 
+// yNode is a value read out of the document with its shape remembered: a Y.Map,
+// a Y.Array, or a plain value. It is how a range of items is moved without
+// passing through ConversationItem, which carries only the fields it declares —
+// so a key a plugin or the browser wrote, or a draft held as a Y.Map, comes out
+// the other side as it went in. A snapshot holds copies only, so the items it
+// was read from can be deleted before it is written back.
+type yNode struct {
+	isMap, isArray bool
+	entries        map[string]yNode // a Y.Map's entries
+	elems          []yNode          // a Y.Array's elements
+	plain          any              // anything else, deep-copied
+}
+
+// snapshotYValue reads v, and everything under it, into a yNode. Callers MUST
+// hold ycrdtMu.
+func snapshotYValue(v any) yNode {
+	switch t := v.(type) {
+	case *ycrdt.YMap:
+		n := yNode{isMap: true, entries: map[string]yNode{}}
+		t.ForEach(func(key string, val any, _ *ycrdt.YMap) {
+			n.entries[key] = snapshotYValue(val)
+		})
+		return n
+	case *ycrdt.YArray:
+		n := yNode{isArray: true}
+		for _, el := range t.ToArray() {
+			n.elems = append(n.elems, snapshotYValue(el))
+		}
+		return n
+	default:
+		return yNode{plain: convertToYcrdt(fromYcrdt(v))}
+	}
+}
+
+// appendYNode writes n at the end of the live array arr. Shared-type children
+// are written only once their parent is in the document, the order
+// insertItemWithNested keeps for the reason it gives. A nil plain value is
+// skipped: y-crdt corrupts nil on encode. Callers must be inside an active
+// Transact and hold ycrdtMu.
+func appendYNode(arr *ycrdt.YArray, n yNode) {
+	end := arr.GetLength()
+	switch {
+	case n.isMap:
+		m := prelimYMap(n)
+		arr.Insert(end, ycrdt.ArrayAny{m})
+		fillYMap(m, n)
+	case n.isArray:
+		child := ycrdt.NewYArray()
+		arr.Insert(end, ycrdt.ArrayAny{child})
+		for _, el := range n.elems {
+			appendYNode(child, el)
+		}
+	case n.plain != nil:
+		arr.Insert(end, ycrdt.ArrayAny{n.plain})
+	}
+}
+
+// prelimYMap is a new Y.Map holding n's plain entries; fillYMap writes the rest
+// once it is in the document.
+func prelimYMap(n yNode) *ycrdt.YMap {
+	entries := map[string]any{}
+	for key, child := range n.entries {
+		if !child.isMap && !child.isArray && child.plain != nil {
+			entries[key] = child.plain
+		}
+	}
+	return ycrdt.NewYMap(entries)
+}
+
+// fillYMap writes n's shared-type entries into m, which is in the document.
+func fillYMap(m *ycrdt.YMap, n yNode) {
+	for key, child := range n.entries {
+		switch {
+		case child.isMap:
+			c := prelimYMap(child)
+			m.Set(key, c)
+			fillYMap(c, child)
+		case child.isArray:
+			c := ycrdt.NewYArray()
+			m.Set(key, c)
+			for _, el := range child.elems {
+				appendYNode(c, el)
+			}
+		}
+	}
+}
+
 // yMapToConversationItem converts a *ycrdt.YMap back to a ConversationItem.
 func yMapToConversationItem(m *ycrdt.YMap) ConversationItem {
 	item := ConversationItem{

@@ -365,16 +365,35 @@ func (t *OperationTracker) PromotePending(threadItemID string) []ConversationIte
 	for i := range pending {
 		pending[i].TransactionID = ""
 	}
+	// What is written is the queued maps themselves, read before the queue is
+	// emptied — not pending, which went through ConversationItem and carries
+	// only the fields it declares. A queued context item holds whatever the
+	// browser or its plugin put there, and arrives with all of it.
 	length := int(queue.GetLength())
+	moved := make([]yNode, 0, length)
+	for i := 0; i < length; i++ {
+		n := snapshotYValue(queue.Get(ycrdt.Number(i)))
+		if n.isMap {
+			delete(n.entries, "transactionId")
+		}
+		moved = append(moved, n)
+	}
 	t.doc.doc.Transact(func(_ *ycrdt.Transaction) {
 		queue.Delete(ycrdt.Number(0), length)
 	}, t.doc.txOrigin())
 
 	if target == nil {
-		t.appendMessageLocked(pending...)
-	} else {
-		t.appendMessageIntoArrayLocked(target, pending...)
+		target = t.doc.ensureItems()
 	}
+	um := t.ensureUndoManager()
+	if !allAuxiliary(pending) {
+		um.StopCapturing()
+	}
+	ycrdt.Transact(t.doc.doc, func(_ *ycrdt.Transaction) {
+		for _, n := range moved {
+			appendYNode(target, n)
+		}
+	}, t.doc.authorID, true)
 	return pending
 }
 

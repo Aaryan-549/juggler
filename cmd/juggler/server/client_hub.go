@@ -21,6 +21,7 @@ type hubOpKind int
 
 const (
 	hubRegister hubOpKind = iota
+	hubReserve
 	hubUnregister
 	hubBroadcast
 	hubViewerCount
@@ -82,6 +83,10 @@ type hubClient struct {
 
 func (h *clientHub) run() {
 	clients := make(map[string]hubClient)
+	// reserved holds the viewer slots granted by reserve to clients not yet
+	// registered. They count toward the limit, so a slot promised to one
+	// arrival cannot be taken by another before it registers.
+	reserved := make(map[string]bool)
 
 	// remove drops a client and releases its delivery goroutines. Undelivered
 	// messages go with it, which is right for a client that has left.
@@ -129,10 +134,26 @@ func (h *clientHub) run() {
 
 	for op := range h.ch {
 		switch op.kind {
+		case hubReserve:
+			id := op.client.ClientID()
+			_, replacing := clients[id]
+			if op.client.ClientRole() != ClientRoleViewer || replacing || reserved[id] {
+				op.boolResult <- true
+				continue
+			}
+			if len(viewerDescriptors())+len(reserved) >= maxViewerClients {
+				op.boolResult <- false
+				continue
+			}
+			reserved[id] = true
+			op.boolResult <- true
 		case hubRegister:
 			id := op.client.ClientID()
 			_, replacing := clients[id]
-			if op.client.ClientRole() == ClientRoleViewer && !replacing && len(viewerDescriptors()) >= maxViewerClients {
+			held := reserved[id]
+			delete(reserved, id)
+			if op.client.ClientRole() == ClientRoleViewer && !replacing && !held &&
+				len(viewerDescriptors())+len(reserved) >= maxViewerClients {
 				op.boolResult <- false
 				continue
 			}
@@ -146,6 +167,7 @@ func (h *clientHub) run() {
 			op.boolResult <- true
 		case hubUnregister:
 			id := op.client.ClientID()
+			delete(reserved, id)
 			if _, ok := clients[id]; ok {
 				remove(id)
 				if op.client.ClientRole() == ClientRoleViewer {
@@ -182,6 +204,17 @@ func (h *clientHub) run() {
 			return
 		}
 	}
+}
+
+// reserve holds a viewer slot for a client about to register, or reports that
+// the viewer limit leaves none. It records nothing else and tells no one, so a
+// caller can greet an admitted client before registering it (and announcing it
+// to the others), and send a refused one nothing that implies a session.
+// Engine clients, and a client already registered under its id, always pass.
+func (h *clientHub) reserve(c RealtimeClient) bool {
+	r := make(chan bool, 1)
+	h.ch <- hubOp{kind: hubReserve, client: c, boolResult: r}
+	return <-r
 }
 
 // register atomically admits and records a client. Viewer admission fails once

@@ -1172,11 +1172,15 @@ func (r *run) sendStatusWithCode(status, message string, text *msg.Message, code
 		}
 	}
 
-	// Also send direct WebSocket message for logging/debugging
+	// The transition as an event, beside the frame. It is the only record of a
+	// resting status written while a sibling run is still live: that run's
+	// entry leaves the registry and the frame's top level is republished from
+	// the sibling, so the client takes notices (validation-error) from here.
 	wsMsg := map[string]any{
-		"type":    "status",
-		"status":  status,
-		"message": message,
+		"type":         "status",
+		"status":       status,
+		"message":      message,
+		"threadItemId": r.t.thread.itemID,
 	}
 	if code != "" {
 		wsMsg["code"] = code

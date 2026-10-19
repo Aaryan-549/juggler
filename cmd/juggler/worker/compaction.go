@@ -515,6 +515,33 @@ func condenseForRefold(it ConversationItem) ConversationItem {
 	}
 }
 
+// foldedItemSnapshot reads one item of a range being folded in the form it nests
+// in the fold, every key and every value's shape included: verbatim, except that
+// a summarized prior compaction thread keeps only the fields condenseForRefold
+// keeps. Callers MUST hold ycrdtMu.
+func foldedItemSnapshot(v any) yNode {
+	n := snapshotYValue(v)
+	m, ok := v.(*ycrdt.YMap)
+	if !ok {
+		return n
+	}
+	item := yMapToConversationItem(m)
+	if !summarizedCompactionThread(item) {
+		return n
+	}
+	data, err := json.Marshal(condenseForRefold(item))
+	var keep map[string]json.RawMessage
+	if err != nil || json.Unmarshal(data, &keep) != nil {
+		return n
+	}
+	for key := range n.entries {
+		if _, ok := keep[key]; !ok {
+			delete(n.entries, key)
+		}
+	}
+	return n
+}
+
 // foldConversationForCompaction folds the target conversation's foldable history
 // into an UNSUMMARIZED bounded-compaction thread — the worker-side port of the
 // browser /compact fold. It relocates the

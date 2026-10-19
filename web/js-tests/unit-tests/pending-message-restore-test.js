@@ -23,6 +23,8 @@
  */
 
 import { assert } from '../utilities/test-helpers.js';
+import { underPseudoLocale } from '../utilities/pseudo-locale.js';
+import { isPseudoLocalized } from '../../sdk/lib/i18n.js';
 import Conversation from '../../js/model/conversation.js';
 import SessionEvents from '../../js/model/session-events.js';
 import workerManager from '../../js/services/worker-manager.js';
@@ -208,6 +210,80 @@ export async function runTests() {
     } finally {
       /** @type {any} */ (workerManager).isWorkerReady = realReady;
       /** @type {any} */ (workerManager).sendMessage = realSend;
+    }
+  }
+
+  // ── Test 5: an accepted turn retires the record for its own thread only ──
+  // Once the worker has accepted the turn the message is in the transcript, and
+  // the record has done its job. Left in place, a later refusal that never set
+  // it — a Continue bounced for want of a model — would hand the old message
+  // back, or resend it. A sibling thread's turn says nothing about this send,
+  // which may still be waiting for its verdict, so it must not retire it.
+  {
+    try {
+      const composer = fakeComposer();
+      const conv = makeConversation({
+        _pendingUserMessage: { content: 'sent already', attachments: [], threadItemId: 'thread-1' },
+        _session: sessionShowing(composer)
+      });
+      conv.settlePendingMessage('thread-2');
+      assert(conv._pendingUserMessage !== null,
+        'a sibling thread\'s accepted turn must leave this send\'s record alone');
+      conv.settlePendingMessage('thread-1');
+      assert(conv._pendingUserMessage === null,
+        'the accepted turn on the message\'s own thread must retire its record');
+      conv.restorePendingMessage();
+      assert(composer.restores === 0,
+        `a retired record must not be handed back, got ${composer.restores} restore(s)`);
+
+      const root = makeConversation({ _pendingUserMessage: { content: 'to root', attachments: [], threadItemId: null } });
+      root.settlePendingMessage(null);
+      assert(root._pendingUserMessage === null, 'the root thread is null on both sides, and matches');
+      passed++;
+    } catch (e) {
+      failed++;
+      errors.push('accepted-turn-retires-its-record: ' + (e instanceof Error ? e.message : String(e)));
+    }
+  }
+
+  // ── Test 6: a validation notice warns, and hands back only a refused send ─
+  // The notice arrives on the worker's status event, which names the thread
+  // and the code. A refused send (`no-model`) is owed back; a turn that ran and
+  // failed already holds the message in the transcript. The warning is the
+  // user's language either way, the fallback included.
+  {
+    try {
+      /** @type {string[]} */
+      const warnings = [];
+      let restores = 0;
+      const conv = makeConversation({
+        showWarning: (/** @type {string} */ text) => { warnings.push(text); },
+        restorePendingMessage: () => { restores++; },
+        trySelfHealMissingModel: () => false
+      });
+      const english = 'Please select a model before sending a message';
+      await underPseudoLocale('pending-message-restore-test', async () => {
+        conv.handleValidationNotice({ code: 'no-model', message: english, text: { key: english }, threadItemId: 'thread-1' });
+        conv.handleValidationNotice({ code: 'provider-unavailable' });
+      });
+      assert(warnings.length === 2 && warnings.every((w) => isPseudoLocalized(w)),
+        `both warnings must be translated, the fallback included: ${JSON.stringify(warnings)}`);
+      assert(restores === 1, `only the refused send is handed back; got ${restores} restore(s)`);
+
+      /** @type {Array<string|null>} */
+      const healed = [];
+      const healing = makeConversation({
+        showWarning: () => { throw new Error('a healed refusal must not warn'); },
+        restorePendingMessage: () => { throw new Error('a healed refusal must not hand the message back'); },
+        trySelfHealMissingModel: (/** @type {string|null} */ id) => { healed.push(id); return true; }
+      });
+      healing.handleValidationNotice({ code: 'no-model', threadItemId: 'thread-1' });
+      assert(healed.length === 1 && healed[0] === 'thread-1',
+        `the self-heal must be tried for the refused thread, got ${JSON.stringify(healed)}`);
+      passed++;
+    } catch (e) {
+      failed++;
+      errors.push('validation-notice: ' + (e instanceof Error ? e.message : String(e)));
     }
   }
 

@@ -138,3 +138,57 @@ func TestClientHub_ViewerLimit(t *testing.T) {
 		t.Fatal("viewer was rejected after a slot was released")
 	}
 }
+
+// TestClientHub_ReserveHoldsASlotAndTellsNoOne pins the first half of a
+// viewer's admission. The connection loop reserves a slot, greets the client
+// with its session, and only then registers it — so the greeting precedes the
+// clients-changed its arrival sets off, and a client the limit turns away is
+// never greeted at all. That needs a reservation that is binding (no other
+// arrival can take the slot before it registers) and silent (nobody is told
+// until it does).
+func TestClientHub_ReserveHoldsASlotAndTellsNoOne(t *testing.T) {
+	h := newClientHub()
+	for i := 0; i < maxViewerClients-1; i++ {
+		if !h.register(testRoleClient(fmt.Sprintf("viewer-%d", i), ClientRoleViewer, "local")) {
+			t.Fatalf("viewer %d was rejected below the limit", i+1)
+		}
+	}
+	held := testRoleClient("held", ClientRoleViewer, "local")
+	if !h.reserve(held) {
+		t.Fatal("the last free slot could not be reserved")
+	}
+	if got := h.viewerCount(); got != maxViewerClients-1 {
+		t.Fatalf("a reservation counted as a connected viewer: viewerCount() = %d, want %d", got, maxViewerClients-1)
+	}
+	select {
+	case msg := <-held.send:
+		t.Fatalf("a reservation sent the client %v; it must tell no one", msg.json)
+	default:
+	}
+
+	rival := testRoleClient("rival", ClientRoleViewer, "local")
+	if h.reserve(rival) || h.register(rival) {
+		t.Fatal("another arrival took a slot that was already reserved")
+	}
+	if !h.register(held) {
+		t.Fatal("the client holding the reservation was refused")
+	}
+	if got := nextClientsCount(t, held); got != maxViewerClients {
+		t.Fatalf("after registering, clients-changed count = %d, want %d", got, maxViewerClients)
+	}
+
+	if !h.reserve(testRoleClient("engine", ClientRoleEngine, "local")) {
+		t.Fatal("the engine is not a viewer and must not be refused a slot")
+	}
+
+	// A reservation abandoned before registering gives its slot back.
+	h.unregister(held)
+	abandoned := testRoleClient("abandoned", ClientRoleViewer, "local")
+	if !h.reserve(abandoned) {
+		t.Fatal("the slot a viewer left could not be reserved")
+	}
+	h.unregister(abandoned)
+	if !h.register(rival) {
+		t.Fatal("an abandoned reservation kept its slot")
+	}
+}

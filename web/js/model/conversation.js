@@ -19,7 +19,7 @@ import { statusHoldsTurn } from './processing-status.js';
 import strategyRegistry from '../registries/strategy-registry.js';
 import contextItemRegistry from '../registries/context-item-registry.js';
 import { TURN_CANCELLED_NOTICE } from '../utils/constants.js';
-import { t } from '../../sdk/lib/i18n.js';
+import { t, serverText } from '../../sdk/lib/i18n.js';
 import { displayConversationName } from './conversation-naming.js';
 import { recordTape } from '../utils/event-tape.js';
 import { ENGINE_DERIVED_ORIGIN } from '../utils/document-sync-manager.js';
@@ -41,6 +41,17 @@ import {
   waitForApproval as orchestrationWaitForApproval,
   continueThread as orchestrationContinueThread,
 } from './conversation-orchestration.js';
+
+/**
+ * The validation-error codes for a send the worker refused before writing the
+ * user item (handleSendMessage), so the composer is owed the message back. The
+ * other codes end a turn that already holds the message in the transcript;
+ * handing it back then would put an already-sent message in the box. Held to
+ * the worker by unit:wire-protocol-parity and TestWireParityValidationCodes
+ * (web/js-tests/fixtures/wire-protocol.json).
+ * @type {ReadonlySet<string>}
+ */
+const BOUNCING_VALIDATION_CODES = new Set(['no-model']);
 
 /**
  * Doc-metadata key naming the workspace a conversation works in. The Go worker
@@ -1928,6 +1939,7 @@ class Conversation {
       content: userMessage,
       attachments: options.attachments || [],
       restorable: consumeComposer,
+      threadItemId: this._targetThreadId(messageThread, threadItemId),
     };
 
     // Validation passed locally - now clear the input, in the box showing the
@@ -2012,7 +2024,11 @@ class Conversation {
    * generated send is not: the box never held this text, and writing it there on
    * a failure would replace whatever the user is in the middle of. Resending is
    * unaffected either way — a refused turn is worth retrying whoever wrote it.
-   * @type {{content: string, attachments: Array<import('../utils/attachments.js').AssetRef>, restorable?: boolean}|null}
+   *
+   * `threadItemId` is the thread the send went to (null for the root), so that
+   * thread's accepted turn, and no other, retires the record
+   * ({@link settlePendingMessage}).
+   * @type {{content: string, attachments: Array<import('../utils/attachments.js').AssetRef>, restorable?: boolean, threadItemId?: string|null}|null}
    */
   _pendingUserMessage = null;
 
@@ -2741,6 +2757,22 @@ class Conversation {
   }
 
   /**
+   * Act on a validation-error the worker announced in its `status` event — the
+   * one record of it that survives a sibling run being live (see
+   * services/llm-state.js). A `no-model` refusal first tries the missing-model
+   * self-heal; otherwise the warning is shown, and the message is handed back
+   * when the send was refused rather than run.
+   * @param {{message?: string, text?: {key?: unknown, params?: unknown, context?: unknown}|null, code?: string, threadItemId?: string|null}} notice - The event's fields.
+   * @returns {void}
+   */
+  handleValidationNotice(notice) {
+    const threadItemId = notice.threadItemId || null;
+    if (notice.code === 'no-model' && this.trySelfHealMissingModel(threadItemId)) return;
+    this.showWarning(serverText(notice.text, notice.message || '') || t('Validation error'));
+    if (notice.code && BOUNCING_VALIDATION_CODES.has(notice.code)) this.restorePendingMessage();
+  }
+
+  /**
    * The missing-model self-heal: try to recover from a "no-model" validation error. The worker's doc
    * resolved no model, yet this client is displaying a real one: the model write
    * never reached the worker (the outbound-sync gap — see session.js).
@@ -2773,6 +2805,22 @@ class Conversation {
    */
   armSelfHeal() {
     this._modelSelfHealAttempted = false;
+  }
+
+  /**
+   * Retire the pending message once the worker has accepted a turn on the
+   * thread it was sent to: it is in the transcript now, and a later refusal
+   * that never set it (a Continue bounced for want of a model) must neither
+   * hand it back nor resend it. Another thread's turn leaves it alone — that
+   * send may still be waiting for its verdict.
+   * @param {string|null} threadItemId - The thread whose turn was accepted, null for the root.
+   * @returns {void}
+   */
+  settlePendingMessage(threadItemId) {
+    const message = this._pendingUserMessage;
+    if (message && (message.threadItemId ?? null) === (threadItemId ?? null)) {
+      this._pendingUserMessage = null;
+    }
   }
 
   /**

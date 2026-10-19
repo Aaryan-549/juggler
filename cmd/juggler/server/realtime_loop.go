@@ -76,6 +76,18 @@ func (s *Server) runRealtimeClientLoop(ctx context.Context, client RealtimeClien
 		}()
 	}
 
+	// Hold this client's place under the viewer limit before telling it anything.
+	// A client sent its session starts loading the app, so one the limit turns
+	// away is told only that, and closed.
+	if !s.reserveClientSlot(client) {
+		client.Send(map[string]any{
+			"type":    "server-full",
+			"message": "Too many clients are connected",
+		})
+		client.Close()
+		return
+	}
+
 	// Send session ready signal to client. It carries the client's own
 	// server-assigned id so the UI can exclude itself from the connected-clients
 	// list it receives via clients-changed, and this instance's boot id so a
@@ -94,14 +106,11 @@ func (s *Server) runRealtimeClientLoop(ctx context.Context, client RealtimeClien
 
 	// Register with server state for broadcasts. Done AFTER the session send so
 	// the client already knows its own id before the first clients-changed
-	// broadcast (which registering triggers) can reach it. Admission and
-	// registration are one hub operation, so simultaneous arrivals cannot exceed
-	// the process-wide viewer limit.
+	// broadcast (which registering triggers) can reach it. The slot reserved
+	// above makes this admission certain; a refusal would be the hub
+	// contradicting its own reservation, and the client is closed rather than
+	// half served.
 	if !s.registerClient(client) {
-		client.Send(map[string]any{
-			"type":    "server-full",
-			"message": "Too many clients are connected",
-		})
 		client.Close()
 		return
 	}

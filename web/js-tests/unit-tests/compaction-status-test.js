@@ -133,10 +133,8 @@ export async function runTests(_ctx) {
     const shown = [];
     const xaConv = 'conv-status-xa';
     const xaState = new LLMState();
-    /** @type {string[]} */
-    const warnings = [];
     (/** @type {any} */ (xaState))._conversations.set(xaConv, {
-      showWarning: (/** @type {string} */ text) => warnings.push(text),
+      showWarning: () => {},
       restorePendingMessage: () => {},
       trySelfHealMissingModel: () => false,
     });
@@ -150,9 +148,6 @@ export async function runTests(_ctx) {
         text: { key: retrying, params: { attempt: 1, max: 3, hasSpent: 'no', spent: '' } },
         threadItemId: 'thread-1', startedAt: Date.now() });
       shown.push(xaState.getStatusMessage(xaConv).split('\u00A0·')[0]);
-      xaPublish({ status: 'validation-error', message: 'Please select a model before sending a message',
-        text: { key: 'Please select a model before sending a message' }, code: 'no-model', threadItemId: 'thread-1' });
-      shown.push(warnings[0] || '');
     });
     xaPublish({ status: 'idle' });
     const raw = shown.filter((text) => !isPseudoLocalized(text));
