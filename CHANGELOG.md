@@ -5,13 +5,14 @@ of changes; this project follows semantic versioning.
 
 ## [Unreleased]
 
-- Cancelling or deleting a sub-agent beside running siblings now stops its model calls
+- Long-pressing text on Android no longer opens a Copy menu over the selection
+- Resizing a column no longer resizes every other column; widths are kept per depth
 - Double-tapping the composer's ⋮ or / button no longer opens two menus
+- Cancelling or deleting a sub-agent beside running siblings now stops its model calls
 - A window whose server dies now restarts it instead of reconnecting forever
 - Slow startups, like logging in with apps reopening, no longer shut the server down
 - Extension ops `stat`, `mkdir`, `getTree`, `expandDirectory` and `fileHash` accept an AbortSignal
 - Extension shell ops take camelCase ids (`taskId`, `shellId`, `convId`); snake_case still works
-- Resizing a column no longer resizes every other column; widths are kept per depth
 
 ## [0.7.7] - 2026-10-17
 

@@ -22,7 +22,9 @@
  *     "Look Up" / "Translate" / "Share". The page can only choose whether to
  *     show the native menu at all — it cannot strip individual items — so the
  *     only way to keep clean, relevant edit menus (and no Inspect Element over a
- *     read-only paragraph) is to render them ourselves.
+ *     read-only paragraph) is to render them ourselves. A touch long-press is
+ *     the exception: it is a text selection starting, and the platform's own
+ *     selection toolbar is left to serve it.
  *
  *  3. **Native fallback, dev-mode only.** When nothing juggler-specific applies
  *     and we're in runtime dev-mode (`window.JUGGLER_DEV_MODE`, injected by the
@@ -33,7 +35,8 @@
  *     own handler agrees and allows that native menu. Outside dev-mode we
  *     `preventDefault()` so the native menu never appears anywhere.
  *
- * Net effect: text and content menus are always juggler-owned and tidy
+ * Net effect: content menus are always juggler-owned, text menus are under a
+ * mouse, and both stay tidy
  * regardless of build tag or dev-mode; the WKWebView debug menu shows only in a
  * real dev session and only over non-text areas.
  * @module services/context-menu-service
@@ -605,6 +608,27 @@ export function registerContextMenuSuppressor(isOwned) {
   _suppressors.push(isOwned);
 }
 
+/** @type {string} @private The `pointerType` of the most recent `pointerdown`. */
+let _lastPointerType = '';
+
+/**
+ * Whether a `contextmenu` came from a finger. The press that led to it decides
+ * as much as the event does: a menu Chromium holds back to the release (a
+ * long-press that began a touch drag, any long-press under WebView2) can carry
+ * an empty or `mouse` `pointerType`, and a plain-MouseEvent engine carries none.
+ * The cost is that a menu key pressed after a tap counts as touch, and gets the
+ * platform's menu.
+ * @param {MouseEvent} e - The contextmenu event.
+ * @returns {boolean} True for a touch long-press.
+ * @private
+ */
+function isTouchPress(e) {
+  const any = /** @type {any} */ (e);
+  return any.pointerType === 'touch'
+    || any.sourceCapabilities?.firesTouchEvents === true
+    || _lastPointerType === 'touch';
+}
+
 /**
  * Capture-phase `contextmenu` handler. Three-tier dispatch (see module doc):
  * registered providers → built-in text-edit menu → native fallback (dev only).
@@ -636,7 +660,12 @@ function onContextMenu(e) {
   // 2) Built-in edit menu for text fields / selections. Owning these means the
   //    native menu (Inspect Element in non-production builds; Writing Tools /
   //    Look Up on macOS) never shows over text — in any build or runtime mode.
+  //    A finger is the exception: on Android the long-press that starts a
+  //    selection fires `contextmenu` once the word is selected, and a menu
+  //    opened under the finger covers the text it is about to drag. The
+  //    platform's selection toolbar tracks the handles, so it is left to that.
   const textItems = buildTextEditMenu(start);
+  if (textItems.length && isTouchPress(e)) return;
   if (textItems.length) {
     e.preventDefault();
     e.stopImmediatePropagation();
@@ -656,6 +685,9 @@ function onContextMenu(e) {
 // first right-click in case the runtime overwrote the environment object after
 // load (the handler reads it live, so a late re-seed is harmless).
 syncWailsDebugFlag();
+window.addEventListener('pointerdown', (e) => {
+  _lastPointerType = e.pointerType || '';
+}, { capture: true, passive: true });
 window.addEventListener('contextmenu', (e) => {
   syncWailsDebugFlag();
   onContextMenu(/** @type {MouseEvent} */ (e));

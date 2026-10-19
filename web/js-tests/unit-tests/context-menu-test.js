@@ -119,6 +119,18 @@ function anchorWith(href) {
 }
 
 /**
+ * The press a real right-click or long-press begins with. The service reads the
+ * last one to tell a finger from a mouse, and a lane shares one realm, so a
+ * `contextmenu` sent without one inherits whatever an earlier suite pressed.
+ * @param {Element} el - Where to press.
+ * @param {string} pointerType - `mouse` or `touch`.
+ * @returns {void}
+ */
+function press(el, pointerType) {
+  el.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType }));
+}
+
+/**
  * @param {boolean} cond
  * @param {string} msg
  * @param {string[]} errors
@@ -362,6 +374,7 @@ export async function runTests() {
   try {
     taHost.focus();
     taHost.setSelectionRange(0, 0);
+    press(taHost, 'mouse');
     const ev = new MouseEvent('contextmenu', {
       bubbles: true, cancelable: true, clientX: 30, clientY: 30,
     });
@@ -381,6 +394,98 @@ export async function runTests() {
     taHost.remove();
     const leftover = document.querySelector('.juggler-context-menu');
     if (leftover) leftover.remove();
+  }
+
+  // === A touch long-press over text belongs to the native selection ===
+  // On Android the long-press that starts a selection also fires `contextmenu`,
+  // after the word under the finger is already selected. Our Copy menu, opened
+  // at the finger, would sit on the selection the user is about to drag; the
+  // platform's own selection toolbar tracks the handles instead.
+  {
+    const touchPara = document.createElement('p');
+    touchPara.textContent = 'text selected by a long-press';
+    const touchField = document.createElement('textarea');
+    touchField.value = 'typed text';
+    const touchHost = document.createElement('div');
+    touchHost.setAttribute(MARK, 'normal');
+    document.body.append(touchPara, touchField, touchHost);
+    const selection = window.getSelection();
+    const selectPara = () => {
+      selection?.removeAllRanges();
+      const range = document.createRange();
+      range.selectNodeContents(touchPara);
+      selection?.addRange(range);
+    };
+    const menuOpen = () => document.querySelector('.juggler-context-menu') !== null;
+    try {
+      selectPara();
+      press(touchPara, 'touch');
+      const touchLeftAlone = touchPara.dispatchEvent(new PointerEvent('contextmenu', {
+        bubbles: true, cancelable: true, clientX: 20, clientY: 20, pointerType: 'touch',
+      }));
+      tally(check(touchLeftAlone && !menuOpen(),
+        `touch: a long-press over selected text opens no juggler menu and is not cancelled (cancelled=${!touchLeftAlone}, menu=${menuOpen()})`, errors));
+      document.querySelector('.juggler-context-menu')?.remove();
+
+      // A WebView whose `contextmenu` is a plain MouseEvent: the press that
+      // started it says it was a finger.
+      selectPara();
+      press(touchPara, 'touch');
+      const fallbackLeftAlone = touchPara.dispatchEvent(new MouseEvent('contextmenu', {
+        bubbles: true, cancelable: true, clientX: 20, clientY: 20,
+      }));
+      tally(check(fallbackLeftAlone && !menuOpen(),
+        'touch: a MouseEvent contextmenu after a touch pointerdown is left to the native selection too', errors));
+      document.querySelector('.juggler-context-menu')?.remove();
+
+      // A menu Chromium holds back to the release (a long-press that began a
+      // touch drag; any long-press under WebView2) need not say `touch`: the
+      // press that began it decides, whatever the event calls itself.
+      for (const pointerType of ['', 'mouse']) {
+        selectPara();
+        press(touchPara, 'touch');
+        const releaseLeftAlone = touchPara.dispatchEvent(new PointerEvent('contextmenu', {
+          bubbles: true, cancelable: true, clientX: 20, clientY: 20, pointerType,
+        }));
+        tally(check(releaseLeftAlone && !menuOpen(),
+          `touch: a contextmenu with pointerType "${pointerType}" after a touch press is left to the native selection (cancelled=${!releaseLeftAlone}, menu=${menuOpen()})`, errors));
+        document.querySelector('.juggler-context-menu')?.remove();
+      }
+
+      // A text field the same: the platform's toolbar has Paste and the handles.
+      selection?.removeAllRanges();
+      touchField.focus();
+      touchField.setSelectionRange(0, 5);
+      const fieldLeftAlone = touchField.dispatchEvent(new PointerEvent('contextmenu', {
+        bubbles: true, cancelable: true, clientX: 20, clientY: 20, pointerType: 'touch',
+      }));
+      tally(check(fieldLeftAlone && !menuOpen(),
+        'touch: a long-press in a text field is left to the native selection', errors));
+      document.querySelector('.juggler-context-menu')?.remove();
+
+      // Content menus are not text selection: a long-press still opens them.
+      touchHost.dispatchEvent(new PointerEvent('contextmenu', {
+        bubbles: true, cancelable: true, clientX: 20, clientY: 20, pointerType: 'touch',
+      }));
+      tally(check(menuOpen(), 'touch: a long-press on a claimed element still opens its menu', errors));
+      document.querySelector('.juggler-context-menu')?.remove();
+
+      // And a mouse right-click over the same selection keeps our Copy menu.
+      selectPara();
+      press(touchPara, 'mouse');
+      const mouseCancelled = !touchPara.dispatchEvent(new PointerEvent('contextmenu', {
+        bubbles: true, cancelable: true, clientX: 20, clientY: 20, pointerType: 'mouse',
+      }));
+      tally(check(mouseCancelled && menuOpen(),
+        'touch: a mouse right-click over selected text still opens the juggler Copy menu', errors));
+    } finally {
+      press(document.body, 'mouse');
+      selection?.removeAllRanges();
+      document.querySelector('.juggler-context-menu')?.remove();
+      touchPara.remove();
+      touchField.remove();
+      touchHost.remove();
+    }
   }
 
   // === End-to-end: contextmenu event opens + Escape dismisses ===
@@ -553,6 +658,7 @@ export async function runTests() {
         // A writable field, through a real right-click.
         selection?.removeAllRanges();
         field.setSelectionRange(0, 2);
+        press(field, 'mouse');
         field.dispatchEvent(new MouseEvent('contextmenu', {
           bubbles: true, cancelable: true, clientX: 20, clientY: 20,
         }));
