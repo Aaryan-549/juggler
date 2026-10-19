@@ -1,4 +1,4 @@
-.PHONY: build test test-build test-go test-full benchmark dev clean fmt lint lint-files lint-go lint-deadcode lint-js lint-types lint-css lint-i18n fix fix-files fix-fmt fix-go fix-js fix-css node-deps help mac-app install-mac app-icon-embed wails-runtime-embed win-icon release-build-mac mac-dmg mac-dmg-pack win-installer win-installer-pack linux-binaries linux-tarball linux-tarball-pack mac-codesign linux-compat-server
+.PHONY: build test test-build test-go test-full benchmark dev clean fmt lint lint-files lint-go lint-deadcode lint-js lint-types lint-css lint-i18n fix fix-files fix-fmt fix-go fix-js fix-css node-deps help mac-app install-mac app-icon-embed wails-runtime-embed wails-runtime-build test-wails-patches win-icon release-build-mac mac-dmg mac-dmg-pack win-installer win-installer-pack linux-binaries linux-tarball linux-tarball-pack mac-codesign linux-compat-server
 
 # Binary name
 BINARY_NAME=juggler
@@ -410,19 +410,67 @@ app-icon-embed:
 ## wails-runtime-embed: Sync the Wails v3 runtime.js bundle into the server
 ## package so go:embed can pick it up (it can't follow symlinks or `..`).
 ## Served at /wails/runtime.js for every client — see wails_runtime.go.
-## The source is an untracked wails build artifact and carries CRLF endings on
-## Windows; we strip CRs so the committed LF copy is byte-identical on every OS
+## The source is the bundle the fork commits, built from the runtime's
+## TypeScript by `make wails-runtime-build`. It carries CRLF endings on Windows;
+## we strip CRs so the committed LF copy is byte-identical on every OS
 ## (otherwise the build rewrites it and it shows as perpetually modified).
-WAILS_RUNTIME_SRC=3rdparty/wails/v3/internal/assetserver/bundledassets/runtime.js
+##
+## It refuses to build on a bundle it can show is stale, rather than embedding
+## it: a fork whose runtime source changed without a rebuild ships a runtime.js
+## that silently disagrees with the Go half of the same fork. Two checks, both
+## against the fork's own git (skipped when it isn't a git checkout):
+##   - runtime source modified in the working tree while the bundle is not;
+##   - a commit to the runtime source (tests excluded) newer than the last
+##     commit to the bundle. A depth-1 clone holds one commit, so it never
+##     trips this; a full clone after a rebase is where it matters.
+## A missing bundle means the fork isn't checked out, and is an error too.
+WAILS_V3=3rdparty/wails/v3
+WAILS_RUNTIME_SRC=$(WAILS_V3)/internal/assetserver/bundledassets/runtime.js
 WAILS_RUNTIME_EMBED=cmd/juggler/server/wails_runtime.js
+WAILS_RUNTIME_INPUTS=internal/runtime/desktop/@wailsio/runtime/src internal/runtime/desktop/compiled \
+	':(exclude)*.test.*' ':(exclude)*.spec.*'
 wails-runtime-embed:
-	@if [ -f "$(WAILS_RUNTIME_SRC)" ]; then \
-		tr -d '\r' < "$(WAILS_RUNTIME_SRC)" > "$(WAILS_RUNTIME_EMBED).tmp"; \
-		if ! cmp -s "$(WAILS_RUNTIME_EMBED).tmp" "$(WAILS_RUNTIME_EMBED)" 2>/dev/null; then \
-			mv "$(WAILS_RUNTIME_EMBED).tmp" "$(WAILS_RUNTIME_EMBED)"; \
-			echo "Synced $(WAILS_RUNTIME_EMBED) ← $(WAILS_RUNTIME_SRC)"; \
-		else rm -f "$(WAILS_RUNTIME_EMBED).tmp"; fi; \
+	@if [ ! -f "$(WAILS_RUNTIME_SRC)" ]; then \
+		echo "✗ $(WAILS_RUNTIME_SRC) is missing — the Wails fork isn't checked out. Run: git submodule update --init --recursive" >&2; \
+		exit 1; \
 	fi
+	@if git -C "$(WAILS_V3)" rev-parse --git-dir >/dev/null 2>&1; then \
+		cd "$(WAILS_V3)"; \
+		if [ -n "$$(git status --porcelain -- $(WAILS_RUNTIME_INPUTS))" ] && \
+		   [ -z "$$(git status --porcelain -- internal/assetserver/bundledassets/runtime.js)" ]; then \
+			echo "✗ the Wails runtime source has uncommitted changes but its bundle doesn't — run: make wails-runtime-build" >&2; \
+			git status --short -- $(WAILS_RUNTIME_INPUTS) >&2; \
+			exit 1; \
+		fi; \
+		bundle=$$(git rev-list -1 HEAD -- internal/assetserver/bundledassets/runtime.js); \
+		src=$$(git rev-list -1 HEAD -- $(WAILS_RUNTIME_INPUTS)); \
+		if [ -n "$$bundle" ] && [ -n "$$src" ] && [ "$$bundle" != "$$src" ] && \
+		   git merge-base --is-ancestor "$$bundle" "$$src"; then \
+			echo "✗ the Wails runtime bundle predates its source: $$(git log -1 --format='%h %s' "$$src") changed the runtime after the bundle was last built ($$(git log -1 --format=%h "$$bundle")). Run: make wails-runtime-build, and commit the result in the fork" >&2; \
+			exit 1; \
+		fi; \
+	fi
+	@tr -d '\r' < "$(WAILS_RUNTIME_SRC)" > "$(WAILS_RUNTIME_EMBED).tmp"; \
+	if ! cmp -s "$(WAILS_RUNTIME_EMBED).tmp" "$(WAILS_RUNTIME_EMBED)" 2>/dev/null; then \
+		mv "$(WAILS_RUNTIME_EMBED).tmp" "$(WAILS_RUNTIME_EMBED)"; \
+		echo "Synced $(WAILS_RUNTIME_EMBED) ← $(WAILS_RUNTIME_SRC)"; \
+	else rm -f "$(WAILS_RUNTIME_EMBED).tmp"; fi
+
+## wails-runtime-build: Rebuild the Wails fork's bundled runtime (runtime.js and
+## runtime.debug.js) from its TypeScript source, with the exact esbuild commands
+## of the fork's `task runtime:build:assets` (internal/runtime/Taskfile.yaml) —
+## the output upstream CI requires every PR's committed bundle to match. Needs
+## Node; `npm ci` installs the runtime's lockfile-pinned esbuild. Commit the
+## result in the fork; wails-runtime-embed then copies it into the server.
+WAILS_ESBUILD=desktop/@wailsio/runtime/node_modules/.bin/esbuild
+WAILS_ESBUILD_ARGS=desktop/@wailsio/runtime/src/index.ts --inject:desktop/compiled/main.js --format=esm \
+	--target=safari11 --bundle --ignore-annotations --tree-shaking=true
+wails-runtime-build:
+	@cd "$(WAILS_V3)/internal/runtime/desktop/@wailsio/runtime" && npm ci --no-audit --no-fund --ignore-scripts
+	@cd "$(WAILS_V3)/internal/runtime" && \
+		$(WAILS_ESBUILD) $(WAILS_ESBUILD_ARGS) --sourcemap=inline --outfile=../assetserver/bundledassets/runtime.debug.js --define:DEBUG=true && \
+		$(WAILS_ESBUILD) $(WAILS_ESBUILD_ARGS) --minify --outfile=../assetserver/bundledassets/runtime.js --define:DEBUG=false --drop:console
+	@git -C "$(WAILS_V3)" status --short -- internal/assetserver/bundledassets
 
 ## win-icon: Compile $(APP_ICON_PNG) into a Windows .syso resource for BOTH the
 ## server (cmd/juggler) and the desktop app (cmd/juggler-app) so each .exe shows
@@ -594,7 +642,7 @@ build: lint go-build
 ##   make test RUN='TestDiffView'            # one test, whichever layer it's in
 ##   make test RUN='TestDiffView/collapsed'  # one subtest
 ##   make test-go RUN='TestWorker'           # restrict to the fast unit layer
-test: test-go
+test: test-go test-wails-patches
 	@mkdir -p $(BUILD_DIR)
 	@echo "── integration + browser suite ──"
 	@bash -c 'set -o pipefail; \
@@ -617,6 +665,33 @@ test-go: go-build test-build
 		rc=$${PIPESTATUS[0]}; \
 		if [ $$rc -eq 0 ]; then echo "✓ Go package tests passed"; else echo "✗ the Go package tests failed — their output is above"; fi; \
 		exit $$rc'
+
+## test-wails-patches: Run the Wails fork's own tests for the packages its
+## local patches touch (docs/wails-fork.md is the ledger; keep this list in
+## step with it). They live in the fork's module, outside every ./... above, so
+## nothing else runs them. Built with the toolchain that builds juggler
+## (GOTOOLCHAIN=local) rather than the newer one the fork's go.mod may suggest.
+## The Windows-only packages compile and run on Windows; elsewhere they are
+## cross-vetted for windows/amd64, so a patch that breaks the Windows build is
+## caught on every OS. ~20s; ~45s under -race.
+WAILS_PATCH_PKGS=./pkg/application ./pkg/updater
+WAILS_PATCH_PKGS_WINDOWS=./pkg/w32 ./internal/webview2/pkg/edge
+ifeq ($(OS),Windows_NT)
+WAILS_PATCH_PKGS+=$(WAILS_PATCH_PKGS_WINDOWS)
+endif
+test-wails-patches:
+	@echo "── Wails fork patch tests ──"
+	@# The verdict is go test's own exit status: with RUN set, QUIET_UNMATCHED's
+	@# grep can filter every line away and exit 1 on a run that passed.
+	@bash -c 'cd $(WAILS_V3) && \
+		GOTOOLCHAIN=local $(GOTEST) -count=1 $(RACE) -timeout 5m $(GOTEST_RUN) $(WAILS_PATCH_PKGS) 2>&1 $(QUIET_UNMATCHED); \
+		exit $${PIPESTATUS[0]}' \
+		|| { echo "✗ the Wails fork patch tests failed — their output is above"; exit 1; }
+ifneq ($(OS),Windows_NT)
+	@cd $(WAILS_V3) && GOTOOLCHAIN=local GOOS=windows GOARCH=amd64 $(GOCMD) vet -unsafeptr=false $(WAILS_PATCH_PKGS) $(WAILS_PATCH_PKGS_WINDOWS) \
+		|| { echo "✗ the Wails fork's patched packages don't compile for windows/amd64"; exit 1; }
+endif
+	@echo "✓ Wails fork patch tests passed"
 
 ## test-full: Run lint + all tests (pre-PR target).
 test-full: lint test

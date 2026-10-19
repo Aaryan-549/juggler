@@ -215,6 +215,20 @@ jobs:
             go test -count=1 -race -timeout 5m ./cmd/...
           fi
 
+      # The vendored Wails fork's own tests, for the packages its local patches
+      # touch (docs/wails-fork.md). They sit in the fork's module, outside
+      # ./cmd/..., so no step above reaches them, and this matrix is the only
+      # place the Linux and Windows halves of those patches run. GTK needs a
+      # display on Linux, as the browser suite does.
+      - name: Run Wails fork patch tests
+        shell: bash
+        run: |
+          if [ "${RUNNER_OS}" = "Linux" ]; then
+            xvfb-run -a make test-wails-patches RACE=-race
+          else
+            make test-wails-patches RACE=-race
+          fi
+
       # Browser test suite: drives the WebKitGTK engine inside a spawned
       # bin/juggler-testsrv. -count=1 (not -short) is load-bearing — under -short the
       # whole suite self-skips (browser_suite_test.go / main_test.go TestMain),

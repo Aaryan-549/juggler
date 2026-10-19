@@ -288,7 +288,21 @@ Key invariants:
 
 ## Vendored forks
 
-`3rdparty/wails` is a git submodule (`go.mod` `replace` points at it). After a
-fresh clone: `git submodule update --init --recursive`. It's shallow by default;
-unshallow before rebasing onto upstream. Keep the branch upstream-PR-ready — no
-juggler-specific references.
+`3rdparty/wails` is a git submodule (`go.mod` `replace` points at it): upstream
+Wails v3 plus a stack of local patches on `juggler-changes`. After a fresh
+clone: `git submodule update --init --recursive`. `docs/wails-fork.md` is the
+patch ledger and the full procedure. In short, to rebase:
+
+1. In the submodule: `git fetch --unshallow origin`, add and fetch `upstream`
+   (wailsapp/wails); `git cherry -v upstream/master juggler-changes` — drop the
+   `-` patches, upstream has them.
+2. `git switch -c juggler-changes-rebase-<date> juggler-changes && git rebase
+   upstream/master`. Changelog conflicts: keep upstream's side plus the patch's
+   own line. Keep every patch upstream-PR-ready — upstream commit style, no
+   juggler-specific references.
+3. Bump the `require` label in `go.mod` to upstream's nearest tag; `go mod tidy`.
+4. `make test-wails-patches` (the fork's tests for the patched packages — no
+   `./...` here reaches them), then `make test`. If `wails-runtime-embed` says
+   the bundle is stale: `make wails-runtime-build` and commit it in the fork.
+5. Update the ledger. Tag the old `juggler-changes` tip before force-pushing
+   over it — older checkouts still fetch it by SHA.

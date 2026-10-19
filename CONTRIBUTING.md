@@ -134,8 +134,9 @@ A few conventions you'll be held to in review; full rationale is in
 ## Vendored fork (`3rdparty/wails`)
 
 The Wails fork is a git submodule wired in through a `go.mod` `replace`
-directive; the submodule pointer is the source of truth. See
-[`AGENTS.md`](AGENTS.md) for the rebase/update workflow.
+directive; the submodule pointer is the source of truth. Its local patches,
+their upstream status and the rebase procedure are in
+[`docs/wails-fork.md`](docs/wails-fork.md).
 
 ## Licensing and contributor agreements
 
