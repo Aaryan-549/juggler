@@ -59,7 +59,7 @@ func assertRecoveryFoldUndoableAtDepth(t *testing.T, depth int) {
 
 	pinned := &ModelConfig{Provider: "original", Model: "rejected"}
 	_, stub := newRecoveryStub(t, pinned)
-	w.llmCallFunc = stub
+	w.SetLLMCaller(stub)
 
 	if _, err := w.ownedRun(t).compactToFit(recoveryLimitErr(), pinned); err != nil {
 		t.Fatal(err)

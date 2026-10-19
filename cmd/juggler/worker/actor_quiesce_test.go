@@ -36,6 +36,10 @@ const quiesceTimeout = 10 * time.Second
 // refused dispatch re-arms the bit for the next event to act on.
 func (w *ConversationWorker) quiesce(t testing.TB) {
 	t.Helper()
+	// The test goroutine is the actor, so the state only the actor may touch is
+	// asserted against it, and the turns it serves are held to the same rule as
+	// they are under the run loop.
+	w.actor.bind()
 	r := w.currentRun()
 	deadline := time.NewTimer(quiesceTimeout)
 	defer deadline.Stop()
@@ -145,6 +149,7 @@ func (w *ConversationWorker) driveStrategyLoop(t testing.TB, userText string, is
 // running on its goroutine when it returns, for a test that acts while it does.
 func (w *ConversationWorker) startStrategyLoop(t testing.TB, userText string, isContinuation bool) {
 	t.Helper()
+	w.actor.bind()
 	r := w.currentRun()
 	threadID := r.t.thread.itemID
 	// A test standing in for a run already under way holds the claim itself.

@@ -35,7 +35,7 @@ func TestLivenessClockMeasuresOnlyAFreeze(t *testing.T) {
 }
 
 func TestUndoGroupingMarksAreOneShot(t *testing.T) {
-	u := newUndoGrouping()
+	u := newUndoGrouping(nil)
 	if _, ok := u.takeCompactionMerge(); ok {
 		t.Fatal("a fresh grouping has a compaction in flight")
 	}

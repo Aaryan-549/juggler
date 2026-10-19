@@ -167,9 +167,9 @@ func TestHandleCompactFoldsSummarizesAndAcks(t *testing.T) {
 	w.currentRun().storeState(StateIdle)
 	w.doc.SetMetadata("defaultModelConfig", map[string]any{"provider": "test", "model": "test"})
 	feedCompactionContextAndTools(w)
-	w.llmCallFunc = func(_ context.Context, _ json.RawMessage, _ func(StreamChunk)) (*LLMResponse, error) {
+	w.SetLLMCaller(func(_ context.Context, _ json.RawMessage, _ func(StreamChunk)) (*LLMResponse, error) {
 		return &LLMResponse{Blocks: []LLMResponseBlock{{Type: provider.ContentBlockTypeText, Content: "command compact summary"}}}, nil
-	}
+	})
 	w.doc.doc.Transact(func(_ *ycrdt.Transaction) {
 		arr := w.doc.ensureItems()
 		arr.Push(ycrdt.ArrayAny{conversationItemToYMap(ConversationItem{Type: "rule", ItemID: generateItemID(), Content: "rule"})})
@@ -206,13 +206,13 @@ func TestManualCompactNotesAssumedWindow(t *testing.T) {
 	defer w.doc.Destroy()
 	w.currentRun().storeState(StateIdle)
 	w.doc.SetMetadata("defaultModelConfig", map[string]any{"provider": "local", "model": "qwen"})
-	w.windowResolver = func(ModelConfig) ContextWindowInfo {
+	w.SetWindowResolver(func(ModelConfig) ContextWindowInfo {
 		return ContextWindowInfo{WindowTokens: 8192, ReserveTokens: 1638, Assumed: true}
-	}
+	})
 	feedCompactionContextAndTools(w)
-	w.llmCallFunc = func(_ context.Context, _ json.RawMessage, _ func(StreamChunk)) (*LLMResponse, error) {
+	w.SetLLMCaller(func(_ context.Context, _ json.RawMessage, _ func(StreamChunk)) (*LLMResponse, error) {
 		return &LLMResponse{Blocks: []LLMResponseBlock{{Type: provider.ContentBlockTypeText, Content: "command compact summary"}}}, nil
-	}
+	})
 	w.doc.doc.Transact(func(_ *ycrdt.Transaction) {
 		arr := w.doc.ensureItems()
 		arr.Push(ycrdt.ArrayAny{conversationItemToYMap(ConversationItem{Type: ItemTypeUser, ItemID: generateItemID(), Content: "hello"})})
@@ -285,9 +285,9 @@ func TestHandleCompactUnderLandedPauseLiftsAndSummarizes(t *testing.T) {
 	w.currentRun().storeState(StateIdle)
 	w.doc.SetMetadata("defaultModelConfig", map[string]any{"provider": "test", "model": "test"})
 	feedCompactionContextAndTools(w)
-	w.llmCallFunc = func(_ context.Context, _ json.RawMessage, _ func(StreamChunk)) (*LLMResponse, error) {
+	w.SetLLMCaller(func(_ context.Context, _ json.RawMessage, _ func(StreamChunk)) (*LLMResponse, error) {
 		return &LLMResponse{Blocks: []LLMResponseBlock{{Type: provider.ContentBlockTypeText, Content: "paused compact summary"}}}, nil
-	}
+	})
 	w.doc.doc.Transact(func(_ *ycrdt.Transaction) {
 		arr := w.doc.ensureItems()
 		arr.Push(ycrdt.ArrayAny{conversationItemToYMap(ConversationItem{Type: ItemTypeUser, ItemID: generateItemID(), Content: "hello"})})
@@ -513,12 +513,12 @@ func TestHandleCompactConvergesToSingleSummary(t *testing.T) {
 	feedCompactionContextAndTools(w)
 	summaries := []string{"first summary", "second summary"}
 	var sources []string
-	w.llmCallFunc = func(_ context.Context, encoded json.RawMessage, _ func(StreamChunk)) (*LLMResponse, error) {
+	w.SetLLMCaller(func(_ context.Context, encoded json.RawMessage, _ func(StreamChunk)) (*LLMResponse, error) {
 		sources = append(sources, string(encoded))
 		s := summaries[0]
 		summaries = summaries[1:]
 		return &LLMResponse{Blocks: []LLMResponseBlock{{Type: provider.ContentBlockTypeText, Content: s}}}, nil
-	}
+	})
 	pushUserTurn := func(content string) {
 		w.doc.doc.Transact(func(_ *ycrdt.Transaction) {
 			arr := w.doc.ensureItems()
@@ -569,13 +569,13 @@ func TestHandleCompactLeavesAnEchoedSummaryUnsummarized(t *testing.T) {
 	w.doc.SetMetadata("defaultModelConfig", map[string]any{"provider": "test", "model": "test"})
 	feedCompactionContextAndTools(w)
 	// The fault in the wild: the transcript handed back instead of a summary.
-	w.llmCallFunc = func(_ context.Context, encoded json.RawMessage, _ func(StreamChunk)) (*LLMResponse, error) {
+	w.SetLLMCaller(func(_ context.Context, encoded json.RawMessage, _ func(StreamChunk)) (*LLMResponse, error) {
 		var req hiddenLLMRequest
 		if err := json.Unmarshal(encoded, &req); err != nil {
 			return nil, err
 		}
 		return &LLMResponse{Blocks: []LLMResponseBlock{{Type: provider.ContentBlockTypeText, Content: req.Messages[0].Content}}}, nil
-	}
+	})
 	w.doc.doc.Transact(func(_ *ycrdt.Transaction) {
 		arr := w.doc.ensureItems()
 		arr.Push(ycrdt.ArrayAny{conversationItemToYMap(ConversationItem{Type: ItemTypeUser, ItemID: generateItemID(), Content: echoableTurn("hello")})})
@@ -629,10 +629,10 @@ func TestFoldSummarizerCancellationMarksThreadUnsummarized(t *testing.T) {
 	w.currentRun().storeState(StateIdle)
 	w.doc.SetMetadata("defaultModelConfig", map[string]any{"provider": "test", "model": "test"})
 	feedCompactionContextAndTools(w)
-	w.llmCallFunc = func(_ context.Context, _ json.RawMessage, _ func(StreamChunk)) (*LLMResponse, error) {
+	w.SetLLMCaller(func(_ context.Context, _ json.RawMessage, _ func(StreamChunk)) (*LLMResponse, error) {
 		cancelLiveRuns(w)
 		return nil, context.Canceled
-	}
+	})
 	w.doc.doc.Transact(func(_ *ycrdt.Transaction) {
 		arr := w.doc.ensureItems()
 		arr.Push(ycrdt.ArrayAny{conversationItemToYMap(ConversationItem{Type: "rule", ItemID: generateItemID(), Content: "rule"})})
@@ -666,10 +666,10 @@ func TestResummariseClearsUnsummarizedMarker(t *testing.T) {
 	w.currentRun().storeState(StateIdle)
 	w.doc.SetMetadata("defaultModelConfig", map[string]any{"provider": "test", "model": "test"})
 	feedCompactionContextAndTools(w)
-	w.llmCallFunc = func(_ context.Context, _ json.RawMessage, _ func(StreamChunk)) (*LLMResponse, error) {
+	w.SetLLMCaller(func(_ context.Context, _ json.RawMessage, _ func(StreamChunk)) (*LLMResponse, error) {
 		cancelLiveRuns(w)
 		return nil, context.Canceled
-	}
+	})
 	w.doc.doc.Transact(func(_ *ycrdt.Transaction) {
 		arr := w.doc.ensureItems()
 		arr.Push(ycrdt.ArrayAny{conversationItemToYMap(ConversationItem{Type: ItemTypeUser, ItemID: generateItemID(), Content: "hello"})})
@@ -689,9 +689,9 @@ func TestResummariseClearsUnsummarizedMarker(t *testing.T) {
 
 	// Re-summarise against a summarizer that answers this time.
 	w.currentRun().storeState(StateIdle)
-	w.llmCallFunc = func(_ context.Context, _ json.RawMessage, _ func(StreamChunk)) (*LLMResponse, error) {
+	w.SetLLMCaller(func(_ context.Context, _ json.RawMessage, _ func(StreamChunk)) (*LLMResponse, error) {
 		return &LLMResponse{Blocks: []LLMResponseBlock{{Type: provider.ContentBlockTypeText, Content: "recovered summary"}}}, nil
-	}
+	})
 	waitAck2 := captureAck(t, w, "client-1", "a2")
 	w.currentRun().handleResummarizeCompactionThread(json.RawMessage(
 		`{"type":"resummarize-compaction-thread","threadItemId":"` + threadID + `","ackId":"a2"}`))

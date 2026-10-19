@@ -126,46 +126,46 @@ func (w *ConversationWorker) driveToolActionsExcept(liveThreads map[string]bool)
 	// attempts cap.
 	var holding []string
 
-	ycrdtMu.Lock()
-	walkAllItems(w.doc.getItems(), "", func(m *ycrdt.YMap, threadID string) bool {
-		if liveThreads[threadID] {
-			return false
-		}
-		if t, _ := m.Get("type").(string); t != ItemTypeToolAction {
-			return false
-		}
-		id, _ := m.Get("toolUseId").(string)
-		if id == "" {
-			return false
-		}
-		state, _ := m.Get("state").(string)
-		if txnID, _ := m.Get("transactionId").(string); txnID != "" {
-			category, _ := m.Get("category").(string)
-			key := [2]string{threadID, txnID}
-			turns[key] = append(turns[key], turnCall{id: id, state: state, category: category, ran: hasRun(m)})
-		}
-		var action string
-		switch state {
-		case StateUnevaluated:
-			action = "evaluate-tool"
-		case StateApproved:
-			action = "execute-tool"
-		case StatePending:
-			if w.tools.commandedAt(id, StateApproved) {
-				holding = append(holding, id)
+	withYDoc(func() {
+		walkAllItems(w.doc.getItems(), "", func(m *ycrdt.YMap, threadID string) bool {
+			if liveThreads[threadID] {
+				return false
 			}
+			if t, _ := m.Get("type").(string); t != ItemTypeToolAction {
+				return false
+			}
+			id, _ := m.Get("toolUseId").(string)
+			if id == "" {
+				return false
+			}
+			state, _ := m.Get("state").(string)
+			if txnID, _ := m.Get("transactionId").(string); txnID != "" {
+				category, _ := m.Get("category").(string)
+				key := [2]string{threadID, txnID}
+				turns[key] = append(turns[key], turnCall{id: id, state: state, category: category, ran: hasRun(m)})
+			}
+			var action string
+			switch state {
+			case StateUnevaluated:
+				action = "evaluate-tool"
+			case StateApproved:
+				action = "execute-tool"
+			case StatePending:
+				if w.tools.commandedAt(id, StateApproved) {
+					holding = append(holding, id)
+				}
+				return false
+			default:
+				// pending (awaiting user), running (already claimed), or terminal
+				// (completed/cancelled): nothing for the worker to command. The user's
+				// approval is expressed as the viewer's state=approved write, which
+				// this walk picks up on the next tick via the StateApproved branch.
+				return false
+			}
+			cmds = append(cmds, toolCmd{id: id, state: state, action: action})
 			return false
-		default:
-			// pending (awaiting user), running (already claimed), or terminal
-			// (completed/cancelled): nothing for the worker to command. The user's
-			// approval is expressed as the viewer's state=approved write, which
-			// this walk picks up on the next tick via the StateApproved branch.
-			return false
-		}
-		cmds = append(cmds, toolCmd{id: id, state: state, action: action})
-		return false
+		})
 	})
-	ycrdtMu.Unlock()
 
 	for _, id := range holding {
 		w.tools.clear(id)
@@ -263,14 +263,14 @@ func (w *ConversationWorker) reevaluatePendingToolsOnStrategyChangeExcept(liveTh
 		current[""] = w.doc.ResolveEffectiveStrategyID("")
 	}
 	var threadIDs []string
-	ycrdtMu.Lock()
-	walkThreads(w.doc.getItems(), func(m *ycrdt.YMap, _ *ycrdt.YArray, _ string) bool {
-		if id, _ := m.Get("itemId").(string); id != "" {
-			threadIDs = append(threadIDs, id)
-		}
-		return false
+	withYDoc(func() {
+		walkThreads(w.doc.getItems(), func(m *ycrdt.YMap, _ *ycrdt.YArray, _ string) bool {
+			if id, _ := m.Get("itemId").(string); id != "" {
+				threadIDs = append(threadIDs, id)
+			}
+			return false
+		})
 	})
-	ycrdtMu.Unlock()
 	for _, id := range threadIDs {
 		if !liveThreads[id] {
 			current[id] = w.doc.ResolveEffectiveStrategyID(id)

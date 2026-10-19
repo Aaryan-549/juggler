@@ -728,7 +728,8 @@ type assumedWindowNoticeData struct {
 // not assumed, is unknown, or this conversation already carries a notice for
 // the same model and window.
 func (r *run) assumedWindowNotice(mc *ModelConfig) (ConversationItem, bool) {
-	if r.windowResolver == nil {
+	resolve := r.deps().windowResolver
+	if resolve == nil {
 		return ConversationItem{}, false
 	}
 	if mc == nil {
@@ -736,7 +737,7 @@ func (r *run) assumedWindowNotice(mc *ModelConfig) (ConversationItem, bool) {
 			return ConversationItem{}, false
 		}
 	}
-	info := r.windowResolver(*mc)
+	info := resolve(*mc)
 	if !info.Assumed || info.WindowTokens <= 0 {
 		return ConversationItem{}, false
 	}

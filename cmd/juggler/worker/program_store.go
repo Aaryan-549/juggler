@@ -70,11 +70,6 @@ func NewProgramStore(pathProvider PathProviderFunc) *ProgramStore {
 	return &ProgramStore{pathProvider: pathProvider}
 }
 
-// SetPathProvider replaces the path resolver. Idempotent.
-func (s *ProgramStore) SetPathProvider(fn PathProviderFunc) {
-	s.pathProvider = fn
-}
-
 // dir returns the conversation's programs directory, or "" if the
 // conversation is unknown to the path provider.
 func (s *ProgramStore) dir(convID string) string {

@@ -68,7 +68,7 @@ func TestRateLimitLatch_HoldsEverySiblingThread(t *testing.T) {
 	w.sched.markReconcile()
 	w.quiesce(t)
 
-	if left := w.mock.remaining(); left != 2 {
+	if left := w.mock().remaining(); left != 2 {
 		t.Fatalf("a standing usage cap let %d of 2 sub-threads call the provider anyway (%d scripted turns left, want 2): "+
 			"what one thread learns about the account's cap has to hold for every thread on that provider, "+
 			"or each one spends its own retries discovering the same four-hour wall", 2-left, left)
@@ -132,7 +132,7 @@ func TestRateLimitLatch_UserSendLiftsItForAParkedParent(t *testing.T) {
 		t.Fatalf("the cap still stands until %v after the user sent into the parked parent: the send is an explicit "+
 			"\"try anyway\", and it is the only send this conversation has left to make", until)
 	}
-	if left := w.mock.remaining(); left != 0 {
+	if left := w.mock().remaining(); left != 0 {
 		t.Fatalf("%d of 2 scripted turns went unused: lifting the cap is not enough on its own — nothing else asks "+
 			"for a reducer pass, so the child is never re-offered and the queued message is never drained", left)
 	}

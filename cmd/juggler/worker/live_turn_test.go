@@ -78,10 +78,21 @@ func startDelegatingWorker(t *testing.T, mc *msgChan, tools []ToolDefinition, sp
 		PauseBeforeReturn: true,
 	}})
 
-	// A turn asks the engine for its context and tools before it calls the model,
-	// so it needs something on the other end or it simply waits out the timeout.
-	// Answered from the callback registry's goroutine, exactly as a real client's
-	// reply arrives.
+	answerEngineRequests(w, tools, nextSpec)
+
+	w.SetCallback("client", mc.callback)
+	w.currentRun().Start(context.Background())
+	t.Cleanup(w.currentRun().Stop)
+	return w
+}
+
+// answerEngineRequests attaches an engine that answers every context and tools
+// request — offering tools — and every build-subthread-spec with nextSpec. A turn
+// asks the engine for its context and tools before it calls the model, so it
+// needs something on the other end or it simply waits out the timeout. Answered
+// from the callback registry's goroutine, exactly as a real client's reply
+// arrives.
+func answerEngineRequests(w *ConversationWorker, tools []ToolDefinition, nextSpec func() *SubthreadSpec) {
 	w.SetCallback("engine", func(b []byte) {
 		var head struct {
 			Type      string `json:"type"`
@@ -111,11 +122,6 @@ func startDelegatingWorker(t *testing.T, mc *msgChan, tools []ToolDefinition, sp
 		}
 	})
 	w.SetEngineClientID("engine")
-
-	w.SetCallback("client", mc.callback)
-	w.currentRun().Start(context.Background())
-	t.Cleanup(w.currentRun().Stop)
-	return w
 }
 
 // sendUserMessage posts an ordinary root-thread send through the mailbox.
@@ -149,10 +155,10 @@ func awaitLiveRun(t *testing.T, w *ConversationWorker) {
 func gateNextMockPause(t *testing.T, w *ConversationWorker) (release func()) {
 	t.Helper()
 	gate := &announceGate{arrived: make(chan struct{}), release: make(chan struct{})}
-	w.mock.gate.Store(gate)
+	w.mock().gate.Store(gate)
 	t.Cleanup(func() {
 		// A test that never got there must not leave the goroutine parked.
-		if w.mock.gate.Swap(nil) != nil {
+		if w.mock().gate.Swap(nil) != nil {
 			return
 		}
 		select {
@@ -385,7 +391,7 @@ func TestSettledRunFilesItsBoundaryUnderItsOwnThread(t *testing.T) {
 	feedContextAndTools(t, w)
 	w.driveStrategyLoop(t, "", true)
 
-	if left := w.mock.remaining(); left != 0 {
+	if left := w.mock().remaining(); left != 0 {
 		t.Fatalf("the child's turn did not run (%d scripted turns left)", left)
 	}
 	if _, ok := w.sched.turnBoundaries[child]; !ok {
@@ -429,7 +435,7 @@ func TestDispatchedTurnRunsOffTheRunLoop(t *testing.T) {
 		t.Fatalf("the run loop stopped serving the mailbox during a turn: %v", err)
 	}
 
-	w.mock.release()
+	w.mock().release()
 	awaitNoLiveRun(t, w)
 
 	if got := w.anyRunState(); got != StateIdle {
@@ -505,7 +511,7 @@ func TestCancellingAPendingRequestStopsItsLiveTurn(t *testing.T) {
 func releaseParkedRuns(t *testing.T, w *ConversationWorker) {
 	t.Cleanup(func() {
 		for i := 0; i < 400 && w.sched.hasLive(); i++ {
-			w.mock.release()
+			w.mock().release()
 			time.Sleep(5 * time.Millisecond)
 		}
 	})
@@ -552,7 +558,7 @@ func TestCancellingAPendingRequestStopsItsRunBesideASibling(t *testing.T) {
 	projected := ""
 	for {
 		projected, _ = w.readProcessingState()["threadItemId"].(string)
-		if len(w.sched.runs()) == 2 && w.mock.remaining() == 0 && (projected == readA || projected == readB) {
+		if len(w.sched.runs()) == 2 && w.mock().remaining() == 0 && (projected == readA || projected == readB) {
 			break
 		}
 		select {
@@ -730,7 +736,7 @@ func TestReadOnlyChildrenRunSideBySide(t *testing.T) {
 	// so a failure doesn't leave two goroutines blocked on the barrier.
 	t.Cleanup(func() {
 		for i := 0; i < 400 && w.sched.hasLive(); i++ {
-			w.mock.release()
+			w.mock().release()
 			time.Sleep(5 * time.Millisecond)
 		}
 	})
@@ -844,7 +850,7 @@ func TestDelegatedReadOnlySiblingsRunSideBySide(t *testing.T) {
 	// so a failure doesn't leave two goroutines blocked on the barrier.
 	t.Cleanup(func() {
 		for i := 0; i < 400 && w.sched.hasLive(); i++ {
-			w.mock.release()
+			w.mock().release()
 			time.Sleep(5 * time.Millisecond)
 		}
 	})
@@ -942,7 +948,7 @@ func TestParentWaitsForEveryDelegatedSibling(t *testing.T) {
 	})
 	t.Cleanup(func() {
 		for i := 0; i < 400 && w.sched.hasLive(); i++ {
-			w.mock.release()
+			w.mock().release()
 			time.Sleep(5 * time.Millisecond)
 		}
 	})
@@ -955,18 +961,18 @@ func TestParentWaitsForEveryDelegatedSibling(t *testing.T) {
 	// after the release below — leaving a response in the queue that reads
 	// exactly like a parent that never resumed at all.
 	deadline := time.After(15 * time.Second)
-	for len(w.sched.runs()) < 2 || w.mock.remaining() > 1 {
+	for len(w.sched.runs()) < 2 || w.mock().remaining() > 1 {
 		select {
 		case <-deadline:
 			t.Fatalf("the two delegated children never ran together; runs=%v scripted responses left=%d",
-				w.readProcessingState()["runs"], w.mock.remaining())
+				w.readProcessingState()["runs"], w.mock().remaining())
 		case <-time.After(5 * time.Millisecond):
 		}
 	}
 
 	// Let exactly one of them through. Which one is not the point — whichever it
 	// is, the other is still running, and that is what the parent owes an answer.
-	w.mock.release()
+	w.mock().release()
 	for len(w.sched.runs()) > 1 {
 		select {
 		case <-deadline:
@@ -980,7 +986,7 @@ func TestParentWaitsForEveryDelegatedSibling(t *testing.T) {
 	// the reducer used to read the transcript's last item, find it settled, and
 	// continue.
 	for i := 0; i < 60; i++ {
-		if remaining := w.mock.remaining(); remaining != 1 {
+		if remaining := w.mock().remaining(); remaining != 1 {
 			t.Fatalf("the parent resumed with a child still running: %d scripted responses left, want 1", remaining)
 		}
 		if !w.sched.hasLive() {
@@ -991,8 +997,8 @@ func TestParentWaitsForEveryDelegatedSibling(t *testing.T) {
 
 	// Once the second child settles the parent is owed nothing more, and takes
 	// its continuation.
-	w.mock.release()
-	for w.mock.remaining() > 0 {
+	w.mock().release()
+	for w.mock().remaining() > 0 {
 		select {
 		case <-deadline:
 			t.Fatal("the parent never resumed once every child had settled")

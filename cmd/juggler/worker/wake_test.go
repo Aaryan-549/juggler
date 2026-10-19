@@ -43,7 +43,7 @@ func TestSystemWakeInterruptsInFlightLLM(t *testing.T) {
 	// leaves it holding a ctx that is never cancelled, so it gives up by itself
 	// and says so: the turn then carries that text instead of the wake's, which
 	// is what the assertion below reads.
-	w.llmCallFunc = func(ctx context.Context, _ json.RawMessage, _ func(StreamChunk)) (*LLMResponse, error) {
+	w.SetLLMCaller(func(ctx context.Context, _ json.RawMessage, _ func(StreamChunk)) (*LLMResponse, error) {
 		close(providerStarted)
 		select {
 		case <-ctx.Done():
@@ -51,7 +51,7 @@ func TestSystemWakeInterruptsInFlightLLM(t *testing.T) {
 		case <-time.After(wakeBudget):
 			return nil, errors.New("the per-turn ctx was never cancelled")
 		}
-	}
+	})
 
 	go func() {
 		<-providerStarted

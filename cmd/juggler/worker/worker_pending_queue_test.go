@@ -74,7 +74,7 @@ func TestQueuedMessageJoinsToolResultContinuation(t *testing.T) {
 	w.quiesce(t)
 
 	// Exactly the one scripted turn must have run.
-	if n := w.mock.remaining(); n != 0 {
+	if n := w.mock().remaining(); n != 0 {
 		t.Fatalf("expected the single scripted turn consumed, %d left — the queued message was not promoted into the tool-result continuation", n)
 	}
 
@@ -178,7 +178,7 @@ func TestMessageQueuedAsATurnEndsIsAnswered(t *testing.T) {
 	if w.hasPendingItems("") {
 		t.Fatal("the late message is still queued under an idle conversation")
 	}
-	if n := w.mock.remaining(); n != 0 {
+	if n := w.mock().remaining(); n != 0 {
 		t.Fatalf("%d scripted turn(s) left; the late message was never answered", n)
 	}
 	items := w.doc.GetItems()

@@ -73,7 +73,9 @@ func (w *ConversationWorker) seedHasAutoNamed() {
 // later message can be mistaken for the conversation's first. See metaAutoNamed.
 func (w *ConversationWorker) fireAutoName(firstMessage, provider, model, thinking string, force bool) {
 	w.doc.SetMetadata(metaAutoNamed, true)
-	w.autoNameFunc(w.conversationID, firstMessage, provider, model, thinking, force)
+	if fn := w.deps().autoNameFunc; fn != nil {
+		fn(w.conversationID, firstMessage, provider, model, thinking, force)
+	}
 }
 
 // NameIsProvisional reports whether this conversation's name may still be

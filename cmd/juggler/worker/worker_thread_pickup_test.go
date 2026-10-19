@@ -166,7 +166,7 @@ func TestCompactionSubthread_DrainsRootQueueOnCompletion(t *testing.T) {
 	}
 
 	// Both scripted turns must have been consumed.
-	if n := w.mock.remaining(); n != 0 {
+	if n := w.mock().remaining(); n != 0 {
 		t.Fatalf("expected both scripted turns consumed, %d left", n)
 	}
 
@@ -346,11 +346,11 @@ func TestCheckForNewThreads_CancelDoesNotRetriggerNeedsStrategyRunThread(t *test
 	w.engine.toolsReply.inject(w.done, toolsResponse)
 
 	calls := 0
-	w.llmCallFunc = func(ctx context.Context, request json.RawMessage, chunkHandler func(StreamChunk)) (*LLMResponse, error) {
+	w.SetLLMCaller(func(ctx context.Context, request json.RawMessage, chunkHandler func(StreamChunk)) (*LLMResponse, error) {
 		calls++
 		cancelLiveRuns(w)
 		return nil, ErrCancelled
-	}
+	})
 
 	threadID := insertThreadWithOpts(w, threadOpts{goal: "Cancellable thread", needsStrategyRun: true, userMessage: "Summarize"})
 	if threadID == "" {
@@ -440,10 +440,10 @@ func TestReconcile_DeletedThreadWithStandingClaimDoesNotRun(t *testing.T) {
 	}()
 
 	calls := 0
-	w.llmCallFunc = func(ctx context.Context, request json.RawMessage, chunkHandler func(StreamChunk)) (*LLMResponse, error) {
+	w.SetLLMCaller(func(ctx context.Context, request json.RawMessage, chunkHandler func(StreamChunk)) (*LLMResponse, error) {
 		calls++
 		return &LLMResponse{StopReason: "end_turn"}, nil
-	}
+	})
 
 	threadID := insertThreadWithOpts(w, threadOpts{goal: "Child"})
 	if !w.requestLLM(threadID) {
@@ -491,10 +491,10 @@ func TestRunOneTurn_DeletedThreadDoesNotCallLLM(t *testing.T) {
 	}()
 
 	calls := 0
-	w.llmCallFunc = func(ctx context.Context, request json.RawMessage, chunkHandler func(StreamChunk)) (*LLMResponse, error) {
+	w.SetLLMCaller(func(ctx context.Context, request json.RawMessage, chunkHandler func(StreamChunk)) (*LLMResponse, error) {
 		calls++
 		return &LLMResponse{StopReason: "end_turn"}, nil
-	}
+	})
 
 	threadID := insertThreadWithOpts(w, threadOpts{goal: "Child"})
 	w.requestLLM(threadID)

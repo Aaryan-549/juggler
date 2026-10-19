@@ -167,7 +167,7 @@ func (r *run) dispatchThread(spec threadSpec) (string, error) {
 	// and to the same once-only and name-provenance guards the message path
 	// uses (metaAutoNamed, NameIsProvisional), so the later root message
 	// that usually follows does not retitle the tab.
-	if spec.ParentThreadItemID == "" && !spec.IsContinuation && r.autoNameFunc != nil &&
+	if spec.ParentThreadItemID == "" && !spec.IsContinuation && r.deps().autoNameFunc != nil &&
 		strings.TrimSpace(spec.Prompt) != "" && !r.hasAutoNamed() && r.NameIsProvisional() {
 		r.fireAutoName(spec.Prompt, mc.Provider, mc.Model, mc.Thinking, false)
 	}

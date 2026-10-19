@@ -26,9 +26,9 @@ func TestCallLLMPreservesTypedProviderError(t *testing.T) {
 		OutputReserveTokens:  50,
 		ContextWindowTokens:  128,
 	}
-	w.llmCallFunc = func(context.Context, json.RawMessage, func(StreamChunk)) (*LLMResponse, error) {
+	w.SetLLMCaller(func(context.Context, json.RawMessage, func(StreamChunk)) (*LLMResponse, error) {
 		return nil, want
-	}
+	})
 
 	_, err := w.currentRun().callLLM(nil)
 	var got *provider.ContextLimitExceededError
@@ -45,14 +45,14 @@ func TestCallLLMWithRetryDoesNotRetryContextLimitError(t *testing.T) {
 	defer w.doc.Destroy()
 
 	calls := 0
-	w.llmCallFunc = func(context.Context, json.RawMessage, func(StreamChunk)) (*LLMResponse, error) {
+	w.SetLLMCaller(func(context.Context, json.RawMessage, func(StreamChunk)) (*LLMResponse, error) {
 		calls++
 		return nil, &provider.ContextLimitExceededError{
 			EstimatedInputTokens: 200,
 			OutputReserveTokens:  50,
 			ContextWindowTokens:  128,
 		}
-	}
+	})
 
 	_, err := w.currentRun().callLLMWithRetry(nil)
 	var exceeded *provider.ContextLimitExceededError
@@ -77,13 +77,13 @@ func TestCallLLMWithRetryRetriesRateAndTransientErrors(t *testing.T) {
 			w := NewConversationWorker("test-conv", "user:test")
 			defer w.doc.Destroy()
 			calls := 0
-			w.llmCallFunc = func(context.Context, json.RawMessage, func(StreamChunk)) (*LLMResponse, error) {
+			w.SetLLMCaller(func(context.Context, json.RawMessage, func(StreamChunk)) (*LLMResponse, error) {
 				calls++
 				if calls == 1 {
 					return nil, test.err
 				}
 				return &LLMResponse{Blocks: []LLMResponseBlock{{Type: provider.ContentBlockTypeText, Content: "recovered"}}}, nil
-			}
+			})
 
 			response, err := w.currentRun().callLLMWithRetry(nil)
 			if err != nil {
@@ -107,13 +107,13 @@ func TestCallLLMWithRetryResendsUnusableOutput(t *testing.T) {
 	defer w.doc.Destroy()
 
 	calls := 0
-	w.llmCallFunc = func(context.Context, json.RawMessage, func(StreamChunk)) (*LLMResponse, error) {
+	w.SetLLMCaller(func(context.Context, json.RawMessage, func(StreamChunk)) (*LLMResponse, error) {
 		calls++
 		if calls == 1 {
 			return nil, &provider.UnusableOutputError{Message: "model called tools by names the session does not serve"}
 		}
 		return &LLMResponse{Blocks: []LLMResponseBlock{{Type: provider.ContentBlockTypeText, Content: "recovered"}}}, nil
-	}
+	})
 
 	response, err := w.currentRun().callLLMWithRetry(nil)
 	if err != nil {
@@ -137,10 +137,10 @@ func TestCallLLMWithRetryStopsWhenRetryBudgetSpent(t *testing.T) {
 	defer w.doc.Destroy()
 
 	calls := 0
-	w.llmCallFunc = func(context.Context, json.RawMessage, func(StreamChunk)) (*LLMResponse, error) {
+	w.SetLLMCaller(func(context.Context, json.RawMessage, func(StreamChunk)) (*LLMResponse, error) {
 		calls++
 		return nil, &TransientError{Wait: time.Nanosecond, Message: "overloaded"}
-	}
+	})
 
 	// Earlier attempts in this sequence already used the whole allowance.
 	w.turn.retrySpent = MaxLLMRetryWindow
@@ -172,7 +172,7 @@ func TestCallLLMWithRetryChargesOnlyTheSilentTail(t *testing.T) {
 	w.turn.retrySpent = MaxLLMRetryWindow - TransientRetryWait - 500*time.Millisecond
 
 	calls := 0
-	w.llmCallFunc = func(_ context.Context, _ json.RawMessage, sink func(StreamChunk)) (*LLMResponse, error) {
+	w.SetLLMCaller(func(_ context.Context, _ json.RawMessage, sink func(StreamChunk)) (*LLMResponse, error) {
 		calls++
 		if calls == 1 {
 			time.Sleep(streaming)
@@ -180,7 +180,7 @@ func TestCallLLMWithRetryChargesOnlyTheSilentTail(t *testing.T) {
 			return nil, &TransientError{Wait: time.Nanosecond, Message: "stream error: stream ID 5; INTERNAL_ERROR; received from peer"}
 		}
 		return &LLMResponse{Blocks: []LLMResponseBlock{{Type: provider.ContentBlockTypeText, Content: "recovered"}}}, nil
-	}
+	})
 
 	if _, err := w.currentRun().callLLMWithRetry(nil); err != nil {
 		t.Fatalf("callLLMWithRetry: %v — the attempt was charged for the time it spent streaming", err)
@@ -200,12 +200,12 @@ func TestCallLLMWithRetryChargesSilentAttemptInFull(t *testing.T) {
 	w.turn.retrySpent = MaxLLMRetryWindow - 50*time.Millisecond
 
 	calls := 0
-	w.llmCallFunc = func(_ context.Context, _ json.RawMessage, sink func(StreamChunk)) (*LLMResponse, error) {
+	w.SetLLMCaller(func(_ context.Context, _ json.RawMessage, sink func(StreamChunk)) (*LLMResponse, error) {
 		calls++
 		time.Sleep(100 * time.Millisecond)
 		sink(StreamChunk{Type: provider.ContentBlockTypeStatus, Content: "Waiting for response"})
 		return nil, &TransientError{Wait: time.Nanosecond, Message: "overloaded"}
-	}
+	})
 
 	if _, err := w.currentRun().callLLMWithRetry(nil); err == nil {
 		t.Fatal("expected the transient error to surface once the silent attempt spent the budget")
@@ -304,10 +304,10 @@ func TestCallLLMWithRetryDoesNotRetryPastTheReset(t *testing.T) {
 	defer w.doc.Destroy()
 
 	calls := 0
-	w.llmCallFunc = func(context.Context, json.RawMessage, func(StreamChunk)) (*LLMResponse, error) {
+	w.SetLLMCaller(func(context.Context, json.RawMessage, func(StreamChunk)) (*LLMResponse, error) {
 		calls++
 		return nil, &RateLimitError{Wait: 5 * time.Second, Message: "usage limit reached"}
-	}
+	})
 
 	// Leaves a second of the allowance — far less than the wait the provider asked for.
 	w.turn.retrySpent = MaxLLMRetryWindow - time.Second
@@ -326,9 +326,9 @@ func TestClassifyLLMResponseErrorCompatibility(t *testing.T) {
 	w := NewConversationWorker("test-conv", "user:test")
 	defer w.doc.Destroy()
 
-	w.llmCallFunc = func(context.Context, json.RawMessage, func(StreamChunk)) (*LLMResponse, error) {
+	w.SetLLMCaller(func(context.Context, json.RawMessage, func(StreamChunk)) (*LLMResponse, error) {
 		return &LLMResponse{Error: "HTTP 429 rate limited"}, nil
-	}
+	})
 
 	_, err := w.currentRun().callLLM(nil)
 	var rateLimit *RateLimitError

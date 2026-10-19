@@ -87,6 +87,10 @@ type turnState struct {
 	// Zeroed by finalizeStreaming at iteration boundaries.
 	streaming streamingState
 
+	// unwrittenItems names the items a write by this run has failed to reach,
+	// so each failure is logged once (updateRunItem).
+	unwrittenItems map[string]bool
+
 	// offeredTools is the canonical set of tool names sent to the provider for
 	// the response being processed. Nil means no authoritative turn snapshot
 	// exists; an empty map means the provider was offered no tools.

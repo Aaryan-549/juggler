@@ -91,9 +91,9 @@ func (r *run) handleInit(payload json.RawMessage) {
 		"loadFromDisk": msg.Conversation.LoadFromDisk,
 	})
 	r.projectPath = msg.Config.ProjectPath
-	r.txnStore = NewTransactionStore(r.pathProvider)
-	r.assetStore = NewAssetStore(r.pathProvider)
-	r.programStore = NewProgramStore(r.pathProvider)
+	r.txnStore = NewTransactionStore(r.resolveConvDir)
+	r.assetStore = NewAssetStore(r.resolveConvDir)
+	r.programStore = NewProgramStore(r.resolveConvDir)
 
 	// Open this conversation's own log file (in addition to the process-wide
 	// server.log) so a conversation's worker activity can be read in isolation.
@@ -401,7 +401,7 @@ func (r *run) handleSendMessage(payload json.RawMessage) {
 		// text-less (image-only) first messages, and any conversation whose name a
 		// human has committed to (NameIsProvisional — the server re-checks it
 		// before applying the title).
-		if msg.ThreadItemID == "" && r.autoNameFunc != nil &&
+		if msg.ThreadItemID == "" && r.deps().autoNameFunc != nil &&
 			strings.TrimSpace(input.Text) != "" && !r.hasAutoNamed() &&
 			r.NameIsProvisional() {
 			r.fireAutoName(input.Text, modelConfig.Provider, modelConfig.Model, modelConfig.Thinking, false)
@@ -506,7 +506,7 @@ func (w *ConversationWorker) firstRootUserMessageText() string {
 // auto-naming isn't wired or there is no user message to summarise yet — there is
 // nothing to name before the first turn.
 func (w *ConversationWorker) handleRequestAutoName(payload json.RawMessage) {
-	if w.autoNameFunc == nil {
+	if w.deps().autoNameFunc == nil {
 		return
 	}
 	var msg RequestAutoNameMessage
@@ -688,8 +688,8 @@ func (r *run) abortTurn(threadID string) {
 	// through isContinuation/continueSession and the CLI would resume
 	// the abandoned turn, never seeing the new user input. The release is
 	// warm-preserving: sessionUUID survives so the next turn --resumes warm.
-	if r.cancelLLMSession != nil {
-		r.cancelLLMSession(r.conversationID, threadID)
+	if release := r.deps().cancelLLMSession; release != nil {
+		release(r.conversationID, threadID)
 	}
 }
 
@@ -784,8 +784,8 @@ func (r *run) handleCancelOn(processingID string, reason cancelReason) {
 		// conversation — and that is the common case, since Claude emits
 		// multi-tool batches where one tool executes while a sibling still awaits
 		// approval, so "real work in flight" is the norm at an approval prompt.
-		if r.cancelLLMSession != nil {
-			r.cancelLLMSession(r.conversationID, threadID)
+		if release := r.deps().cancelLLMSession; release != nil {
+			release(r.conversationID, threadID)
 		}
 
 		if pureApproval {
@@ -1121,10 +1121,11 @@ func (w *ConversationWorker) handleEngineTrace(payload json.RawMessage) {
 // conversation the store doesn't have — in which case the log file falls back
 // to a bare conv-id filename.
 func (w *ConversationWorker) conversationName() string {
-	if w.nameProvider == nil {
+	resolve := w.deps().nameProvider
+	if resolve == nil {
 		return ""
 	}
-	name, ok := w.nameProvider(w.conversationID)
+	name, ok := resolve(w.conversationID)
 	if !ok {
 		return ""
 	}

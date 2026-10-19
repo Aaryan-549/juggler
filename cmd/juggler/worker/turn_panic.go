@@ -18,10 +18,12 @@ package worker
 // it errored rather than left waiting for an answer that will never come.
 //
 // Every recover asks one question before it carries on: whether the doc lock is
-// still usable. ycrdtMu is process-wide, and most holds are a bare Lock/Unlock
-// pair rather than a deferred Unlock, so a panic between the two leaves it held
-// for good. Carrying on would then park this goroutine on its first doc write,
-// and every conversation behind it; ending the process is the better of the two
+// still usable. ycrdtMu is process-wide, and a panic inside a hold that did not
+// defer its release would leave it held for good. Every hold in this package
+// does defer it (TestEveryYcrdtHoldDefersItsRelease), so the answer should
+// always be yes; the question stays as the backstop for the day one does not,
+// because carrying on would then park this goroutine on its first doc write, and
+// every conversation behind it. Ending the process is the better of the two
 // failures, so that is what happens.
 
 import (
@@ -133,8 +135,8 @@ func (r *run) cancelInFlightCall(threadID string) {
 	if p := r.t.cancelLLM.Swap(nil); p != nil {
 		(*p)()
 	}
-	if r.cancelLLMSession != nil {
-		r.cancelLLMSession(r.conversationID, threadID)
+	if release := r.deps().cancelLLMSession; release != nil {
+		release(r.conversationID, threadID)
 	}
 }
 

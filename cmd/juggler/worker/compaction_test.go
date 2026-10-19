@@ -363,13 +363,13 @@ func TestRunFoldedThreadCompactionOnePassAppendsPrompt(t *testing.T) {
 
 	calls := 0
 	var sawReq hiddenLLMRequest
-	w.llmCallFunc = func(_ context.Context, raw json.RawMessage, _ func(StreamChunk)) (*LLMResponse, error) {
+	w.SetLLMCaller(func(_ context.Context, raw json.RawMessage, _ func(StreamChunk)) (*LLMResponse, error) {
 		calls++
 		if err := json.Unmarshal(raw, &sawReq); err != nil {
 			t.Fatal(err)
 		}
 		return &LLMResponse{Blocks: []LLMResponseBlock{{Type: provider.ContentBlockTypeText, Content: "the handoff summary"}}}, nil
-	}
+	})
 
 	probeTools := []ToolDefinition{{Name: "edit", Description: "Edit a file", InputSchema: json.RawMessage(`{"type":"object"}`)}}
 	handled, err := w.currentRun().runFoldedThreadCompaction(&ModelConfig{Provider: "test", Model: "test"}, &ContextResult{SystemPrompt: "ordinary system prompt"}, probeTools)
@@ -417,7 +417,7 @@ func TestRunFoldedThreadCompactionProbeOverflowChunks(t *testing.T) {
 	const window int64 = 2400
 	const reserve int64 = 300
 	calls := 0
-	w.llmCallFunc = func(_ context.Context, raw json.RawMessage, _ func(StreamChunk)) (*LLMResponse, error) {
+	w.SetLLMCaller(func(_ context.Context, raw json.RawMessage, _ func(StreamChunk)) (*LLMResponse, error) {
 		calls++
 		var req hiddenLLMRequest
 		if err := json.Unmarshal(raw, &req); err != nil {
@@ -435,7 +435,7 @@ func TestRunFoldedThreadCompactionProbeOverflowChunks(t *testing.T) {
 			return &LLMResponse{Blocks: []LLMResponseBlock{{Type: provider.ContentBlockTypeText, Content: "final compact summary"}}}, nil
 		}
 		return &LLMResponse{Blocks: []LLMResponseBlock{{Type: provider.ContentBlockTypeText, Content: "condensed fragment"}}}, nil
-	}
+	})
 
 	handled, err := w.currentRun().runFoldedThreadCompaction(&ModelConfig{Provider: "test", Model: "test"}, &ContextResult{}, nil)
 	if !handled || err != nil {
@@ -468,13 +468,13 @@ func TestFoldedCompactionPublishesBusyStatus(t *testing.T) {
 
 	var sawStatus, sawMessage string
 	var sawStarted bool
-	w.llmCallFunc = func(_ context.Context, _ json.RawMessage, _ func(StreamChunk)) (*LLMResponse, error) {
+	w.SetLLMCaller(func(_ context.Context, _ json.RawMessage, _ func(StreamChunk)) (*LLMResponse, error) {
 		state := w.readProcessingState()
 		sawStatus, _ = state["status"].(string)
 		sawMessage, _ = state["message"].(string)
 		_, sawStarted = state["startedAt"]
 		return &LLMResponse{Blocks: []LLMResponseBlock{{Type: provider.ContentBlockTypeText, Content: "the handoff summary"}}}, nil
-	}
+	})
 
 	handled, err := w.currentRun().runFoldedThreadCompaction(&ModelConfig{Provider: "test", Model: "test"}, &ContextResult{}, nil)
 	if !handled || err != nil {
@@ -501,7 +501,7 @@ func TestBoundedCompactionMapsReducesAndPublishesOnlyFinalResult(t *testing.T) {
 	const window int64 = 2400
 	const reserve int64 = 300
 	calls := 0
-	w.llmCallFunc = func(_ context.Context, raw json.RawMessage, _ func(StreamChunk)) (*LLMResponse, error) {
+	w.SetLLMCaller(func(_ context.Context, raw json.RawMessage, _ func(StreamChunk)) (*LLMResponse, error) {
 		calls++
 		var req hiddenLLMRequest
 		if err := json.Unmarshal(raw, &req); err != nil {
@@ -515,7 +515,7 @@ func TestBoundedCompactionMapsReducesAndPublishesOnlyFinalResult(t *testing.T) {
 			return &LLMResponse{Blocks: []LLMResponseBlock{{Type: provider.ContentBlockTypeText, Content: "final compact summary"}}}, nil
 		}
 		return &LLMResponse{Blocks: []LLMResponseBlock{{Type: provider.ContentBlockTypeText, Content: "condensed fragment"}}}, nil
-	}
+	})
 
 	handled, err := w.currentRun().tryBoundedCompaction(&provider.ContextLimitExceededError{
 		EstimatedInputTokens: 5_000, OutputReserveTokens: reserve, ContextWindowTokens: window,
@@ -556,7 +556,7 @@ func TestBoundedCompactionPinsRejectedRequestModel(t *testing.T) {
 	insertBoundedCompactionThread(t, w, strings.Repeat("history ", 1000))
 	pinned := &ModelConfig{Provider: "original", Model: "rejected"}
 	calls := 0
-	w.llmCallFunc = func(_ context.Context, raw json.RawMessage, _ func(StreamChunk)) (*LLMResponse, error) {
+	w.SetLLMCaller(func(_ context.Context, raw json.RawMessage, _ func(StreamChunk)) (*LLMResponse, error) {
 		calls++
 		var req hiddenLLMRequest
 		if err := json.Unmarshal(raw, &req); err != nil {
@@ -570,7 +570,7 @@ func TestBoundedCompactionPinsRejectedRequestModel(t *testing.T) {
 			return &LLMResponse{Blocks: []LLMResponseBlock{{Type: provider.ContentBlockTypeText, Content: "done"}}}, nil
 		}
 		return &LLMResponse{Blocks: []LLMResponseBlock{{Type: provider.ContentBlockTypeText, Content: "short"}}}, nil
-	}
+	})
 	_, err := w.currentRun().tryBoundedCompaction(&provider.ContextLimitExceededError{EstimatedInputTokens: 3_000, OutputReserveTokens: 300, ContextWindowTokens: 3000}, pinned)
 	if err != nil {
 		t.Fatal(err)
@@ -700,11 +700,11 @@ func TestBoundedCompactionRejectsNonConvergence(t *testing.T) {
 	defer w.doc.Destroy()
 	w.currentRun().storeState(StateProcessing)
 	insertBoundedCompactionThread(t, w, strings.Repeat("source ", 2000))
-	w.llmCallFunc = func(_ context.Context, raw json.RawMessage, _ func(StreamChunk)) (*LLMResponse, error) {
+	w.SetLLMCaller(func(_ context.Context, raw json.RawMessage, _ func(StreamChunk)) (*LLMResponse, error) {
 		var req hiddenLLMRequest
 		_ = json.Unmarshal(raw, &req)
 		return &LLMResponse{Blocks: []LLMResponseBlock{{Type: provider.ContentBlockTypeText, Content: strings.Repeat("expanded ", 3000)}}}, nil
-	}
+	})
 	_, err := w.currentRun().tryBoundedCompaction(&provider.ContextLimitExceededError{OutputReserveTokens: 200, ContextWindowTokens: 1800}, &ModelConfig{Provider: "test", Model: "test"})
 	if err == nil || !strings.Contains(err.Error(), "no progress") {
 		t.Fatalf("error = %v, want no progress", err)
@@ -716,10 +716,10 @@ func TestBoundedCompactionCancellationPublishesNothing(t *testing.T) {
 	defer w.doc.Destroy()
 	w.currentRun().storeState(StateProcessing)
 	threadID := insertBoundedCompactionThread(t, w, strings.Repeat("source ", 2000))
-	w.llmCallFunc = func(_ context.Context, _ json.RawMessage, _ func(StreamChunk)) (*LLMResponse, error) {
+	w.SetLLMCaller(func(_ context.Context, _ json.RawMessage, _ func(StreamChunk)) (*LLMResponse, error) {
 		w.currentRun().storeState(StateCancelling)
 		return nil, context.Canceled
-	}
+	})
 	_, err := w.currentRun().tryBoundedCompaction(&provider.ContextLimitExceededError{OutputReserveTokens: 200, ContextWindowTokens: 1800}, &ModelConfig{Provider: "test", Model: "test"})
 	if !errors.Is(err, errBoundedCompactionCancelled) {
 		t.Fatalf("error = %v, want cancellation", err)
@@ -735,10 +735,10 @@ func TestBoundedCompactionCancellationCarriesPartialAccounting(t *testing.T) {
 	defer w.doc.Destroy()
 	w.currentRun().storeState(StateProcessing)
 	insertBoundedCompactionThread(t, w, strings.Repeat("source ", 2000))
-	w.llmCallFunc = func(_ context.Context, _ json.RawMessage, _ func(StreamChunk)) (*LLMResponse, error) {
+	w.SetLLMCaller(func(_ context.Context, _ json.RawMessage, _ func(StreamChunk)) (*LLMResponse, error) {
 		w.currentRun().storeState(StateCancelling)
 		return nil, context.Canceled
-	}
+	})
 	_, err := w.currentRun().tryBoundedCompaction(&provider.ContextLimitExceededError{OutputReserveTokens: 200, ContextWindowTokens: 1800}, &ModelConfig{Provider: "test", Model: "test"})
 	if !errors.Is(err, errBoundedCompactionCancelled) {
 		t.Fatalf("error = %v, want cancellation", err)
@@ -872,7 +872,7 @@ func TestHiddenCompactionUsesRegistryAdmissionAndDiscardsAllStreamChunks(t *test
 	w.currentRun().storeState(StateProcessing)
 	threadID := insertBoundedCompactionThread(t, w, strings.Repeat("large history λ🙂 ", 500))
 	originalItems := w.doc.GetItemsFromArray(w.doc.GetThreadItemsArray(threadID))
-	w.llmCallFunc = func(ctx context.Context, raw json.RawMessage, callback func(StreamChunk)) (*LLMResponse, error) {
+	w.SetLLMCaller(func(ctx context.Context, raw json.RawMessage, callback func(StreamChunk)) (*LLMResponse, error) {
 		var hidden hiddenLLMRequest
 		if err := json.Unmarshal(raw, &hidden); err != nil {
 			return nil, err
@@ -888,7 +888,7 @@ func TestHiddenCompactionUsesRegistryAdmissionAndDiscardsAllStreamChunks(t *test
 			return &LLMResponse{Blocks: []LLMResponseBlock{{Type: provider.ContentBlockTypeToolUse, Name: "submit_summary", Input: json.RawMessage(`{"summary":"admitted final"}`)}}}, nil
 		}
 		return &LLMResponse{Blocks: []LLMResponseBlock{{Type: provider.ContentBlockTypeText, Content: "short"}}}, nil
-	}
+	})
 
 	handled, err := w.currentRun().tryBoundedCompaction(&provider.ContextLimitExceededError{
 		EstimatedInputTokens: 5_000, OutputReserveTokens: reserve, ContextWindowTokens: window,

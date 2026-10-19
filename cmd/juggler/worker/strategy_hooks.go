@@ -26,21 +26,23 @@ import (
 // (plan, research) still fires onActivate.
 const defaultStrategyID = "default"
 
-// StrategyHookTimeout bounds how long the worker blocks waiting for the engine
-// to run onActivate and for the injected guidance to sync back into the doc.
-// On timeout the worker proceeds WITHOUT marking the strategy activated, so the
-// next turn retries — self-healing once a warm engine is available, rather than
-// permanently losing the guidance.
-var StrategyHookTimeout = 10 * time.Second
+// defaultStrategyHookTimeout bounds how long the worker blocks waiting for the
+// engine to run onActivate and for the injected guidance to sync back into the
+// doc. On timeout the worker proceeds WITHOUT marking the strategy activated, so
+// the next turn retries — self-healing once a warm engine is available, rather
+// than permanently losing the guidance. Each worker carries its own copy
+// (ConversationWorker.strategyHookTimeout), which is what a test shortens.
+const defaultStrategyHookTimeout = 10 * time.Second
 
 // ensureEngineReady brings the on-demand engine up and waits for it to connect.
 // Returns true when no gate is installed (tests / test-pool: the engine is an
 // always-on iframe).
 func (w *ConversationWorker) ensureEngineReady() bool {
-	if w.engineReadyFunc == nil {
+	ready := w.deps().engineReadyFunc
+	if ready == nil {
 		return true
 	}
-	return w.engineReadyFunc()
+	return ready()
 }
 
 // dispatchStrategyHook sends a run-strategy-hook request to the engine only. A
@@ -111,7 +113,7 @@ func (r *run) maybeActivateStrategy() {
 	reply, unregister := r.engine.strategyHookReply.register(requestID)
 	defer unregister()
 	r.dispatchStrategyHook(requestID, "onActivate", current, threadID, activated)
-	guidance, ok := r.waitForStrategyHook(requestID, reply, StrategyHookTimeout)
+	guidance, ok := r.waitForStrategyHook(requestID, reply, r.strategyHookTimeout)
 	if !ok {
 		return // engine didn't answer in time — retry on a later turn
 	}

@@ -385,7 +385,7 @@ func TestRunResultCapFollowsTheCallersWindow(t *testing.T) {
 		w := NewConversationWorker("test-conv", "user:test")
 		t.Cleanup(w.doc.Destroy)
 		w.doc.SetMetadata("defaultModelConfig", map[string]any{"provider": "prov", "model": "caller"})
-		w.windowResolver = func(mc ModelConfig) ContextWindowInfo {
+		w.SetWindowResolver(func(mc ModelConfig) ContextWindowInfo {
 			switch mc.Model {
 			case "caller":
 				return ContextWindowInfo{WindowTokens: callerWindow}
@@ -393,7 +393,7 @@ func TestRunResultCapFollowsTheCallersWindow(t *testing.T) {
 				return ContextWindowInfo{WindowTokens: 8192}
 			}
 			return ContextWindowInfo{}
-		}
+		})
 
 		threadID := insertThreadWithOpts(w, threadOpts{goal: "Research", userMessage: "look into it"})
 		w.doc.SetThreadField(threadID, "modelConfig", map[string]any{"provider": "prov", "model": "child"})

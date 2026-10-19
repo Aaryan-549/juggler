@@ -28,10 +28,10 @@ import (
 // its own: every run settles into a result, so the parent's stamped tool_use is
 // never stranded.
 
-// SubthreadSpecTimeout bounds the build-spec round-trip. On timeout the worker
+// subthreadSpecTimeout bounds the build-spec round-trip. On timeout the worker
 // falls back to the ordinary client-side tool-action, so a slow/absent engine
 // degrades to normal execution rather than wedging the turn.
-var SubthreadSpecTimeout = 10 * time.Second
+const subthreadSpecTimeout = 10 * time.Second
 
 // delegatingTool is what the worker remembers about one offered tool that may
 // delegate: everything the delegation decision needs that the tool_use block
@@ -162,7 +162,7 @@ func (r *run) tryDelegateTool(toolUseID, toolName string, toolInput json.RawMess
 	reply, unregister := r.engine.subthreadSpecReply.register(requestID)
 	defer unregister()
 	r.dispatchBuildSubthreadSpec(requestID, toolUseID, toolName, toolInput)
-	spec, ok := r.waitForSubthreadSpec(requestID, reply, SubthreadSpecTimeout)
+	spec, ok := r.waitForSubthreadSpec(requestID, reply, subthreadSpecTimeout)
 	if !ok || spec == nil {
 		return false // null spec / error / timeout → ordinary tool-action
 	}

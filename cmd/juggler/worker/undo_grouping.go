@@ -22,8 +22,11 @@ const historyNavRecoil = 500 * time.Millisecond
 //
 // It records indices and windows; the undo stack itself is the tracker's.
 // Every field is read and written only by the methods in this file
-// (TestWorkerSeamsOwnTheirState). Run goroutine only.
+// (TestWorkerSeamsOwnTheirState). Run goroutine only, which every method
+// asserts (actor_guard.go).
 type undoGrouping struct {
+	// undoActor is the worker's actor guard; nil for a grouping built bare.
+	undoActor *actorGuard
 	// observerMuted, when true, makes handleItemsChange a no-op. Set for the
 	// duration of an undo/redo so the document mutations the UndoManager
 	// applies don't kick the reducer (which would otherwise see e.g. a restored
@@ -55,32 +58,37 @@ type undoGrouping struct {
 // newUndoGrouping returns grouping state with nothing in flight. Both marks
 // mean "nothing in flight" at -1, so the zero value would read as "collapse
 // everything from entry 0".
-func newUndoGrouping() undoGrouping {
-	return undoGrouping{compactionMergeFrom: -1, commandMergeFrom: -1}
+func newUndoGrouping(actor *actorGuard) undoGrouping {
+	return undoGrouping{undoActor: actor, compactionMergeFrom: -1, commandMergeFrom: -1}
 }
+
+// own asserts the caller is the actor.
+func (u *undoGrouping) own() { u.undoActor.assertActor("the undo grouping") }
 
 // ---- Reducer holds around a history step ----
 
 // muteObserver silences handleItemsChange while a history step is applied.
-func (u *undoGrouping) muteObserver() { u.observerMuted = true }
+func (u *undoGrouping) muteObserver() { u.own(); u.observerMuted = true }
 
 // unmuteObserver ends muteObserver.
-func (u *undoGrouping) unmuteObserver() { u.observerMuted = false }
+func (u *undoGrouping) unmuteObserver() { u.own(); u.observerMuted = false }
 
 // observerIsMuted reports whether handleItemsChange should do nothing.
-func (u *undoGrouping) observerIsMuted() bool { return u.observerMuted }
+func (u *undoGrouping) observerIsMuted() bool { u.own(); return u.observerMuted }
 
 // startNavRecoil opens the post-history-step recoil window at now.
 func (u *undoGrouping) startNavRecoil(now time.Time) {
+	u.own()
 	u.navRecoilUntilMs = now.Add(historyNavRecoil).UnixMilli()
 }
 
 // endNavRecoil closes the recoil window: an explicit user intent has arrived.
-func (u *undoGrouping) endNavRecoil() { u.navRecoilUntilMs = 0 }
+func (u *undoGrouping) endNavRecoil() { u.own(); u.navRecoilUntilMs = 0 }
 
 // inNavRecoil reports whether now falls inside the recoil window. A window
 // found expired is closed, so the check costs nothing afterwards.
 func (u *undoGrouping) inNavRecoil(now time.Time) bool {
+	u.own()
 	if u.navRecoilUntilMs == 0 {
 		return false
 	}
@@ -94,21 +102,23 @@ func (u *undoGrouping) inNavRecoil(now time.Time) bool {
 // ---- Merge marks ----
 
 // markCompactionStart records the undo-stack index of the compaction insert.
-func (u *undoGrouping) markCompactionStart(idx int) { u.compactionMergeFrom = idx }
+func (u *undoGrouping) markCompactionStart(idx int) { u.own(); u.compactionMergeFrom = idx }
 
 // takeCompactionMerge returns the compaction mark and clears it; ok is false
 // when no compaction is in flight.
 func (u *undoGrouping) takeCompactionMerge() (idx int, ok bool) {
+	u.own()
 	idx, u.compactionMergeFrom = u.compactionMergeFrom, -1
 	return idx, idx >= 0
 }
 
 // openCommand records the undo-stack index a bracketed command starts at.
-func (u *undoGrouping) openCommand(idx int) { u.commandMergeFrom = idx }
+func (u *undoGrouping) openCommand(idx int) { u.own(); u.commandMergeFrom = idx }
 
 // takeCommandMerge returns the command mark and clears it; ok is false when no
 // bracket is open.
 func (u *undoGrouping) takeCommandMerge() (idx int, ok bool) {
+	u.own()
 	idx, u.commandMergeFrom = u.commandMergeFrom, -1
 	return idx, idx >= 0
 }

@@ -58,18 +58,14 @@ const DefaultRunBudgetTokens int64 = 1_000_000
 // so a settings change takes effect on the next turn without a restart.
 type RunBudgetFunc func() int64
 
-// SetRunBudget installs the run budget resolver. See RunBudgetFunc.
-func (w *ConversationWorker) SetRunBudget(fn RunBudgetFunc) {
-	w.runBudgetFn = fn
-}
-
 // runCostBudget is the run budget in force: the configured figure, the default
 // when nothing is configured, 0 when it is switched off.
 func (w *ConversationWorker) runCostBudget() int64 {
-	if w.runBudgetFn == nil {
+	resolve := w.deps().runBudgetFn
+	if resolve == nil {
 		return DefaultRunBudgetTokens
 	}
-	if budget := w.runBudgetFn(); budget > 0 {
+	if budget := resolve(); budget > 0 {
 		return budget
 	}
 	return 0

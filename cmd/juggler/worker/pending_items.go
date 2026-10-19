@@ -165,14 +165,6 @@ func (w *ConversationWorker) requestLLMIfQueued(threadItemID string) bool {
 	)
 }
 
-// HasPendingItems reports whether the thread ("" => root) has any queued
-// (not-yet-promoted) messages. Exported for test observability so a test can
-// deterministically wait for a busy-time send to land in the queue before
-// releasing the in-flight turn.
-func (w *ConversationWorker) HasPendingItems(threadItemID string) bool {
-	return w.hasPendingItems(threadItemID)
-}
-
 // hasPendingItems reports whether the thread has any queued messages.
 func (w *ConversationWorker) hasPendingItems(threadItemID string) bool {
 	ycrdtMu.Lock()
@@ -187,6 +179,13 @@ func (w *ConversationWorker) hasPendingItems(threadItemID string) bool {
 // findUnstampedUserMsgID picks up the last one for the next round-trip. Returns
 // the number promoted. The move itself, and why it is one hold, is
 // OperationTracker.PromotePending.
+//
+// The items-change pass the promotion calls for runs on the actor. A turn
+// promotes at every boundary on its own goroutine, and the pass reaches state
+// only the actor may touch (the undo grouping, the delivery pumps, the doc-driven
+// pickup), so off the actor it is handed over through the items-change signal
+// rather than run where it stands. The turn needs nothing from it: what it reads
+// next is the promoted items themselves.
 func (r *run) promotePendingItems(threadItemID string) int {
 	pending := r.tracker.PromotePending(threadItemID)
 	if len(pending) == 0 {
@@ -198,7 +197,11 @@ func (r *run) promotePendingItems(threadItemID string) int {
 		"count":        len(pending),
 	})
 	r.batcher.Flush()
-	r.handleItemsChange()
+	if r.actor.onActor() {
+		r.handleItemsChange()
+	} else {
+		r.signalItemsChange()
+	}
 	return len(pending)
 }
 

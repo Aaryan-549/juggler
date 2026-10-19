@@ -89,7 +89,7 @@ func assistantContains(items map[string][]ConversationItem, substr string) bool 
 // be reported as what it was.
 func TestTruncatedThinkingOnlyTurnIsReportedNotRetried(t *testing.T) {
 	w := newTruncationWorker(t, "conv-truncated")
-	w.windowResolver = func(ModelConfig) ContextWindowInfo { return ContextWindowInfo{WindowTokens: 8192, ReserveTokens: 1638} }
+	w.SetWindowResolver(func(ModelConfig) ContextWindowInfo { return ContextWindowInfo{WindowTokens: 8192, ReserveTokens: 1638} })
 
 	// Four queued, only one may be consumed: the surplus proves the loop
 	// stopped rather than merely running the queue dry.
@@ -102,7 +102,7 @@ func TestTruncatedThinkingOnlyTurnIsReportedNotRetried(t *testing.T) {
 
 	w.driveStrategyLoop(t, "optimise clipToPolygon", false)
 
-	if n := w.mock.remaining(); n != 3 {
+	if n := w.mock().remaining(); n != 3 {
 		t.Fatalf("leftover mock responses = %d, want 3 (one call, not %d)", n, MaxBarrenTurns)
 	}
 
@@ -144,7 +144,7 @@ func TestTruncatedThinkingOnlyTurnIsReportedNotRetried(t *testing.T) {
 // the reply is short, not absent, and nothing may discard it.
 func TestTruncatedTurnWithTextKeepsTheTextAndReportsIt(t *testing.T) {
 	w := newTruncationWorker(t, "conv-truncated-text")
-	w.windowResolver = func(ModelConfig) ContextWindowInfo { return ContextWindowInfo{WindowTokens: 8192, ReserveTokens: 1638} }
+	w.SetWindowResolver(func(ModelConfig) ContextWindowInfo { return ContextWindowInfo{WindowTokens: 8192, ReserveTokens: 1638} })
 
 	w.setMockResponses([]MockResponse{
 		{Blocks: []LLMResponseBlock{textBlock("Here is the first half of the answer")}, StopReason: "max_tokens", OutputTokens: 1638},
@@ -153,7 +153,7 @@ func TestTruncatedTurnWithTextKeepsTheTextAndReportsIt(t *testing.T) {
 
 	w.driveStrategyLoop(t, "explain the algorithm", false)
 
-	if n := w.mock.remaining(); n != 1 {
+	if n := w.mock().remaining(); n != 1 {
 		t.Fatalf("leftover mock responses = %d, want 1 (exactly one call)", n)
 	}
 	items := itemsByType(w)
@@ -180,7 +180,7 @@ func TestBarrenTurnWithoutTruncationStillRetries(t *testing.T) {
 
 	w.driveStrategyLoop(t, "optimise clipToPolygon", false)
 
-	if n := w.mock.remaining(); n != 1 {
+	if n := w.mock().remaining(); n != 1 {
 		t.Fatalf("leftover mock responses = %d, want 1 (exactly %d calls)", n, MaxBarrenTurns)
 	}
 

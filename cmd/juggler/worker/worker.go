@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"runtime/debug"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -78,22 +79,10 @@ type ConversationWorker struct {
 	// because two of them racing costs one extra line and nothing else.
 	lastGuardLog atomic.Pointer[contextGuardDecision]
 
-	// pathProvider resolves convID → on-disk folder path. Used for reads
-	// and to locate the per-conversation transaction folder. Set at
-	// construction by the Manager; called on every load so a rename
-	// mid-life is naturally seen on the next I/O.
-	pathProvider PathProviderFunc
-
-	// nameProvider resolves convID → the conversation's human-readable name.
-	// Set at construction by the Manager; called on every use so a rename
-	// mid-life is seen immediately. nil until then, and the worker treats an
-	// unresolved name as "not known" rather than guessing at one.
-	nameProvider NameProviderFunc
-
-	// saveBinary persists the Yjs doc. The implementation creates the
-	// conversation folder if it doesn't exist (e.g. brand-new convs and
-	// duplicates) and writes atomically. Set at construction by the Manager.
-	saveBinary SaveBinaryFunc
+	// injected is what the worker is handed from outside — path and name
+	// resolvers, persistence, the LLM caller, the live settings — as one
+	// snapshot replaced whole. See worker_deps.go.
+	injected atomic.Pointer[workerDeps]
 
 	doc     *ConversationDocument
 	tracker *OperationTracker
@@ -151,8 +140,27 @@ type ConversationWorker struct {
 	// being dispatched came from. See worker_inbox.go.
 	inbox workerInbox
 
+	// actor knows which goroutine is the run loop, for the state only it may
+	// touch. See actor_guard.go.
+	actor actorGuard
+
+	// strategyHookTimeout bounds a turn's wait for the engine's onActivate
+	// guidance (defaultStrategyHookTimeout). Set at construction; a test that
+	// wants a shorter wait sets it on its own worker before the worker runs.
+	strategyHookTimeout time.Duration
+
 	done    chan struct{}
 	stopped chan struct{}
+	// stopOnce closes done exactly once, whichever of Stop and a cancelled
+	// lifetime context gets there first (beginStop).
+	stopOnce sync.Once
+
+	// lifetime is the context Start was given: the worker's own lifetime, from
+	// which every provider call it makes derives, so a cancellation from above (a
+	// server shutdown) reaches each call. Written once by Start, before the run
+	// loop exists; nil for a worker never started, whose calls run under
+	// context.Background.
+	lifetime context.Context
 
 	// turn is the run currently in flight: the thread it writes to, the
 	// round-trip in flight, and the accumulators that outlive a chunk but not the
@@ -162,35 +170,6 @@ type ConversationWorker struct {
 	// Per-client outbound callbacks. Owned by a dedicated actor goroutine
 	// (see callback_registry.go); all ops route through callbacks.ch.
 	callbacks *callbackRegistry
-
-	// LLM calling
-	llmCallFunc LLMCallFunc
-	// windowResolver maps the conversation's effective model to its context
-	// window and output reserve. Nil (tests / not wired) ⇒ unknown window. See
-	// WindowResolverFunc.
-	windowResolver WindowResolverFunc
-	// autoCompactGate reports whether automatic compaction is enabled. Nil
-	// (tests / not wired) ⇒ enabled, preserving the default-on behavior. Note
-	// the polarity is the inverse of windowResolver (nil there means unknown).
-	// See AutoCompactGateFunc.
-	autoCompactGate AutoCompactGateFunc
-	// autoNameFunc is the injected server callback fired once, on the first user
-	// message of the root conversation, to auto-name the tab out-of-band. Nil
-	// (tests / not wired) ⇒ no auto-naming. See AutoNameFunc.
-	autoNameFunc AutoNameFunc
-	// engineReadyFunc brings the on-demand engine WebView up and waits until it
-	// is connected, returning false if it could not. Used by the worker to
-	// guarantee the engine is present before dispatching a strategy hook to it
-	// at turn-start (the LLM-call gate runs too late for onActivate, whose
-	// guidance must be in the doc before the turn's messages are built). Nil in
-	// tests / the test-pool, where the engine is an always-on iframe — treated
-	// as always-ready.
-	engineReadyFunc func() bool
-	// cancelLLMSession releases provider-side LLM session state for this
-	// conversation, preserving the resume token + prompt-cache anchor so the
-	// next turn stays warm. Today only the claudecode provider has anything to
-	// do here (kill its parked CLI subprocess; the warm session survives).
-	cancelLLMSession CancelLLMSessionFunc
 
 	// politeStops holds the "Pause" marks: one per paused thread, each standing
 	// over that thread and everything nested below it. A covered thread finishes
@@ -215,9 +194,9 @@ type ConversationWorker struct {
 	// See rate_limit_latch.go, which owns every rule here.
 	rateLimits atomic.Pointer[map[string]time.Time]
 
-	// mock is non-nil iff this worker is under test with scripted LLM
-	// responses installed. See mock_llm.go. Production binaries leave it nil.
-	mock *mockLLMCaller
+	// script is the slot a test installs scripted LLM responses in. It holds
+	// nothing in a production build (mock_llm_production.go); see mock_llm.go.
+	script mockScript
 
 	// Whether handleInit has been called at least once (first-init vs reconnect)
 	initialized bool
@@ -242,9 +221,9 @@ type ConversationWorker struct {
 	// increment below stays a single-writer sequence.
 	turnCounter atomic.Int64
 
-	// The conversation's cumulative token spend — new input, and billed output —
-	// and the resolver for the ceiling that stops delegated work past it. See
-	// spend.go, which owns every rule here.
+	// The conversation's cumulative token spend — new input, and billed output.
+	// The ceiling that stops delegated work past it is resolved through
+	// deps().spendLimit. See spend.go, which owns every rule here.
 	//
 	// Atomic for the same reason turnCounter is, only more so: sibling threads
 	// stream side by side on their own goroutines (canAdmitThread), so several
@@ -254,9 +233,6 @@ type ConversationWorker struct {
 	// reload.
 	spendInput  atomic.Int64
 	spendOutput atomic.Int64
-	spendLimit  SpendLimitFunc
-	// runBudgetFn resolves the per-run budget for delegated children (run_budget.go).
-	runBudgetFn RunBudgetFunc
 
 	// sched is which turns run and when the reducer is next asked: the reconcile
 	// bit, the run loop's dispatch and retirement hand-offs, the live-run
@@ -321,15 +297,19 @@ func NewConversationWorker(conversationID, authorID string) *ConversationWorker 
 		turn:           newTurnState(),
 		docChangeChan:  make(chan struct{}, 1),
 		sched:          newRunScheduler(done),
-		tools:          newToolCommandTracker(),
 		baselines:      newReconcileBaselines(),
-		pumps:          newDeliveryPumps(),
 		saver:          newDocSaver(),
-		undo:           newUndoGrouping(),
 		// Unbounded, order-preserving intake, its pump's lifetime tied to the
 		// worker's; Send enqueues here so it never drops.
 		inbox: newWorkerInbox(done),
+
+		strategyHookTimeout: defaultStrategyHookTimeout,
 	}
+	w.injected.Store(&workerDeps{})
+	// The actor-only seams hold the worker's guard, which exists only once w does.
+	w.tools = newToolCommandTracker(&w.actor)
+	w.pumps = newDeliveryPumps(&w.actor)
+	w.undo = newUndoGrouping(&w.actor)
 	// Created after w.done, which its reply slots share so a blocked test client
 	// is released when the worker stops.
 	w.engine = newEngineSession(w.done)
@@ -353,34 +333,6 @@ func NewConversationWorker(conversationID, authorID string) *ConversationWorker 
 	return w
 }
 
-// SetPathProvider injects the per-conversation path resolver. Idempotent.
-// Called by the Manager when the worker is created and again if the
-// provider is replaced (e.g. on project switch).
-func (w *ConversationWorker) SetPathProvider(fn PathProviderFunc) {
-	w.pathProvider = fn
-	if w.txnStore != nil {
-		w.txnStore.SetPathProvider(fn)
-	}
-	if w.assetStore != nil {
-		w.assetStore.SetPathProvider(fn)
-	}
-	if w.programStore != nil {
-		w.programStore.SetPathProvider(fn)
-	}
-}
-
-// SetNameProvider injects the per-conversation name resolver. Idempotent.
-// Called by the Manager when the worker is created and again if the provider
-// is replaced (e.g. on project switch).
-func (w *ConversationWorker) SetNameProvider(fn NameProviderFunc) {
-	w.nameProvider = fn
-}
-
-// SetSaveBinary injects the doc-persistence callback. Idempotent.
-func (w *ConversationWorker) SetSaveBinary(fn SaveBinaryFunc) {
-	w.saveBinary = fn
-}
-
 // SetSyncThrottle overrides the outbound-sync coalescing window by rebuilding
 // the batcher. Must be called before Start() — the batcher is untouched until
 // the run loop selects on it. Used by the Manager to apply a server-configured
@@ -393,28 +345,61 @@ func (w *ConversationWorker) SetSyncThrottle(d time.Duration) {
 	w.batcher = newSyncBatcher(w.doc, d)
 }
 
-// Start begins the worker's message processing loop.
+// Start begins the worker's message processing loop, under ctx: cancelling it
+// stops the worker the way Stop does, and every provider call the worker makes
+// runs under a context derived from it.
 func (r *run) Start(ctx context.Context) {
+	r.lifetime = ctx
 	go r.run(ctx)
 }
 
-func (r *run) Stop() {
-	// Cancel every in-flight LLM call first — this run's and any turn goroutine's
-	// — so their wait loops return promptly instead of parking on the LLMTimeout
-	// backstop.
-	for _, t := range r.allTurnStates() {
-		if p := t.cancelLLM.Load(); p != nil {
-			(*p)()
-		}
+// lifetimeContext is the context the worker's provider calls derive from.
+func (w *ConversationWorker) lifetimeContext() context.Context {
+	if w.lifetime == nil {
+		return context.Background()
 	}
-	close(r.done)
+	return w.lifetime
+}
+
+// Stop stops the worker and returns once it has gone: its turns unwound, its
+// document saved (onShutdown) and its loop exited.
+func (r *run) Stop() {
+	r.beginStop()
 	<-r.stopped
 	// The loop has gone, so nothing more can be dispatched and this snapshot is
-	// final. Wait the turns out: they unwind on r.done, and a turn still writing
-	// to the document after Stop returns would be writing into a doc the caller
-	// is about to destroy.
+	// final. onShutdown has already waited the turns out; anything left here
+	// outlived its grace, and is waited for without one, because a turn still
+	// writing to the document after Stop returns would be writing into a doc the
+	// caller is about to destroy.
 	for _, e := range r.sched.runs() {
 		<-e.t.finished
+	}
+}
+
+// beginStop starts the worker's stop: it closes done, which releases every wait
+// a turn can be parked in and makes each turn's unwinding quiet (stopping), then
+// cancels every in-flight provider call so none is left streaming into a turn
+// that has gone. Idempotent and callable from any goroutine: Stop calls it, and
+// so does onShutdown, for a loop ended by its lifetime context.
+func (w *ConversationWorker) beginStop() {
+	w.stopOnce.Do(func() {
+		close(w.done)
+		for _, t := range w.allTurnStates() {
+			if p := t.cancelLLM.Load(); p != nil {
+				(*p)()
+			}
+		}
+	})
+}
+
+// stopping reports whether the worker's stop has begun. A turn reads it as it
+// unwinds: what ends a run during a stop is the stop, not anything the run did.
+func (w *ConversationWorker) stopping() bool {
+	select {
+	case <-w.done:
+		return true
+	default:
+		return false
 	}
 }
 
@@ -433,10 +418,10 @@ func (r *run) Stop() {
 // delete and harmless for a bin, where the resume anchor survives — and a no-op
 // when no provider session exists.
 func (r *run) StopForRemoval() {
-	if r.cancelLLMSession != nil {
+	if release := r.deps().cancelLLMSession; release != nil {
 		// Every thread: the conversation itself is going, so there is no thread
 		// left whose session should survive.
-		r.cancelLLMSession(r.conversationID, provider.CancelAllThreads)
+		release(r.conversationID, provider.CancelAllThreads)
 	}
 	r.Stop()
 }
@@ -466,8 +451,21 @@ func (w *ConversationWorker) SendFromClient(clientID, msgType string, payload js
 // processed it. It is for server-side initialization barriers, not normal viewer
 // traffic.
 func (w *ConversationWorker) SendAndWait(ctx context.Context, msgType string, payload json.RawMessage) error {
+	return w.awaitAck(ctx, w.sendWithAck(msgType, payload))
+}
+
+// sendWithAck queues a worker-internal message and returns the channel its
+// handling is acknowledged on, so one goroutine can fix the message's place in
+// the mailbox and another wait for it (Manager.SeedNewConversation).
+func (w *ConversationWorker) sendWithAck(msgType string, payload json.RawMessage) <-chan error {
 	ack := make(chan error, 1)
 	w.inbox.push(workerMessage{Type: msgType, Payload: payload, Ack: ack})
+	return ack
+}
+
+// awaitAck waits for a message sendWithAck queued to be handled. A worker that
+// stops first acknowledges nothing, and that is not an error.
+func (w *ConversationWorker) awaitAck(ctx context.Context, ack <-chan error) error {
 	select {
 	case err := <-ack:
 		return err
@@ -542,62 +540,27 @@ func (w *ConversationWorker) pushStateToEngine() {
 	}
 }
 
-// SetLLMCaller sets the function used to call the LLM provider directly.
-func (w *ConversationWorker) SetLLMCaller(fn LLMCallFunc) {
-	w.llmCallFunc = fn
-}
-
-// SetWindowResolver injects the read-only context-window resolver. See
-// WindowResolverFunc.
-func (w *ConversationWorker) SetWindowResolver(fn WindowResolverFunc) {
-	w.windowResolver = fn
-}
-
 // resolveContextWindow maps the conversation's effective model to its context
 // window and output reserve (tokens) via the injected resolver. Returns the
 // zero value when no resolver is wired (tests) or the model is unknown; callers
 // read a non-positive window as "unknown".
 func (r *run) resolveContextWindow() ContextWindowInfo {
-	if r.windowResolver == nil {
+	resolve := r.deps().windowResolver
+	if resolve == nil {
 		return ContextWindowInfo{}
 	}
 	mc := r.resolveModelConfig()
 	if mc == nil {
 		return ContextWindowInfo{}
 	}
-	return r.windowResolver(*mc)
-}
-
-// SetAutoCompactGate injects the gate that governs whether automatic proactive
-// and reactive compaction runs. See AutoCompactGateFunc.
-func (w *ConversationWorker) SetAutoCompactGate(fn AutoCompactGateFunc) {
-	w.autoCompactGate = fn
+	return resolve(*mc)
 }
 
 // autoCompactEnabled reports whether automatic compaction is enabled. A nil gate
 // (tests / not wired) is treated as enabled, preserving default-on behavior.
 func (w *ConversationWorker) autoCompactEnabled() bool {
-	return w.autoCompactGate == nil || w.autoCompactGate()
-}
-
-// SetAutoNamer registers the out-of-band tab auto-naming callback. See
-// autoNameFunc / AutoNameFunc.
-func (w *ConversationWorker) SetAutoNamer(fn AutoNameFunc) {
-	w.autoNameFunc = fn
-}
-
-// SetEngineReadyFunc registers the gate that brings the on-demand engine up and
-// waits for it to connect. The worker calls it before dispatching a strategy
-// hook to the engine at turn-start. See engineReadyFunc.
-func (w *ConversationWorker) SetEngineReadyFunc(fn func() bool) {
-	w.engineReadyFunc = fn
-}
-
-// SetCancelLLMSession registers the provider-side cancellation hook used by
-// handleCancel when the worker is waiting for a tool result and there is no
-// in-flight LLM ctx to cancel.
-func (w *ConversationWorker) SetCancelLLMSession(fn CancelLLMSessionFunc) {
-	w.cancelLLMSession = fn
+	gate := w.deps().autoCompactGate
+	return gate == nil || gate()
 }
 
 // interruptInFlightLLMForWake cancels the in-flight LLM request (if any)
@@ -726,14 +689,6 @@ func (w *ConversationWorker) FlushPersistence(ctx context.Context) error {
 	}
 }
 
-// SweepTransactionsForTest synchronously runs the transaction blob GC sweep.
-// Test-only: production GC piggy-backs on the 2s debounced save (and on
-// shutdown). Tests use this to assert the live-set + undoLog contract without
-// waiting for the debounce timer.
-func (w *ConversationWorker) SweepTransactionsForTest() error {
-	return w.sweepTransactions()
-}
-
 // loadState reads this run's state atomically.
 func (r *run) loadState() WorkerState {
 	return r.t.state.Load().(WorkerState)
@@ -769,7 +724,12 @@ func (r *run) resolveModelConfig() *ModelConfig {
 
 // run is the main message processing loop. All state access happens here.
 func (r *run) run(ctx context.Context) {
+	r.actor.bind()
 	defer close(r.stopped)
+	// Held for as long as this loop runs; released before stopped closes, so a
+	// Stop that has returned has let it go.
+	defer holdYcrdtWatchdog()()
+	defer r.actor.unbind()
 	defer r.onShutdown()
 	r.liveness.start()
 	defer r.liveness.stop()
@@ -1421,16 +1381,18 @@ func (w *ConversationWorker) sendRenderContextItemsRequest(requestID string, ite
 // setupDocumentObserver registers the items array observer for approval flow.
 // This enables pure document-driven state transitions with no polling.
 func (w *ConversationWorker) setupDocumentObserver() {
-	w.doc.RegisterItemsObserver(func() {
-		// Non-blocking signal: the observer fires on whichever goroutine
-		// did the Transact(), which may not be the run() goroutine.
-		// Move the actual work onto run() via a channel signal.
-		select {
-		case w.docChangeChan <- struct{}{}:
-		default:
-			// Already signaled, run() will pick it up
-		}
-	})
+	// The observer fires on whichever goroutine did the Transact(), which may not
+	// be the run() goroutine, so it only signals.
+	w.doc.RegisterItemsObserver(w.signalItemsChange)
+}
+
+// signalItemsChange asks the run loop for an items-change pass. Callable from
+// any goroutine, and never blocks: a signal already pending covers this one.
+func (w *ConversationWorker) signalItemsChange() {
+	select {
+	case w.docChangeChan <- struct{}{}:
+	default:
+	}
 }
 
 // handleItemsChange reacts to document state changes.
@@ -1515,26 +1477,26 @@ func (r *run) checkForNewThreads() bool {
 		noAutoSelect bool
 	}
 	var candidates []rootThread
-	ycrdtMu.Lock()
-	if root := r.doc.getItems(); root != nil {
-		for _, raw := range root.ToArray() {
-			threadYMap, ok := raw.(*ycrdt.YMap)
-			if !ok {
-				continue
+	withYDoc(func() {
+		if root := r.doc.getItems(); root != nil {
+			for _, raw := range root.ToArray() {
+				threadYMap, ok := raw.(*ycrdt.YMap)
+				if !ok {
+					continue
+				}
+				if itemType, _ := threadYMap.Get("type").(string); itemType != ItemTypeThread {
+					continue
+				}
+				itemID, _ := threadYMap.Get("itemId").(string)
+				needsStrategyRun, _ := threadYMap.Get("needsStrategyRun").(bool)
+				if itemID == "" || !needsStrategyRun || threadRunSettledLocked(threadYMap) {
+					continue
+				}
+				noAutoSelect, _ := threadYMap.Get("noAutoSelect").(bool)
+				candidates = append(candidates, rootThread{itemID: itemID, noAutoSelect: noAutoSelect})
 			}
-			if itemType, _ := threadYMap.Get("type").(string); itemType != ItemTypeThread {
-				continue
-			}
-			itemID, _ := threadYMap.Get("itemId").(string)
-			needsStrategyRun, _ := threadYMap.Get("needsStrategyRun").(bool)
-			if itemID == "" || !needsStrategyRun || threadRunSettledLocked(threadYMap) {
-				continue
-			}
-			noAutoSelect, _ := threadYMap.Get("noAutoSelect").(bool)
-			candidates = append(candidates, rootThread{itemID: itemID, noAutoSelect: noAutoSelect})
 		}
-	}
-	ycrdtMu.Unlock()
+	})
 
 	for _, candidate := range candidates {
 		threadID := candidate.itemID

@@ -133,8 +133,7 @@ func (cd *ConversationDocument) GetReducerItemsFromArray(arr *ycrdt.YArray) []Co
 
 // GetReducerItems returns the root items in the reducer's view.
 func (cd *ConversationDocument) GetReducerItems() []ConversationItem {
-	ycrdtMu.Lock()
-	root := cd.getItems()
-	ycrdtMu.Unlock()
+	var root *ycrdt.YArray
+	withYDoc(func() { root = cd.getItems() })
 	return cd.GetReducerItemsFromArray(root)
 }

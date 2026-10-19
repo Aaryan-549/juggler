@@ -81,7 +81,7 @@ func TestPoliteStop_ReducerRestsBeforeNextTurn(t *testing.T) {
 	w.quiesce(t)
 
 	// The model was NOT re-invoked: the scripted turn is still on the queue.
-	if n := w.mock.remaining(); n != 1 {
+	if n := w.mock().remaining(); n != 1 {
 		t.Fatalf("polite stop failed to suppress the next turn: %d scripted responses left, want 1", n)
 	}
 

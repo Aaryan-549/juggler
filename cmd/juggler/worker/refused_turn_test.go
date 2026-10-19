@@ -26,7 +26,7 @@ func TestRefusedTurnIsNotRetried(t *testing.T) {
 
 	w.driveStrategyLoop(t, "a request that gets declined", false)
 
-	if n := w.mock.remaining(); n != 3 {
+	if n := w.mock().remaining(); n != 3 {
 		t.Fatalf("leftover mock responses = %d, want 3 (one call, not %d)", n, MaxBarrenTurns)
 	}
 
@@ -55,7 +55,7 @@ func TestRefusedTurnWithTextKeepsTheText(t *testing.T) {
 
 	w.driveStrategyLoop(t, "a request that gets declined", false)
 
-	if n := w.mock.remaining(); n != 1 {
+	if n := w.mock().remaining(); n != 1 {
 		t.Fatalf("leftover mock responses = %d, want 1 (exactly one call)", n)
 	}
 	items := itemsByType(w)

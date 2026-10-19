@@ -309,13 +309,10 @@ func TestWorkerDispatchesContextTurnHook(t *testing.T) {
 // later turn with a healthy engine retries rather than permanently swallowing
 // the activation. The engine here records the dispatch but never replies.
 func TestStrategyActivationDefersWhenEngineSilent(t *testing.T) {
-	orig := StrategyHookTimeout
-	StrategyHookTimeout = 200 * time.Millisecond
-	t.Cleanup(func() { StrategyHookTimeout = orig })
-
 	w, hookCh := newStrategyHookHarness(t, "read-only", func(_ *ConversationWorker, _ hookRec) {
 		// Deliberately never reply → the worker's wait must time out.
 	})
+	w.strategyHookTimeout = 200 * time.Millisecond
 
 	w.driveStrategyLoop(t, "build a feature", false)
 

@@ -810,7 +810,7 @@ func TestRetriedChildErrorWakesTheParent(t *testing.T) {
 	if last := items[len(items)-1]; last.Type != ItemTypeAssistant || !strings.Contains(last.Content, "Picked up the retried result.") {
 		t.Errorf("the parent must take up the retried run on its own; it ends on %+v", last)
 	}
-	if left := w.mock.remaining(); left != 0 {
+	if left := w.mock().remaining(); left != 0 {
 		t.Errorf("%d scripted response(s) never used — the parent did not run its turn", left)
 	}
 }

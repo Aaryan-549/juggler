@@ -44,6 +44,18 @@ const docInternalOrigin = "doc-internal"
 // conversation — see ycrdt_watchdog.go.
 var ycrdtMu watchedMutex
 
+// withYDoc runs fn holding ycrdtMu, and releases the lock however fn ends — by
+// returning, or by panicking. A hold a panic leaves behind freezes every
+// conversation in the process, which is why no hold in this package releases
+// the lock by hand (TestEveryYcrdtHoldDefersItsRelease): it takes the lock and
+// defers the release on the next line, or it comes through here. fn must not
+// take the lock again; it is not reentrant.
+func withYDoc(fn func()) {
+	ycrdtMu.Lock()
+	defer ycrdtMu.Unlock()
+	fn()
+}
+
 // ConversationDocument wraps a Yjs document for conversation state management.
 // Thread-safe: a mutex serialises all y-crdt access so test goroutines
 // can call methods concurrently with the worker's run() goroutine.
@@ -1323,12 +1335,19 @@ func (cd *ConversationDocument) ApplyUpdate(update []byte) error {
 
 // LoadFromState loads document state from binary.
 // After applying, refreshes the cached items pointer from root.
+//
+// y-crdt's ApplyUpdate reports nothing: a state it cannot decode is logged to
+// stdout and dropped, leaving the document as it was. So the state's structs
+// are decoded first, on their own, and a failure there is this error.
 func (cd *ConversationDocument) LoadFromState(state []byte) error {
 	if len(state) == 0 {
 		return nil
 	}
 	ycrdtMu.Lock()
 	defer ycrdtMu.Unlock()
+	if _, err := ycrdt.ReadClientsStructRefs(ycrdt.NewUpdateDecoderV1(state), cd.doc); err != nil {
+		return fmt.Errorf("not a document state: %w", err)
+	}
 	ycrdt.ApplyUpdate(cd.doc, state, nil)
 	cd.refreshItemsCache()
 	return nil

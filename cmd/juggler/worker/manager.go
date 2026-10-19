@@ -119,7 +119,7 @@ type managerOp struct {
 	boolResult   chan bool
 	intResult    chan int
 	idsResult    chan []string
-	errorResult  chan error
+	seedResult   chan seedStarted
 	done         chan struct{} // for synchronous operations (e.g., shutdown)
 }
 
@@ -161,6 +161,9 @@ func (m *Manager) run() {
 	// whose every save is then silently dropped as unowned, and whose tab
 	// outlives it. The id is cleared again by ConversationRestored.
 	removedConvs := make(map[string]bool)
+	// removals are the stops Remove started and did not wait for: its caller is
+	// waiting to move the folder. Shutdown waits for them with the rest.
+	var removals sync.WaitGroup
 	var llmCallFunc LLMCallFunc
 	var windowResolver WindowResolverFunc
 	var autoCompactGate AutoCompactGateFunc
@@ -251,6 +254,9 @@ func (m *Manager) run() {
 		switch op.kind {
 		case mgrSetLLMCaller:
 			llmCallFunc = op.llmCallFunc
+			for _, w := range workers {
+				w.SetLLMCaller(llmCallFunc)
+			}
 
 		case mgrSetWindowResolver:
 			windowResolver = op.windowResolver
@@ -295,8 +301,12 @@ func (m *Manager) run() {
 			}
 
 		case mgrSetSyncThrottle:
-			// Applied to workers at creation (the batcher is built in the
-			// constructor); existing workers keep their current window.
+			// The one setting not carried to live workers: the batcher it sizes
+			// is built before Start and is the run loop's from then on, so
+			// existing workers keep their current window. Every other setter
+			// here reaches live workers too, which is safe because a worker
+			// holds what it is handed as one snapshot replaced whole
+			// (worker_deps.go).
 			syncThrottle = op.syncThrottle
 
 		case mgrSetPathProvider:
@@ -360,19 +370,17 @@ func (m *Manager) run() {
 			if !ok {
 				w = createWorker(op.conversationID, "server:seed", false)
 			}
-			var err error
+			// The init is queued here, so it is ahead of anything routed to the
+			// worker afterwards; the caller waits for it, off this goroutine.
+			seed := seedStarted{worker: w}
 			if w != nil && op.initMessage != nil {
-				payload, marshalErr := json.Marshal(op.initMessage)
-				if marshalErr != nil {
-					err = marshalErr
+				if payload, err := json.Marshal(op.initMessage); err != nil {
+					seed.err = err
 				} else {
-					err = w.SendAndWait(m.ctx, "init", payload)
-					if err == nil {
-						err = w.FlushPersistence(m.ctx)
-					}
+					seed.initDone = w.sendWithAck("init", payload)
 				}
 			}
-			op.errorResult <- err
+			op.seedResult <- seed
 
 		case mgrGet:
 			op.workerResult <- workers[op.conversationID]
@@ -396,7 +404,7 @@ func (m *Manager) run() {
 			if ok {
 				inflight := w.hasLLMInFlight()
 				jlog.Info("[worker.Remove] stopping worker conv=%s llmInFlight=%v", op.conversationID, inflight)
-				go w.StopForRemoval()
+				removals.Go(w.StopForRemoval)
 			} else {
 				jlog.Info("[worker.Remove] no worker for conv=%s (already gone)", op.conversationID)
 			}
@@ -472,6 +480,7 @@ func (m *Manager) run() {
 				wg.Go(w.Stop)
 			}
 			wg.Wait()
+			removals.Wait()
 			workers = make(map[string]*ConversationWorker)
 			if op.done != nil {
 				op.done <- struct{}{}
@@ -523,7 +532,8 @@ func (m *Manager) run() {
 	close(m.done)
 }
 
-// SetLLMCaller sets the function used by all workers to call the LLM provider directly.
+// SetLLMCaller sets the function used to call the LLM provider directly by
+// every existing worker and any worker created later.
 func (m *Manager) SetLLMCaller(fn LLMCallFunc) {
 	m.ops <- managerOp{kind: mgrSetLLMCaller, llmCallFunc: fn}
 }
@@ -640,9 +650,27 @@ func (m *Manager) SeedNewConversation(conversationID, name, projectPath, created
 		},
 		Config: WorkerConfig{ProjectPath: projectPath},
 	}
-	result := make(chan error, 1)
-	m.ops <- managerOp{kind: mgrSeedNewConversation, conversationID: conversationID, initMessage: init, errorResult: result}
-	return <-result
+	result := make(chan seedStarted, 1)
+	m.ops <- managerOp{kind: mgrSeedNewConversation, conversationID: conversationID, initMessage: init, seedResult: result}
+	seed := <-result
+	if seed.err != nil || seed.initDone == nil {
+		return seed.err
+	}
+	// Both waits are on the one worker, and they are taken here rather than on
+	// the Manager's goroutine, which every other conversation's traffic passes
+	// through.
+	if err := seed.worker.awaitAck(m.ctx, seed.initDone); err != nil {
+		return err
+	}
+	return seed.worker.FlushPersistence(m.ctx)
+}
+
+// seedStarted is what the Manager's goroutine hands back to a seed: the worker,
+// and the acknowledgement of the init it queued there.
+type seedStarted struct {
+	worker   *ConversationWorker
+	initDone <-chan error
+	err      error
 }
 
 // Get returns a worker if it exists.

@@ -93,46 +93,46 @@ func (w *ConversationWorker) finalizeToolsAbsentFromExecReportExcept(liveThreads
 		epoch int64
 	}
 	var cands []cand
-	ycrdtMu.Lock()
-	walkAllItems(w.doc.getItems(), "", func(m *ycrdt.YMap, threadID string) bool {
-		if liveThreads[threadID] {
+	withYDoc(func() {
+		walkAllItems(w.doc.getItems(), "", func(m *ycrdt.YMap, threadID string) bool {
+			if liveThreads[threadID] {
+				return false
+			}
+			if t, _ := m.Get("type").(string); t != ItemTypeToolAction {
+				return false
+			}
+			// The wedge shape only: still running, no result.
+			if state, _ := m.Get("state").(string); state != StateRunning {
+				return false
+			}
+			if m.Get("result") != nil {
+				return false
+			}
+			// Cond 2: worker-executed tools never appear in an engine report — the
+			// engine's executor is not their liveness oracle. Skip the executor='worker'
+			// stamp (written at evaluate) and the create_thread fallback (docs predating
+			// the stamp). Only create_thread is worker-managed today, so these two cover
+			// every worker-executed tool; a future one would carry the stamp.
+			if ex, _ := m.Get("executor").(string); ex == "worker" {
+				return false
+			}
+			if name, _ := m.Get("toolName").(string); name == "create_thread" {
+				return false
+			}
+			id, _ := m.Get("toolUseId").(string)
+			if id == "" {
+				return false
+			}
+			epoch, _ := docNumberToInt64(m.Get("runningEpoch"))
+			started, _ := docNumberToInt64(m.Get("runningStartedAt"))
+			// Cond 3+4 must hold for BOTH consecutive reports (the belt).
+			if !w.engine.provesAbsent(id, epoch, started) {
+				return false
+			}
+			cands = append(cands, cand{id: id, epoch: epoch})
 			return false
-		}
-		if t, _ := m.Get("type").(string); t != ItemTypeToolAction {
-			return false
-		}
-		// The wedge shape only: still running, no result.
-		if state, _ := m.Get("state").(string); state != StateRunning {
-			return false
-		}
-		if m.Get("result") != nil {
-			return false
-		}
-		// Cond 2: worker-executed tools never appear in an engine report — the
-		// engine's executor is not their liveness oracle. Skip the executor='worker'
-		// stamp (written at evaluate) and the create_thread fallback (docs predating
-		// the stamp). Only create_thread is worker-managed today, so these two cover
-		// every worker-executed tool; a future one would carry the stamp.
-		if ex, _ := m.Get("executor").(string); ex == "worker" {
-			return false
-		}
-		if name, _ := m.Get("toolName").(string); name == "create_thread" {
-			return false
-		}
-		id, _ := m.Get("toolUseId").(string)
-		if id == "" {
-			return false
-		}
-		epoch, _ := docNumberToInt64(m.Get("runningEpoch"))
-		started, _ := docNumberToInt64(m.Get("runningStartedAt"))
-		// Cond 3+4 must hold for BOTH consecutive reports (the belt).
-		if !w.engine.provesAbsent(id, epoch, started) {
-			return false
-		}
-		cands = append(cands, cand{id: id, epoch: epoch})
-		return false
+		})
 	})
-	ycrdtMu.Unlock()
 
 	for _, c := range cands {
 		if w.finalizeStuckRunningToolOnField(c.id, "runningEpoch", float64(c.epoch), "exec-report-absent") {

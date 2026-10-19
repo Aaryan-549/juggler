@@ -2,8 +2,11 @@
 //     ██ ██ ██ ██ ▄▄ ██ ▄▄ ██    ██▄▄  ██▄█▄   Copyright (c) 2026 Julian Storer
 //   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
 
-// Mock LLM caller — scripted responses for tests, never present in
-// production paths. callLLM picks the mock branch iff w.mock != nil.
+// Mock LLM caller — scripted responses for tests. Compiled only when -tags
+// production is NOT set; mock_llm_production.go stands in for it in release
+// builds, where no worker can carry a script and callLLM never asks for one.
+
+//go:build !production
 
 package worker
 
@@ -15,8 +18,28 @@ import (
 	"juggler/internal/jlog"
 )
 
+// mockScript is the worker's slot for a script. Installed whole by
+// setMockResponses and read by every turn's provider call, so it is atomic.
+type mockScript struct {
+	caller atomic.Pointer[mockLLMCaller]
+}
+
+// mock returns the worker's installed script, or nil when it has none and its
+// calls go to the provider.
+func (w *ConversationWorker) mock() *mockLLMCaller { return w.script.caller.Load() }
+
+// callScriptedLLM answers a provider call from the worker's script when a test
+// has installed one. scripted is false when none is, and the call goes to the
+// provider.
+func (r *run) callScriptedLLM(turnID string, sink func(StreamChunk)) (scripted bool, response *LLMResponse, err error) {
+	if r.mock() == nil {
+		return false, nil, nil
+	}
+	response, err = r.callLLMMockWithSink(turnID, sink)
+	return true, response, err
+}
+
 // mockLLMCaller holds the scripted-response state for one worker under test.
-// A non-nil pointer on the worker is the mock-mode signal; nil means production.
 type mockLLMCaller struct {
 	// responses is the script, held as a channel because several of a
 	// conversation's turns run at once: a parent and its read-only children each
@@ -89,10 +112,8 @@ func (m *mockLLMCaller) release() {
 // setMockResponses installs a mock caller (creating one on first call) with
 // the given scripted responses. Used by tests that build a worker directly.
 func (w *ConversationWorker) setMockResponses(r []MockResponse) {
-	if w.mock == nil {
-		w.mock = newMockLLMCaller()
-	}
-	w.mock.setResponses(r)
+	w.script.caller.CompareAndSwap(nil, newMockLLMCaller())
+	w.mock().setResponses(r)
 }
 
 // popMockResponse returns and removes the next mock response from the queue,
@@ -109,7 +130,7 @@ func (w *ConversationWorker) setMockResponses(r []MockResponse) {
 // response. This lets tests inject actions (e.g. cancel) at a deterministic
 // moment between stream and return.
 func (r *run) popMockResponse(turnID string, sink func(StreamChunk)) (*LLMResponse, error) {
-	mock, remaining, ok := r.mock.pop()
+	mock, remaining, ok := r.mock().pop()
 	if !ok {
 		r.tape.Record("mock-pop", map[string]any{"exhausted": true})
 		return nil, fmt.Errorf("mock responses exhausted")
@@ -162,13 +183,13 @@ func (r *run) popMockResponse(turnID string, sink func(StreamChunk)) (*LLMRespon
 		}
 
 		if paused {
-			if gate := r.mock.gate.Swap(nil); gate != nil {
+			if gate := r.mock().gate.Swap(nil); gate != nil {
 				close(gate.arrived)
 				<-gate.release
 			}
 			r.announceMockPause(threadItemID)
 			select {
-			case <-r.mock.releaseCh:
+			case <-r.mock().releaseCh:
 			case <-r.done:
 				return
 			}
@@ -207,8 +228,8 @@ func (r *run) announceMockPause(threadItemID string) {
 // callLLMMock is the mock branch of callLLM. Returns the next scripted
 // response, or an error if responses are exhausted.
 func (r *run) callLLMMockWithSink(turnID string, sink func(StreamChunk)) (*LLMResponse, error) {
-	if r.mock.remaining() > 0 {
-		jlog.Info("[callLLM] conv=%s thread=%q mockLeft=%d", r.conversationID, r.t.thread.itemID, r.mock.remaining())
+	if r.mock().remaining() > 0 {
+		jlog.Info("[callLLM] conv=%s thread=%q mockLeft=%d", r.conversationID, r.t.thread.itemID, r.mock().remaining())
 		response, err := r.popMockResponse(turnID, sink)
 		if err != nil {
 			return nil, err

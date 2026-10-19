@@ -68,11 +68,6 @@ func NewAssetStore(pathProvider PathProviderFunc) *AssetStore {
 	return &AssetStore{pathProvider: pathProvider}
 }
 
-// SetPathProvider replaces the path resolver. Idempotent.
-func (s *AssetStore) SetPathProvider(fn PathProviderFunc) {
-	s.pathProvider = fn
-}
-
 // dir returns the per-conversation assets directory or "" if the conversation
 // is unknown to the path provider.
 func (s *AssetStore) dir(convID string) string {

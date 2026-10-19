@@ -75,6 +75,7 @@ type pendingEntrySnapshot struct {
 // pendingRequests Y.Array and drives every entry one step forward. Runs on
 // the worker's run() goroutine; Yjs reads/writes acquire ycrdtMu.
 func (r *run) scanPendingRequests() {
+	r.actor.assertActor("the pendingRequests scan")
 	snapshot := r.snapshotPendingEntries()
 	if len(snapshot) == 0 {
 		return
@@ -232,21 +233,24 @@ func (r *run) claimAndDispatchPendingEntry(e pendingEntrySnapshot) {
 		}
 	}
 
-	ycrdtMu.Lock()
-	_, ymap, ok := r.pendingEntryByIDLocked(e.ownerThreadID, e.id)
-	if !ok {
-		ycrdtMu.Unlock()
-		return
-	}
-	if v, _ := ymap.Get("status").(string); v != string(pendingRequested) {
-		ycrdtMu.Unlock()
-		return
-	}
-	r.doc.transactTracked(func(t *ycrdt.Transaction) {
-		ymap.Set("status", string(pendingClaimed))
-		ymap.Set("claimedBy", "worker")
+	claimed := false
+	withYDoc(func() {
+		_, ymap, ok := r.pendingEntryByIDLocked(e.ownerThreadID, e.id)
+		if !ok {
+			return
+		}
+		if v, _ := ymap.Get("status").(string); v != string(pendingRequested) {
+			return
+		}
+		r.doc.transactTracked(func(t *ycrdt.Transaction) {
+			ymap.Set("status", string(pendingClaimed))
+			ymap.Set("claimedBy", "worker")
+		})
+		claimed = true
 	})
-	ycrdtMu.Unlock()
+	if !claimed {
+		return
+	}
 
 	switch e.kind {
 	case pendingKindCreateThread:
@@ -322,17 +326,21 @@ func (r *run) advanceClaimedPendingEntry(e pendingEntrySnapshot) {
 		if e.threadItemID == "" {
 			return // dispatch hasn't recorded the threadItemId yet
 		}
-		ycrdtMu.Lock()
-		threadYMap := findThreadYMap(r.doc.getItems(), e.threadItemID)
-		if threadYMap == nil {
-			ycrdtMu.Unlock()
-			return
-		}
-		settled := threadRunSettledLocked(threadYMap)
-		status, runResult := latestRunOutcomeLocked(threadYMap)
-		summary, _ := threadYMap.Get("result").(string)
-		ycrdtMu.Unlock()
-		if !settled {
+		var (
+			found, settled             bool
+			status, runResult, summary string
+		)
+		withYDoc(func() {
+			threadYMap := findThreadYMap(r.doc.getItems(), e.threadItemID)
+			if threadYMap == nil {
+				return
+			}
+			found = true
+			settled = threadRunSettledLocked(threadYMap)
+			status, runResult = latestRunOutcomeLocked(threadYMap)
+			summary, _ = threadYMap.Get("result").(string)
+		})
+		if !found || !settled {
 			return
 		}
 		if status == runStatusCancelled {

@@ -7,6 +7,7 @@ package worker
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"juggler/cmd/juggler/core"
 	"juggler/internal/logpaths"
@@ -50,10 +51,11 @@ func (w *ConversationWorker) loadStateFromDisk(mustExist bool) error {
 // docPathFor resolves a conversation id to its <dir>/doc.yjs path. Returns
 // an error if no path provider is set or the conversation is unknown.
 func (w *ConversationWorker) docPathFor(convID string) (string, error) {
-	if w.pathProvider == nil {
+	resolve := w.deps().pathProvider
+	if resolve == nil {
 		return "", fmt.Errorf("no path provider set")
 	}
-	dir, ok := w.pathProvider(convID)
+	dir, ok := resolve(convID)
 	if !ok {
 		return "", fmt.Errorf("conversation folder not found: %s", convID)
 	}
@@ -111,15 +113,18 @@ func (w *ConversationWorker) repairDuplicateItemIds() int {
 // This is the whole of what persistence owes the user. Everything else a save
 // does is housekeeping, which is why the shutdown path calls this directly.
 func (r *run) writeStateToDisk() (bool, error) {
-	if r.projectPath == "" || r.saveBinary == nil {
+	save := r.deps().saveBinary
+	if r.projectPath == "" || save == nil {
 		return false, nil // Can't save without store wiring
 	}
 
 	// The single point where the document becomes the file on disk, so the
 	// single place persistence has to care about the streaming write throttle:
 	// content it is still holding back would be missing from the saved state.
-	// Every caller runs on the worker goroutine, so this is the same actor that
-	// owns the streaming state.
+	// It flushes the streaming state of the run it is called on, which for the
+	// run loop's own ambient turn holds nothing: a live turn streams on a
+	// goroutine of its own and flushes its own state as its waits end. That is
+	// why the shutdown save waits the turns out first (onShutdown).
 	r.flushPendingStreamWrites()
 
 	state := r.doc.ToState()
@@ -127,7 +132,7 @@ func (r *run) writeStateToDisk() (bool, error) {
 		return false, nil // Nothing to save
 	}
 
-	if err := r.saveBinary(r.conversationID, state); err != nil {
+	if err := save(r.conversationID, state); err != nil {
 		return false, fmt.Errorf("save conversation binary: %w", err)
 	}
 
@@ -183,15 +188,17 @@ func (r *run) onShutdown() {
 	// Close this conversation's per-conversation log sink (nil-safe).
 	defer r.log.Close()
 
+	// The turns first. A turn streaming when the stop came holds text the write
+	// throttle has not yet put in the document, and puts it there as its wait
+	// ends; the save below is the last a mid-turn conversation gets, so it waits
+	// for them. The log stays open until they are done (the deferred Close runs
+	// after this body), since they log as they unwind.
+	r.beginStop()
+	r.awaitTurns(shutdownTurnGrace)
+
 	// Stop every task-output delivery pump and kill its background task so a
 	// delivering command doesn't outlive the conversation worker.
 	r.pumps.stopAll()
-
-	// Level the document up with any streamed content the write throttle is
-	// holding, BEFORE the Yjs flush below, so the final broadcast and the
-	// dirty check both see the whole message. This is the only save a
-	// mid-turn conversation gets.
-	r.flushPendingStreamWrites()
 
 	// Flush any pending Yjs sync updates
 	r.batcher.Flush()
@@ -217,6 +224,41 @@ func (r *run) onShutdown() {
 	if _, err := r.writeStateToDisk(); err != nil {
 		r.log.Error("Failed to save state on shutdown: %v", err)
 	}
+}
+
+// shutdownTurnGrace bounds how long a stopping worker waits for its turns before
+// saving without them. A stopped turn unwinds in microseconds — every wait it can
+// be parked in selects on done — so this is a backstop for a turn wedged
+// somewhere that does not, and it sits well inside the server's teardown window,
+// since a save that never happens loses more than one that misses a tail.
+const shutdownTurnGrace = 5 * time.Second
+
+// awaitTurns waits up to grace for every live turn to return, dropping each from
+// the registry as it does. A dispatch the loop posted but never started has no
+// goroutine to wait for, so it is dropped unwaited. Run goroutine only, after
+// beginStop.
+func (r *run) awaitTurns(grace time.Duration) {
+	for drained := false; !drained; {
+		select {
+		case t := <-r.sched.dispatches():
+			r.sched.unregister(t)
+		default:
+			drained = true
+		}
+	}
+	timer := time.NewTimer(grace)
+	defer timer.Stop()
+	for _, e := range r.sched.runs() {
+		select {
+		case <-e.t.finished:
+			r.sched.unregister(e.t)
+		case <-timer.C:
+			r.log.Error("⏳ %d turn(s) still running %v into the stop of conv=%s; saving without them",
+				len(r.sched.runs()), grace, r.conversationID)
+			return
+		}
+	}
+	r.sched.releaseActivity()
 }
 
 // maybePurgeLogs removes this conversation's per-conversation log file(s) when

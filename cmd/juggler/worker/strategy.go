@@ -232,7 +232,7 @@ func (r *run) runOneTurn(st *strategyRunState, explicitContinuation bool) turnVe
 
 	ctxResult, tools, err := r.requestContextAndTools()
 	if err != nil {
-		if errors.Is(err, ErrCancelled) {
+		if errors.Is(err, ErrCancelled) || r.stopping() {
 			return turnDone
 		}
 		r.sendError(msg.New("Failed to get context/tools: {detail}", "detail", err.Error()))
@@ -261,7 +261,7 @@ func (r *run) runOneTurn(st *strategyRunState, explicitContinuation bool) turnVe
 	// blob is written below regardless of outcome, so on LLM failure the
 	// user message + error item both link to a viewable blob.
 	if userMsgToStamp != "" {
-		_ = r.updateTargetItemByID(userMsgToStamp, "transactionId", txnID)
+		r.updateRunItem(userMsgToStamp, "transactionId", txnID)
 	}
 
 	startTime := time.Now()
@@ -451,6 +451,18 @@ func (r *run) finishStrategyRun() {
 	// sitting in this run's chunk buffer, and this run is the only reader it will
 	// ever have. Fold it in before the run settles.
 	r.drainStreamChunks()
+
+	// A run the worker's stop unwound is not finished, and nothing about how it
+	// ended is the conversation's. It is left exactly as it stands — its claim,
+	// its open run record, a parent parked on it — which is the state a killed
+	// process leaves and the next launch recovers (handleInit). Settling it here
+	// would be saved as an answer the thread never gave. Only the words it had
+	// received are kept: the drain above has just written them, before the
+	// shutdown save that is waiting on this turn.
+	if r.stopping() {
+		r.storeState(StateIdle)
+		return
+	}
 
 	// Non-blocking: if the loop returned after dispatching tools or
 	// creating a child thread, THIS thread is left awaiting_llm — let the reducer
@@ -942,11 +954,12 @@ func (r *run) callLLMWithSink(request json.RawMessage, sink func(StreamChunk)) (
 		}
 	}
 
-	if r.mock != nil {
-		return r.callLLMMockWithSink(turnID, correlatedSink)
+	if scripted, response, err := r.callScriptedLLM(turnID, correlatedSink); scripted {
+		return response, err
 	}
 
-	if r.llmCallFunc == nil {
+	call := r.deps().llmCallFunc
+	if call == nil {
 		return nil, fmt.Errorf("LLM caller not configured")
 	}
 
@@ -954,13 +967,15 @@ func (r *run) callLLMWithSink(request json.RawMessage, sink func(StreamChunk)) (
 	// during a previous turn can't be misattributed to this call's error.
 	r.t.wakeInterrupt.Store(false)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	// Derived from the worker's lifetime, so a shutdown from above reaches the
+	// call; its own cancel is what Stop, a user's cancel and a wake pull.
+	ctx, cancel := context.WithCancel(r.lifetimeContext())
 	r.t.cancelLLM.Store(&cancel)
 	defer r.t.cancelLLM.Store(nil)
 
 	go func() {
 		defer cancel()
-		response, err := r.llmCallFunc(ctx, request, correlatedSink)
+		response, err := call(ctx, request, correlatedSink)
 		r.deliverLLMResponse(turnID, response, err)
 	}()
 

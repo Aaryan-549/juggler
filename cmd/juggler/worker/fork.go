@@ -39,7 +39,13 @@ func (w *ConversationWorker) snapshotParked() []byte {
 
 	tmp := NewConversationDocument(w.doc.ConversationID(), w.doc.AuthorID())
 	defer tmp.Destroy()
-	_ = tmp.LoadFromState(state)
+	if err := tmp.LoadFromState(state); err != nil {
+		// The state is the live doc's own encoding, so this is a y-crdt fault.
+		// The clone gets it unmarked — it may resume the in-flight turn when it
+		// loads — which is a lesser failure than a clone of nothing.
+		w.log.Error("[fork] the running doc's state could not be copied to mark it parked (%v); the clone is unmarked", err)
+		return state
+	}
 	tmp.SetMetadata(metaForkParked, true)
 	return tmp.ToState()
 }

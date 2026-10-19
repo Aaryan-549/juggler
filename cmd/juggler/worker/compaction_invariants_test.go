@@ -76,7 +76,7 @@ func newCompactionWorld(t *testing.T, window, reserve int64, respond func(turn i
 	world.w = w
 
 	visibleTurn := 0
-	w.llmCallFunc = func(ctx context.Context, raw json.RawMessage, sink func(StreamChunk)) (*LLMResponse, error) {
+	w.SetLLMCaller(func(ctx context.Context, raw json.RawMessage, sink func(StreamChunk)) (*LLMResponse, error) {
 		var req hiddenLLMRequest
 		if err := json.Unmarshal(raw, &req); err != nil {
 			t.Fatal(err)
@@ -110,7 +110,7 @@ func newCompactionWorld(t *testing.T, window, reserve int64, respond func(turn i
 			}
 		}
 		return response, nil
-	}
+	})
 	return world
 }
 

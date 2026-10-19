@@ -38,19 +38,19 @@ func TestMocksQueuedByNameGoToTheConversationCreatedWithThatName(t *testing.T) {
 
 	other := namedWorker(t, "conv_mbn_other", "mbn something else", &calls)
 	other.adoptPendingMocks()
-	if other.mock != nil {
+	if other.mock() != nil {
 		t.Fatal("a conversation with a different name adopted the queue")
 	}
 
 	child := namedWorker(t, "conv_mbn_child", "mbn audit idempotency keys", &calls)
 	child.adoptPendingMocks()
-	if child.mock == nil || child.mock.remaining() != 3 {
-		t.Fatalf("child adopted %v, want the 3 queued responses", child.mock)
+	if child.mock() == nil || child.mock().remaining() != 3 {
+		t.Fatalf("child adopted %v, want the 3 queued responses", child.mock())
 	}
 
 	again := namedWorker(t, "conv_mbn_again", "mbn audit idempotency keys", &calls)
 	again.adoptPendingMocks()
-	if again.mock != nil {
+	if again.mock() != nil {
 		t.Fatal("a queue was adopted twice; it belongs to the first conversation with the name")
 	}
 }
@@ -63,7 +63,7 @@ func TestAdoptPendingMocksKeepsAnInstalledScript(t *testing.T) {
 	w.setMockResponses([]MockResponse{{StopReason: "end_turn"}})
 	queueMocksForName(t, w, "mbn kept", 4)
 	w.adoptPendingMocks()
-	if w.mock.remaining() != 1 {
-		t.Fatalf("remaining = %d, want the directly installed 1", w.mock.remaining())
+	if w.mock().remaining() != 1 {
+		t.Fatalf("remaining = %d, want the directly installed 1", w.mock().remaining())
 	}
 }

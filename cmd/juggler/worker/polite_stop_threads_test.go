@@ -126,7 +126,7 @@ func TestPoliteStop_RestsOneThreadAndLetsItsSiblingCallTheModel(t *testing.T) {
 	w.sched.markReconcile()
 	w.quiesce(t)
 
-	if left := w.mock.remaining(); left != 2 {
+	if left := w.mock().remaining(); left != 2 {
 		t.Fatalf("Pause let %d of 2 sub-threads call the provider anyway (%d scripted turns left, want 2): "+
 			"the latch is conversation-wide but Swap(false) hands it to whichever run reaches a boundary "+
 			"first, so one thread rests and every other live thread carries on", 2-left, left)
@@ -189,7 +189,7 @@ func TestPoliteStop_PausedChildNeitherSettlesNorReDrivesItsParent(t *testing.T) 
 
 	w.quiesce(t)
 
-	if left := w.mock.remaining(); left != 1 {
+	if left := w.mock().remaining(); left != 1 {
 		t.Fatalf("a Pause caused a fresh provider request on the parent (%d scripted turns left, want 1): "+
 			"the child rested cleanly on the pause, so its run settled and signalParentThread "+
 			"queued the parent for a turn the pause exists to prevent", left)
@@ -318,7 +318,7 @@ func TestPoliteStop_PickupLeavesCoveredThreadsArmed(t *testing.T) {
 	})
 	w.currentRun().checkForNewThreads()
 
-	if left := w.mock.remaining(); left != 1 {
+	if left := w.mock().remaining(); left != 1 {
 		t.Fatalf("the pickup started a covered thread anyway (%d scripted turns left, want 1)", left)
 	}
 	ymap := w.doc.GetThreadYMap(id)
@@ -338,7 +338,7 @@ func TestPoliteStop_PickupLeavesCoveredThreadsArmed(t *testing.T) {
 	w.handleUnpause("")
 	w.quiesce(t)
 
-	if left := w.mock.remaining(); left != 0 {
+	if left := w.mock().remaining(); left != 0 {
 		t.Errorf("unpausing did not resume the thread the pause parked (%d scripted turns left, want 0)", left)
 	}
 }
@@ -356,9 +356,9 @@ func TestPoliteStop_PausedFoldKeepsItsRightToASummary(t *testing.T) {
 	w.currentRun().storeState(StateIdle)
 	w.doc.SetMetadata("defaultModelConfig", map[string]any{"provider": "test", "model": "test"})
 	feedCompactionContextAndTools(w)
-	w.llmCallFunc = func(_ context.Context, _ json.RawMessage, _ func(StreamChunk)) (*LLMResponse, error) {
+	w.SetLLMCaller(func(_ context.Context, _ json.RawMessage, _ func(StreamChunk)) (*LLMResponse, error) {
 		return &LLMResponse{Blocks: []LLMResponseBlock{{Type: provider.ContentBlockTypeText, Content: "the summary"}}}, nil
-	}
+	})
 
 	w.doc.InsertMessage(0, ConversationItem{
 		Type: ItemTypeUser, ItemID: "u-1", Content: "do the thing",
@@ -433,7 +433,7 @@ func TestPoliteStop_MachineContinuationLeavesTheMarkStanding(t *testing.T) {
 	if !w.politeStopCovers("") {
 		t.Fatal("delivered task output lifted the pause; nobody asked for that turn")
 	}
-	if left := w.mock.remaining(); left != 1 {
+	if left := w.mock().remaining(); left != 1 {
 		t.Errorf("delivered task output called the provider under a pause (%d scripted turns left, want 1)", left)
 	}
 	// The output itself must survive: the pause defers the answer, it does not
@@ -511,7 +511,7 @@ func TestPoliteStop_StoppingOneThreadLeavesTheConversationPaused(t *testing.T) {
 	w.sched.markReconcile()
 	w.quiesce(t)
 
-	if left := w.mock.remaining(); left != 1 {
+	if left := w.mock().remaining(); left != 1 {
 		t.Fatalf("the parent carried on after a sub-thread was stopped under a pause "+
 			"(%d scripted turns left, want 1): a Stop scoped to one thread must not resume the conversation", left)
 	}

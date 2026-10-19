@@ -48,14 +48,14 @@ func TestRetryingStatusCarriesAMessage(t *testing.T) {
 
 	calls := 0
 	var seen map[string]any
-	w.llmCallFunc = func(_ context.Context, _ json.RawMessage, _ func(StreamChunk)) (*LLMResponse, error) {
+	w.SetLLMCaller(func(_ context.Context, _ json.RawMessage, _ func(StreamChunk)) (*LLMResponse, error) {
 		calls++
 		if calls == 1 {
 			return nil, &TransientError{Wait: time.Nanosecond, Message: "overloaded"}
 		}
 		seen = processingStateNow(w)
 		return &LLMResponse{Blocks: []LLMResponseBlock{{Type: provider.ContentBlockTypeText, Content: "recovered"}}}, nil
-	}
+	})
 	if _, err := w.currentRun().callLLMWithRetry(nil); err != nil {
 		t.Fatalf("callLLMWithRetry: %v", err)
 	}

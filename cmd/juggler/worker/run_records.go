@@ -113,14 +113,15 @@ func runResultCharBudget(windowTokens int) int {
 // the result is spent in the caller's context, not its own. Takes ycrdtMu, so
 // callers must hold nothing.
 func (w *ConversationWorker) runResultBudgetFor(threadItemID string) int {
-	if w.windowResolver == nil {
+	resolve := w.deps().windowResolver
+	if resolve == nil {
 		return runResultFloorChars
 	}
 	mc := w.doc.ResolveEffectiveModelConfig(w.doc.ParentThreadID(threadItemID))
 	if mc == nil {
 		return runResultFloorChars
 	}
-	return runResultCharBudget(w.windowResolver(*mc).WindowTokens)
+	return runResultCharBudget(resolve(*mc).WindowTokens)
 }
 
 // runResultTrimmedMarker opens the note left in place of what was cut. Kept as
@@ -1043,62 +1044,68 @@ func (w *ConversationWorker) settleThreadRun(threadItemID string, cancelled bool
 	}
 	resultLimit := w.runResultBudgetFor(threadItemID)
 
-	ycrdtMu.Lock()
-	threadYMap := findThreadYMap(w.doc.getItems(), threadItemID)
-	if threadYMap == nil {
-		ycrdtMu.Unlock()
-		return
-	}
-	if boundedCompaction, _ := threadYMap.Get("boundedCompaction").(bool); boundedCompaction {
-		ycrdtMu.Unlock()
-		return
-	}
-	nested, _ := threadYMap.Get("items").(*ycrdt.YArray)
-	threadResult, _ := threadYMap.Get("result").(string)
-
-	var items []ConversationItem
-	if nested != nil {
-		items = w.doc.getItemsFromArrayLocked(nested)
-	}
-	status, result, fullChars := resolveRunOutcome(items, cancelled, resultLimit)
-	open := openRunMessagesLocked(nested)
-	_, recordsRun := runSettlementLocked(nested)
-
-	// A run with no message to stamp reports through `result` or not at all: a
-	// creation that appended no invocation message (a continuation creation, or a
-	// call that supplied no prompt) records a run nowhere else, so a caller parked
-	// on this child would be waiting on a run that can never report. That case
-	// writes whatever the run came to; every other ending keeps failure out of
-	// the summary. A human's Continue is not one of them — it appends a marker to
-	// be recorded on (openThreadContinuationRun).
-	orphanRun := len(open) == 0 && !recordsRun
-	summarises := status == runStatusRest || orphanRun
-
-	if len(open) == 0 && !summarises {
-		ycrdtMu.Unlock()
-		return
-	}
-	starterID, starterCall := "", ""
-	if len(open) > 0 {
-		// openRunMessagesLocked walks backwards, so the last entry is the message
-		// that STARTED this run — the one a parent item selects it by.
-		starterID, _ = open[len(open)-1].Get("itemId").(string)
-		starterCall, _ = open[len(open)-1].Get("runToolUseId").(string)
-	}
-	contextTokens, resultTokens := threadTokenFigures(items, result)
-	w.doc.transactTracked(func(_ *ycrdt.Transaction) {
-		for _, m := range open {
-			m.Set("runStatus", status)
-			m.Set("runResult", result)
+	var (
+		wrote          bool
+		status, result string
+		fullChars      int
+	)
+	withYDoc(func() {
+		threadYMap := findThreadYMap(w.doc.getItems(), threadItemID)
+		if threadYMap == nil {
+			return
 		}
-		if summarises && result != threadResult {
-			threadYMap.Set("result", result)
+		if boundedCompaction, _ := threadYMap.Get("boundedCompaction").(bool); boundedCompaction {
+			return
 		}
-		threadYMap.Set("contextTokens", ycrdt.Number(contextTokens))
-		threadYMap.Set("resultTokens", ycrdt.Number(resultTokens))
-		w.reportRunToParentLocked(threadItemID, threadYMap, starterID, starterCall, status, result)
+		nested, _ := threadYMap.Get("items").(*ycrdt.YArray)
+		threadResult, _ := threadYMap.Get("result").(string)
+
+		var items []ConversationItem
+		if nested != nil {
+			items = w.doc.getItemsFromArrayLocked(nested)
+		}
+		status, result, fullChars = resolveRunOutcome(items, cancelled, resultLimit)
+		open := openRunMessagesLocked(nested)
+		_, recordsRun := runSettlementLocked(nested)
+
+		// A run with no message to stamp reports through `result` or not at all: a
+		// creation that appended no invocation message (a continuation creation, or a
+		// call that supplied no prompt) records a run nowhere else, so a caller parked
+		// on this child would be waiting on a run that can never report. That case
+		// writes whatever the run came to; every other ending keeps failure out of
+		// the summary. A human's Continue is not one of them — it appends a marker to
+		// be recorded on (openThreadContinuationRun).
+		orphanRun := len(open) == 0 && !recordsRun
+		summarises := status == runStatusRest || orphanRun
+
+		if len(open) == 0 && !summarises {
+			return
+		}
+		starterID, starterCall := "", ""
+		if len(open) > 0 {
+			// openRunMessagesLocked walks backwards, so the last entry is the message
+			// that STARTED this run — the one a parent item selects it by.
+			starterID, _ = open[len(open)-1].Get("itemId").(string)
+			starterCall, _ = open[len(open)-1].Get("runToolUseId").(string)
+		}
+		contextTokens, resultTokens := threadTokenFigures(items, result)
+		w.doc.transactTracked(func(_ *ycrdt.Transaction) {
+			for _, m := range open {
+				m.Set("runStatus", status)
+				m.Set("runResult", result)
+			}
+			if summarises && result != threadResult {
+				threadYMap.Set("result", result)
+			}
+			threadYMap.Set("contextTokens", ycrdt.Number(contextTokens))
+			threadYMap.Set("resultTokens", ycrdt.Number(resultTokens))
+			w.reportRunToParentLocked(threadItemID, threadYMap, starterID, starterCall, status, result)
+		})
+		wrote = true
 	})
-	ycrdtMu.Unlock()
+	if !wrote {
+		return
+	}
 
 	// A trimmed result names the size it was cut from: the length handed on is
 	// only the cap, and the log is where a cut is diagnosed after the fact.

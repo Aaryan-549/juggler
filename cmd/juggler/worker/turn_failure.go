@@ -7,6 +7,7 @@ package worker
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -88,7 +89,9 @@ func (r *run) runFoldedCompactionTurn() (verdict turnVerdict, handled bool) {
 func (r *run) handleTurnFailure(st *strategyRunState, err error, llmRequest json.RawMessage, duration time.Duration) turnVerdict {
 	defer func() { r.t.txnID = "" }()
 
-	if errors.Is(err, ErrCancelled) {
+	// A call ended by the worker's stop failed because the worker stopped, which
+	// is no error of the conversation's (finishStrategyRun).
+	if errors.Is(err, ErrCancelled) || r.stopping() {
 		return turnDone
 	}
 	if errors.Is(err, ErrProviderUnavailable) {
@@ -258,7 +261,12 @@ func (r *run) resolveContextOverflow(st *strategyRunState, err error, llmRequest
 	// Parse the original request only now that it is needed (a
 	// context-limit overflow), not on every successful turn.
 	var originalRequest hiddenLLMRequest
-	_ = json.Unmarshal(llmRequest, &originalRequest)
+	if err := json.Unmarshal(llmRequest, &originalRequest); err != nil {
+		// The request is the worker's own encoding, so this is a fault here, not
+		// the provider's. Recovery pins its model from the request, and without
+		// it has nothing to compact with: report the cause, not the missing model.
+		return turnDone, false, fmt.Errorf("context overflow recovery could not read the rejected request: %w", err)
+	}
 	retry, terminal := r.handleContextOverflow(overflow, &st.compaction, originalRequest.ModelConfig)
 	switch {
 	case terminal != nil:

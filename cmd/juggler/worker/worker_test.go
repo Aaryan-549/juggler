@@ -543,10 +543,10 @@ func TestProviderUnavailableSurfacedAsValidationError(t *testing.T) {
 	// ErrProviderUnavailable, exactly as createLLMCaller does when credentials
 	// for the stored provider are missing.
 	var calls int32
-	w.llmCallFunc = func(context.Context, json.RawMessage, func(StreamChunk)) (*LLMResponse, error) {
+	w.SetLLMCaller(func(context.Context, json.RawMessage, func(StreamChunk)) (*LLMResponse, error) {
 		atomic.AddInt32(&calls, 1)
 		return nil, fmt.Errorf("%w: no API key configured for provider: test", ErrProviderUnavailable)
-	}
+	})
 
 	// Capture the worker's broadcast status messages.
 	statusCh := make(chan map[string]any, 16)
@@ -708,10 +708,10 @@ func assertUserFixableFailure(t *testing.T, failErr error, wantCode, wantKind, h
 	w.currentRun().handleInit(initPayload)
 
 	var calls int32
-	w.llmCallFunc = func(context.Context, json.RawMessage, func(StreamChunk)) (*LLMResponse, error) {
+	w.SetLLMCaller(func(context.Context, json.RawMessage, func(StreamChunk)) (*LLMResponse, error) {
 		atomic.AddInt32(&calls, 1)
 		return nil, fmt.Errorf("LLM error: %w", failErr)
-	}
+	})
 
 	statusCh := make(chan map[string]any, 16)
 	w.SetCallback("viewer", func(b []byte) {
@@ -1060,7 +1060,7 @@ func TestBuildLLMRequest_AutoCompactGateSetsContextCeiling(t *testing.T) {
 		t.Fatalf("contextCeilingFraction = %v, want absent so admission uses its soft default", enabled["contextCeilingFraction"])
 	}
 
-	w.autoCompactGate = func() bool { return false }
+	w.SetAutoCompactGate(func() bool { return false })
 	var disabled map[string]any
 	if err := json.Unmarshal(w.currentRun().buildLLMRequest(&ContextResult{}, nil, "txn-disabled", false), &disabled); err != nil {
 		t.Fatalf("unmarshal request: %v", err)

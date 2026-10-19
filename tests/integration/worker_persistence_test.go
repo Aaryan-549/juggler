@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"juggler/cmd/juggler/providers/provider"
 	"juggler/cmd/juggler/worker"
 	"juggler/tests/integration/helpers"
 )
@@ -201,6 +202,78 @@ func TestWorkerPersistsOnShutdown(t *testing.T) {
 	doc.Destroy()
 
 	t.Log("SUCCESS: Worker persisted state on shutdown")
+}
+
+// TestWorkerPersistsMidStreamOnShutdown verifies that a server shutdown in the
+// middle of a streamed answer saves every word the provider had sent — including
+// the tail the stream-write throttle was still holding back from the document —
+// and saves no error for an interruption the conversation did not cause.
+func TestWorkerPersistsMidStreamOnShutdown(t *testing.T) {
+	t.Parallel()
+	ts := helpers.SetupTestSession(t)
+	ts.SetupMockEngine()
+	ts.GetDocument().SetMetadata("defaultModelConfig", map[string]any{
+		"provider": "test", "model": "test",
+	})
+
+	const head = "The opening words of an answer, written as they arrive"
+	const tail = " and a tail"
+	streamed := make(chan struct{})
+	llm := func(ctx context.Context, _ json.RawMessage, sink func(worker.StreamChunk)) (*worker.LLMResponse, error) {
+		sink(worker.StreamChunk{Type: provider.ContentBlockTypeText, Content: head})
+		// The tail must arrive as a chunk of its own, after the head is in the
+		// document, or the turn coalesces the two into one write.
+		deadline := time.Now().Add(5 * time.Second)
+		for !hasAssistantMessage(ts.GetDocument().GetItems(), head) && time.Now().Before(deadline) {
+			time.Sleep(2 * time.Millisecond)
+		}
+		sink(worker.StreamChunk{Type: provider.ContentBlockTypeText, Content: tail})
+		close(streamed)
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
+	ts.Manager.SetLLMCaller(llm)
+
+	sendPayload, _ := json.Marshal(worker.SendMessageMessage{Type: "send-message", Text: "tell me something"})
+	ts.Manager.HandleMessage(ts.ConvID, "send-message", sendPayload, nil)
+	select {
+	case <-streamed:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the provider never streamed")
+	}
+
+	ts.Manager.Shutdown()
+
+	data, err := os.ReadFile(convDocPath(t, ts.TmpDir, ts.ConvID))
+	if err != nil {
+		t.Fatalf("State not saved on shutdown: %v", err)
+	}
+	doc := worker.NewConversationDocument("verify", "user:test")
+	defer doc.Destroy()
+	if err := doc.LoadFromState(data); err != nil {
+		t.Fatalf("Failed to load state: %v", err)
+	}
+	items := doc.GetItems()
+	if !hasAssistantMessage(items, head+tail) {
+		t.Errorf("the saved transcript does not hold the whole streamed answer %q", head+tail)
+	}
+	for _, it := range items {
+		t.Logf("saved %s: %q", it.Type, it.Content)
+		if it.Type == worker.ItemTypeError {
+			t.Errorf("the saved transcript carries an error the shutdown caused: %q", it.Content)
+		}
+	}
+}
+
+// hasAssistantMessage reports whether items hold an assistant message reading
+// exactly text.
+func hasAssistantMessage(items []worker.ConversationItem, text string) bool {
+	for _, it := range items {
+		if it.Type == worker.ItemTypeAssistant && it.Content == text {
+			return true
+		}
+	}
+	return false
 }
 
 // TestWorkerLoadsPersistedState verifies that the worker correctly loads

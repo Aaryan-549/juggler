@@ -50,7 +50,7 @@ func newIdleGuardWorld(t *testing.T, replyFor func(threadID string) string) *idl
 	feedCompactionContextAndTools(w, ToolDefinition{Name: "bash"})
 
 	world := &idleGuardWorld{t: t, w: w, entered: make(chan string, 8), replyFor: replyFor}
-	w.llmCallFunc = func(_ context.Context, raw json.RawMessage, _ func(StreamChunk)) (*LLMResponse, error) {
+	w.SetLLMCaller(func(_ context.Context, raw json.RawMessage, _ func(StreamChunk)) (*LLMResponse, error) {
 		// The production request is a map (llm_request.go), so pull the thread id
 		// out of the wire shape rather than a struct.
 		var req struct {
@@ -65,7 +65,7 @@ func newIdleGuardWorld(t *testing.T, replyFor func(threadID string) string) *idl
 			Blocks:     []LLMResponseBlock{{Type: provider.ContentBlockTypeText, Content: replyFor(req.ThreadID)}},
 			StopReason: "end_turn",
 		}, nil
-	}
+	})
 	return world
 }
 

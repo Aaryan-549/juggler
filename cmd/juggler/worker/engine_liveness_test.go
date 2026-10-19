@@ -240,7 +240,7 @@ func TestEngineTrace_StampsThePerToolReceipt(t *testing.T) {
 // exists to prevent: a tool blamed for an engine that was about to run it.
 func TestCommandArrival_IsNotEngagement(t *testing.T) {
 	tick := time.Now()
-	tr := newToolCommandTracker()
+	tr := newToolCommandTracker(nil)
 
 	tr.recordDispatch("tu-1", StateApproved, tick)
 	tr.recordTrace("tu-1", "command-recv", "", tick)
@@ -261,7 +261,7 @@ func TestCommandArrival_IsNotEngagement(t *testing.T) {
 
 	// The slow-preamble trace says the same thing more loudly — an engine still
 	// inside its preamble has by definition not reached the tool.
-	tr2 := newToolCommandTracker()
+	tr2 := newToolCommandTracker(nil)
 	tr2.recordDispatch("tu-2", StateApproved, tick)
 	tr2.recordTrace("tu-2", "preamble-slow", "", tick)
 	tr2.recordDispatch("tu-2", StateApproved, tick)
@@ -281,7 +281,7 @@ func TestCommandArrival_IsNotEngagement(t *testing.T) {
 // holds a genuinely stuck tool for a minute and then blames the engine link.
 func TestEngineAnswered_IsNotDecidedByTheClock(t *testing.T) {
 	tick := time.Now() // one clock tick, spanning every event below
-	tr := newToolCommandTracker()
+	tr := newToolCommandTracker(nil)
 
 	tr.recordDispatch("tu-1", StateApproved, tick)
 	tr.recordTrace("tu-1", "evaluate-done", "", tick)

@@ -105,8 +105,7 @@ func (m *watchedMutex) sample(now time.Time) (age time.Duration, generation uint
 }
 
 // watchYcrdtStalls samples the lock on every tick, calling report at most once
-// per stalled acquisition. Started by init below; runs for the process
-// lifetime. Each tick carries the time the sample is taken at, so a tick
+// per stalled acquisition, until ticks is closed. Each tick carries the time the sample is taken at, so a tick
 // delayed behind a busy scheduler measures the hold as it was when the sample
 // fell due — which can only under-state a stall, never invent one. The tick
 // channel and report are parameters so the detection rule can be driven from a
@@ -146,8 +145,80 @@ func goroutineDump() string {
 	}
 }
 
-func init() {
-	// The watchdog runs until the process exits, so the ticker is never stopped.
+// ycrdtWatchdog is the running watchdog's bookkeeping. It runs while any worker
+// does: each running worker holds it (holdYcrdtWatchdog), the first hold starts
+// it and the last release stops it, so a process that never runs a worker — a
+// CLI subcommand, another package's tests — carries no ticker and no goroutine
+// for it.
+var ycrdtWatchdog = struct {
+	// lock is a one-slot semaphore over the two fields below: a send takes it,
+	// a receive gives it back.
+	lock    chan struct{}
+	holders int
+	// stop ends the running watchdog; nil while none runs.
+	stop chan struct{}
+}{lock: make(chan struct{}, 1)}
+
+// holdYcrdtWatchdog keeps the watchdog running until the returned release is
+// called, starting it if nothing held it. Release is idempotent.
+func holdYcrdtWatchdog() (release func()) {
+	g := &ycrdtWatchdog
+	g.lock <- struct{}{}
+	g.holders++
+	if g.holders == 1 {
+		g.stop = make(chan struct{})
+		go runYcrdtWatchdog(g.stop)
+	}
+	<-g.lock
+
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			g.lock <- struct{}{}
+			g.holders--
+			if g.holders == 0 {
+				close(g.stop)
+				g.stop = nil
+			}
+			<-g.lock
+		})
+	}
+}
+
+// ycrdtWatchdogState reports how many holders the watchdog has and whether it
+// is running.
+func ycrdtWatchdogState() (holders int, running bool) {
+	g := &ycrdtWatchdog
+	g.lock <- struct{}{}
+	defer func() { <-g.lock }()
+	return g.holders, g.stop != nil
+}
+
+// runYcrdtWatchdog samples the real lock on the real clock until stop closes,
+// then stops its ticker and waits for the sampler to return.
+func runYcrdtWatchdog(stop <-chan struct{}) {
 	ticker := time.NewTicker(ycrdtStallCheckInterval)
-	go watchYcrdtStalls(&ycrdtMu, ticker.C, ycrdtStallThreshold, reportYcrdtStall)
+	defer ticker.Stop()
+	ticks := make(chan time.Time)
+	sampled := make(chan struct{})
+	go func() {
+		defer close(sampled)
+		watchYcrdtStalls(&ycrdtMu, ticks, ycrdtStallThreshold, reportYcrdtStall)
+	}()
+	defer func() {
+		close(ticks)
+		<-sampled
+	}()
+	for {
+		select {
+		case <-stop:
+			return
+		case now := <-ticker.C:
+			select {
+			case ticks <- now:
+			case <-stop:
+				return
+			}
+		}
+	}
 }

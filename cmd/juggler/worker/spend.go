@@ -80,11 +80,6 @@ const DefaultSpendCeilingTokens int64 = 10_000_000
 // so a settings change takes effect on the next turn without a restart.
 type SpendLimitFunc func() int64
 
-// SetSpendLimit installs the ceiling resolver. See SpendLimitFunc.
-func (w *ConversationWorker) SetSpendLimit(fn SpendLimitFunc) {
-	w.spendLimit = fn
-}
-
 // toInt64 reads a number out of doc metadata, whatever numeric shape the CRDT
 // round-trip left it in. Anything else — absent, or not a number — is 0.
 func toInt64(v any) int64 {
@@ -186,10 +181,11 @@ func (w *ConversationWorker) conversationSpend() (int64, int64) {
 
 // spendCeiling is the configured ceiling in cumulative input tokens: 0 = off.
 func (w *ConversationWorker) spendCeiling() int64 {
-	if w.spendLimit == nil {
+	resolve := w.deps().spendLimit
+	if resolve == nil {
 		return DefaultSpendCeilingTokens
 	}
-	if limit := w.spendLimit(); limit > 0 {
+	if limit := resolve(); limit > 0 {
 		return limit
 	}
 	return 0

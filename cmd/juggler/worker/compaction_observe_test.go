@@ -122,7 +122,7 @@ func TestCompactionAccountingPersistedOnSummaryItem(t *testing.T) {
 	w.doc.InsertMessage(0, recoveryTestItems()...)
 	pinned := &ModelConfig{Provider: "original", Model: "rejected"}
 	calls := 0
-	w.llmCallFunc = observedRecoveryStub(t, &calls)
+	w.SetLLMCaller(observedRecoveryStub(t, &calls))
 
 	if _, err := w.ownedRun(t).compactToFit(recoveryLimitErr(), pinned); err != nil {
 		t.Fatal(err)
@@ -188,7 +188,7 @@ func TestCompactionTapeRecords(t *testing.T) {
 	w.doc.InsertMessage(0, recoveryTestItems()...)
 	pinned := &ModelConfig{Provider: "original", Model: "rejected"}
 	calls := 0
-	w.llmCallFunc = observedRecoveryStub(t, &calls)
+	w.SetLLMCaller(observedRecoveryStub(t, &calls))
 
 	if _, err := w.ownedRun(t).compactToFit(recoveryLimitErr(), pinned); err != nil {
 		t.Fatal(err)
@@ -289,7 +289,7 @@ func TestCompactionCancellationTapeAndAccounting(t *testing.T) {
 	pinned := &ModelConfig{Provider: "test", Model: "test"}
 
 	calls := 0
-	w.llmCallFunc = func(_ context.Context, raw json.RawMessage, _ func(StreamChunk)) (*LLMResponse, error) {
+	w.SetLLMCaller(func(_ context.Context, raw json.RawMessage, _ func(StreamChunk)) (*LLMResponse, error) {
 		calls++
 		var req hiddenLLMRequest
 		if err := json.Unmarshal(raw, &req); err != nil {
@@ -300,7 +300,7 @@ func TestCompactionCancellationTapeAndAccounting(t *testing.T) {
 			Blocks:      []LLMResponseBlock{{Type: provider.ContentBlockTypeText, Content: "condensed fragment"}},
 			InputTokens: 150, OutputTokens: 40,
 		}, nil
-	}
+	})
 
 	_, err := w.ownedRun(t).compactToFit(recoveryLimitErr(), pinned)
 	if !errors.Is(err, errBoundedCompactionCancelled) {
@@ -342,7 +342,7 @@ func TestCompactionFoldedThreadAccountingPersisted(t *testing.T) {
 	const window int64 = 2400
 	const reserve int64 = 300
 	calls := 0
-	w.llmCallFunc = observedRecoveryStub(t, &calls)
+	w.SetLLMCaller(observedRecoveryStub(t, &calls))
 
 	handled, err := w.currentRun().tryBoundedCompaction(&provider.ContextLimitExceededError{
 		EstimatedInputTokens: 5_000, OutputReserveTokens: reserve, ContextWindowTokens: window,
@@ -464,7 +464,7 @@ func TestContextGuardRecoveryRetryDispatchesBypassed(t *testing.T) {
 
 	visibleCalls, hiddenCalls := 0, 0
 	retryBypassed := false
-	w.llmCallFunc = func(_ context.Context, raw json.RawMessage, _ func(StreamChunk)) (*LLMResponse, error) {
+	w.SetLLMCaller(func(_ context.Context, raw json.RawMessage, _ func(StreamChunk)) (*LLMResponse, error) {
 		var req hiddenLLMRequest
 		if err := json.Unmarshal(raw, &req); err != nil {
 			return nil, err
@@ -497,7 +497,7 @@ func TestContextGuardRecoveryRetryDispatchesBypassed(t *testing.T) {
 			t.Fatal("the bypassed retry was marked synthetic, so the dispatch recovery relies on can no longer re-anchor admission")
 		}
 		return &LLMResponse{Blocks: []LLMResponseBlock{{Type: provider.ContentBlockTypeText, Content: "recovered"}}, StopReason: "end_turn"}, nil
-	}
+	})
 
 	w.driveStrategyLoop(t, "latest question", false)
 	if visibleCalls != 2 || hiddenCalls == 0 {
@@ -558,7 +558,7 @@ func TestContextGuardBypassedRetryReanchorsAdmission(t *testing.T) {
 	advisories := 0
 	var admitted []*provider.StreamResult
 	var wholeRequestEstimates []int64
-	w.llmCallFunc = func(ctx context.Context, raw json.RawMessage, sink func(StreamChunk)) (*LLMResponse, error) {
+	w.SetLLMCaller(func(ctx context.Context, raw json.RawMessage, sink func(StreamChunk)) (*LLMResponse, error) {
 		var req hiddenLLMRequest
 		if err := json.Unmarshal(raw, &req); err != nil {
 			return nil, err
@@ -579,7 +579,7 @@ func TestContextGuardBypassedRetryReanchorsAdmission(t *testing.T) {
 		// project from — the number that decides whether this test has teeth.
 		wholeRequestEstimates = append(wholeRequestEstimates, provider.EstimateMessageRequestTokenBreakdown(providerRequest(req), 0).Total)
 		return &LLMResponse{Blocks: []LLMResponseBlock{{Type: provider.ContentBlockTypeText, Content: "answer"}}, StopReason: "end_turn"}, nil
-	}
+	})
 
 	w.driveStrategyLoop(t, prompt.String(), false)
 	if advisories != 1 || len(admitted) != 1 {
@@ -613,7 +613,7 @@ func TestContextGuardIrreducibleFallbackIsSingleDispatchAndResets(t *testing.T) 
 	go feedStrategyContextAndTools(w)
 
 	calls := 0
-	w.llmCallFunc = func(_ context.Context, raw json.RawMessage, _ func(StreamChunk)) (*LLMResponse, error) {
+	w.SetLLMCaller(func(_ context.Context, raw json.RawMessage, _ func(StreamChunk)) (*LLMResponse, error) {
 		calls++
 		var req hiddenLLMRequest
 		if err := json.Unmarshal(raw, &req); err != nil {
@@ -641,7 +641,7 @@ func TestContextGuardIrreducibleFallbackIsSingleDispatchAndResets(t *testing.T) 
 			t.Fatal("fallback bypass was not reset after successful dispatch")
 		}
 		return &LLMResponse{Blocks: []LLMResponseBlock{{Type: provider.ContentBlockTypeText, Content: "next turn success"}}, StopReason: "end_turn"}, nil
-	}
+	})
 
 	w.driveStrategyLoop(t, strings.Repeat("x", 25_000), false)
 	if calls != 3 {
@@ -670,14 +670,14 @@ func TestContextGuardRepeatedAdvisoryAfterBypassStopsWithoutErrorItem(t *testing
 	go feedStrategyContextAndTools(w)
 
 	calls := 0
-	w.llmCallFunc = func(_ context.Context, _ json.RawMessage, _ func(StreamChunk)) (*LLMResponse, error) {
+	w.SetLLMCaller(func(_ context.Context, _ json.RawMessage, _ func(StreamChunk)) (*LLMResponse, error) {
 		calls++
 		limit := recoveryLimitErr()
 		return nil, &provider.ContextCompactionAdvisory{
 			EstimatedInputTokens: limit.EstimatedInputTokens, OutputReserveTokens: limit.OutputReserveTokens,
 			ContextWindowTokens: limit.ContextWindowTokens, Breakdown: limit.Breakdown,
 		}
-	}
+	})
 	w.driveStrategyLoop(t, strings.Repeat("x", 25_000), false)
 	if calls != 2 {
 		t.Fatalf("calls = %d, want initial advisory plus one bounded fallback", calls)
@@ -698,7 +698,7 @@ func TestContextGuardFallbackRealOverflowPreservesProviderCause(t *testing.T) {
 
 	providerCause := errors.New("provider fallback says context window exceeded")
 	calls := 0
-	w.llmCallFunc = func(_ context.Context, raw json.RawMessage, _ func(StreamChunk)) (*LLMResponse, error) {
+	w.SetLLMCaller(func(_ context.Context, raw json.RawMessage, _ func(StreamChunk)) (*LLMResponse, error) {
 		calls++
 		var req hiddenLLMRequest
 		if err := json.Unmarshal(raw, &req); err != nil {
@@ -716,7 +716,7 @@ func TestContextGuardFallbackRealOverflowPreservesProviderCause(t *testing.T) {
 		}
 		limit.Cause = providerCause
 		return nil, limit
-	}
+	})
 
 	w.driveStrategyLoop(t, strings.Repeat("x", 25_000), false)
 	if calls != 2 {
@@ -746,7 +746,7 @@ func TestContextGuardRecoveryFailureSurfacesErrorItem(t *testing.T) {
 	go feedStrategyContextAndTools(w)
 
 	reducerFailure := errors.New("hidden reducer transport failed")
-	w.llmCallFunc = func(_ context.Context, raw json.RawMessage, _ func(StreamChunk)) (*LLMResponse, error) {
+	w.SetLLMCaller(func(_ context.Context, raw json.RawMessage, _ func(StreamChunk)) (*LLMResponse, error) {
 		var req hiddenLLMRequest
 		if err := json.Unmarshal(raw, &req); err != nil {
 			return nil, err
@@ -759,7 +759,7 @@ func TestContextGuardRecoveryFailureSurfacesErrorItem(t *testing.T) {
 			EstimatedInputTokens: limit.EstimatedInputTokens, OutputReserveTokens: limit.OutputReserveTokens,
 			ContextWindowTokens: limit.ContextWindowTokens, Breakdown: limit.Breakdown,
 		}
-	}
+	})
 
 	w.driveStrategyLoop(t, "latest question", false)
 	for _, item := range w.doc.GetItems() {
@@ -807,7 +807,7 @@ func TestContextRecoveryBudgetResetsAfterSuccessfulDispatch(t *testing.T) {
 		limit.Cause = providerCause
 		return limit
 	}
-	w.llmCallFunc = func(_ context.Context, raw json.RawMessage, _ func(StreamChunk)) (*LLMResponse, error) {
+	w.SetLLMCaller(func(_ context.Context, raw json.RawMessage, _ func(StreamChunk)) (*LLMResponse, error) {
 		var req hiddenLLMRequest
 		if err := json.Unmarshal(raw, &req); err != nil {
 			return nil, err
@@ -834,7 +834,7 @@ func TestContextRecoveryBudgetResetsAfterSuccessfulDispatch(t *testing.T) {
 		default:
 			return &LLMResponse{Blocks: []LLMResponseBlock{{Type: provider.ContentBlockTypeText, Content: "recovered"}}, StopReason: "end_turn"}, nil
 		}
-	}
+	})
 
 	w.driveStrategyLoop(t, "latest question", false)
 	if want := maxContextRecoveryAttempts + 3; visibleCalls != want {
@@ -874,7 +874,7 @@ func TestContextRecoveryNoProgressErrorItemPreservesProviderCause(t *testing.T) 
 
 	providerCause := errors.New("provider says context is too long")
 	realCalls, hiddenCalls := 0, 0
-	w.llmCallFunc = func(_ context.Context, raw json.RawMessage, _ func(StreamChunk)) (*LLMResponse, error) {
+	w.SetLLMCaller(func(_ context.Context, raw json.RawMessage, _ func(StreamChunk)) (*LLMResponse, error) {
 		var req hiddenLLMRequest
 		if err := json.Unmarshal(raw, &req); err != nil {
 			t.Fatal(err)
@@ -887,7 +887,7 @@ func TestContextRecoveryNoProgressErrorItemPreservesProviderCause(t *testing.T) 
 		overflow := recoveryLimitErr()
 		overflow.Cause = providerCause
 		return nil, overflow
-	}
+	})
 
 	// The user's own message is the newest unit and alone exceeds the window:
 	// recovery cannot fold anything, so the turn fails terminally.

@@ -305,7 +305,7 @@ func TestStreamingLongMessageIntact(t *testing.T) {
 
 	// llmCallFunc streams one word per chunk (simulates real LLM token streaming).
 	// The callback IS queueStreamChunk — same path as production.
-	w.llmCallFunc = func(ctx context.Context, request json.RawMessage, chunkHandler func(StreamChunk)) (*LLMResponse, error) {
+	w.SetLLMCaller(func(ctx context.Context, request json.RawMessage, chunkHandler func(StreamChunk)) (*LLMResponse, error) {
 		for i, word := range wordsInText {
 			tok := word
 			if i > 0 {
@@ -317,7 +317,7 @@ func TestStreamingLongMessageIntact(t *testing.T) {
 			Blocks:     []LLMResponseBlock{{Type: "text", Content: fullText}},
 			StopReason: "end_turn",
 		}, nil
-	}
+	})
 
 	// callLLM spawns the provider goroutine and enters waitForLLMResponse,
 	// which processes chunks from the inbound channel on THIS goroutine.
@@ -396,7 +396,7 @@ func TestStreamingNoBottleneck(t *testing.T) {
 	var providerDone time.Time
 	var bufferedAtDone int
 
-	w.llmCallFunc = func(ctx context.Context, request json.RawMessage, chunkHandler func(StreamChunk)) (*LLMResponse, error) {
+	w.SetLLMCaller(func(ctx context.Context, request json.RawMessage, chunkHandler func(StreamChunk)) (*LLMResponse, error) {
 		for _, chunk := range chunks {
 			chunkHandler(chunk)
 		}
@@ -406,7 +406,7 @@ func TestStreamingNoBottleneck(t *testing.T) {
 			Blocks:     []LLMResponseBlock{{Type: "text", Content: fullText}},
 			StopReason: "end_turn",
 		}, nil
-	}
+	})
 
 	_, err := w.currentRun().callLLM(nil)
 	callLLMDone := time.Now()
@@ -541,7 +541,7 @@ func TestStatusChunkSurfacesPhase(t *testing.T) {
 	// strategy loop, which sends "streaming" just before the provider call.
 	w.currentRun().sendStatus("streaming", "")
 
-	w.llmCallFunc = func(ctx context.Context, request json.RawMessage, chunkHandler func(StreamChunk)) (*LLMResponse, error) {
+	w.SetLLMCaller(func(ctx context.Context, request json.RawMessage, chunkHandler func(StreamChunk)) (*LLMResponse, error) {
 		// A phase label arrives before any content, then the first token.
 		chunkHandler(StreamChunk{
 			Type:            "status",
@@ -553,7 +553,7 @@ func TestStatusChunkSurfacesPhase(t *testing.T) {
 			Blocks:     []LLMResponseBlock{{Type: "text", Content: "hi"}},
 			StopReason: "end_turn",
 		}, nil
-	}
+	})
 
 	if _, err := w.currentRun().callLLM(nil); err != nil {
 		t.Fatalf("callLLM failed: %v", err)
@@ -580,7 +580,7 @@ func TestCacheMissLandsInTranscript(t *testing.T) {
 	w.currentRun().sendStatus("streaming", "")
 
 	const reason = "diverged: system prompt changed"
-	w.llmCallFunc = func(ctx context.Context, request json.RawMessage, chunkHandler func(StreamChunk)) (*LLMResponse, error) {
+	w.SetLLMCaller(func(ctx context.Context, request json.RawMessage, chunkHandler func(StreamChunk)) (*LLMResponse, error) {
 		chunkHandler(StreamChunk{Type: "status", Content: "Rebuilding Claude Code context", CacheMissReason: reason})
 		// The same miss re-announced mid-turn must not add a second item.
 		chunkHandler(StreamChunk{Type: "status", Content: "Waiting for response", CacheMissReason: reason})
@@ -589,7 +589,7 @@ func TestCacheMissLandsInTranscript(t *testing.T) {
 			Blocks:     []LLMResponseBlock{{Type: "text", Content: "hi"}},
 			StopReason: "end_turn",
 		}, nil
-	}
+	})
 
 	if _, err := w.currentRun().callLLM(nil); err != nil {
 		t.Fatalf("callLLM failed: %v", err)

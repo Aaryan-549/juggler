@@ -36,8 +36,8 @@ func (w *ConversationWorker) handleTestMessage(msg workerMessage) bool {
 	case "set-mock-responses":
 		w.handleSetMockResponses(msg.Payload)
 	case "release-mock":
-		if w.mock != nil {
-			w.mock.release()
+		if mock := w.mock(); mock != nil {
+			mock.release()
 		}
 	case "queue-mocks-for-name":
 		w.handleQueueMocksForName(msg.Payload)
@@ -87,7 +87,7 @@ func (w *ConversationWorker) handlePing(payload json.RawMessage) {
 }
 
 // handleSetMockResponses enables mock mode and sets scripted LLM responses.
-// When w.mock is non-nil, callLLM() pops and returns these responses instead of calling the real LLM.
+// While a script is installed, callLLM() pops and returns these responses instead of calling the real LLM.
 func (w *ConversationWorker) handleSetMockResponses(payload json.RawMessage) {
 	var msg struct {
 		SetMockResponsesMessage
@@ -128,11 +128,26 @@ func (w *ConversationWorker) handleQueueMocksForName(payload json.RawMessage) {
 	}
 }
 
+// SweepTransactionsForTest synchronously runs the transaction blob GC sweep.
+// Production GC piggy-backs on the 2s debounced save (and on shutdown). Tests
+// use this to assert the live-set + undoLog contract without waiting for the
+// debounce timer.
+func (w *ConversationWorker) SweepTransactionsForTest() error {
+	return w.sweepTransactions()
+}
+
+// HasPendingItems reports whether the thread ("" => root) has any queued
+// (not-yet-promoted) messages, so a test can wait for a busy-time send to land
+// in the queue before releasing the in-flight turn.
+func (w *ConversationWorker) HasPendingItems(threadItemID string) bool {
+	return w.hasPendingItems(threadItemID)
+}
+
 // adoptPendingMocks installs the responses queued under this conversation's
 // name, if any, and spends the queue. Called at init on the run goroutine. A
 // script installed directly is never replaced.
 func (w *ConversationWorker) adoptPendingMocks() {
-	if w.mock != nil {
+	if w.mock() != nil {
 		return
 	}
 	name := w.conversationName()

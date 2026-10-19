@@ -116,6 +116,23 @@ func (r *run) updateTargetItemByID(itemID, field string, value any) error {
 	return r.doc.UpdateItemByID(itemID, field, value)
 }
 
+// updateRunItem is updateTargetItemByID for the writes a run makes as it goes —
+// a streamed block rewriting its item, the user message a round-trip stamps —
+// where a failure means the item has gone (a viewer deleted it mid-stream) and
+// the run has nothing to do but carry on. The failure is logged at Debug, once
+// per item: a streaming block rewrites its item many times a second.
+func (r *run) updateRunItem(itemID, field string, value any) {
+	err := r.updateTargetItemByID(itemID, field, value)
+	if err == nil || r.t.unwrittenItems[itemID] {
+		return
+	}
+	if r.t.unwrittenItems == nil {
+		r.t.unwrittenItems = map[string]bool{}
+	}
+	r.t.unwrittenItems[itemID] = true
+	r.log.Debug("[worker] %s of item %s not written, and will not be reported again this run: %v", field, itemID, err)
+}
+
 // findThreadWithIncompleteTool returns the itemID of the innermost thread
 // containing any non-terminal tool-action (pending / approved / running /
 // state-unset), with ok=true. Returns ("", true) if such a tool exists at
@@ -187,13 +204,14 @@ func (w *ConversationWorker) CancelAllToolActions(threadItemID string) {
 // lock promises only that no two y-crdt calls overlap, so finding the thread and
 // walking it are one question and take one hold.
 func (w *ConversationWorker) cancelToolsUnder(threadItemID string, includeApproved, includePending bool) {
-	ycrdtMu.Lock()
-	arr := w.doc.getItems()
-	if threadItemID != "" {
-		arr = findThreadItemsArray(arr, threadItemID)
-	}
-	executingIDs := w.cancelToolsInArray(arr, includeApproved, includePending)
-	ycrdtMu.Unlock()
+	var executingIDs []toolCancelRef
+	withYDoc(func() {
+		arr := w.doc.getItems()
+		if threadItemID != "" {
+			arr = findThreadItemsArray(arr, threadItemID)
+		}
+		executingIDs = w.cancelToolsInArray(arr, includeApproved, includePending)
+	})
 	w.dispatchCancelTools(executingIDs)
 }
 
@@ -440,51 +458,51 @@ func (w *ConversationWorker) finalizeStuckRunningToolOnField(toolUseID, epochFie
 	})
 	wrote := false
 	var cancelEpoch int64
-	ycrdtMu.Lock()
-	walkAllItems(w.doc.getItems(), "", func(m *ycrdt.YMap, _ string) bool {
-		if t, _ := m.Get("type").(string); t != ItemTypeToolAction {
-			return false
-		}
-		if id, _ := m.Get("toolUseId").(string); id != toolUseID {
-			return false
-		}
-		// Found the tool-action. Only finalize the exact wedge shape: still
-		// running, no result yet. Anything else (approved re-run, or already
-		// terminal) is left untouched. Stop the walk either way.
-		if state, _ := m.Get("state").(string); state != StateRunning {
+	withYDoc(func() {
+		walkAllItems(w.doc.getItems(), "", func(m *ycrdt.YMap, _ string) bool {
+			if t, _ := m.Get("type").(string); t != ItemTypeToolAction {
+				return false
+			}
+			if id, _ := m.Get("toolUseId").(string); id != toolUseID {
+				return false
+			}
+			// Found the tool-action. Only finalize the exact wedge shape: still
+			// running, no result yet. Anything else (approved re-run, or already
+			// terminal) is left untouched. Stop the walk either way.
+			if state, _ := m.Get("state").(string); state != StateRunning {
+				return true
+			}
+			if r := m.Get("result"); r != nil {
+				return true
+			}
+			// Epoch guard: only finalize the exact execution the caller observed. A
+			// mismatch means a re-run re-claimed this id to a fresh running — leave it.
+			// A missing or non-numeric stamp reads as 0. The doc stamp round-trips as
+			// int/int64/float64 depending on its write path, so it is coerced before
+			// the compare.
+			if de, _ := docNumberToInt64(m.Get(epochField)); de != int64(epoch) {
+				return true
+			}
+			// Capture the execution generation under the lock so the belt cancel below
+			// aborts exactly this incarnation, not a re-run that re-claims the id.
+			cancelEpoch, _ = docNumberToInt64(m.Get("runningEpoch"))
+			toolName, _ := m.Get("toolName").(string)
+			w.tape.Record("tool-state", map[string]any{
+				"toolUseId": toolUseID,
+				"toolName":  toolName,
+				"from":      StateRunning,
+				"to":        "cancelled",
+				"writer":    "worker-finalize",
+				"reason":    reason,
+			})
+			w.doc.transactTracked(func(_ *ycrdt.Transaction) {
+				m.Set("state", StateCancelled)
+				m.Set("result", interruptedResult)
+			})
+			wrote = true
 			return true
-		}
-		if r := m.Get("result"); r != nil {
-			return true
-		}
-		// Epoch guard: only finalize the exact execution the caller observed. A
-		// mismatch means a re-run re-claimed this id to a fresh running — leave it.
-		// A missing or non-numeric stamp reads as 0. The doc stamp round-trips as
-		// int/int64/float64 depending on its write path, so it is coerced before
-		// the compare.
-		if de, _ := docNumberToInt64(m.Get(epochField)); de != int64(epoch) {
-			return true
-		}
-		// Capture the execution generation under the lock so the belt cancel below
-		// aborts exactly this incarnation, not a re-run that re-claims the id.
-		cancelEpoch, _ = docNumberToInt64(m.Get("runningEpoch"))
-		toolName, _ := m.Get("toolName").(string)
-		w.tape.Record("tool-state", map[string]any{
-			"toolUseId": toolUseID,
-			"toolName":  toolName,
-			"from":      StateRunning,
-			"to":        "cancelled",
-			"writer":    "worker-finalize",
-			"reason":    reason,
 		})
-		w.doc.transactTracked(func(_ *ycrdt.Transaction) {
-			m.Set("state", StateCancelled)
-			m.Set("result", interruptedResult)
-		})
-		wrote = true
-		return true
 	})
-	ycrdtMu.Unlock()
 	if wrote {
 		// Belt-and-suspenders: tell the engine to abort any lingering in-flight
 		// execution for this id (idempotent — a no-op if nothing is running there),

@@ -84,22 +84,32 @@ type toolCommandState struct {
 
 // toolCommandTracker owns the tool-command bookkeeping. Every access happens on
 // the worker's run goroutine (driveToolActions and the reattach/reset paths all
-// run there), so it carries no lock of its own.
+// run there), so it carries no lock of its own; every method asserts it
+// (actor_guard.go).
 type toolCommandTracker struct {
-	byID map[string]*toolCommandState
+	// toolActor is the worker's actor guard; nil for a tracker built bare.
+	toolActor *actorGuard
+	byID      map[string]*toolCommandState
 	// redriveAfter is how long a command still stuck at the state it was last
 	// sent at waits before shouldRedrive allows it again. A field (defaulting to
 	// defaultRedriveInterval) so tests can shrink it to force staleness.
 	redriveAfter time.Duration
 }
 
-func newToolCommandTracker() *toolCommandTracker {
-	return &toolCommandTracker{byID: map[string]*toolCommandState{}, redriveAfter: defaultRedriveInterval}
+func newToolCommandTracker(actor *actorGuard) *toolCommandTracker {
+	return &toolCommandTracker{toolActor: actor, byID: map[string]*toolCommandState{}, redriveAfter: defaultRedriveInterval}
+}
+
+// lookup returns id's state, or nil, asserting the caller is the actor. Every
+// method reaches the table through here or entry.
+func (t *toolCommandTracker) lookup(id string) *toolCommandState {
+	t.toolActor.assertActor("the tool-command tracker")
+	return t.byID[id]
 }
 
 // entry returns the mutable state for id, creating a zero entry if absent.
 func (t *toolCommandTracker) entry(id string) *toolCommandState {
-	s := t.byID[id]
+	s := t.lookup(id)
 	if s == nil {
 		s = &toolCommandState{}
 		t.byID[id] = s
@@ -111,19 +121,23 @@ func (t *toolCommandTracker) entry(id string) *toolCommandState {
 // engine has observed none of this conversation's commands, so every non-terminal
 // tool-action must be dispatched afresh against it.
 func (t *toolCommandTracker) resetAll() {
+	t.toolActor.assertActor("the tool-command tracker")
 	t.byID = map[string]*toolCommandState{}
 }
 
 // clear drops all bookkeeping for id (the full-reset sites: escalation-to-failed,
 // user-triggered retry, per-tool reattach reset). The next drive treats the id as
 // never-dispatched.
-func (t *toolCommandTracker) clear(id string) { delete(t.byID, id) }
+func (t *toolCommandTracker) clear(id string) {
+	t.toolActor.assertActor("the tool-command tracker")
+	delete(t.byID, id)
+}
 
 // commandedAt reports whether the last command sent for id was sent at state.
 // For StateApproved that means execute-tool has gone out: the engine may be
 // about to claim the call, so only the cancel path may stop it.
 func (t *toolCommandTracker) commandedAt(id, state string) bool {
-	s := t.byID[id]
+	s := t.lookup(id)
 	return s != nil && s.dispatchedStateSet && s.dispatchedState == state
 }
 
@@ -145,7 +159,7 @@ func (t *toolCommandTracker) noteHeld(id string) bool {
 // suppressed until interval has elapsed since the last dispatch (the anti-spam
 // dedup that also recovers a silently-dropped command once it goes stale).
 func (t *toolCommandTracker) shouldRedrive(id, state string, now time.Time) bool {
-	s := t.byID[id]
+	s := t.lookup(id)
 	if s == nil || !s.dispatchedStateSet || s.dispatchedState != state {
 		return true
 	}
@@ -229,7 +243,7 @@ var engineLivenessOnlyEvents = map[string]bool{
 // diagnostic-only, and creating an entry for it would leak one map entry per
 // tool ever traced.
 func (t *toolCommandTracker) recordTrace(id, event, reason string, now time.Time) {
-	s := t.byID[id]
+	s := t.lookup(id)
 	if s == nil {
 		return
 	}
@@ -265,7 +279,7 @@ func (t *toolCommandTracker) recordTrace(id, event, reason string, now time.Time
 // counts any trace at all is satisfied by an engine repeating that it cannot
 // find the conversation, which is a statement about the engine, not the tool.
 func (t *toolCommandTracker) answeredSincePrevDispatch(id string) bool {
-	s := t.byID[id]
+	s := t.lookup(id)
 	if s == nil || s.engagedAtDispatch == 0 {
 		return false
 	}
@@ -278,7 +292,7 @@ func (t *toolCommandTracker) answeredSincePrevDispatch(id string) bool {
 // declined that way and has since fallen silent is not "currently unreachable" —
 // it is mute, and the shorter mute hold applies.
 func (t *toolCommandTracker) unreachableSincePrevDispatch(id string) (bool, string) {
-	s := t.byID[id]
+	s := t.lookup(id)
 	if s == nil || s.unreachableAtDispatch == 0 {
 		return false, ""
 	}
@@ -292,7 +306,7 @@ func (t *toolCommandTracker) unreachableSincePrevDispatch(id string) (bool, stri
 // time if none ever has. Diagnostic only — the escalation verdict uses
 // answeredSincePrevDispatch, which also weighs recency.
 func (t *toolCommandTracker) lastTracedAt(id string) time.Time {
-	if s := t.byID[id]; s != nil {
+	if s := t.lookup(id); s != nil {
 		return s.lastTracedAt
 	}
 	return time.Time{}
@@ -301,7 +315,7 @@ func (t *toolCommandTracker) lastTracedAt(id string) time.Time {
 // phaseStartedAt returns when the current delivery phase for id began, or the
 // zero time if id has never been dispatched.
 func (t *toolCommandTracker) phaseStartedAt(id string) time.Time {
-	if s := t.byID[id]; s != nil {
+	if s := t.lookup(id); s != nil {
 		return s.firstDispatchedAt
 	}
 	return time.Time{}
