@@ -17,18 +17,16 @@ import (
 // (provider.Config.ProjectPath, the value the conversation cache fills from
 // Server.ProjectPath()), NOT the directory the server was launched from.
 //
-// The regression it guards: NewClient derived workingDir from
-// os.Getenv("JUGGLER_PROJECT_PATH") (a seam nothing populates in production)
-// with an os.Getwd() fallback, so the CLI inherited the launch directory and
-// Claude Code resolved the wrong project — loading the other project's
-// CLAUDE.md, transcripts, and .claude/settings.json.
+// A CLI that inherited the launch directory would resolve the wrong project in
+// Claude Code — loading the other project's CLAUDE.md, transcripts, and
+// .claude/settings.json.
 //
-// To prove Config wins, JUGGLER_PROJECT_PATH is deliberately pointed at a
-// DECOY directory: the spawn must still land in the Config project dir.
+// To prove Config wins, the process cwd is deliberately a DECOY directory: the
+// spawn must still land in the Config project dir.
 func TestSpawn_UsesConfigProjectDir(t *testing.T) {
 	projectDir := t.TempDir() // what the window shows — where the CLI must run
-	decoyDir := t.TempDir()   // the legacy env seam / "launch dir" — must lose
-	t.Setenv("JUGGLER_PROJECT_PATH", decoyDir)
+	decoyDir := t.TempDir()   // the "launch dir" — must lose
+	t.Chdir(decoyDir)
 
 	tracePath := installFakeClaude(t, fakeModeUntilClose, "uuid-projectdir")
 

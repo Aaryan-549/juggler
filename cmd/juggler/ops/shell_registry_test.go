@@ -15,7 +15,7 @@ import (
 // does not act on wedges its caller for the life of the process.
 func TestRegistryAnswersAnUnrecognisedOp(t *testing.T) {
 	resp := make(chan registryResp, 1)
-	registryCh <- registryOp{kind: registryOpKind(-1), resp: resp}
+	registryCh() <- registryOp{kind: registryOpKind(-1), resp: resp}
 
 	select {
 	case <-resp:

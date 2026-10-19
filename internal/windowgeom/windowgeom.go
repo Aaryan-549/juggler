@@ -15,7 +15,7 @@ package windowgeom
 import (
 	"time"
 
-	"juggler/cmd/juggler/core"
+	"juggler/internal/windowstate"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
@@ -78,17 +78,17 @@ func DefaultSize(screens []*application.Screen) (int, int) {
 // DefaultFrame is DefaultSize centred on the primary work area, for a caller
 // correcting a window that was placed before there were screens to consult.
 // Reported as (frame, false) when there are none now either.
-func DefaultFrame(screens []*application.Screen) (core.WindowState, bool) {
+func DefaultFrame(screens []*application.Screen) (windowstate.State, bool) {
 	primary := primaryScreen(screens)
 	if primary == nil {
-		return core.WindowState{}, false
+		return windowstate.State{}, false
 	}
 	area := primary.WorkArea
 	if area.Width <= 0 || area.Height <= 0 {
-		return core.WindowState{}, false
+		return windowstate.State{}, false
 	}
 	width, height := DefaultSize(screens)
-	return core.WindowState{
+	return windowstate.State{
 		X:      area.X + (area.Width-width)/2,
 		Y:      area.Y + (area.Height-height)/2,
 		Width:  width,
@@ -116,7 +116,7 @@ type Window interface {
 // frame of one window, which is what makes a maximised window still able to
 // persist a sane restore frame alongside its maximised flag.
 type Tracker struct {
-	lastPos core.WindowState
+	lastPos windowstate.State
 	screens func() []*application.Screen
 }
 
@@ -130,7 +130,7 @@ type Tracker struct {
 // the main thread, along with the rest of the capture. A nil func disables the
 // check, which is what a host whose window deliberately lives outside every
 // work area wants — the test-pool window is off-screen by design.
-func NewTracker(seed core.WindowState, screens func() []*application.Screen) *Tracker {
+func NewTracker(seed windowstate.State, screens func() []*application.Screen) *Tracker {
 	return &Tracker{lastPos: seed, screens: screens}
 }
 
@@ -138,20 +138,20 @@ func NewTracker(seed core.WindowState, screens func() []*application.Screen) *Tr
 // just put the window at itself. For a window moved out from under the tracker
 // — a rescue off a display that no longer exists — where the new frame is both
 // true and, while the window is maximised, the only one anybody knows.
-func (t *Tracker) Reseed(frame core.WindowState) {
+func (t *Tracker) Reseed(frame windowstate.State) {
 	t.lastPos = frame
 }
 
 // RestoreFrame is the remembered normal-state frame: what a maximised window
 // will return to when it is restored. It has no position when nothing true is
 // known about one — see Seed.
-func (t *Tracker) RestoreFrame() core.WindowState {
+func (t *Tracker) RestoreFrame() windowstate.State {
 	return t.lastPos
 }
 
 // stranded reports whether a frame is unrecoverable on the displays present
 // right now, and false whenever there is no way to tell.
-func (t *Tracker) stranded(frame core.WindowState) bool {
+func (t *Tracker) stranded(frame windowstate.State) bool {
 	if t.screens == nil {
 		return false
 	}
@@ -169,13 +169,13 @@ func (t *Tracker) stranded(frame core.WindowState) bool {
 // window come back invisible, so a window the user rescued by maximising it
 // must not persist the very frame it was rescued from. All of these leave the
 // stored frame alone rather than clobbering the user's real geometry.
-func (t *Tracker) Capture(win Window) (core.WindowState, bool) {
+func (t *Tracker) Capture(win Window) (windowstate.State, bool) {
 	// Windows parks a minimised HWND outside the virtual desktop. Position() sees
 	// those parking coordinates, not the frame Windows will restore, so saving one
 	// would strand the next window off-screen. Leave both the store and lastPos
 	// untouched until the window has been restored.
 	if win.IsMinimised() {
-		return core.WindowState{}, false
+		return windowstate.State{}, false
 	}
 	maximised := win.IsMaximised()
 	fullscreen := win.IsFullscreen()
@@ -183,17 +183,17 @@ func (t *Tracker) Capture(win Window) (core.WindowState, bool) {
 		x, y := win.Position()
 		w, h := win.Size()
 		if w <= 0 || h <= 0 {
-			return core.WindowState{}, false
+			return windowstate.State{}, false
 		}
-		frame := core.WindowState{X: x, Y: y, Width: w, Height: h, HasPos: true}
+		frame := windowstate.State{X: x, Y: y, Width: w, Height: h, HasPos: true}
 		if t.stranded(frame) {
-			return core.WindowState{}, false
+			return windowstate.State{}, false
 		}
 		t.lastPos = frame
 	} else if !t.lastPos.HasPos || t.stranded(t.lastPos) {
-		return core.WindowState{}, false
+		return windowstate.State{}, false
 	}
-	return core.WindowState{
+	return windowstate.State{
 		X:          t.lastPos.X,
 		Y:          t.lastPos.Y,
 		Width:      t.lastPos.Width,
@@ -258,7 +258,7 @@ type Placement struct {
 // window for anything the frame doesn't say. A zero WindowState therefore gives
 // exactly the first-run placement, which is what a caller with no saved frame
 // should pass.
-func Place(saved core.WindowState) Placement {
+func Place(saved windowstate.State) Placement {
 	p := Placement{
 		Width:    DefaultWidth,
 		Height:   DefaultHeight,
@@ -287,7 +287,7 @@ func Place(saved core.WindowState) Placement {
 // coordinates were saved by an older build. A stranded frame is centred on the
 // primary display and limited to its work area; valid negative coordinates on a
 // display left of the primary are retained.
-func PlaceVisible(saved core.WindowState, screens []*application.Screen) Placement {
+func PlaceVisible(saved windowstate.State, screens []*application.Screen) Placement {
 	p := Place(saved)
 
 	// Place answers a window with no saved size with the layout's minimum,
@@ -340,7 +340,7 @@ func PlaceVisible(saved core.WindowState, screens []*application.Screen) Placeme
 //
 // A frame with no position or no size is returned untouched. There is nothing
 // to fit, and inventing coordinates would take away the centring default.
-func FitOnScreen(frame core.WindowState, screens []*application.Screen) core.WindowState {
+func FitOnScreen(frame windowstate.State, screens []*application.Screen) windowstate.State {
 	if !frame.HasPos || frame.Width <= 0 || frame.Height <= 0 {
 		return frame
 	}
@@ -370,7 +370,7 @@ func FitOnScreen(frame core.WindowState, screens []*application.Screen) core.Win
 // the thing a new user is least likely to think of.
 //
 // A frame with no size is returned untouched; there is nothing to cap.
-func CapToWorkArea(frame core.WindowState, screens []*application.Screen) (core.WindowState, bool) {
+func CapToWorkArea(frame windowstate.State, screens []*application.Screen) (windowstate.State, bool) {
 	if frame.Width <= 0 || frame.Height <= 0 {
 		return frame, false
 	}
@@ -398,7 +398,7 @@ func CapToWorkArea(frame core.WindowState, screens []*application.Screen) (core.
 
 // screenUnder picks the screen a frame mostly lies on, falling back to the
 // primary for one that lies on none of them.
-func screenUnder(frame core.WindowState, screens []*application.Screen) *application.Screen {
+func screenUnder(frame windowstate.State, screens []*application.Screen) *application.Screen {
 	var best *application.Screen
 	bestArea := 0
 	for _, screen := range screens {
@@ -437,7 +437,7 @@ const (
 // A frame with no position, and any frame at all when no displays are known,
 // is never stranded. "Cannot tell" has to answer no: a caller that refused work
 // on an empty screen list would refuse it every time one was unavailable.
-func Stranded(frame core.WindowState, screens []*application.Screen) bool {
+func Stranded(frame windowstate.State, screens []*application.Screen) bool {
 	if !frame.HasPos || len(screens) == 0 {
 		return false
 	}
@@ -468,7 +468,7 @@ func Stranded(frame core.WindowState, screens []*application.Screen) bool {
 // PlaceVisible answers "where do I open this", from a saved frame and before
 // there is a window; RescueFrame answers "is this window reachable", from the
 // live frame of one that is already up.
-func RescueFrame(frame core.WindowState, screens []*application.Screen) (core.WindowState, bool) {
+func RescueFrame(frame windowstate.State, screens []*application.Screen) (windowstate.State, bool) {
 	if !Stranded(frame, screens) {
 		return frame, false
 	}
@@ -501,7 +501,7 @@ func RescueFrame(frame core.WindowState, screens []*application.Screen) (core.Wi
 // restore frame is judged first, because rescuing it gives a normal-sized frame
 // for the window to return to, where rescuing the live one would give a
 // display-sized one.
-func RescueTarget(live, restore core.WindowState, screens []*application.Screen) (core.WindowState, bool) {
+func RescueTarget(live, restore windowstate.State, screens []*application.Screen) (windowstate.State, bool) {
 	if rescued, moved := RescueFrame(restore, screens); moved {
 		return rescued, true
 	}
@@ -510,8 +510,8 @@ func RescueTarget(live, restore core.WindowState, screens []*application.Screen)
 
 // frameOf reads a placement back as the frame it will put on screen, so the
 // same visibility rule serves a placement and a live window.
-func frameOf(p Placement) core.WindowState {
-	return core.WindowState{X: p.X, Y: p.Y, Width: p.Width, Height: p.Height, HasPos: true}
+func frameOf(p Placement) windowstate.State {
+	return windowstate.State{X: p.X, Y: p.Y, Width: p.Width, Height: p.Height, HasPos: true}
 }
 
 // Seed reads a placement back as the frame to seed a Tracker with: where the
@@ -524,9 +524,9 @@ func frameOf(p Placement) core.WindowState {
 // platform's answer rather than ours, so it seeds a size and no position. A
 // window that then comes up maximised declines to write a restore frame until
 // the user restores it, which is the honest result: nothing true is known yet.
-func Seed(p Placement) core.WindowState {
+func Seed(p Placement) windowstate.State {
 	if p.Position != application.WindowXY {
-		return core.WindowState{Width: p.Width, Height: p.Height}
+		return windowstate.State{Width: p.Width, Height: p.Height}
 	}
 	return frameOf(p)
 }

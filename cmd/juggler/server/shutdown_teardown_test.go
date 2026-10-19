@@ -112,3 +112,21 @@ func TestTeardownRunsEveryStageInOrderThenReleases(t *testing.T) {
 		t.Fatal("a clean teardown left the project lock held")
 	}
 }
+
+// TestShutdownDropsTheWakeSubscription: the system-wake subscription New takes
+// is process-global, so a server that shuts down without dropping it stays
+// reachable and keeps being woken for the life of the process.
+func TestShutdownDropsTheWakeSubscription(t *testing.T) {
+	s := newTestServerState(t)
+	dropped := 0
+	s.stopWake = func() { dropped++ }
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := s.Shutdown(ctx); err != nil {
+		t.Fatalf("Shutdown: %v", err)
+	}
+	if dropped != 1 {
+		t.Fatalf("the wake subscription was dropped %d times, want once", dropped)
+	}
+}

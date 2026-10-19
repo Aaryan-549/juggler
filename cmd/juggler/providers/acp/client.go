@@ -48,15 +48,11 @@ func NewClient(cfg provider.Config) (provider.Provider, error) {
 
 // projectDir is the root used to locate the per-project acp.json. The
 // authoritative source is the project the server has open (cfgProjectPath, from
-// Server.ProjectPath()); it falls back to the legacy env seam and then the
-// process cwd only when no project is carried (e.g. model-listing calls that
-// pass a bare Config).
+// Server.ProjectPath()); it falls back to the process cwd only when no project
+// is carried (e.g. model-listing calls that pass a bare Config).
 func projectDir(cfgProjectPath string) string {
 	if cfgProjectPath != "" {
 		return cfgProjectPath
-	}
-	if wd := os.Getenv("JUGGLER_PROJECT_PATH"); wd != "" {
-		return wd
 	}
 	if wd, err := os.Getwd(); err == nil {
 		return wd

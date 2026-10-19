@@ -10,6 +10,8 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+
+	"juggler/internal/atomicio"
 )
 
 // Config represents the application configuration
@@ -222,7 +224,7 @@ func (c *Config) Save(projectPath string) error {
 	if err != nil {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
-	if err := os.WriteFile(configPath, data, 0644); err != nil {
+	if err := atomicio.WriteFile(configPath, data, 0644); err != nil {
 		return fmt.Errorf("failed to write config: %w", err)
 	}
 

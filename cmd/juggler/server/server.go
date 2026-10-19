@@ -233,6 +233,7 @@ type Server struct {
 	shutdownChan   chan struct{}
 	shutdownOnce   sync.Once
 	workerManager  *worker.Manager     // Go worker manager
+	stopWake       func()              // Drops the system-wake subscription New took for workerManager; nil before New finishes
 	extraRoutes    func(r *mux.Router) // Optional Config.ExtraRoutes hook, invoked at the end of setupRoutes
 	exitWithParent bool                // Config.ExitWithParent: server self-terminates when its parent (the viewer) dies; reported on /api/health/instance
 	loopbackOnly   bool                // Config.LoopbackOnly: bind 127.0.0.1 instead of every interface
@@ -362,16 +363,13 @@ func New(cfg Config) (*Server, error) {
 		return nil, fmt.Errorf("session manager is required")
 	}
 
+	// From here the tunnel-mode registry is read without a lock.
+	sealTunnelModes()
+
 	router := mux.NewRouter()
 	upgrader := newWSUpgrader()
 
 	wm := worker.NewManager()
-
-	// When the OS resumes from sleep, cancel any in-flight LLM request whose
-	// connection the sleep likely dropped, so the turn fails fast instead of
-	// riding the LLMTimeout backstop. syswake.Fire() is called from the
-	// platform sleep/wake observer (darwin: the NSWorkspace DidWake hook).
-	syswake.OnWake(wm.SystemDidWake)
 
 	// Server skeleton created up-front so handler providers can close over its accessors.
 	s := &Server{}
@@ -526,6 +524,14 @@ func New(cfg Config) (*Server, error) {
 
 	s.wireWorkerManager()
 	go s.runProviderRefreshActor()
+
+	// When the OS resumes from sleep, cancel any in-flight LLM request whose
+	// connection the sleep likely dropped, so the turn fails fast instead of
+	// riding the LLMTimeout backstop. syswake.Fire() is called from the
+	// platform sleep/wake observer (darwin: the NSWorkspace DidWake hook). The
+	// subscription is process-global, so it is taken last — no error return
+	// below it can strand one — and Shutdown drops it.
+	s.stopWake = syswake.OnWake(wm.SystemDidWake)
 
 	return s, nil
 }

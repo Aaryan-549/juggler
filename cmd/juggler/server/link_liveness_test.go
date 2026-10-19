@@ -211,6 +211,7 @@ func newViewerSocketServer(t *testing.T) (*Server, *httptest.Server) {
 	s.workerManager = worker.NewManager()
 	s.upgrader = websocket.Upgrader{}
 	s.testMode = true
+	s.apiToken = testSocketToken
 	ts := httptest.NewServer(http.HandlerFunc(s.handleWebSocket))
 	t.Cleanup(ts.Close)
 	return s, ts

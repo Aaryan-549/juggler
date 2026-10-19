@@ -369,10 +369,11 @@ class WebSocketService {
    * @private
    */
   _connectWebSocket(role) {
-    // Replay the per-instance session token (embedded in the served page) so the
-    // server accepts the viewer upgrade (see cmd/juggler/server/api_auth.go). The
-    // engine worker has no token global and is exempt server-side, so it simply
-    // omits the param.
+    // Replay the per-instance session token so the server accepts the upgrade
+    // (see cmd/juggler/server/websocket_loop.go). A viewer has it from the served
+    // page; the engine from its host — the webview worker's start message, or
+    // JUGGLER_TOKEN for the node host — and the server refuses an engine without
+    // it. A remote-ingress viewer may have none and is admitted without.
     const token = /** @type {{__jugglerToken?: string}} */ (globalThis).__jugglerToken;
     const tokenParam = token ? `&token=${encodeURIComponent(token)}` : '';
     // A viewer names itself so another viewer can address it (see utils/viewer-id).

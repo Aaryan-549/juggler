@@ -39,8 +39,7 @@ func seedSession(t *testing.T, c *Client, sess *activeSession) func() {
 // fallback can't pull in state from elsewhere.
 func newTestClient(t *testing.T, model string) *Client {
 	t.Helper()
-	t.Setenv("JUGGLER_PROJECT_PATH", t.TempDir())
-	p, err := NewClient(provider.Config{Model: model})
+	p, err := NewClient(provider.Config{Model: model, ProjectPath: t.TempDir()})
 	if err != nil {
 		t.Fatalf("NewClient: %v", err)
 	}

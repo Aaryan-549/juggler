@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -142,24 +143,31 @@ type registryResp struct {
 	stopping []stoppingTask
 }
 
-var registryCh = make(chan registryOp, 16)
+var (
+	registryOps   = make(chan registryOp, 16)
+	registryStart sync.Once
+)
 
-// The registry actor runs for the lifetime of any process that links this
-// package, rather than being started by whoever wires the ops up. Every
-// accessor here waits for a reply from it, and registryCh is buffered, so a
-// process where nothing had started it would not fail — the send would land and
-// the caller would wait for an answer forever. StopBackgroundTasks is called
-// from a project switch and from shutdown, where that wait blocks the release
-// of everything sequenced behind it.
-func init() { go runShellRegistry() }
+// registryCh is the registry actor's mailbox, and starts the actor on first
+// use: a process that never runs a background shell never has the goroutine.
+// Every send goes through here rather than to registryOps, because every
+// accessor waits for a reply and the mailbox is buffered — a send into a
+// mailbox nobody had started would land, and its caller would wait forever.
+// StopBackgroundTasks is called from a project switch and from shutdown, where
+// that wait would block the release of everything sequenced behind it.
+func registryCh() chan<- registryOp {
+	registryStart.Do(func() { go runShellRegistry() })
+	return registryOps
+}
 
 // runShellRegistry owns the background-shell map and processes all ops
-// serialized through registryCh.
+// serialized through registryCh. It runs for the rest of the process once
+// started.
 func runShellRegistry() {
 	shells := make(map[string]*BackgroundShell)
 	latestByOwner := make(map[string]string)
 	var observer BackgroundTaskObserver
-	for op := range registryCh {
+	for op := range registryOps {
 		switch op.kind {
 		case regRegister:
 			shells[op.shell.ID] = op.shell
@@ -416,17 +424,17 @@ func signalShellStop(shell *BackgroundShell) *stoppingTask {
 // getBackgroundShell retrieves a background shell by ID
 func getBackgroundShell(id string) *BackgroundShell {
 	resp := make(chan registryResp, 1)
-	registryCh <- registryOp{kind: regGet, id: id, resp: resp}
+	registryCh() <- registryOp{kind: regGet, id: id, resp: resp}
 	return (<-resp).shell
 }
 
 // registerBackgroundShell adds a shell to the registry
 func registerBackgroundShell(shell *BackgroundShell) {
-	registryCh <- registryOp{kind: regRegister, shell: shell}
+	registryCh() <- registryOp{kind: regRegister, shell: shell}
 }
 
 func setBackgroundTaskObserver(observer BackgroundTaskObserver) {
-	registryCh <- registryOp{kind: regSetObserver, observer: observer}
+	registryCh() <- registryOp{kind: regSetObserver, observer: observer}
 }
 
 // publishBackgroundTaskSnapshots copies the bounded observable state to the
@@ -438,7 +446,7 @@ func publishBackgroundTaskSnapshots(shellID string) {
 	last := TaskOutputState{}
 	for {
 		respCh := make(chan registryResp, 1)
-		registryCh <- registryOp{kind: regPersistenceState, id: shellID, resp: respCh}
+		registryCh() <- registryOp{kind: regPersistenceState, id: shellID, resp: respCh}
 		resp := <-respCh
 		if !resp.current || resp.shell == nil {
 			return
@@ -460,13 +468,13 @@ func publishBackgroundTaskSnapshots(shellID string) {
 
 // removeBackgroundShell removes a shell from the registry
 func removeBackgroundShell(id string) {
-	registryCh <- registryOp{kind: regRemove, id: id}
+	registryCh() <- registryOp{kind: regRemove, id: id}
 }
 
 // getShellState gets a state snapshot via the registry goroutine
 func getShellState(id string) TaskOutputState {
 	resp := make(chan registryResp, 1)
-	registryCh <- registryOp{kind: regGetState, id: id, resp: resp}
+	registryCh() <- registryOp{kind: regGetState, id: id, resp: resp}
 	return (<-resp).snapshot
 }
 
@@ -475,20 +483,20 @@ func getShellState(id string) TaskOutputState {
 // Snapshot.Output carries the delta, not the full accumulated output.
 func getShellDelta(id string) TaskOutputState {
 	resp := make(chan registryResp, 1)
-	registryCh <- registryOp{kind: regGetDelta, id: id, resp: resp}
+	registryCh() <- registryOp{kind: regGetDelta, id: id, resp: resp}
 	return (<-resp).snapshot
 }
 
 // updateShellCmd updates the cmd field via the registry goroutine
 func updateShellCmd(id string, cmd *exec.Cmd) {
-	registryCh <- registryOp{kind: regUpdateCmd, id: id, cmd: cmd}
+	registryCh() <- registryOp{kind: regUpdateCmd, id: id, cmd: cmd}
 }
 
 // appendShellOutput appends an output delta via the registry goroutine without
 // touching status. Used by startBackground to publish a running command's output
 // incrementally, so readers (ops.TaskState) see it before the process exits.
 func appendShellOutput(id, delta string) {
-	registryCh <- registryOp{kind: regAppendOutput, id: id, output: delta}
+	registryCh() <- registryOp{kind: regAppendOutput, id: id, output: delta}
 }
 
 // updateShellStatus updates status fields via the registry goroutine. Pass an
@@ -498,7 +506,7 @@ func appendShellOutput(id, delta string) {
 // accounting, set here (on the registry goroutine) rather than written directly
 // from the spawner goroutine so a concurrent getOutput can't race the write.
 func updateShellStatus(id string, status, output string, exitCode int, errMsg string, outputFile string, outputBytes int64, outputTruncated bool) {
-	registryCh <- registryOp{
+	registryCh() <- registryOp{
 		kind: regUpdateStatus, id: id, status: status, output: output, exitCode: exitCode, errMsg: errMsg,
 		outputFile: outputFile, outputBytes: outputBytes, outputTruncated: outputTruncated,
 	}
@@ -507,7 +515,7 @@ func updateShellStatus(id string, status, output string, exitCode int, errMsg st
 // killShell sends a kill request via the registry goroutine and waits for completion
 func killShell(id string) TaskOutputState {
 	resp := make(chan registryResp, 1)
-	registryCh <- registryOp{kind: regKill, id: id, resp: resp}
+	registryCh() <- registryOp{kind: regKill, id: id, resp: resp}
 	return (<-resp).snapshot
 }
 

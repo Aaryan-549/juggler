@@ -238,32 +238,13 @@ func (s *CredentialsStore) Save(creds Credentials) error {
 		return fmt.Errorf("failed to marshal credentials: %w", err)
 	}
 
-	// Write atomically (unique temp + rename) so a concurrent save never leaves
-	// a torn file. os.WriteFile truncates-then-writes through one fd, so two
-	// racing saves could interleave and a shorter write would leave trailing
-	// bytes from a longer one — corrupting the JSON ("invalid character after
-	// top-level value"). Each save gets its OWN temp via os.CreateTemp (the
-	// server is one process with concurrent handlers, so a shared temp name
-	// would itself collide), then rename atomically publishes a complete file;
-	// last writer wins, every observable state is valid.
-	tmp, err := os.CreateTemp(dir, "credentials-*.json.tmp")
-	if err != nil {
-		return fmt.Errorf("failed to write credentials file: %w", err)
-	}
-	tmpName := tmp.Name()
-	defer os.Remove(tmpName) // no-op once the rename succeeds
-	if err := tmp.Chmod(0600); err != nil {
-		tmp.Close()
-		return fmt.Errorf("failed to write credentials file: %w", err)
-	}
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return fmt.Errorf("failed to write credentials file: %w", err)
-	}
-	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("failed to write credentials file: %w", err)
-	}
-	if err := atomicio.RobustRename(tmpName, s.filePath); err != nil {
+	// Written atomically so a concurrent save never leaves a torn file. A plain
+	// os.WriteFile truncates-then-writes through one fd, so two racing saves
+	// could interleave and a shorter write would leave trailing bytes from a
+	// longer one — corrupting the JSON ("invalid character after top-level
+	// value"). atomicio.WriteFile publishes a complete file instead; last writer
+	// wins, every observable state is valid.
+	if err := atomicio.WriteFile(s.filePath, data, 0600); err != nil {
 		return fmt.Errorf("failed to write credentials file: %w", err)
 	}
 

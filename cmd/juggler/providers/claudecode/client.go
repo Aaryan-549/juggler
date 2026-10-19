@@ -90,13 +90,10 @@ type Client struct {
 func NewClient(cfg provider.Config) (provider.Provider, error) {
 	// The project the server has open is the authoritative source, so it is
 	// cfg.ProjectPath (filled from Server.ProjectPath() at the conversation-cache
-	// call site). Fall back to the legacy env seam and then the process cwd only
-	// when no project is carried — the path taken by model-listing calls that
-	// pass a bare Config and never spawn against a project.
+	// call site). Fall back to the process cwd only when no project is carried —
+	// the path taken by model-listing calls that pass a bare Config and never
+	// spawn against a project.
 	stateDir := cfg.ProjectPath
-	if stateDir == "" {
-		stateDir = os.Getenv("JUGGLER_PROJECT_PATH")
-	}
 	if stateDir == "" {
 		var err error
 		stateDir, err = os.Getwd()

@@ -141,7 +141,7 @@ func TestEnabledAgentNamesSortedAndFiltered(t *testing.T) {
 }
 
 // anyAgentConfiguredIn mirrors anyAgentConfigured but takes an explicit project,
-// so the test doesn't depend on JUGGLER_PROJECT_PATH.
+// so a project's own acp.json is counted too.
 func anyAgentConfiguredIn(project string) bool {
 	return len(enabledAgentNames(project)) > 0
 }

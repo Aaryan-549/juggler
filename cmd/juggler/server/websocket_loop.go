@@ -18,6 +18,52 @@ import (
 
 // handleWebSocket handles WebSocket connections for streaming
 func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
+	// Who may connect is settled before the upgrade wherever the client can do
+	// without a socket to learn it was refused; see each gate.
+	query := r.URL.Query()
+	token := query.Get("token")
+	role := ClientRoleViewer
+	if query.Get("role") == "engine" {
+		// The engine slot goes to the newest arrival, so it is open only to this
+		// process's own engine realm — loopback, not remote ingress
+		// (engineRoleAllowed) — carrying this process's token. Both realms are
+		// handed the token (the webview worker in engine-worker-main.js's start
+		// message, the node host in JUGGLER_TOKEN), and it is the one thing that
+		// tells an engine of this server from one that outlived the server
+		// before it and is still dialling the address we now hold: a stranger in
+		// the slot means the work goes to a realm that cannot do it. The engine
+		// has no stale-page recovery that needs the socket to open, so it is
+		// refused with a plain status.
+		if !engineRoleAllowed(r) || token == "" || !s.isAPIToken(token) {
+			jlog.Info("Rejected an engine WS upgrade from %s (ingress=%q, token sent=%v)", r.RemoteAddr, RemoteIngressKind(r), token != "")
+			http.Error(w, "engine role refused", http.StatusForbidden)
+			return
+		}
+		role = ClientRoleEngine
+	}
+
+	// Per-instance token gate for local viewer upgrades (§S.1) — the defense
+	// against a same-machine cross-site page opening a socket to the agent.
+	// Remote ingress is exempt: those are the user's explicit remote grants
+	// (possession of the unguessable URL), authorized exactly like the LAN gate
+	// authorizes them, and their transport need not thread the token through
+	// the WS handshake. Skipped entirely in test mode, where the headless
+	// harness drives many synthetic viewers without a token.
+	//
+	// A missing token is refused before the upgrade: no page this server serves
+	// dials without one. A token that is present but not ours is refused only
+	// after it, because that is a page an earlier instance of this server
+	// served, and a browser cannot read the status of a refused upgrade — a
+	// socket that opens and closes before the session frame is the only signal
+	// that its page is stale, and the page reloads on it
+	// (websocket.js _onTransportClosed).
+	viewerGated := role == ClientRoleViewer && !s.testMode && !isRemoteIngress(r)
+	if viewerGated && token == "" {
+		jlog.Debug("Rejected viewer WS upgrade from %s: no session token", r.RemoteAddr)
+		http.Error(w, "missing session token", http.StatusForbidden)
+		return
+	}
+
 	// Negotiate (and use) permessage-deflate only for remote peers — remote
 	// ingress, or any non-loopback LAN viewer — where the link is the bottleneck
 	// this targets. The engine and a local desktop-app/browser viewer ride
@@ -39,61 +85,18 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		_ = conn.SetCompressionLevel(flate.DefaultCompression)
 	}
 
-	// Parse client role from query parameter (default: viewer).
-	// Engine connections are only legitimate from this process — either the
-	// dedicated engine WebviewWindow or, in test mode, the engine iframe in
-	// the loopback test slot. Restrict role=engine upgrades to loopback (and
-	// exclude remote ingress) so an external browser can't claim the engine
-	// slot.
-	roleParam := r.URL.Query().Get("role")
-	role := ClientRoleViewer
-	if roleParam == "engine" {
-		if !engineRoleAllowed(r) {
-			jlog.Debug("Rejected engine WS upgrade from %s (ingress=%q)", r.RemoteAddr, RemoteIngressKind(r))
-			conn.Close()
-			return
-		}
-		// An engine that names a token must name ours. The token is minted per
-		// process, so this is the one thing that tells an engine of this server
-		// apart from one that outlived the server before it and is still dialling
-		// the address we now hold — and the engine slot goes to the newest
-		// arrival, so a stranger taking it means the work goes to a realm that
-		// cannot do it. A token-less engine is still admitted: the webview host's
-		// socket runs in a worker with no token to send, and loopback plus the
-		// origin check is what has always vouched for it.
-		if token := r.URL.Query().Get("token"); token != "" && !s.isAPIToken(token) {
-			jlog.Info("Rejected an engine WS upgrade from %s carrying another instance's token — an engine outlived its server and found this one", r.RemoteAddr)
-			conn.Close()
-			return
-		}
-		role = ClientRoleEngine
-	}
-
-	// Per-instance token gate for local viewer upgrades (§S.1) — the defense
-	// against a same-machine cross-site page opening a socket to the agent.
-	// Exempt:
-	//   - the engine role: restricted to the in-process loopback WebView by
-	//     engineRoleAllowed, and gated above on the token when it sends one —
-	//     the webview host's worker has none to send;
-	//   - remote ingress: these are the user's explicit remote grants
-	//     (possession of the unguessable URL), authorized exactly like the
-	//     LAN gate authorizes them, and their transport need not thread the token
-	//     through the WS handshake.
-	// Skipped entirely in test mode, where the headless harness drives many
-	// synthetic viewers without a token.
-	tokenExempt := role == ClientRoleEngine || isRemoteIngress(r)
-	if !s.testMode && !tokenExempt && !s.isAPIToken(r.URL.Query().Get("token")) {
-		jlog.Debug("Rejected viewer WS upgrade from %s: missing or invalid session token", r.RemoteAddr)
+	if viewerGated && !s.isAPIToken(token) {
+		jlog.Debug("Rejected viewer WS upgrade from %s: its session token belongs to another instance", r.RemoteAddr)
 		conn.Close()
 		return
 	}
 
 	// Create WSClient with dedicated writer goroutine
-	viewerID := sanitiseViewerID(r.URL.Query().Get("viewerId"))
+	viewerID := sanitiseViewerID(query.Get("viewerId"))
 	info := clientInfoFromRequest(r)
 	// A detached pinboard names the window it was popped out of. The same
 	// alphabet as a viewer id, because it is one and is relayed the same way.
-	info.Owner = sanitiseViewerID(r.URL.Query().Get("owner"))
+	info.Owner = sanitiseViewerID(query.Get("owner"))
 	client := NewWSClient(conn, role, viewerID, info, s.stats)
 	defer client.Close()
 

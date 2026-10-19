@@ -185,6 +185,37 @@ func TestFileTreeServesProjectFile(t *testing.T) {
 	}
 }
 
+// TestFileRoutesServeUnderASandbox: both GET routes carry the API token in the
+// URL, and an HTML file served from them can read its own URL. So whatever the
+// response is opened as — framed by the HTML viewer or navigated to directly —
+// it runs in an opaque origin, never the app's, and can open no connection to
+// carry the token anywhere.
+func TestFileRoutesServeUnderASandbox(t *testing.T) {
+	api, project, _ := newFilesTestAPI(t)
+	page := filepath.Join(project, "index.html")
+	if err := os.WriteFile(page, []byte("<script>fetch(location.href)</script>"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	for name, rec := range map[string]*httptest.ResponseRecorder{
+		"query route": serveFileContent(api, page),
+		"tree route":  serveFileTree(api, page),
+	} {
+		csp := rec.Header().Get("Content-Security-Policy")
+		directives := map[string]string{}
+		for _, d := range strings.Split(csp, ";") {
+			name, value, _ := strings.Cut(strings.TrimSpace(d), " ")
+			directives[name] = value
+		}
+		sandbox, ok := directives["sandbox"]
+		if !ok || strings.Contains(sandbox, "allow-same-origin") || strings.Contains(sandbox, "allow-top-navigation") {
+			t.Errorf("%s: CSP %q, want a sandbox without allow-same-origin or top navigation", name, csp)
+		}
+		if directives["connect-src"] != "'none'" {
+			t.Errorf("%s: CSP %q, want connect-src 'none'", name, csp)
+		}
+	}
+}
+
 // TestFileTreeRejectsTraversal: a page's `../` links are exactly how this route
 // is asked for a path outside the project, so it must refuse them as the query
 // route does.

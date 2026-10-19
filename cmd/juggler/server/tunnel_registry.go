@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
+	"sync/atomic"
 
 	"github.com/pion/webrtc/v4"
 
@@ -96,17 +97,28 @@ func (spec TunnelModeSpec) IsAvailable() bool {
 }
 
 // tunnelModeRegistry holds the registered specs in registration order. No
-// mutex: registration is a startup-time, single-goroutine affair (see
-// RegisterTunnelMode), and the slice is read-only afterwards.
+// mutex: registration is a startup-time, single-goroutine affair, and the slice
+// is read-only once sealed (see RegisterTunnelMode).
 var tunnelModeRegistry []TunnelModeSpec
 
+// tunnelModesSealed is set once a server has been created, after which the
+// registry is read without synchronization and RegisterTunnelMode refuses.
+var tunnelModesSealed atomic.Bool
+
+// sealTunnelModes ends registration. New calls it: from then on the registry
+// is read from request handlers with no lock.
+func sealTunnelModes() { tunnelModesSealed.Store(true) }
+
 // RegisterTunnelMode adds a WAN tunnel mode to the registry. It must be called
-// during process startup, before the server begins serving — typically from a
+// during process startup, before the server is created — typically from a
 // distribution's main before app.Run — because the registry is read without
-// synchronization afterwards. Panics on an invalid or duplicate spec: a bad
-// registration is a programming error in the distribution, best failed loudly
-// at startup.
+// synchronization afterwards. Panics on a registration after that, and on an
+// invalid or duplicate spec: each is a programming error in the distribution,
+// best failed loudly at startup.
 func RegisterTunnelMode(spec TunnelModeSpec) {
+	if tunnelModesSealed.Load() {
+		panic(fmt.Sprintf("RegisterTunnelMode: mode %q registered after the server was created; register modes before app.Run", spec.Mode))
+	}
 	if spec.Mode == "" || spec.New == nil {
 		panic("RegisterTunnelMode: spec needs a Mode and a New factory")
 	}

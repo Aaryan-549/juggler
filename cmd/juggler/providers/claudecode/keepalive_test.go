@@ -13,6 +13,7 @@ package claudecode
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -20,6 +21,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"testing"
@@ -108,6 +110,15 @@ func TestMain(m *testing.M) {
 	if os.Getenv(envFakeClaude) == "1" {
 		runFakeClaude()
 		return
+	}
+	// Before any test touches the package: importing it must start nothing.
+	// Every binary that links the provider — whether or not it ever runs
+	// Claude Code — would otherwise carry the model-info actor, and read its
+	// on-disk cache, from init.
+	buf := make([]byte, 1<<20)
+	if stacks := buf[:runtime.Stack(buf, true)]; bytes.Contains(stacks, []byte("claudecode.runModelInfoActor")) {
+		fmt.Fprintln(os.Stderr, "FAIL: importing claudecode started the model-info actor; it must start on first use")
+		os.Exit(1)
 	}
 	cleanupFakeCLI := prepareFakeCLI()
 	code := m.Run()
@@ -619,8 +630,7 @@ func installFakeClaude(t *testing.T, mode, sessionID string) (tracePath string) 
 
 func mkClient(t *testing.T, model string) *Client {
 	t.Helper()
-	t.Setenv("JUGGLER_PROJECT_PATH", t.TempDir())
-	p, err := NewClient(provider.Config{Model: model})
+	p, err := NewClient(provider.Config{Model: model, ProjectPath: t.TempDir()})
 	if err != nil {
 		t.Fatalf("NewClient: %v", err)
 	}

@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -233,6 +234,19 @@ func TestRepoBaseName(t *testing.T) {
 		if got := repoBaseName(in); got != want {
 			t.Errorf("repoBaseName(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+// TestGitCloneArgsEndOptions: the repo reference is the user's text, and one
+// that passes normalizeRepoURL untouched (it contains "://") can begin with a
+// dash. git must read it as the repository, never as an option such as
+// --upload-pack, which names a program to run.
+func TestGitCloneArgsEndOptions(t *testing.T) {
+	url := normalizeRepoURL("--upload-pack=touch pwned ://x")
+	args := gitCloneArgs(url, "/tmp/dest")
+	want := []string{"--", url, "/tmp/dest"}
+	if len(args) < len(want) || !slices.Equal(args[len(args)-len(want):], want) {
+		t.Fatalf("git clone args = %q, want them to end %q", args, want)
 	}
 }
 

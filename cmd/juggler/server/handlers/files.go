@@ -97,6 +97,19 @@ func isDriveLetterPath(p string) bool {
 	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
 }
 
+// projectFileCSP is the policy every project file is served under. Both GET
+// routes carry the API token in the URL, and an HTML or SVG file served from
+// one can read its own URL — so whatever the response is opened as, framed by
+// the HTML viewer or navigated to directly, it is a sandboxed document with an
+// opaque origin of its own, never the app's. The sandbox grants what the HTML
+// viewer's frame grants (html-file-viewer.js SANDBOX) and no more, so a preview
+// still runs its scripts, forms and dialogs. connect-src 'none' refuses it every
+// fetch, XHR, WebSocket and beacon. Its relative images, styles and scripts,
+// and a library from a CDN, still load — so a URL it builds for one of those
+// can still carry what the page read, which no policy that lets a preview load
+// its own assets can prevent.
+const projectFileCSP = "sandbox allow-scripts allow-forms allow-modals; connect-src 'none'"
+
 // serveProjectFile streams the file at requested, contained to the project
 // root. Both GET routes share it, and with it the SECURITY rules on
 // HandleGetFileContent.
@@ -153,6 +166,7 @@ func (api *FilesAPI) serveProjectFile(w http.ResponseWriter, r *http.Request, re
 	}
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Security-Policy", projectFileCSP)
 	// The file is live on disk and can change under a pin, so it must never be
 	// cached the way an immutable content-addressed asset is. ServeContent still
 	// answers conditional requests from the modtime below.

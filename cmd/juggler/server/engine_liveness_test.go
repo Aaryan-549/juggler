@@ -53,16 +53,18 @@ func newEngineSocketServer(t *testing.T) (*Server, *httptest.Server) {
 	// Shorten the staleness window so a mute engine is condemned in test time
 	// rather than production time. Still several heartbeat intervals wide.
 	s.setEngineLivenessWindow(300 * time.Millisecond)
+	s.apiToken = testSocketToken
 	ts := httptest.NewServer(http.HandlerFunc(s.handleWebSocket))
 	t.Cleanup(ts.Close)
 	return s, ts
 }
 
 // dialEngine opens a real WebSocket claiming the engine role. httptest listens
-// on loopback, so engineRoleAllowed admits it and the token gate exempts it.
+// on loopback, so engineRoleAllowed admits it, and it carries the token the
+// socket servers here are given.
 func dialEngine(t *testing.T, ts *httptest.Server) *websocket.Conn {
 	t.Helper()
-	url := "ws" + strings.TrimPrefix(ts.URL, "http") + "/ws?role=engine"
+	url := "ws" + strings.TrimPrefix(ts.URL, "http") + "/ws?role=engine&token=" + testSocketToken
 	conn, resp, err := websocket.DefaultDialer.Dial(url, nil)
 	if resp != nil {
 		_ = resp.Body.Close()

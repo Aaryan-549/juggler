@@ -18,6 +18,7 @@ import (
 
 	"juggler/internal/atomicio"
 	"juggler/internal/jlog"
+	"juggler/internal/windowstate"
 )
 
 // BinnedConvInfo describes a conversation that lives in .juggler/trash/.
@@ -93,62 +94,11 @@ func WindowRoleForView(view, boardID string) string {
 	return WindowRolePinboardFor(boardID)
 }
 
-// WindowState is one of this project's windows: the native geometry it was left
-// in, and the look it was left wearing. It is session state (persisted in
-// .juggler/session.json) rather than a single machine-global file: keying it by
-// project gives each project's windows their own slots with no cross-process
-// write race, and reopening a project restores its windows as they were.
-// Process-local; deliberately NOT part of Metadata, so it is never sent to
-// viewers or surfaced as a frontend flag.
-//
-// Theme and Zoom sit beside the frame because they are the same kind of fact
-// about the same window: a board detached onto a second display is a window the
-// user set up on purpose, and its appearance belongs to it rather than to
-// whichever window last touched the project. Both are unset ("" / 0) until that
-// window is told otherwise, and an unset one falls back to the project-wide
-// UITheme/UIZoom — so a board nobody has restyled still follows the main window.
-//
-// UI is the same kind of fact again, one level less structured: the preferences
-// the viewer keeps for this window (see ui_prefs.go). Nothing in Go reads them,
-// so they are stored opaquely.
-//
-// Geometry writes never carry any of it: the frame is captured from the live
-// native window (see windowgeom.Tracker.Capture) and knows nothing about
-// appearance, so SetWindowState preserves whatever is already stored.
-type WindowState struct {
-	X          int                        `json:"x"`
-	Y          int                        `json:"y"`
-	Width      int                        `json:"width"`
-	Height     int                        `json:"height"`
-	HasPos     bool                       `json:"hasPos"`
-	Maximised  bool                       `json:"maximised"`
-	Fullscreen bool                       `json:"fullscreen"`
-	Theme      string                     `json:"theme,omitempty"` // UI theme mode (system|light|dark) for this window; "" follows the project
-	Zoom       int                        `json:"zoom,omitempty"`  // UI zoom (root font-size %) for this window; 0 follows the project
-	UI         map[string]json.RawMessage `json:"ui,omitempty"`    // This window's UI preferences, stored verbatim (the client owns the shape); nil until one is set
-}
-
-// Clone returns a private copy of one window's slot. The UI map is the reason
-// it exists: a map inside a struct value is copied by reference, so a caller
-// handed the struct would share that map with whoever else holds a copy.
-func (ws WindowState) Clone() WindowState {
-	ws.UI = cloneUIPrefs(ws.UI)
-	return ws
-}
-
-// SameFrame reports whether two slots describe the same native window frame,
-// ignoring everything that is not geometry.
-//
-// It exists because WindowState holds a map and so cannot be compared with ==.
-// That is the useful outcome rather than an obstacle: almost every comparison
-// here is asking about the frame, and one that silently started including the
-// viewer's preferences would answer a question nobody asked.
-func (ws WindowState) SameFrame(other WindowState) bool {
-	return ws.X == other.X && ws.Y == other.Y &&
-		ws.Width == other.Width && ws.Height == other.Height &&
-		ws.HasPos == other.HasPos &&
-		ws.Maximised == other.Maximised && ws.Fullscreen == other.Fullscreen
-}
+// WindowState is one of this project's windows: its native geometry and the
+// look it was left wearing. The type lives in internal/windowstate, below both
+// this package and internal/windowgeom, which reads and writes the same frames;
+// see windowstate.State for what each field means.
+type WindowState = windowstate.State
 
 // Session represents the folder state with multiple conversations.
 // There is exactly one session per folder.
@@ -851,15 +801,9 @@ func (fs *FileSessionStore) Save(session *Session) error {
 	if err != nil {
 		return fmt.Errorf("failed to marshal session globals: %w", err)
 	}
-	// Atomic temp+rename (matching SaveConversationBinary) so a crash mid-write
-	// can't leave a truncated/torn session.json.
-	tmp := globalsPath + ".tmp"
-	if err := os.WriteFile(tmp, globalsData, 0644); err != nil {
+	// Atomic so a crash mid-write can't leave a truncated/torn session.json.
+	if err := atomicio.WriteFile(globalsPath, globalsData, 0644); err != nil {
 		return fmt.Errorf("failed to write session globals: %w", err)
-	}
-	if err := atomicio.RobustRename(tmp, globalsPath); err != nil {
-		os.Remove(tmp)
-		return fmt.Errorf("failed to rename session globals: %w", err)
 	}
 
 	return nil

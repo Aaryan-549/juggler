@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"juggler/internal/atomicio"
 	"juggler/internal/userpaths"
 )
 
@@ -98,7 +99,7 @@ func (s *RecentModelsStore) save(models []ModelRef) error {
 	if err != nil {
 		return fmt.Errorf("failed to marshal recent models: %w", err)
 	}
-	if err := os.WriteFile(s.filePath, data, 0600); err != nil {
+	if err := atomicio.WriteFile(s.filePath, data, 0600); err != nil {
 		return fmt.Errorf("failed to write recent models file: %w", err)
 	}
 	return nil

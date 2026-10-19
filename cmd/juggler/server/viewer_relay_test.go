@@ -233,7 +233,7 @@ func expectNoRelay(t *testing.T, conn *websocket.Conn) {
 // assertion rather than this setup.
 func dialRole(t *testing.T, ts *httptest.Server, role, viewerID string) *websocket.Conn {
 	t.Helper()
-	dialURL := "ws" + strings.TrimPrefix(ts.URL, "http") + "/ws?role=" + role + "&viewerId=" + viewerID
+	dialURL := "ws" + strings.TrimPrefix(ts.URL, "http") + "/ws?role=" + role + "&viewerId=" + viewerID + "&token=" + testSocketToken
 	conn, resp, err := websocket.DefaultDialer.Dial(dialURL, nil)
 	if resp != nil {
 		_ = resp.Body.Close()

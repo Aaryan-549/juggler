@@ -9,48 +9,23 @@ import (
 	"strings"
 	"testing"
 
-	"juggler/cmd/juggler/providers/anthropic"
-	"juggler/cmd/juggler/providers/copilot"
-	"juggler/cmd/juggler/providers/deepseek"
-	"juggler/cmd/juggler/providers/gemini"
-	"juggler/cmd/juggler/providers/llamacpp"
-	"juggler/cmd/juggler/providers/lmstudio"
-	"juggler/cmd/juggler/providers/localai"
-	"juggler/cmd/juggler/providers/mistral"
-	"juggler/cmd/juggler/providers/moonshot"
-	"juggler/cmd/juggler/providers/ollama"
-	"juggler/cmd/juggler/providers/openai"
-	"juggler/cmd/juggler/providers/openaicodex"
-	"juggler/cmd/juggler/providers/opencodezen"
-	"juggler/cmd/juggler/providers/openrouter"
+	"juggler/cmd/juggler/providers/builtin"
 	"juggler/cmd/juggler/providers/provider"
-	"juggler/cmd/juggler/providers/zai"
 )
 
-// registerCatalogProviders registers every provider that ships a static model
-// catalog. It mirrors the registration list in app/run.go, minus the providers
-// that carry no catalog of their own (the CLI- and protocol-backed ones, whose
-// models come from a subprocess) and customprovider, whose catalog is whatever
-// endpoints the user configured.
+// registerCatalogProviders registers every built-in provider that ships a
+// static model catalog (builtin.Provider.Catalog) — not the CLI- and
+// protocol-backed ones, whose models come from a subprocess, nor
+// customprovider, whose catalog is whatever endpoints the user configured.
 //
 // Registration is idempotent per process — the registry replaces a name — so
 // tests in this package may call it freely.
 func registerCatalogProviders() {
-	anthropic.Register()
-	copilot.Register()
-	deepseek.Register()
-	gemini.Register()
-	llamacpp.Register()
-	lmstudio.Register()
-	localai.Register()
-	mistral.Register()
-	moonshot.Register()
-	ollama.Register()
-	openai.Register()
-	openaicodex.Register()
-	opencodezen.Register()
-	openrouter.Register()
-	zai.Register()
+	for _, p := range builtin.All {
+		if p.Catalog {
+			p.Register()
+		}
+	}
 }
 
 // TestCatalogInvariants checks every catalogued model of every provider against

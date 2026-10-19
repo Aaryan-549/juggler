@@ -8,9 +8,9 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/gorilla/websocket"
 
@@ -68,22 +68,12 @@ func TestStandaloneServerServesAnAllowedHostAsRemote(t *testing.T) {
 		t.Errorf("GET / with an unlisted Host: status %d, want 403", code)
 	}
 
-	// The engine slot: refused by closing the socket before any frame, where
-	// an admitted engine is greeted with the session frame first.
+	// The engine slot, asked for with the session's own token so that only
+	// where the request came from can be what refuses it.
 	dialer := websocket.Dialer{
 		NetDial: func(network, _ string) (net.Conn, error) { return net.Dial(network, addr) },
 	}
 	header := http.Header{"Origin": []string{"https://" + allowed}}
-	conn, resp, err := dialer.Dial("ws://"+allowed+apipaths.WebSocket+"?role=engine", header)
-	if resp != nil && resp.Body != nil {
-		_ = resp.Body.Close()
-	}
-	if err != nil {
-		t.Fatalf("engine WebSocket dial through the proxy: %v", err)
-	}
-	defer conn.Close()
-	_ = conn.SetReadDeadline(time.Now().Add(10 * time.Second))
-	if _, msg, err := conn.ReadMessage(); err == nil {
-		t.Fatalf("a caller through the proxy took the engine slot; first frame %s", msg)
-	}
+	conn, resp, err := dialer.Dial("ws://"+allowed+apipaths.WebSocket+"?role=engine&token="+url.QueryEscape(token), header)
+	assertEngineSlotRefused(t, conn, resp, err, "a caller through the proxy")
 }

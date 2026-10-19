@@ -323,7 +323,7 @@ func extAdd(args []string) int {
 		return 1
 	}
 
-	cmd := exec.Command("git", "clone", "--depth", "1", url, dest)
+	cmd := exec.Command("git", gitCloneArgs(url, dest)...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
@@ -409,6 +409,13 @@ func normalizeRepoURL(repo string) string {
 		return repo
 	}
 	return "https://" + repo
+}
+
+// gitCloneArgs is the git command line that installs url into dest. url is the
+// user's text and can begin with a dash, so `--` ends the options before it:
+// otherwise git would read it as one, and --upload-pack names a program to run.
+func gitCloneArgs(url, dest string) []string {
+	return []string{"clone", "--depth", "1", "--", url, dest}
 }
 
 // repoBaseName derives the install directory name from a repo reference: the

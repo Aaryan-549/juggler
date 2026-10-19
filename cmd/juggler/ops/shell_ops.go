@@ -335,7 +335,7 @@ func (ops *ShellOperations) listBackgroundShells(params map[string]any) (any, er
 // current project. The registry applies both filters; nothing here can widen them.
 func (ops *ShellOperations) shellsFor(convID string) []map[string]any {
 	resp := make(chan registryResp, 1)
-	registryCh <- registryOp{
+	registryCh() <- registryOp{
 		kind:        regList,
 		convID:      convID,
 		projectRoot: ops.scope.Root(),

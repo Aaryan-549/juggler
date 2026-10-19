@@ -16,7 +16,9 @@ const t = translator('@juggler/core');
  * app's origin never does. The page is served from Juggler's own origin, so
  * `allow-same-origin` here would hand whatever the file contains the API token
  * and the whole `/api` surface. Without it the page gets an opaque origin of
- * its own and can reach nothing of the app's.
+ * its own and can reach nothing of the app's. The server serves the file under
+ * the same sandbox as its CSP (projectFileCSP, cmd/juggler/server/handlers/files.go),
+ * and the two intersect, so widening this means widening that too.
  */
 const SANDBOX = 'allow-scripts allow-forms allow-modals';
 

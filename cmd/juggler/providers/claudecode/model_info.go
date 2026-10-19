@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"juggler/cmd/juggler/msg"
 	"juggler/cmd/juggler/providers/provider"
@@ -145,7 +146,7 @@ func (c *Client) ListModelsWithInfo(ctx context.Context) ([]provider.ModelInfo, 
 // configured) the user requested so ListModelsWithInfo returns current
 // numbers without a hardcoded model-version table.
 //
-// All access flows through modelInfoOps so we don't need a mutex.
+// All access flows through modelInfoCh so we don't need a mutex.
 type modelInfoOp struct {
 	opType          string // "get" | "update" | "sethook"
 	alias           string
@@ -155,8 +156,23 @@ type modelInfoOp struct {
 	response        chan provider.ModelInfo // for "get"
 }
 
-var modelInfoOps = make(chan modelInfoOp)
+var (
+	modelInfoOps   = make(chan modelInfoOp)
+	modelInfoStart sync.Once
+)
 
+// modelInfoCh is the model-info actor's mailbox, and starts the actor on first
+// use — so a process that never asks Claude Code about a model never runs it,
+// nor reads its on-disk cache. Every send goes through here rather than to
+// modelInfoOps, which nothing would ever receive from until the actor runs.
+func modelInfoCh() chan<- modelInfoOp {
+	modelInfoStart.Do(func() { go runModelInfoActor() })
+	return modelInfoOps
+}
+
+// runModelInfoActor owns the cache. Per-conversation session state lives on
+// each *Client (bound 1:1 to a Conversation by the server's
+// conversationCache), not here.
 func runModelInfoActor() {
 	cache := loadModelInfoCache()
 	var changed func()
@@ -271,12 +287,12 @@ func saveModelInfoCache(cache map[string]provider.ModelInfo) {
 // learned window propagates to clients via the providers-update broadcast.
 // Pass nil to clear. Safe to call once at startup before any turns run.
 func SetModelInfoChangedHook(fn func()) {
-	modelInfoOps <- modelInfoOp{opType: "sethook", hook: fn}
+	modelInfoCh() <- modelInfoOp{opType: "sethook", hook: fn}
 }
 
 func getCachedModelInfo(alias string) (provider.ModelInfo, bool) {
 	resp := make(chan provider.ModelInfo, 1)
-	modelInfoOps <- modelInfoOp{opType: "get", alias: alias, response: resp}
+	modelInfoCh() <- modelInfoOp{opType: "get", alias: alias, response: resp}
 	info := <-resp
 	return info, info.ID != ""
 }
@@ -321,7 +337,7 @@ func updateCachedModelInfo(alias string, contextWindow, maxOutputTokens int) {
 	if alias == "" || (contextWindow == 0 && maxOutputTokens == 0) {
 		return
 	}
-	modelInfoOps <- modelInfoOp{
+	modelInfoCh() <- modelInfoOp{
 		opType:          "update",
 		alias:           alias,
 		contextWindow:   contextWindow,

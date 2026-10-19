@@ -3,7 +3,7 @@ package windowgeom
 import (
 	"testing"
 
-	"juggler/cmd/juggler/core"
+	"juggler/internal/windowstate"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
@@ -28,7 +28,7 @@ func (w fakeWindow) Size() (int, int) {
 }
 
 func TestCaptureIgnoresMinimisedWindow(t *testing.T) {
-	seed := core.WindowState{X: 120, Y: 80, Width: 1400, Height: 900, HasPos: true}
+	seed := windowstate.State{X: 120, Y: 80, Width: 1400, Height: 900, HasPos: true}
 	tracker := NewTracker(seed, testScreens)
 
 	if got, ok := tracker.Capture(fakeWindow{
@@ -55,7 +55,7 @@ func TestCaptureIgnoresMinimisedWindow(t *testing.T) {
 // that frame back, or the rescue survives only until the window is closed and
 // the next launch is stranded all over again.
 func TestCaptureMaximisedDoesNotPersistAStrandedSeed(t *testing.T) {
-	stranded := core.WindowState{X: -32000, Y: -32000, Width: 1400, Height: 900, HasPos: true}
+	stranded := windowstate.State{X: -32000, Y: -32000, Width: 1400, Height: 900, HasPos: true}
 	tracker := NewTracker(stranded, testScreens)
 
 	got, ok := tracker.Capture(fakeWindow{
@@ -72,7 +72,7 @@ func TestCaptureMaximisedDoesNotPersistAStrandedSeed(t *testing.T) {
 
 func TestPlaceVisibleKeepsFrameWithDraggableHeader(t *testing.T) {
 	screens := testScreens()
-	saved := core.WindowState{X: -1200, Y: 50, Width: 1000, Height: 800, HasPos: true}
+	saved := windowstate.State{X: -1200, Y: 50, Width: 1000, Height: 800, HasPos: true}
 
 	got := PlaceVisible(saved, screens)
 	if got.Position != application.WindowXY || got.X != saved.X || got.Y != saved.Y {
@@ -85,7 +85,7 @@ func TestPlaceVisibleKeepsFrameWithDraggableHeader(t *testing.T) {
 
 func TestPlaceVisibleRecentresStrandedFrame(t *testing.T) {
 	screens := testScreens()
-	saved := core.WindowState{X: -32000, Y: -32000, Width: 1400, Height: 900, HasPos: true}
+	saved := windowstate.State{X: -32000, Y: -32000, Width: 1400, Height: 900, HasPos: true}
 
 	got := PlaceVisible(saved, screens)
 	if got.Position != application.WindowCentered {
@@ -101,7 +101,7 @@ func TestPlaceVisibleRecentresStrandedFrame(t *testing.T) {
 
 func TestPlaceVisibleRecentresFrameWithHiddenHeader(t *testing.T) {
 	screens := testScreens()
-	saved := core.WindowState{X: 100, Y: -850, Width: 1400, Height: 900, HasPos: true}
+	saved := windowstate.State{X: 100, Y: -850, Width: 1400, Height: 900, HasPos: true}
 
 	got := PlaceVisible(saved, screens)
 	if got.Position != application.WindowCentered || got.Screen != screens[0] {
@@ -111,7 +111,7 @@ func TestPlaceVisibleRecentresFrameWithHiddenHeader(t *testing.T) {
 
 func TestPlaceVisibleClampsRescuedFrameToWorkArea(t *testing.T) {
 	screens := testScreens()
-	saved := core.WindowState{X: 4000, Y: 0, Width: 3000, Height: 2000, HasPos: true}
+	saved := windowstate.State{X: 4000, Y: 0, Width: 3000, Height: 2000, HasPos: true}
 
 	got := PlaceVisible(saved, screens)
 	if got.Width != 1920 || got.Height != 1040 {
@@ -128,7 +128,7 @@ func TestPlaceVisibleCapsDefaultToASmallDisplay(t *testing.T) {
 		{IsPrimary: true, WorkArea: application.Rect{X: 0, Y: 0, Width: 1280, Height: 984}},
 	}
 
-	got := PlaceVisible(core.WindowState{}, small)
+	got := PlaceVisible(windowstate.State{}, small)
 	if got.Width != 1280 || got.Height != 900 {
 		t.Fatalf("PlaceVisible() size = %dx%d, want 1280x900 (width capped, height already fits)", got.Width, got.Height)
 	}
@@ -142,7 +142,7 @@ func TestPlaceVisibleCapsDefaultToASmallDisplay(t *testing.T) {
 // case that used to pass straight through.
 func TestPlaceVisibleCapsAnOversizedReachableFrame(t *testing.T) {
 	screens := testScreens()
-	saved := core.WindowState{X: 100, Y: 50, Width: 3000, Height: 900, HasPos: true}
+	saved := windowstate.State{X: 100, Y: 50, Width: 3000, Height: 900, HasPos: true}
 
 	got := PlaceVisible(saved, screens)
 	if got.Width != 1920 {
@@ -161,7 +161,7 @@ func TestPlaceVisibleCapsAnOversizedReachableFrame(t *testing.T) {
 // they wanted it.
 func TestCapToWorkAreaLeavesAFrameThatFits(t *testing.T) {
 	screens := testScreens()
-	frame := core.WindowState{X: -1200, Y: 50, Width: 1000, Height: 800, HasPos: true}
+	frame := windowstate.State{X: -1200, Y: 50, Width: 1000, Height: 800, HasPos: true}
 
 	got, changed := CapToWorkArea(frame, screens)
 	if changed {
@@ -177,7 +177,7 @@ func TestCapToWorkAreaLeavesAFrameThatFits(t *testing.T) {
 // primary's room.
 func TestCapToWorkAreaUsesTheScreenTheFrameIsOn(t *testing.T) {
 	screens := testScreens()
-	frame := core.WindowState{X: -1280, Y: 0, Width: 1600, Height: 900, HasPos: true}
+	frame := windowstate.State{X: -1280, Y: 0, Width: 1600, Height: 900, HasPos: true}
 
 	got, changed := CapToWorkArea(frame, screens)
 	if !changed {
@@ -194,7 +194,7 @@ func TestCapToWorkAreaUsesTheScreenTheFrameIsOn(t *testing.T) {
 // far edge off the screen is one you can drag but cannot read.
 func TestFitOnScreenLeavesAFrameThatAlreadyFits(t *testing.T) {
 	screens := testScreens()
-	frame := core.WindowState{X: 100, Y: 80, Width: 800, Height: 700, HasPos: true}
+	frame := windowstate.State{X: 100, Y: 80, Width: 800, Height: 700, HasPos: true}
 
 	if got := FitOnScreen(frame, screens); !got.SameFrame(frame) {
 		t.Fatalf("FitOnScreen() = %+v, want it untouched", got)
@@ -203,7 +203,7 @@ func TestFitOnScreenLeavesAFrameThatAlreadyFits(t *testing.T) {
 
 func TestFitOnScreenPullsBackAnOverhangingFrame(t *testing.T) {
 	screens := testScreens()
-	frame := core.WindowState{X: 1500, Y: 900, Width: 800, Height: 600, HasPos: true}
+	frame := windowstate.State{X: 1500, Y: 900, Width: 800, Height: 600, HasPos: true}
 
 	got := FitOnScreen(frame, screens)
 	if got.X != 1920-800 || got.Y != 1040-600 {
@@ -218,7 +218,7 @@ func TestFitOnScreenPullsBackAnOverhangingFrame(t *testing.T) {
 // nowhere to fit goes to the top-left of the work area with its size intact.
 func TestFitOnScreenPinsAFrameTooBigForTheScreen(t *testing.T) {
 	screens := testScreens()
-	frame := core.WindowState{X: 300, Y: 200, Width: 2400, Height: 1200, HasPos: true}
+	frame := windowstate.State{X: 300, Y: 200, Width: 2400, Height: 1200, HasPos: true}
 
 	got := FitOnScreen(frame, screens)
 	if got.X != 0 || got.Y != 0 {
@@ -233,7 +233,7 @@ func TestFitOnScreenPinsAFrameTooBigForTheScreen(t *testing.T) {
 // the second display is fitted to that display rather than dragged home.
 func TestFitOnScreenStaysOnTheScreenTheFrameIsOn(t *testing.T) {
 	screens := testScreens()
-	frame := core.WindowState{X: -1000, Y: 700, Width: 800, Height: 600, HasPos: true}
+	frame := windowstate.State{X: -1000, Y: 700, Width: 800, Height: 600, HasPos: true}
 
 	got := FitOnScreen(frame, screens)
 	if got.X != -1000 {
@@ -248,7 +248,7 @@ func TestFitOnScreenStaysOnTheScreenTheFrameIsOn(t *testing.T) {
 // default, and inventing coordinates for it here would take that away.
 func TestFitOnScreenIgnoresAFrameWithNothingToFit(t *testing.T) {
 	screens := testScreens()
-	for _, frame := range []core.WindowState{
+	for _, frame := range []windowstate.State{
 		{Width: 800, Height: 600},
 		{X: 4000, Y: 4000, HasPos: true},
 		{},
@@ -257,7 +257,7 @@ func TestFitOnScreenIgnoresAFrameWithNothingToFit(t *testing.T) {
 			t.Errorf("FitOnScreen(%+v) = %+v, want it untouched", frame, got)
 		}
 	}
-	frame := core.WindowState{X: 4000, Y: 4000, Width: 800, Height: 600, HasPos: true}
+	frame := windowstate.State{X: 4000, Y: 4000, Width: 800, Height: 600, HasPos: true}
 	if got := FitOnScreen(frame, nil); !got.SameFrame(frame) {
 		t.Errorf("FitOnScreen() with no screens = %+v, want it untouched", got)
 	}
@@ -269,7 +269,7 @@ func TestFitOnScreenIgnoresAFrameWithNothingToFit(t *testing.T) {
 // the saved frame has to pass through untouched — which is why the live frame
 // is re-checked once the app is up.
 func TestStrandedCannotJudgeWithoutScreens(t *testing.T) {
-	frame := core.WindowState{X: -32000, Y: -32000, Width: 1400, Height: 900, HasPos: true}
+	frame := windowstate.State{X: -32000, Y: -32000, Width: 1400, Height: 900, HasPos: true}
 
 	if Stranded(frame, nil) {
 		t.Error("Stranded() with no screens = true, want false — there is nothing to judge against")
@@ -290,14 +290,14 @@ func TestStrandedCannotJudgeWithoutScreens(t *testing.T) {
 // A frame with no position cannot strand: it is placed by the centring default,
 // which is on-screen by construction.
 func TestStrandedIgnoresAFrameWithNoPosition(t *testing.T) {
-	if Stranded(core.WindowState{Width: 1400, Height: 900}, testScreens()) {
+	if Stranded(windowstate.State{Width: 1400, Height: 900}, testScreens()) {
 		t.Error("Stranded() for a frame with no position = true, want false")
 	}
 }
 
 func TestRescueFrameCentresOnPrimaryAndShrinksToFit(t *testing.T) {
 	screens := testScreens()
-	got, moved := RescueFrame(core.WindowState{X: -32000, Y: -32000, Width: 3000, Height: 2000, HasPos: true}, screens)
+	got, moved := RescueFrame(windowstate.State{X: -32000, Y: -32000, Width: 3000, Height: 2000, HasPos: true}, screens)
 	if !moved {
 		t.Fatal("RescueFrame() moved = false, want true for a parked frame")
 	}
@@ -308,7 +308,7 @@ func TestRescueFrameCentresOnPrimaryAndShrinksToFit(t *testing.T) {
 		t.Errorf("RescueFrame() position = %d,%d, want it centred on the primary work area", got.X, got.Y)
 	}
 
-	smaller, _ := RescueFrame(core.WindowState{X: 9000, Y: 9000, Width: 920, Height: 40, HasPos: true}, screens)
+	smaller, _ := RescueFrame(windowstate.State{X: 9000, Y: 9000, Width: 920, Height: 40, HasPos: true}, screens)
 	if smaller.X != (1920-920)/2 || smaller.Y != (1040-40)/2 {
 		t.Errorf("RescueFrame() position = %d,%d, want it centred", smaller.X, smaller.Y)
 	}
@@ -317,18 +317,18 @@ func TestRescueFrameCentresOnPrimaryAndShrinksToFit(t *testing.T) {
 // A window that is reachable, and a window with no display to be moved onto,
 // are both left exactly where they are.
 func TestRescueFrameLeavesAReachableWindowAlone(t *testing.T) {
-	onScreen := core.WindowState{X: 100, Y: 100, Width: 800, Height: 600, HasPos: true}
+	onScreen := windowstate.State{X: 100, Y: 100, Width: 800, Height: 600, HasPos: true}
 	if got, moved := RescueFrame(onScreen, testScreens()); moved || !got.SameFrame(onScreen) {
 		t.Errorf("RescueFrame() = (%+v, %v), want it untouched and false", got, moved)
 	}
 
 	// The second display's frame, which is stranded only if you forget it exists.
-	onSecond := core.WindowState{X: -1200, Y: 50, Width: 1000, Height: 800, HasPos: true}
+	onSecond := windowstate.State{X: -1200, Y: 50, Width: 1000, Height: 800, HasPos: true}
 	if got, moved := RescueFrame(onSecond, testScreens()); moved || !got.SameFrame(onSecond) {
 		t.Errorf("RescueFrame() on the second display = (%+v, %v), want it untouched", got, moved)
 	}
 
-	parked := core.WindowState{X: -32000, Y: -32000, Width: 800, Height: 600, HasPos: true}
+	parked := windowstate.State{X: -32000, Y: -32000, Width: 800, Height: 600, HasPos: true}
 	if got, moved := RescueFrame(parked, nil); moved || !got.SameFrame(parked) {
 		t.Errorf("RescueFrame() with no screens = (%+v, %v), want it untouched", got, moved)
 	}
@@ -339,8 +339,8 @@ func TestRescueFrameLeavesAReachableWindowAlone(t *testing.T) {
 // alone, the first press of the restore button drops the window where nobody
 // can see it.
 func TestRescueTargetJudgesTheFrameAMaximisedWindowRestoresTo(t *testing.T) {
-	maximised := core.WindowState{X: 0, Y: 0, Width: 1920, Height: 1040, HasPos: true}
-	stranded := core.WindowState{X: 4000, Y: 200, Width: 1000, Height: 800, HasPos: true}
+	maximised := windowstate.State{X: 0, Y: 0, Width: 1920, Height: 1040, HasPos: true}
+	stranded := windowstate.State{X: 4000, Y: 200, Width: 1000, Height: 800, HasPos: true}
 
 	got, moved := RescueTarget(maximised, stranded, testScreens())
 	if !moved {
@@ -355,19 +355,19 @@ func TestRescueTargetJudgesTheFrameAMaximisedWindowRestoresTo(t *testing.T) {
 // nothing underneath is judged as it stands, and a reachable pair is left be.
 func TestRescueTargetLeavesEverythingElseToTheLiveFrame(t *testing.T) {
 	screens := testScreens()
-	reachable := core.WindowState{X: 100, Y: 100, Width: 800, Height: 600, HasPos: true}
-	parked := core.WindowState{X: -32000, Y: -32000, Width: 800, Height: 600, HasPos: true}
-	maximised := core.WindowState{X: 0, Y: 0, Width: 1920, Height: 1040, HasPos: true}
+	reachable := windowstate.State{X: 100, Y: 100, Width: 800, Height: 600, HasPos: true}
+	parked := windowstate.State{X: -32000, Y: -32000, Width: 800, Height: 600, HasPos: true}
+	maximised := windowstate.State{X: 0, Y: 0, Width: 1920, Height: 1040, HasPos: true}
 
 	for _, tc := range []struct {
 		name          string
-		live, restore core.WindowState
+		live, restore windowstate.State
 		want          bool
 	}{
-		{"a normal window, reachable", reachable, core.WindowState{}, false},
-		{"a normal window, stranded", parked, core.WindowState{}, true},
+		{"a normal window, reachable", reachable, windowstate.State{}, false},
+		{"a normal window, stranded", parked, windowstate.State{}, true},
 		{"maximised over a reachable frame", maximised, reachable, false},
-		{"maximised over a centred placement", maximised, core.WindowState{Width: 800, Height: 600}, false},
+		{"maximised over a centred placement", maximised, windowstate.State{Width: 800, Height: 600}, false},
 		{"maximised and itself stranded", parked, reachable, true},
 	} {
 		if _, moved := RescueTarget(tc.live, tc.restore, screens); moved != tc.want {
@@ -380,7 +380,7 @@ func TestRescueTargetLeavesEverythingElseToTheLiveFrame(t *testing.T) {
 // let a rescued window write back the frame it was rescued from. A refused
 // frame becomes a centred placement, which seeds a size and no position.
 func TestSeedTakesThePlacementNotTheSavedFrame(t *testing.T) {
-	strandedSave := core.WindowState{X: -32000, Y: -32000, Width: 1400, Height: 900, HasPos: true}
+	strandedSave := windowstate.State{X: -32000, Y: -32000, Width: 1400, Height: 900, HasPos: true}
 
 	seed := Seed(PlaceVisible(strandedSave, testScreens()))
 	if seed.HasPos {
@@ -390,7 +390,7 @@ func TestSeedTakesThePlacementNotTheSavedFrame(t *testing.T) {
 		t.Errorf("Seed() size = %dx%d, want the saved 1400x900 kept", seed.Width, seed.Height)
 	}
 
-	kept := core.WindowState{X: 120, Y: 80, Width: 1000, Height: 800, HasPos: true}
+	kept := windowstate.State{X: 120, Y: 80, Width: 1000, Height: 800, HasPos: true}
 	seed = Seed(PlaceVisible(kept, testScreens()))
 	if !seed.HasPos || seed.X != 120 || seed.Y != 80 {
 		t.Errorf("Seed() of an honoured placement = %+v, want the saved position", seed)
@@ -401,7 +401,7 @@ func TestSeedTakesThePlacementNotTheSavedFrame(t *testing.T) {
 // the window is maximised, and must say so rather than invent one.
 func TestCaptureMaximisedWithNoSeedDeclines(t *testing.T) {
 	tracker := NewTracker(Seed(PlaceVisible(
-		core.WindowState{X: -32000, Y: -32000, Width: 1400, Height: 900, HasPos: true}, testScreens())), testScreens)
+		windowstate.State{X: -32000, Y: -32000, Width: 1400, Height: 900, HasPos: true}, testScreens())), testScreens)
 
 	if got, ok := tracker.Capture(fakeWindow{maximised: true, width: 1920, height: 1040}); ok {
 		t.Fatalf("Capture() = (%+v, true), want (_, false) with no normal-state frame known", got)
@@ -419,14 +419,14 @@ func TestCaptureMaximisedWithNoSeedDeclines(t *testing.T) {
 // repaired on none. Reseeding it with the frame it was actually moved to lets
 // the very next capture write a frame that will come back.
 func TestReseedRepairsAStrandedMaximisedWindow(t *testing.T) {
-	tracker := NewTracker(core.WindowState{X: -32000, Y: -32000, Width: 1400, Height: 900, HasPos: true}, testScreens)
+	tracker := NewTracker(windowstate.State{X: -32000, Y: -32000, Width: 1400, Height: 900, HasPos: true}, testScreens)
 	maximised := fakeWindow{maximised: true, width: 1920, height: 1040}
 
 	if got, ok := tracker.Capture(maximised); ok {
 		t.Fatalf("Capture() = (%+v, true), want the stranded frame refused", got)
 	}
 
-	tracker.Reseed(core.WindowState{X: 0, Y: 0, Width: 1920, Height: 1040, HasPos: true})
+	tracker.Reseed(windowstate.State{X: 0, Y: 0, Width: 1920, Height: 1040, HasPos: true})
 
 	got, ok := tracker.Capture(maximised)
 	if !ok {

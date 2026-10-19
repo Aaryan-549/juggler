@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"juggler/internal/atomicio"
 	"juggler/internal/userpaths"
 )
 
@@ -151,7 +152,7 @@ func (s *RecentsStore) save(paths []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to marshal recents: %w", err)
 	}
-	if err := os.WriteFile(s.filePath, data, 0600); err != nil {
+	if err := atomicio.WriteFile(s.filePath, data, 0600); err != nil {
 		return fmt.Errorf("failed to write recents file: %w", err)
 	}
 	return nil

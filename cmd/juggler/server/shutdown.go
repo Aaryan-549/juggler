@@ -190,6 +190,12 @@ func (s *Server) Shutdown(ctx context.Context) error {
 		}
 	}
 
+	// Stop being woken: the subscription is process-global, and the worker
+	// manager it wakes is about to be shut down.
+	if s.stopWake != nil {
+		s.stopWake()
+	}
+
 	st := s.projectState.Load()
 
 	steps := []teardownStep{

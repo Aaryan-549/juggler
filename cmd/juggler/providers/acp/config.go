@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strings"
 
+	"juggler/internal/atomicio"
 	"juggler/internal/userpaths"
 )
 
@@ -101,7 +102,8 @@ func loadMergedConfig(projectRoot string) (map[string]AgentConfig, error) {
 }
 
 // writeConfigFile serializes agents to the given acp.json path, creating parent
-// directories as needed. Used by the setConfig op.
+// directories as needed. Used by the setConfig op. Written 0600: an agent's env
+// is where its API key goes.
 func writeConfigFile(path string, agents map[string]AgentConfig) error {
 	if agents == nil {
 		agents = map[string]AgentConfig{}
@@ -114,7 +116,7 @@ func writeConfigFile(path string, agents map[string]AgentConfig) error {
 		return err
 	}
 	data = append(data, '\n')
-	return os.WriteFile(path, data, 0o644)
+	return atomicio.WriteFile(path, data, 0o600)
 }
 
 // coerceAgentConfig converts one JSON-decoded agent entry (map[string]any) into
@@ -184,10 +186,12 @@ func enabledAgentNames(projectRoot string) []string {
 }
 
 // anyAgentConfigured reports whether at least one enabled agent with a command
-// exists for the env-scoped project. Backs the provider AutoDetect, which the
-// registry snapshots once (sync.Once) at first use — so this decides the ACP
-// provider's visibility at startup only. An agent added mid-session is surfaced
-// by the settings tab enabling the provider directly, not by this re-running.
+// exists in the global acp.json. Detection is asked with no project in hand, so
+// a project's own acp.json does not count here. Backs the provider AutoDetect,
+// whose answer the registry memoises per provider name until something calls
+// provider.InvalidateAutoDetect (provider.CheckAutoDetect) — so an agent added
+// mid-session is surfaced by the settings tab enabling the provider directly,
+// not by this re-running.
 func anyAgentConfigured() bool {
-	return len(enabledAgentNames(os.Getenv("JUGGLER_PROJECT_PATH"))) > 0
+	return len(enabledAgentNames("")) > 0
 }

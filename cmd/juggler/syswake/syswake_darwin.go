@@ -12,7 +12,7 @@ package syswake
 // cmd/juggler), so Fire is darwin-only: on other platforms nothing fires
 // wake events and the function would be unreachable.
 func Fire() {
-	for _, fn := range *subs.Load() {
-		go fn()
+	for _, s := range *subs.Load() {
+		go s.fn()
 	}
 }

@@ -30,24 +30,9 @@ import (
 	"juggler/cmd/juggler/mcp"
 	"juggler/cmd/juggler/ops"
 	"juggler/cmd/juggler/providers/acp"
-	"juggler/cmd/juggler/providers/anthropic"
-	"juggler/cmd/juggler/providers/claudecode"
-	"juggler/cmd/juggler/providers/copilot"
+	"juggler/cmd/juggler/providers/builtin"
 	"juggler/cmd/juggler/providers/customprovider"
-	"juggler/cmd/juggler/providers/deepseek"
-	"juggler/cmd/juggler/providers/gemini"
-	"juggler/cmd/juggler/providers/llamacpp"
-	"juggler/cmd/juggler/providers/lmstudio"
-	"juggler/cmd/juggler/providers/localai"
-	"juggler/cmd/juggler/providers/mistral"
-	"juggler/cmd/juggler/providers/moonshot"
-	"juggler/cmd/juggler/providers/ollama"
-	"juggler/cmd/juggler/providers/openai"
-	"juggler/cmd/juggler/providers/openaicodex"
-	"juggler/cmd/juggler/providers/opencodezen"
-	"juggler/cmd/juggler/providers/openrouter"
 	"juggler/cmd/juggler/providers/streamidle"
-	"juggler/cmd/juggler/providers/zai"
 	"juggler/cmd/juggler/server"
 	"juggler/internal/enginehost"
 	"juggler/internal/ingress"
@@ -244,23 +229,7 @@ func reportStartupFailure(w io.Writer, err error) {
 // registerProviders registers every built-in provider with the global registry.
 // Called once at startup. Tests that want a subset compose their own calls.
 func registerProviders() {
-	acp.Register()
-	anthropic.Register()
-	claudecode.Register()
-	copilot.Register()
-	deepseek.Register()
-	gemini.Register()
-	llamacpp.Register()
-	lmstudio.Register()
-	localai.Register()
-	mistral.Register()
-	moonshot.Register()
-	ollama.Register()
-	openai.Register()
-	openaicodex.Register()
-	opencodezen.Register()
-	openrouter.Register()
-	zai.Register()
+	builtin.Register()
 
 	// The user's own named endpoints, read from their definitions file. They
 	// register here, alongside the built-ins and ahead of every credential

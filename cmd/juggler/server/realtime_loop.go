@@ -7,6 +7,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"time"
 
 	"juggler/cmd/juggler/msg"
@@ -173,6 +174,16 @@ func (s *Server) runRealtimeClientLoop(ctx context.Context, client RealtimeClien
 			// beat below only covers a client with nothing else to say.
 			link.noteInbound()
 
+			// Who may send what is decided here, once, from inboundFrameRoles —
+			// never inside a case below.
+			if known, allowed := inboundFrameAllowed(frameType(generic.Type), role); !known {
+				jlog.Error("Realtime: unrecognized message type %q", generic.Type)
+				continue
+			} else if !allowed {
+				jlog.Info("Realtime: refused %q from a %s client %s (%s)", generic.Type, role, client.ClientID(), client.ClientInfo().Origin)
+				continue
+			}
+
 			// Engine traffic refreshes the liveness stamp: a message the engine
 			// composed is proof that the realm which composes messages is running.
 			// See engineTrafficProvesLiveness for the one message that is exempt.
@@ -227,19 +238,9 @@ func (s *Server) runRealtimeClientLoop(ctx context.Context, client RealtimeClien
 				}
 
 			case "engine-bridge":
-				if role != ClientRoleEngine {
-					continue
-				}
 				s.viewerSendRawToAll(msgBytes)
 
 			case "viewer-relay":
-				// Viewer-only, and the mirror image of engine-bridge: that one is the
-				// engine speaking to every viewer, this one is a viewer speaking to a
-				// named viewer. The engine is excluded because it has nothing to say
-				// to a single viewer that the bridge does not already carry.
-				if role != ClientRoleViewer {
-					continue
-				}
 				relay, ok := unmarshalWS[ViewerRelay](msgBytes, "viewer-relay")
 				if !ok {
 					continue
@@ -253,11 +254,6 @@ func (s *Server) runRealtimeClientLoop(ctx context.Context, client RealtimeClien
 				})
 
 			case "one-shot-result":
-				// Engine-only, like engine-bridge: a viewer answering a run the
-				// engine was asked to make would be answering for it.
-				if role != ClientRoleEngine {
-					continue
-				}
 				res, ok := unmarshalWS[OneShotResult](msgBytes, "one-shot-result")
 				if !ok {
 					continue
@@ -293,8 +289,6 @@ func (s *Server) runRealtimeClientLoop(ctx context.Context, client RealtimeClien
 					}
 				}
 
-			default:
-				jlog.Error("Realtime: unrecognized message type %q", generic.Type)
 			}
 
 		case shellID := <-shellCancelChan:
@@ -334,6 +328,50 @@ func (s *Server) runRealtimeClientLoop(ctx context.Context, client RealtimeClien
 			go s.processShellRequest(ctx, shellReq, client, shellCompleteChan)
 		}
 	}
+}
+
+// inboundFrameRoles is which client roles may send each inbound frame. It is
+// the whole of the socket's authorization by role: runRealtimeClientLoop
+// consults it before dispatch and drops a frame its sender's role may not send.
+// A type with no entry is refused from everyone, and
+// TestInboundFrameRoles_CoverTheVocabulary holds it to allInboundFrames.
+//
+//   - Heartbeats are per role: each proves something only its own realm can
+//     (engine_liveness.go, link_liveness.go).
+//   - viewer-fault is a viewer's render fault; the engine reports its own over
+//     /api/client/report.
+//   - shell-start / shell-cancel are the bash tool's streaming transport, open
+//     to both roles. Their output goes back to the requester alone
+//     (processShellRequest). The bash tool runs in the engine, but its code
+//     (shell-streaming.js) is not engine-only — the browser suite drives it
+//     from viewer lanes — and refusing a viewer would protect nothing: every
+//     token-holding viewer can run the same command through /api/ops/call.
+//   - engine-bridge and one-shot-result speak for the engine: a viewer
+//     bridging would be impersonating it to every viewer, and a viewer answering
+//     a run the engine was asked to make would be answering for it.
+//   - viewer-relay is a viewer addressing a named viewer; the engine has
+//     nothing to say to one viewer that engine-bridge does not already carry.
+//   - session-changed follows a PUT /session, which the session model in either
+//     realm makes, and carries nothing but "re-read it".
+//   - worker-message is how both realms talk to a conversation's worker.
+var inboundFrameRoles = map[frameType][]ClientRole{
+	frameEngineHeartbeat: {ClientRoleEngine},
+	frameViewerHeartbeat: {ClientRoleViewer},
+	frameViewerFault:     {ClientRoleViewer},
+	frameShellStart:      {ClientRoleViewer, ClientRoleEngine},
+	frameShellCancel:     {ClientRoleViewer, ClientRoleEngine},
+	frameEngineBridge:    {ClientRoleEngine},
+	frameViewerRelay:     {ClientRoleViewer},
+	frameOneShotResult:   {ClientRoleEngine},
+	frameSessionChanged:  {ClientRoleViewer, ClientRoleEngine},
+	frameWorkerMessage:   {ClientRoleViewer, ClientRoleEngine},
+}
+
+// inboundFrameAllowed reports whether t is an inbound frame type at all, and
+// whether a client in role may send it.
+func inboundFrameAllowed(t frameType, role ClientRole) (known, allowed bool) {
+	roles, known := inboundFrameRoles[t]
+	return known, slices.Contains(roles, role)
 }
 
 // labelled prefixes a value with its label, or yields nothing at all when the

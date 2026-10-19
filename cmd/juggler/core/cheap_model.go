@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"juggler/internal/atomicio"
 	"juggler/internal/userpaths"
 )
 
@@ -100,7 +101,7 @@ func (s *CheapModelStore) Save(setting CheapModelSetting) error {
 	if err != nil {
 		return fmt.Errorf("failed to marshal cheap model: %w", err)
 	}
-	if err := os.WriteFile(s.filePath, data, 0600); err != nil {
+	if err := atomicio.WriteFile(s.filePath, data, 0600); err != nil {
 		return fmt.Errorf("failed to write cheap model file: %w", err)
 	}
 	return nil

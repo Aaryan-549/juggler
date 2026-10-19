@@ -96,7 +96,7 @@ func stopBackgroundTasksWithin(dir, reason string, grace time.Duration) int {
 func stopMatchingTasks(op registryOp, reason string, grace time.Duration) int {
 	resp := make(chan registryResp, 1)
 	op.kind, op.errMsg, op.resp = regKillMatching, reason, resp
-	registryCh <- op
+	registryCh() <- op
 	result := <-resp
 	stopping := result.stopping
 	if len(stopping) == 0 {

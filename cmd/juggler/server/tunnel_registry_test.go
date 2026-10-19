@@ -32,12 +32,16 @@ func (p *fakeTunnelProvider) Start(context.Context) (TunnelInfo, error) {
 // save/restore rather than leak modes into other tests.
 func withTestTunnelModes(t *testing.T, specs ...TunnelModeSpec) {
 	t.Helper()
-	saved := tunnelModeRegistry
+	saved, sealed := tunnelModeRegistry, tunnelModesSealed.Load()
 	tunnelModeRegistry = nil
+	tunnelModesSealed.Store(false)
 	for _, spec := range specs {
 		RegisterTunnelMode(spec)
 	}
-	t.Cleanup(func() { tunnelModeRegistry = saved })
+	t.Cleanup(func() {
+		tunnelModeRegistry = saved
+		tunnelModesSealed.Store(sealed)
+	})
 }
 
 // TestTunnelRegistryDispatch verifies newTunnelProvider consults the registry:
@@ -173,4 +177,23 @@ func TestRegisterTunnelModeValidation(t *testing.T) {
 	mustPanic("duplicate mode", func() {
 		RegisterTunnelMode(TunnelModeSpec{Mode: "x", New: func(TunnelHost) TunnelProvider { return nil }})
 	})
+}
+
+// TestRegisterTunnelModeAfterSealPanics: the registry is read without a lock
+// once a server exists, so a registration after that is refused loudly rather
+// than racing the readers. New seals it.
+func TestRegisterTunnelModeAfterSealPanics(t *testing.T) {
+	withTestTunnelModes(t)
+	RegisterTunnelMode(TunnelModeSpec{Mode: "early", New: func(TunnelHost) TunnelProvider { return nil }})
+
+	sealTunnelModes()
+	defer func() {
+		if recover() == nil {
+			t.Fatal("a registration after the seal was accepted")
+		}
+		if _, ok := findTunnelMode("late"); ok {
+			t.Fatal("a refused registration still landed in the registry")
+		}
+	}()
+	RegisterTunnelMode(TunnelModeSpec{Mode: "late", New: func(TunnelHost) TunnelProvider { return nil }})
 }

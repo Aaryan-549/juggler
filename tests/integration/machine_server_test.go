@@ -10,6 +10,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -845,21 +846,11 @@ func TestSessionChildTreatsItsSupervisorsIngressAsRemote(t *testing.T) {
 		}
 	}
 
-	// The engine slot: refused by closing the socket before any frame, where
-	// an admitted engine is greeted with the session frame first.
+	// The engine slot, asked for with the session's own token so that only
+	// where the request came from can be what refuses it.
 	header := http.Header{"Origin": []string{base}, ingress.Header: []string{secret}}
-	conn, resp, err := websocket.DefaultDialer.Dial("ws://"+addr+apipaths.WebSocket+"?role=engine", header)
-	if resp != nil && resp.Body != nil {
-		_ = resp.Body.Close()
-	}
-	if err != nil {
-		t.Fatalf("engine WebSocket dial: %v", err)
-	}
-	defer conn.Close()
-	_ = conn.SetReadDeadline(time.Now().Add(10 * time.Second))
-	if _, msg, err := conn.ReadMessage(); err == nil {
-		t.Fatalf("a caller the supervisor vouched for as remote took the engine slot; first frame %s", msg)
-	}
+	conn, resp, err := websocket.DefaultDialer.Dial("ws://"+addr+apipaths.WebSocket+"?role=engine&token="+url.QueryEscape(token), header)
+	assertEngineSlotRefused(t, conn, resp, err, "a caller the supervisor vouched for as remote")
 }
 
 // TestMachineServerRefusesRebindingHost plays a DNS-rebinding page against a
@@ -1010,4 +1001,25 @@ func TestMachineServerChildListensOnLoopbackOnly(t *testing.T) {
 		t.Skip("this machine has no non-loopback address to probe")
 	}
 	t.Logf("refused on %s", strings.Join(probed, ", "))
+}
+
+// assertEngineSlotRefused fails unless an engine-role dial was refused: with a
+// status in place of the upgrade, or, if upgraded, closed before the session
+// frame an admitted engine is greeted with.
+func assertEngineSlotRefused(t *testing.T, conn *websocket.Conn, resp *http.Response, err error, who string) {
+	t.Helper()
+	if resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
+	if err != nil {
+		if resp == nil {
+			t.Fatalf("engine WebSocket dial: %v", err)
+		}
+		return
+	}
+	defer conn.Close()
+	_ = conn.SetReadDeadline(time.Now().Add(10 * time.Second))
+	if _, msg, err := conn.ReadMessage(); err == nil {
+		t.Fatalf("%s took the engine slot; first frame %s", who, msg)
+	}
 }
