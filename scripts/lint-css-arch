@@ -1182,7 +1182,7 @@ function loadMarkupModel() {
 		eslintScope = require(path.join(toolingModules, 'eslint-scope'));
 	} catch {
 		console.error('lint-css-arch: tooling/node_modules is missing espree/eslint-scope.');
-		console.error("Run 'cd tooling && npm install' (or just 'make lint', which installs it).");
+		console.error("Run 'cd tooling && npm ci' (or just 'make lint', which installs it).");
 		process.exit(2);
 	}
 	const { buildMarkupModel } = require(path.join(__dirname, 'css-markup-model'));

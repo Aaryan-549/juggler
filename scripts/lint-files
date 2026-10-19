@@ -111,16 +111,16 @@ ensure_node_tooling() {
 	if [ -x "$NPM_BIN/$bin" ]; then return 0; fi
 	if ! command -v npm &> /dev/null; then
 		echo "lint-files: npm not found on PATH — cannot lint JS/CSS." >&2
-		echo "Install Node.js (or run 'cd tooling && npm install') and retry." >&2
+		echo "Install Node.js (or run 'cd tooling && npm ci') and retry." >&2
 		exit 2
 	fi
-	echo "Installing JS/CSS linters (cd tooling && npm install)..."
-	( cd tooling && npm install ) || {
-		echo "lint-files: 'npm install' in tooling/ failed." >&2
+	echo "Installing JS/CSS linters (cd tooling && npm ci)..."
+	( cd tooling && npm ci --no-audit --no-fund --ignore-scripts ) || {
+		echo "lint-files: 'npm ci' in tooling/ failed." >&2
 		exit 2
 	}
 	if [ ! -x "$NPM_BIN/$bin" ]; then
-		echo "lint-files: $bin still missing after 'npm install'." >&2
+		echo "lint-files: $bin still missing after 'npm ci'." >&2
 		exit 2
 	fi
 }

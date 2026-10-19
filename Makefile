@@ -841,8 +841,8 @@ node-deps:
 			echo "npm not found on PATH — cannot lint JS/CSS. Install Node.js and retry." >&2; \
 			exit 2; \
 		fi; \
-		echo "Installing JS/CSS linters (cd tooling && npm install)..."; \
-		(cd tooling && npm install) || exit 2; \
+		echo "Installing JS/CSS linters (cd tooling && npm ci)..."; \
+		(cd tooling && npm ci --no-audit --no-fund --ignore-scripts) || exit 2; \
 	fi
 
 ## lint-types: Run TypeScript type checking on JavaScript files

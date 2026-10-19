@@ -78,13 +78,18 @@ jobs:
           git config --global http.version HTTP/1.1
           git config --global http.postBuffer 524288000
 
+      # Every action is pinned to a full commit SHA, the release it was taken
+      # from in the trailing comment: a tag can be moved, a SHA cannot.
+      # persist-credentials: false leaves no token in .git/config for the npm
+      # installs, linters and tests that follow.
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           submodules: recursive
+          persist-credentials: false
 
       - name: Setup Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version: '1.26'
           # Module/build caching is on by default and always wanted here: every
@@ -122,12 +127,15 @@ jobs:
       # what TestNodeEngineHostBootsAndConnects probes. On an older Node that test
       # skips and the node engine host goes untested; keep this at/above the floor.
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: '22'
 
+      # npm ci installs exactly tooling/package-lock.json, never a newer
+      # in-range release; --ignore-scripts keeps every package's install hooks
+      # from running, and nothing in the linter toolchain needs one.
       - name: Install npm dependencies
-        run: npm install
+        run: npm ci --no-audit --no-fund --ignore-scripts
         working-directory: tooling
 
       # WebKitGTK/GTK4/libsoup dev headers for the cgo Wails v3 Linux backend.
@@ -210,9 +218,9 @@ jobs:
         shell: bash
         run: |
           if [ "${RUNNER_OS}" = "Windows" ]; then
-            go test -count=1 -race -timeout 5m -p 2 ./cmd/...
+            go test -count=1 -race -timeout 5m -p 2 ./cmd/... ./internal/... ./web/...
           else
-            go test -count=1 -race -timeout 5m ./cmd/...
+            go test -count=1 -race -timeout 5m ./cmd/... ./internal/... ./web/...
           fi
 
       # The vendored Wails fork's own tests, for the packages its local patches

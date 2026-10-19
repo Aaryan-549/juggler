@@ -45,7 +45,7 @@ try {
 	eslintScope = require(path.join(toolingModules, 'eslint-scope'));
 } catch {
 	console.error('lint-docs-code: tooling/node_modules is missing espree/eslint-scope.');
-	console.error("Run 'cd tooling && npm install' (or just 'make lint', which installs it).");
+	console.error("Run 'cd tooling && npm ci' (or just 'make lint', which installs it).");
 	process.exit(2);
 }
 
