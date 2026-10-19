@@ -69,3 +69,33 @@ func TestOpenConversationRejectsNonChatProvider(t *testing.T) {
 		t.Fatal("OpenConversation succeeded on a provider that cannot chat")
 	}
 }
+
+func TestInitializeProviderExposesUsageStatsAndConversations(t *testing.T) {
+	const name = "unwrap-test-usage-chat"
+	RegisterProvider(ProviderInfo{Name: name}, func(Config) (Provider, error) {
+		return usageChatProvider{}, nil
+	})
+	t.Cleanup(func() { UnregisterProvider(name) })
+
+	initialized, err := InitializeProvider(name, Config{Model: "m"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := As[UsageStatsProvider](initialized); !ok {
+		t.Fatal("usage stats not reachable through the admission wrapper")
+	}
+	cp, ok := AsConversationProvider(initialized)
+	if !ok {
+		t.Fatal("conversations not reachable through the admission wrapper")
+	}
+	if _, isWrapper := cp.(*admissionProvider); !isWrapper {
+		t.Fatalf("conversation provider is %T, want the admission wrapper", cp)
+	}
+}
+
+type usageChatProvider struct{ baseOnlyProvider }
+
+func (usageChatProvider) UsageStats(context.Context) (UsageStats, error) { return UsageStats{}, nil }
+func (usageChatProvider) OpenConversation(context.Context, string) (Conversation, error) {
+	return nil, nil
+}
