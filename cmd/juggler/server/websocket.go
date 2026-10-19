@@ -208,7 +208,7 @@ func (c *WSClient) writePump() {
 		case <-c.closed:
 			// Shutting down. Flush whatever is already queued first — a close is
 			// often preceded by a message that exists precisely to be read on the
-			// way out (the hub's server_shutdown notice) — then say goodbye.
+			// way out (the hub's server-shutdown notice) — then say goodbye.
 			for {
 				select {
 				case msg := <-c.send:

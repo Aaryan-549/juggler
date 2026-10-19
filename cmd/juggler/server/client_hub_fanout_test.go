@@ -212,7 +212,7 @@ func TestClientHub_ShutdownNoticeReachesClients(t *testing.T) {
 	for {
 		select {
 		case msg := <-c.send:
-			if m, ok := msg.json.(map[string]any); ok && m["type"] == "server_shutdown" {
+			if m, ok := msg.json.(map[string]any); ok && m["type"] == "server-shutdown" {
 				sawNotice = true
 			}
 			continue
@@ -221,6 +221,6 @@ func TestClientHub_ShutdownNoticeReachesClients(t *testing.T) {
 		break
 	}
 	if !sawNotice {
-		t.Fatal("shutdown closed the client without queueing the server_shutdown notice")
+		t.Fatal("shutdown closed the client without queueing the server-shutdown notice")
 	}
 }

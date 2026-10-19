@@ -38,8 +38,8 @@ func TestExample(t *testing.T) {
 
 ```go
 // ❌ OLD: String matching (brittle, misses issues)
-if !strings.Contains(string(msg), "approval-request") {
-    t.Fatal("Never received approval-request")
+if !strings.Contains(string(msg), "evaluate-tool") {
+    t.Fatal("Never received evaluate-tool")
 }
 
 // ✅ NEW: Structured state assertion (deterministic)
@@ -170,13 +170,13 @@ var foundApproval bool
 for _, msgBytes := range messages {
     var parsed map[string]any
     json.Unmarshal(msgBytes, &parsed)
-    if parsed["type"] == "approval-request" {
+    if parsed["type"] == "evaluate-tool" {
         foundApproval = true
     }
 }
 
 if !foundApproval {
-    t.Fatal("Never received approval-request")
+    t.Fatal("Never received evaluate-tool")
 }
 ```
 

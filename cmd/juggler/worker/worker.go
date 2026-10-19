@@ -1241,32 +1241,25 @@ func (r *run) writeProcessingState(status, message string, text *msg.Message, co
 
 	// Terminal-error statuses release only this thread; live siblings retain their
 	// claims and remain visible through the projection.
-	r.replaceProcessingState(stateMap, r.t.thread.itemID, func(runs map[string]any) {
+	r.replaceProcessingState(stateMap, r.t.thread.itemID, func(runs runRegistry) {
 		key := runKey(r.t.thread.itemID)
 		if !holdsClaim {
 			delete(runs, key)
 			return
 		}
-		entry, ok := runs[key].(map[string]any)
+		entry, ok := runs[key]
 		if !ok {
-			entry = map[string]any{"threadItemId": r.t.thread.itemID}
+			entry = runEntry{}
+			entry.setThreadItemID(r.t.thread.itemID)
 		}
-		entry["activity"] = ActivityCallingLLM
-		entry["claimedAt"] = time.Now().UnixMilli()
-		entry["status"] = status
-		entry["message"] = message
-		if code != "" {
-			entry["code"] = code
-		} else {
-			delete(entry, "code")
-		}
-		if text != nil {
-			entry["text"] = *text
-		} else {
-			delete(entry, "text")
-		}
-		entry["startedAt"] = r.t.processingStartedAt.Load()
-		dropPhaseProgress(entry)
+		entry.setActivity(ActivityCallingLLM)
+		entry.setClaimedAt(time.Now().UnixMilli())
+		entry.setStatus(processingStatus(status))
+		entry.setMessage(message)
+		entry.setCode(code)
+		entry.setText(text)
+		entry.setStartedAt(r.t.processingStartedAt.Load())
+		entry.dropPhaseProgress()
 		runs[key] = entry
 	})
 }
@@ -1414,13 +1407,6 @@ func (w *ConversationWorker) sendRenderContextItemsRequest(requestID string, ite
 		RequestID: requestID,
 		ItemIDs:   itemIDs,
 		SentAt:    time.Now().UnixMilli(),
-	})
-}
-
-func (w *ConversationWorker) sendCorruptionRepaired(repairedCount int) {
-	w.send(CorruptionRepairedMessage{
-		Type:          "corruption-repaired",
-		RepairedCount: repairedCount,
 	})
 }
 

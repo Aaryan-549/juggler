@@ -17,9 +17,6 @@ import { assert, waitFor } from '../utilities/test-helpers.js';
 import { underPseudoLocale, assertPseudoLocalized } from '../utilities/pseudo-locale.js';
 import { buildApprovalButtons } from '../../js/services/approval-options.js';
 import { buildApprovalOptions } from '../../js/services/response-handler-actions.js';
-import { handleApprovalRequest } from '../../js/model/session-worker-callbacks.js';
-import contextItemRegistry from '../../js/registries/context-item-registry.js';
-import ContextItem from '../../sdk/context-item.js';
 import { isPseudoLocalized, setLocale } from '../../sdk/lib/i18n.js';
 import '../../js/components/action-confirmation.js';
 
@@ -133,82 +130,16 @@ export async function runTests() {
     }
   });
 
-  // The approval's title and message are built in the engine, which follows the
-  // UI language, beside the plugin's own (already translated) getTitle(): they
-  // are stored translated, and the plugins that show the title show it as it
-  // is. Fallback buttons are English data like the standard set, translated
-  // where they are drawn. A validator's error is the model's English and stays
-  // so. Tool names and titles here are digits, so they read as data.
-  await run('the approval text the engine builds is translated under en-XA', async () => {
-    if (!contextItemRegistry.isInitialized()) await contextItemRegistry.init();
-    /**
-     * Drive the real approval handler with `ActionClass` (null = unknown tool)
-     * and return what it stored on the tool action.
-     * @param {any} ActionClass - Class the tool name resolves to, or null
-     * @returns {Promise<any>} The stored approval options
-     */
-    const stored = async (ActionClass) => {
-      /** @type {any} */
-      let written = null;
-      const thread = {
-        items: [{ get: (/** @type {string} */ k) => ({ type: 'tool-action', toolUseId: 't1' })[k] }],
-        updateItemField: (/** @type {number} */ _i, /** @type {string} */ _f, /** @type {any} */ v) => { written = v; },
-      };
-      const conv = { findMessageThreadForToolUse: () => thread, rootMessageThread: thread };
-      const session = { conversations: new Map([['c1', conv]]) };
-      const original = contextItemRegistry.getByToolName;
-      contextItemRegistry.getByToolName = () => ActionClass;
-      try {
-        await handleApprovalRequest(session, { toolUseId: 't1', toolName: '1', toolInput: {} }, 'c1');
-      } finally {
-        contextItemRegistry.getByToolName = original;
-      }
-      assert(written, 'the handler stored no approval options');
-      return written;
-    };
-    /**
-     * @param {string} [error] - The validator's error, if it gives one
-     * @returns {any} A context-item class whose input never validates
-     */
-    const invalidClass = (error) => class extends ContextItem {
-      getTitle() { return '2'; }
-      async validate() { return { valid: false, error }; }
-    };
-    class Throws extends ContextItem {
-      async validate() { throw new Error('3'); }
-    }
-
+  // The approval's title is built in the engine, which follows the UI language,
+  // beside the plugin's own (already translated) getTitle(): it is stored
+  // translated, and the plugins that show the title show it as it is.
+  await run('the approval title the engine builds is translated under en-XA', async () => {
     await underPseudoLocale('approval-buttons-test-engine', async () => {
-      const unknown = await stored(null);
-      const invalid = await stored(invalidClass());
-      const rejected = await stored(invalidClass('bad value'));
-      const broken = await stored(Throws);
       const built = buildApprovalOptions({
         getManifest: () => ({ id: 'read-file', name: 'Read File' }),
         getApprovalSuggestions: () => [],
       }, {});
-
-      const text = {
-        'unknown tool title': unknown.title,
-        'invalid title': invalid.title,
-        'invalid message': invalid.message,
-        'broken message': broken.message,
-        'default title': built.title,
-      };
-      const raw = Object.entries(text).filter(([, s]) => !isPseudoLocalized(s));
-      assert(raw.length === 0, `plain English approval text under en-XA: ${JSON.stringify(raw)}`);
-      assert(rejected.message === 'bad value', `the validator's error is shown as given, got ${rejected.message}`);
-
-      const labels = [...unknown.options, ...invalid.options, ...broken.options].map((/** @type {any} */ o) => o.label);
-      assert(JSON.stringify(labels) === JSON.stringify(['Allow', 'Deny', 'Cancel', 'Allow', 'Deny']),
-        `fallback buttons are stored as English, got ${JSON.stringify(labels)}`);
-      for (const [where, opts] of [['allow/deny', unknown], ['cancel', invalid]]) {
-        const el = /** @type {any} */ (document.createElement('action-confirmation'));
-        document.body.appendChild(el);
-        made.push(el);
-        el.setOptions({ options: opts.options }, () => {});
-        assertPseudoLocalized(el, { where });
-      }
+      assert(isPseudoLocalized(built.title), `plain English approval title under en-XA: ${JSON.stringify(built.title)}`);
     }, { '@juggler/core': ['Read File'] });
   });
 

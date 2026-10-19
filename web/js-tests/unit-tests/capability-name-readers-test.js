@@ -7,15 +7,15 @@
  * the base `getTitle()`, which is that name) show it translated in its own
  * extension's catalogue — tool-action-message's running label, error, result
  * and no-plugin pending rows; context-item-message's error and fallback rows;
- * and the approval title the engine builds for a plugin with only the base
- * `getTitle()`. Tool names, action ids and errors are digits, which read as
+ * and the approval title the engine builds (`buildApprovalOptions`) for a
+ * plugin with no approval config of its own. Tool names, action ids and errors are digits, which read as
  * data inside a message.
  * @module unit-tests/capability-name-readers
  */
 
 import { assert } from '../utilities/test-helpers.js';
 import { underPseudoLocale } from '../utilities/pseudo-locale.js';
-import { handleApprovalRequest } from '../../js/model/session-worker-callbacks.js';
+import { buildApprovalOptions } from '../../js/services/response-handler-actions.js';
 import contextItemRegistry from '../../js/registries/context-item-registry.js';
 import ContextItem from '../../sdk/context-item.js';
 import { isPseudoLocalized } from '../../sdk/lib/i18n.js';
@@ -148,33 +148,10 @@ export async function runTests() {
       shown['context item fallback type'] = text(fallback, '.context-item-type-badge');
       shown['context item fallback summary'] = text(fallback, '.action-result-summary-text');
 
-      // The approval title the engine builds from the base getTitle.
-      /**
-       * @param {any} ActionClass - The class the tool resolves to
-       * @returns {Promise<any>} The stored approval options
-       */
-      const stored = async (ActionClass) => {
-        /** @type {any} */
-        let written = null;
-        const thread = {
-          items: [{ get: (/** @type {string} */ k) => ({ type: 'tool-action', toolUseId: 't1' })[k] }],
-          updateItemField: (/** @type {number} */ _i, /** @type {string} */ _f, /** @type {any} */ v) => { written = v; },
-        };
-        const conv = { findMessageThreadForToolUse: () => thread, rootMessageThread: thread };
-        const session = { conversations: new Map([['c1', conv]]) };
-        toolClass = ActionClass;
-        await handleApprovalRequest(session, { toolUseId: 't1', toolName: '1', toolInput: {} }, 'c1');
-        assert(written, 'the handler stored no approval options');
-        return written;
-      };
-      class Invalid extends StatusLess {
-        async validate() { return { valid: false, error: undefined }; }
-      }
-      class Valid extends StatusLess {
-        async validate() { return { valid: true, params: {} }; }
-      }
-      shown['invalid approval title'] = (await stored(Invalid)).title;
-      shown['approval title'] = (await stored(Valid)).title;
+      // The approval title the engine builds for a plugin with no approval
+      // config of its own.
+      toolClass = StatusLess;
+      shown['approval title'] = buildApprovalOptions(instance, {}).title;
 
       const raw = Object.entries(shown).filter(([, s]) => !s || !isPseudoLocalized(s));
       assert(raw.length === 0, `plain English under en-XA: ${JSON.stringify(raw)}`);

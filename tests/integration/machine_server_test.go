@@ -683,7 +683,7 @@ func holdTurn(t *testing.T, ms *machineServer, sess machineserver.Session) (rele
 				switch msg.Status {
 				case "mock-paused":
 					signal(paused)
-				case "validation-error", "error":
+				case "validation-error":
 					select {
 					case refused <- msg.Status + ": " + msg.Message:
 					default:

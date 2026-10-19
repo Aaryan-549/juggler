@@ -113,13 +113,6 @@ export class WorkerManager {
     this._spawning = new Map();
 
     /**
-     * Callback for approval requests
-     * @type {((request: object, conversationId: string) => void)|null}
-     * @private
-     */
-    this._onApprovalRequest = null;
-
-    /**
      * Callback for context requests (to call plugins on main thread)
      * @type {((request: object, conversationId: string) => void)|null}
      * @private
@@ -250,14 +243,6 @@ export class WorkerManager {
       }
     }
     this._handleWorkerMessage(conversationId, /** @type {WorkerMessage} */ (parsedPayload));
-  }
-
-  /**
-   * Set callback for approval requests from workers
-   * @param {(request: object, conversationId: string) => void} callback
-   */
-  setOnApprovalRequest(callback) {
-    this._onApprovalRequest = callback;
   }
 
   /**

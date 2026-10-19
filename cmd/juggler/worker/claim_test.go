@@ -91,15 +91,15 @@ func TestSendStatusNonIdleSetsActivity(t *testing.T) {
 	}
 }
 
-// TestSendStatusErrorReleasesClaim: the terminal-error statuses (error,
-// validation-error) are resting states, NOT active operations — they must
+// TestSendStatusErrorReleasesClaim: the terminal-error status
+// (validation-error) is a resting state, NOT active operations — they must
 // release the doc-native claim like idle, never hold it. Regression test for
 // the wedge where a no-model send wrote activity="calling_llm" via
 // sendStatus("validation-error", …) and never released it: every subsequent
 // send was then parked in the pending queue (getActivity != none) and every
 // Continue was silently dropped, even after a model was selected.
 func TestSendStatusErrorReleasesClaim(t *testing.T) {
-	for _, status := range []string{"error", "validation-error"} {
+	for _, status := range []string{"validation-error"} {
 		t.Run(status, func(t *testing.T) {
 			w := NewConversationWorker("test-err-"+status, "user:test")
 			w.currentRun().sendStatus(status, "boom")
@@ -519,7 +519,7 @@ func TestAwaitingToolsRepublishesRunStatus(t *testing.T) {
 
 	state := w.readProcessingState()
 	entry := runEntryOf(state, "")
-	if got := entryActivity(entry); got != ActivityAwaitingLLM {
+	if got := entry.activity(); got != ActivityAwaitingLLM {
 		t.Fatalf("entry activity = %q, want %q", got, ActivityAwaitingLLM)
 	}
 	if got, _ := entry["status"].(string); got != "processing_tools" {

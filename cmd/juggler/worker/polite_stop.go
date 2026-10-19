@@ -332,15 +332,13 @@ func (w *ConversationWorker) publishPoliteStopsLocked() {
 // projection would answer with whichever run it happens to name. A mark reports
 // `landed` once nothing under it holds a claim: that is the moment the pause has
 // actually taken, and the only positive confirmation the user ever gets.
-func (w *ConversationWorker) refreshPoliteStopsLocked(state map[string]any, runs map[string]any) {
+func (w *ConversationWorker) refreshPoliteStopsLocked(state map[string]any, runs runRegistry) {
 	marks := w.politeStopMarks()
 	if len(marks) == 0 {
 		delete(state, "politeStops")
 		delete(state, "politePending")
-		for _, raw := range runs {
-			if entry, ok := raw.(map[string]any); ok {
-				delete(entry, "politePending")
-			}
+		for _, entry := range runs {
+			entry.setPolitePending(false)
 		}
 		return
 	}
@@ -350,16 +348,12 @@ func (w *ConversationWorker) refreshPoliteStopsLocked(state map[string]any, runs
 		landed[id] = true
 	}
 	pending := false
-	for _, raw := range runs {
-		entry, ok := raw.(map[string]any)
-		if !ok {
+	for _, entry := range runs {
+		if entry.activity() == ActivityNone {
+			entry.setPolitePending(false)
 			continue
 		}
-		if entryActivity(entry) == ActivityNone {
-			delete(entry, "politePending")
-			continue
-		}
-		threadID, _ := entry["threadItemId"].(string)
+		threadID := entry.threadItemID()
 		covered := false
 		for id := range marks {
 			if w.doc.markCoversLocked(id, threadID) {
@@ -367,11 +361,9 @@ func (w *ConversationWorker) refreshPoliteStopsLocked(state map[string]any, runs
 				covered = true
 			}
 		}
+		entry.setPolitePending(covered)
 		if covered {
-			entry["politePending"] = true
 			pending = true
-		} else {
-			delete(entry, "politePending")
 		}
 	}
 

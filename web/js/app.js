@@ -433,6 +433,7 @@ class JugglerApp {
     this._connectionManager = new ConnectionManager({
       conversationBar: this.conversationBar,
       disconnectionOverlay: new DisconnectionOverlay(),
+      showPersistentNotice: (message) => showNotice(message, { duration: 0 }),
       llmState: this._llmState,
       onServerMessage: (data) => this._handleServerMessage(data),
       onSessionInitialized: () => this._initializeSessionServices(),

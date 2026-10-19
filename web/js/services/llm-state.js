@@ -831,7 +831,7 @@ class LLMState {
 
     // Map worker status to LLMState actions
     // Status values: preparing, streaming, processing_tools, retrying,
-    // compacting, idle, error, validation-error
+    // compacting, idle, validation-error
     switch (status) {
       case 'preparing': {
         // A turn was accepted, so the model divergence (if any) is resolved —
@@ -867,16 +867,6 @@ class LLMState {
 
       case 'idle':
         // Processing complete - stop spinner
-        this._stopThread(conversationId, key);
-        break;
-
-      case 'error':
-        // Terminal, and a rest: the worker releases the claim on this status and
-        // drops the run from the registry in the same frame (statusHoldsClaim,
-        // cmd/juggler/worker/activity_state.go), so no idle frame follows to take
-        // the spinner down afterwards. What went wrong is already a durable error
-        // item in the transcript, which is where it is read; a status line
-        // repeating it would be the one part of the conversation still moving.
         this._stopThread(conversationId, key);
         break;
 

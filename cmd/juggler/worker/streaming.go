@@ -180,9 +180,7 @@ func (r *run) processStreamChunk(chunk StreamChunk) {
 		// Provider activity is a complete, replaceable snapshot. It lives only in
 		// this run's processingState entry and is never inserted into
 		// conversation history.
-		r.patchLiveRun(func(entry map[string]any) {
-			entry["description"] = chunk.Content
-		})
+		r.patchLiveRun(func(entry runEntry) { entry.setDescription(chunk.Content) })
 	case provider.ContentBlockTypeProviderState:
 		// Hidden continuation data is durable and ordered with the provider's
 		// visible output, even when it has no content of its own.
@@ -247,9 +245,7 @@ func (r *run) processStreamChunk(chunk StreamChunk) {
 // clearProcessingDescription drops this run's provider-activity line. Scoped to
 // the run's own entry: a sibling's activity snapshot is its own business.
 func (r *run) clearProcessingDescription() {
-	r.patchLiveRun(func(entry map[string]any) {
-		delete(entry, "description")
-	})
+	r.patchLiveRun(runEntry.clearDescription)
 }
 
 // streamWriteDue reports whether an accumulated block has moved far enough — in
@@ -465,17 +461,7 @@ func (r *run) processThinkingChunk(chunk StreamChunk) {
 // runs streaming at once report their own totals, and neither can lose the
 // other's update between a read and a write.
 func (r *run) mergeProcessingTokens(outputTokens, inputTokens, cachedTokens int) {
-	r.patchLiveRun(func(entry map[string]any) {
-		if outputTokens > 0 {
-			entry["outputTokens"] = outputTokens
-		}
-		if inputTokens > 0 {
-			entry["inputTokens"] = inputTokens
-		}
-		if cachedTokens > 0 {
-			entry["cachedTokens"] = cachedTokens
-		}
-	})
+	r.patchLiveRun(func(entry runEntry) { entry.mergeTokens(outputTokens, inputTokens, cachedTokens) })
 }
 
 // mergeProcessingPhase writes a provider-emitted phase label into this run's
@@ -487,9 +473,7 @@ func (r *run) mergeProcessingPhase(phase string) {
 	if phase == "" {
 		return
 	}
-	r.patchLiveRun(func(entry map[string]any) {
-		entry["phase"] = phase
-	})
+	r.patchLiveRun(func(entry runEntry) { entry.setPhase(phase) })
 }
 
 // cacheMissNoticeText is a cache-miss notice's text. The content states, in

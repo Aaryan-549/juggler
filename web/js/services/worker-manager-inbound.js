@@ -99,15 +99,6 @@ import { setBootstrapSummarizationPrompt } from '../utils/compaction-utils.js';
  */
 
 /**
- * @typedef {object} ApprovalRequestMessage
- * @property {'approval-request'} type - Wire type
- * @property {string} toolUseId - The tool call awaiting approval
- * @property {string} toolName - Its tool
- * @property {unknown} toolInput - Its input
- * @property {object} [config] - How to present the request
- */
-
-/**
  * @typedef {object} RunStrategyHookMessage
  * @property {'run-strategy-hook'} type - Wire type
  * @property {string} hook - Which hook
@@ -161,13 +152,6 @@ import { setBootstrapSummarizationPrompt } from '../utils/compaction-utils.js';
  */
 
 /**
- * @typedef {object} ValidationErrorMessage
- * @property {'validation-error'} type - Wire type
- * @property {string} [message] - English text
- * @property {ServerTextField} [text] - The same, as a server message
- */
-
-/**
  * A transition of the worker's processing state, which itself syncs through
  * the document's metadata.
  * @typedef {object} StatusMessage
@@ -186,19 +170,13 @@ import { setBootstrapSummarizationPrompt } from '../utils/compaction-utils.js';
  */
 
 /**
- * @typedef {object} SaveErrorMessage
- * @property {'save-error'} type - Wire type
- * @property {string} [error] - What went wrong
- */
-
-/**
  * Any message a worker sends a client, told apart by `type`.
  * @typedef {ReadyMessage|YjsSyncMessage|ResyncOfferMessage|ResyncResponseMessage
  *   |RenderContextItemsRequestMessage|RequestToolsMessage|BuildSubthreadSpecMessage
- *   |ApprovalRequestMessage|RunStrategyHookMessage|RunContextHookMessage
+ *   |RunStrategyHookMessage|RunContextHookMessage
  *   |EvaluateToolMessage|ExecuteToolMessage|CancelToolMessage
  *   |CancelStrategyExecutionMessage|CreateThreadResponseMessage|ErrorMessage
- *   |ValidationErrorMessage|StatusMessage|AckMessage|SaveErrorMessage} WorkerMessage
+ *   |StatusMessage|AckMessage} WorkerMessage
  */
 
 /**
@@ -373,19 +351,6 @@ function onError(wm, conversationId, data) {
     : `Worker error for ${conversationId}`);
 }
 
-/** @type {HandlerFor<'validation-error'>} */
-function onValidationError(wm, conversationId, data) {
-  // Show validation error in composer warning
-  if (!data.message) return;
-  const conversation = conversationOf(wm, conversationId);
-  if (!conversation) {
-    console.warn(`[WorkerManager] No conversation found for ${conversationId}`);
-    return;
-  }
-  conversation.showWarning(serverText(data.text, data.message));
-  conversation.restorePendingMessage();
-}
-
 /** @type {HandlerFor<'status'>} */
 function onStatus(wm, conversationId) {
   // Processing state syncs via Yjs metadata (doc.metadata.processingState),
@@ -402,11 +367,6 @@ function onStatus(wm, conversationId) {
 /** @type {HandlerFor<'ack'>} */
 function onAck(wm, _conversationId, data) {
   if (data.ackId) wm.settleAck(data.ackId, data.result);
-}
-
-/** @type {HandlerFor<'save-error'>} */
-function onSaveError(_wm, conversationId, data) {
-  console.error(`[WorkerManager] Save failed for ${conversationId}:`, data.error);
 }
 
 /**
@@ -427,7 +387,6 @@ export const INBOUND_HANDLERS = new Map([
   entry('render-context-items-request', (wm, id, data) => protocols.handleRenderContextItemsRequest(wm, id, data)),
   entry('request-tools', (wm, id, data) => protocols.handleRequestTools(wm, id, data)),
   entry('build-subthread-spec', (wm, id, data) => protocols.handleBuildSubthreadSpec(wm, id, data)),
-  entry('approval-request', (wm, id, data) => protocols.handleApprovalRequest(wm, id, data)),
   entry('run-strategy-hook', (wm, id, data) => protocols.handleRunStrategyHook(wm, id, data)),
   entry('run-context-hook', (wm, id, data) => protocols.handleRunContextHook(wm, id, data)),
   entry('evaluate-tool', (wm, id, data) => protocols.handleEvaluateTool(wm, id, data.toolUseId)),
@@ -436,10 +395,8 @@ export const INBOUND_HANDLERS = new Map([
   entry('cancel-strategy-execution', onCancelStrategyExecution),
   entry('create-thread-response', onCreateThreadResponse),
   entry('error', onError),
-  entry('validation-error', onValidationError),
   entry('status', onStatus),
   entry('ack', onAck),
-  entry('save-error', onSaveError),
 ]);
 
 /**

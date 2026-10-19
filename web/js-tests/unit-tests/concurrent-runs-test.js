@@ -292,7 +292,7 @@ export async function runTests() {
     errors.push(`tiles agree with footers per thread: ${msg(e)}`);
   }
 
-  // --- 7: a run's last word is an error, and that is a rest ---
+  // --- 7: a run's last word is a validation error, and that is a rest ---
   // A terminal error releases the claim, so the worker's frame carries no run at
   // all and the top-level fields are the failing run's own last word (see
   // statusHoldsClaim, cmd/juggler/worker/activity_state.go). Nothing follows it:
@@ -301,7 +301,11 @@ export async function runTests() {
   // running is the last thing the worker ever says about it.
   try {
     const llm = new LLMState();
-    const conv = stubConversation('conv-terminal-error');
+    const conv = {
+      ...stubConversation('conv-terminal-error'),
+      showWarning: () => {},
+      restorePendingMessage: () => {},
+    };
     llm.registerConversation(conv);
     conv.publish(frame([
       { threadItemId: 'child-a', status: 'streaming', startedAt: now - 4000, outputTokens: 51 },
@@ -309,8 +313,8 @@ export async function runTests() {
     assert(llm.isThreadProcessing(conv.id, 'child-a') === true, 'the child is streaming before it fails');
 
     conv.publish({
-      activity: 'none', threadItemId: 'child-a', status: 'error',
-      message: 'The provider has reached its usage limit.', runs: {},
+      activity: 'none', threadItemId: 'child-a', status: 'validation-error',
+      code: 'provider-unavailable', message: 'The provider has reached its usage limit.', runs: {},
     });
 
     assert(llm.isThreadProcessing(conv.id, 'child-a') === false,

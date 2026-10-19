@@ -160,8 +160,8 @@ func (w *ConversationWorker) requestLLMIfQueued(threadItemID string) bool {
 		return false
 	}
 	return w.patchRunIfLocked(threadItemID,
-		func(entry map[string]any) bool { return entryActivity(entry) != ActivityCallingLLM },
-		func(entry, _ map[string]any) { entry["activity"] = ActivityAwaitingLLM },
+		entryNotCallingLLM,
+		func(entry runEntry, _ map[string]any) { entry.setActivity(ActivityAwaitingLLM) },
 	)
 }
 

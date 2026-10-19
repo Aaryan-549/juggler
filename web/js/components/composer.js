@@ -950,7 +950,7 @@ class Composer extends JugglerElement {
     if (!historyCount) return 'fresh';
 
     const status = this._conversation?.processingState?.status;
-    if (status === 'error' || status === 'validation-error') return 'error';
+    if (status === 'validation-error') return 'error';
 
     const outcome = trailingTurnOutcome(items);
     if (outcome) return outcome;

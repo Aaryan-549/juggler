@@ -21,6 +21,7 @@ import { setAppPhase } from './app-phase.js';
  * @property {function(): void} [onSessionInitialized] - Optional callback after session is created
  * @property {import('../model/session.js').ConversationServices} services - Services for Conversation instances
  * @property {{show: () => void, hide: () => void, startCountdown: (delayMs: number) => void}|null} [disconnectionOverlay] - Overlay for connection loss (null for engine)
+ * @property {(message: string) => void} [showPersistentNotice] - Shows a notice that stays until dismissed (absent for engine, which has nowhere to show one)
  */
 
 /**
@@ -73,6 +74,12 @@ class ConnectionManager {
 
     /** @type {{show: () => void, hide: () => void, startCountdown: (delayMs: number) => void}|null} @private */
     this._disconnectionOverlay = options.disconnectionOverlay || null;
+
+    /** @type {((message: string) => void)|null} @private */
+    this._showPersistentNotice = options.showPersistentNotice || null;
+
+    /** @type {boolean} @private - The server turned this viewer away as full; see setup() */
+    this._refusedAsFull = false;
 
     // Settled when the session has finished loading, which is the point at which
     // the realm can spawn a worker: workerManager.init runs at the end of that
@@ -143,9 +150,22 @@ class ConnectionManager {
     this._wsUnsubscribes.push(wsService.on('open', openCallback));
 
     const closeCallback = /** @type {any} */ (() => {
+      // A refused viewer is not reconnecting, so the overlay would say
+      // something untrue; the refusal notice below says what is.
+      if (this._refusedAsFull) return;
       if (this._disconnectionOverlay) this._disconnectionOverlay.show();
     });
     this._wsUnsubscribes.push(wsService.on('close', closeCallback));
+
+    // The server holds as many viewers as it takes, so this one was turned away
+    // and the socket will not retry. The notice stays until dismissed: nothing
+    // here changes until the user closes another window and reloads.
+    const serverFullCallback = /** @type {any} */ (() => {
+      this._refusedAsFull = true;
+      if (this._disconnectionOverlay) this._disconnectionOverlay.hide();
+      this._showPersistentNotice?.(t('Too many windows are connected to this server. Close one, then reload this page.'));
+    });
+    this._wsUnsubscribes.push(wsService.on('server-full', serverFullCallback));
 
     // Handle reconnection attempt notifications
     const reconnectAttemptCallback = /** @type {any} */ ((/** @type {{attempt: number, delayMs: number}} */ data) => {

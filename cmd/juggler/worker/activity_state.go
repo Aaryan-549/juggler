@@ -46,63 +46,41 @@ func runKey(threadItemID string) string {
 // exactly one run, on the thread its threadItemId names, so synthesize that
 // entry rather than reading the frame as idle. The first compare-and-set against
 // such a frame writes a real registry and the synthesis stops applying.
-func runsView(state map[string]any) map[string]any {
-	if runs, ok := state["runs"].(map[string]any); ok {
+//
+// The entries are the frame's own maps, so the result is for reading; copyRuns
+// is the registry to write into.
+func runsView(state map[string]any) runRegistry {
+	if raw, ok := state["runs"].(map[string]any); ok {
+		runs := make(runRegistry, len(raw))
+		for key, v := range raw {
+			if entry, ok := v.(map[string]any); ok {
+				runs[key] = entry
+			}
+		}
 		return runs
 	}
-	activity, _ := state["activity"].(string)
+	activity, _ := state[runFieldActivity].(string)
 	if activity == ActivityNone {
 		return nil
 	}
-	threadItemID, _ := state["threadItemId"].(string)
-	entry := map[string]any{"activity": activity, "threadItemId": threadItemID}
-	if claimedAt, ok := state["claimedAt"]; ok {
-		entry["claimedAt"] = claimedAt
+	threadItemID, _ := state[runFieldThreadItemID].(string)
+	entry := runEntry{}
+	entry.setActivity(activity)
+	entry.setThreadItemID(threadItemID)
+	if claimedAt, ok := state[runFieldClaimedAt]; ok {
+		entry[runFieldClaimedAt] = claimedAt
 	}
-	if explicit, _ := state["explicitContinuation"].(bool); explicit {
-		entry["explicitContinuation"] = true
+	if explicit, _ := state[runFieldExplicitContinuation].(bool); explicit {
+		entry.setExplicitContinuation()
 	}
-	return map[string]any{runKey(threadItemID): entry}
+	return runRegistry{runKey(threadItemID): entry}
 }
 
 // runEntryOf returns one thread's run entry, or nil when that thread holds no
-// claim. Read-only — the returned map belongs to state.
-func runEntryOf(state map[string]any, threadItemID string) map[string]any {
-	entry, _ := runsView(state)[runKey(threadItemID)].(map[string]any)
-	return entry
-}
-
-// entryActivity reads a run entry's activity, reporting an absent entry as idle.
-func entryActivity(entry map[string]any) string {
-	activity, _ := entry["activity"].(string)
-	return activity
-}
-
-// entryClaimedAt reads a run entry's claim timestamp. The value survives a JSON
-// round-trip through toYcrdt, so it can come back as any numeric kind.
-func entryClaimedAt(entry map[string]any) int64 {
-	switch v := entry["claimedAt"].(type) {
-	case int64:
-		return v
-	case float64:
-		return int64(v)
-	case int:
-		return int64(v)
-	default:
-		return 0
-	}
-}
-
-// runEntryIsSpent reports whether an entry has nothing left worth storing: no
-// activity and no pending continuation marker. Such entries are dropped so an
-// idle conversation's runs map is absent entirely, exactly as an idle
-// conversation's activity field is.
-func runEntryIsSpent(entry map[string]any) bool {
-	if entryActivity(entry) != ActivityNone {
-		return false
-	}
-	explicit, _ := entry["explicitContinuation"].(bool)
-	return !explicit
+// claim. Read-only — the returned map belongs to state. A nil entry reads as
+// idle through every accessor.
+func runEntryOf(state map[string]any, threadItemID string) runEntry {
+	return runsView(state)[runKey(threadItemID)]
 }
 
 // copyRuns returns a deep-enough copy of processingState's runs sub-map (the
@@ -110,30 +88,22 @@ func runEntryIsSpent(entry map[string]any) bool {
 // matters because the map read back through fromYcrdt is also reachable from
 // the frame clone patchProcessingStateIf builds: mutating it in place would
 // edit state a rejected compare-and-set is supposed to leave untouched.
-func copyRuns(state map[string]any) map[string]any {
-	out := map[string]any{}
-	for key, raw := range runsView(state) {
-		entry, ok := raw.(map[string]any)
-		if !ok {
-			continue
-		}
-		clone := make(map[string]any, len(entry))
-		for k, v := range entry {
-			clone[k] = v
-		}
-		out[key] = clone
+func copyRuns(state map[string]any) runRegistry {
+	out := runRegistry{}
+	for key, entry := range runsView(state) {
+		out[key] = entry.clone()
 	}
 	return out
 }
 
 // storeRuns writes the registry back into a frame, omitting the key entirely
 // when no thread holds a claim.
-func storeRuns(state map[string]any, runs map[string]any) {
+func storeRuns(state map[string]any, runs runRegistry) {
 	if len(runs) == 0 {
 		delete(state, "runs")
 		return
 	}
-	state["runs"] = runs
+	state["runs"] = runs.toDoc()
 }
 
 // pickLiveRun chooses which run the top-level projection describes: the thread
@@ -141,16 +111,15 @@ func storeRuns(state map[string]any, runs map[string]any) {
 // else one awaiting dispatch. Ties break on the most recent claim and then on
 // key, so the projection is a stable function of the registry rather than of Go
 // map iteration order.
-func pickLiveRun(runs map[string]any, touchedKey string) map[string]any {
-	if entry, ok := runs[touchedKey].(map[string]any); ok && entryActivity(entry) != ActivityNone {
+func pickLiveRun(runs runRegistry, touchedKey string) runEntry {
+	if entry, ok := runs[touchedKey]; ok && entry.activity() != ActivityNone {
 		return entry
 	}
 	for _, want := range []string{ActivityCallingLLM, ActivityAwaitingLLM} {
-		var best map[string]any
+		var best runEntry
 		bestKey := ""
-		for key, raw := range runs {
-			entry, ok := raw.(map[string]any)
-			if !ok || entryActivity(entry) != want {
+		for key, entry := range runs {
+			if entry.activity() != want {
 				continue
 			}
 			if best == nil || preferRun(entry, key, best, bestKey) {
@@ -166,8 +135,8 @@ func pickLiveRun(runs map[string]any, touchedKey string) map[string]any {
 
 // preferRun orders two candidate runs for the projection: most recently claimed
 // first, then by key so the choice is deterministic.
-func preferRun(a map[string]any, aKey string, b map[string]any, bKey string) bool {
-	if aAt, bAt := entryClaimedAt(a), entryClaimedAt(b); aAt != bAt {
+func preferRun(a runEntry, aKey string, b runEntry, bKey string) bool {
+	if aAt, bAt := a.claimedAt(), b.claimedAt(); aAt != bAt {
 		return aAt > bAt
 	}
 	return aKey < bKey
@@ -179,23 +148,22 @@ func preferRun(a map[string]any, aKey string, b map[string]any, bKey string) boo
 // republishes the chosen run's copy at the top level for the conversation-wide
 // readers.
 var runProjectedFields = []string{
-	"status", "message", "code", "startedAt",
-	"description", "phase", "inputTokens", "outputTokens", "cachedTokens",
+	runFieldStatus, runFieldMessage, runFieldCode, runFieldStartedAt,
+	runFieldDescription, runFieldPhase, runFieldInputTokens, runFieldOutputTokens, runFieldCachedTokens,
 }
 
 // projectLiveRun refreshes the top-level activity/threadItemId/claimedAt fields
 // from the registry. threadItemId is deliberately left in place when no run is
 // live: a released claim keeps naming the thread it was released from, which is
 // what handleCancel and the reducer read on the way to rest.
-func projectLiveRun(state map[string]any, touchedThreadID string) {
-	runs, _ := state["runs"].(map[string]any)
+func projectLiveRun(state map[string]any, runs runRegistry, touchedThreadID string) {
 	entry := pickLiveRun(runs, runKey(touchedThreadID))
 	if entry == nil {
-		delete(state, "activity")
-		delete(state, "claimedAt")
+		delete(state, runFieldActivity)
+		delete(state, runFieldClaimedAt)
 		return
 	}
-	state["activity"] = entryActivity(entry)
+	state[runFieldActivity] = entry.activity()
 	for _, field := range runProjectedFields {
 		if value, ok := entry[field]; ok {
 			state[field] = value
@@ -203,13 +171,13 @@ func projectLiveRun(state map[string]any, touchedThreadID string) {
 			delete(state, field)
 		}
 	}
-	if id, ok := entry["threadItemId"].(string); ok {
-		state["threadItemId"] = id
+	if id, ok := entry[runFieldThreadItemID].(string); ok {
+		state[runFieldThreadItemID] = id
 	}
-	if claimedAt, ok := entry["claimedAt"]; ok {
-		state["claimedAt"] = claimedAt
+	if claimedAt, ok := entry[runFieldClaimedAt]; ok {
+		state[runFieldClaimedAt] = claimedAt
 	} else {
-		delete(state, "claimedAt")
+		delete(state, runFieldClaimedAt)
 	}
 }
 
@@ -218,11 +186,11 @@ func projectLiveRun(state map[string]any, touchedThreadID string) {
 // to cond and, if accepted, applies mutate to that entry (and, where a
 // transition also touches UI-facing frame fields, to the frame), stores the
 // result and refreshes the projection. Returns false — changing nothing — when
-// cond rejects.
+// cond rejects. cond may be handed a nil entry: the thread holds no claim.
 func (w *ConversationWorker) patchRunIf(
 	threadItemID string,
-	cond func(entry map[string]any) bool,
-	mutate func(entry, state map[string]any),
+	cond func(entry runEntry) bool,
+	mutate func(entry runEntry, state map[string]any),
 ) bool {
 	ycrdtMu.Lock()
 	defer ycrdtMu.Unlock()
@@ -232,21 +200,21 @@ func (w *ConversationWorker) patchRunIf(
 // patchRunIfLocked is patchRunIf for a caller already holding ycrdtMu.
 func (w *ConversationWorker) patchRunIfLocked(
 	threadItemID string,
-	cond func(entry map[string]any) bool,
-	mutate func(entry, state map[string]any),
+	cond func(entry runEntry) bool,
+	mutate func(entry runEntry, state map[string]any),
 ) bool {
 	key := runKey(threadItemID)
 	return w.patchProcessingStateIfLocked(
 		func(existing map[string]any) bool { return cond(runEntryOf(existing, threadItemID)) },
 		func(updated map[string]any) {
 			runs := copyRuns(updated)
-			entry, ok := runs[key].(map[string]any)
+			entry, ok := runs[key]
 			if !ok {
-				entry = map[string]any{}
+				entry = runEntry{}
 			}
-			entry["threadItemId"] = threadItemID
+			entry.setThreadItemID(threadItemID)
 			mutate(entry, updated)
-			if runEntryIsSpent(entry) {
+			if entry.isSpent() {
 				delete(runs, key)
 			} else {
 				runs[key] = entry
@@ -256,30 +224,26 @@ func (w *ConversationWorker) patchRunIfLocked(
 			// that carries it rather than left to the next status frame.
 			w.refreshPoliteStopsLocked(updated, runs)
 			storeRuns(updated, runs)
-			projectLiveRun(updated, threadItemID)
+			projectLiveRun(updated, runs, threadItemID)
 		},
 	)
-}
-
-// statusIsLive reports whether a run entry's own status is one that is still
-// working. The mid-stream progress writers gate on it, so a chunk that arrives
-// after its run rested cannot revive a spinner on that thread.
-func statusIsLive(entry map[string]any) bool {
-	switch status, _ := entry["status"].(string); status {
-	case "preparing", "streaming", "processing_tools", "retrying":
-		return true
-	default:
-		return false
-	}
 }
 
 // patchLiveRun applies mutate to this run's OWN entry, and only while that entry
 // is still working. Every mid-stream progress field goes through it: a run
 // describes itself, so two turns streaming at once cannot overwrite each other's
 // token counts or activity line.
-func (r *run) patchLiveRun(mutate func(entry map[string]any)) {
-	r.patchRunIf(r.t.thread.itemID, statusIsLive, func(entry, _ map[string]any) { mutate(entry) })
+func (r *run) patchLiveRun(mutate func(entry runEntry)) {
+	r.patchRunIf(r.t.thread.itemID, runEntry.isLive, func(entry runEntry, _ map[string]any) { mutate(entry) })
 }
+
+// entryHoldsClaim and entryNotCallingLLM are the two gates most transitions are offered
+// under: the thread holds a claim at all, and the thread is not mid-turn.
+func entryHoldsClaim(entry runEntry) bool    { return entry.activity() != ActivityNone }
+func entryNotCallingLLM(entry runEntry) bool { return entry.activity() != ActivityCallingLLM }
+
+// anyEntry is the gate for a transition that applies whatever the entry holds.
+func anyEntry(runEntry) bool { return true }
 
 // claimLLM atomically claims the given thread for an LLM turn. The
 // compare-and-set reads that thread's run entry and, if it is not already
@@ -292,24 +256,22 @@ func (r *run) patchLiveRun(mutate func(entry map[string]any)) {
 // leaves the work for the next reconcile tick.
 func (w *ConversationWorker) claimLLM(threadItemID string) bool {
 	return w.patchRunIf(threadItemID,
-		func(entry map[string]any) bool {
-			// Succeed from idle or "awaiting_llm"; fail if already "calling_llm".
-			return entryActivity(entry) != ActivityCallingLLM
-		},
-		func(entry, _ map[string]any) {
+		// Succeed from idle or "awaiting_llm"; fail if already "calling_llm".
+		entryNotCallingLLM,
+		func(entry runEntry, _ map[string]any) {
 			now := time.Now().UnixMilli()
-			entry["activity"] = ActivityCallingLLM
-			entry["claimedAt"] = now
+			entry.setActivity(ActivityCallingLLM)
+			entry.setClaimedAt(now)
 			// Seed the entry, not the frame: the projection republishes the
 			// entry's own fields and would drop anything written beside it. Any
 			// status this thread already carries is kept, so the UI doesn't
 			// flicker through an intermediate state; sendStatus overwrites it
 			// with the first loop phase a moment later.
-			if _, hasStatus := entry["status"]; !hasStatus {
-				entry["status"] = "preparing"
+			if !entry.hasStatus() {
+				entry.setStatus(statusPreparing)
 			}
-			if _, hasStarted := entry["startedAt"]; !hasStarted {
-				entry["startedAt"] = now
+			if !entry.hasStartedAt() {
+				entry.setStartedAt(now)
 			}
 		},
 	)
@@ -322,11 +284,8 @@ func (w *ConversationWorker) claimLLM(threadItemID string) bool {
 // handoff, an abandoned pickup — names that thread here instead.
 func (w *ConversationWorker) releaseLLM(threadItemID string) {
 	w.patchRunIf(threadItemID,
-		func(entry map[string]any) bool { return entryActivity(entry) != ActivityNone },
-		func(entry, _ map[string]any) {
-			delete(entry, "activity")
-			delete(entry, "claimedAt")
-		},
+		entryHoldsClaim,
+		func(entry runEntry, _ map[string]any) { entry.releaseClaim() },
 	)
 }
 
@@ -406,7 +365,7 @@ func (w *ConversationWorker) patchProcessingStateIfLocked(
 func (w *ConversationWorker) replaceProcessingState(
 	stateMap map[string]any,
 	touchedThreadID string,
-	updateRuns func(runs map[string]any),
+	updateRuns func(runs runRegistry),
 ) {
 	ycrdtMu.Lock()
 	defer ycrdtMu.Unlock()
@@ -415,7 +374,7 @@ func (w *ConversationWorker) replaceProcessingState(
 	updateRuns(runs)
 	w.refreshPoliteStopsLocked(stateMap, runs)
 	storeRuns(stateMap, runs)
-	projectLiveRun(stateMap, touchedThreadID)
+	projectLiveRun(stateMap, runs, touchedThreadID)
 	w.doc.setMetadata("processingState", stateMap)
 }
 
@@ -461,8 +420,8 @@ func (r *run) reconcileProcessingStateOnLoad() {
 // the wait excluded) when work resumes, via advanceElapsedAnchor.
 func (r *run) hideElapsedAnchor() {
 	r.patchRunIf(r.t.thread.itemID,
-		func(entry map[string]any) bool { return entryActivity(entry) != ActivityNone },
-		func(entry, _ map[string]any) { delete(entry, "startedAt") },
+		entryHoldsClaim,
+		func(entry runEntry, _ map[string]any) { entry.clearStartedAt() },
 	)
 }
 
@@ -479,8 +438,8 @@ func (r *run) advanceElapsedAnchor(waitMs int64) {
 		r.t.processingStartedAt.Store(anchor)
 	}
 	r.patchRunIf(r.t.thread.itemID,
-		func(entry map[string]any) bool { return entryActivity(entry) != ActivityNone },
-		func(entry, _ map[string]any) { entry["startedAt"] = anchor },
+		entryHoldsClaim,
+		func(entry runEntry, _ map[string]any) { entry.setStartedAt(anchor) },
 	)
 }
 
@@ -504,19 +463,19 @@ func (w *ConversationWorker) readProcessingStateLocked() map[string]any {
 
 // statusHoldsClaim reports whether a processingState.status represents an
 // active operation that holds the doc-native LLM claim (activity != none).
-// "idle" and the terminal-error statuses ("error", "validation-error") are
-// resting states: the operation has ended, so the claim must be released and a
-// new send/continue allowed to start. Every other status (preparing, streaming,
+// "idle" and the terminal-error status "validation-error" are resting states:
+// the operation has ended, so the claim must be released and a new
+// send/continue allowed to start. Every other status (preparing, streaming,
 // processing_tools, retrying, …) is an in-flight phase that holds the claim.
 //
-// Treating the terminal-error statuses as resting is essential: a no-model send
+// Treating validation-error as resting is essential: a no-model send
 // surfaces via sendStatus("validation-error", …) and returns without running a
 // turn, so it must release the claim — otherwise activity="calling_llm" wedges
 // in the doc, parking every later message in the pending queue and dropping
 // Continue.
 func statusHoldsClaim(status string) bool {
-	switch status {
-	case "idle", "error", "validation-error":
+	switch processingStatus(status) {
+	case statusIdle, statusValidationError:
 		return false
 	default:
 		return true
@@ -551,27 +510,23 @@ func (w *ConversationWorker) docTurnCounter() int64 {
 // dispatch.
 func (w *ConversationWorker) markExplicitContinuation(threadItemID string) {
 	w.patchRunIf(threadItemID,
-		func(map[string]any) bool { return true },
-		func(entry, _ map[string]any) { entry["explicitContinuation"] = true },
+		anyEntry,
+		func(entry runEntry, _ map[string]any) { entry.setExplicitContinuation() },
 	)
 }
 
 // isExplicitContinuation reports whether the one-shot continuation marker is set
 // on the given thread.
 func (w *ConversationWorker) isExplicitContinuation(threadItemID string) bool {
-	flag, _ := runEntryOf(w.readProcessingState(), threadItemID)["explicitContinuation"].(bool)
-	return flag
+	return runEntryOf(w.readProcessingState(), threadItemID).explicitContinuation()
 }
 
 // consumeExplicitContinuation returns and clears the one-shot continuation
 // marker on the thread currently being dispatched.
 func (w *ConversationWorker) consumeExplicitContinuation(threadItemID string) bool {
 	return w.patchRunIf(threadItemID,
-		func(entry map[string]any) bool {
-			flag, _ := entry["explicitContinuation"].(bool)
-			return flag
-		},
-		func(entry, _ map[string]any) { delete(entry, "explicitContinuation") },
+		runEntry.explicitContinuation,
+		func(entry runEntry, _ map[string]any) { entry.clearExplicitContinuation() },
 	)
 }
 
@@ -592,8 +547,8 @@ func (w *ConversationWorker) consumeExplicitContinuation(threadItemID string) bo
 // added to. A busy SIBLING is irrelevant: each thread queues on its own.
 func (w *ConversationWorker) requestLLM(threadItemID string) bool {
 	return w.patchRunIf(threadItemID,
-		func(entry map[string]any) bool { return entryActivity(entry) != ActivityCallingLLM },
-		func(entry, _ map[string]any) { entry["activity"] = ActivityAwaitingLLM },
+		entryNotCallingLLM,
+		func(entry runEntry, _ map[string]any) { entry.setActivity(ActivityAwaitingLLM) },
 	)
 }
 
@@ -605,11 +560,11 @@ func (w *ConversationWorker) requestLLM(threadItemID string) bool {
 // thread. A status the entry already carries is kept, as claimLLM keeps it.
 func (w *ConversationWorker) requestLLMAfterTools(threadItemID string) bool {
 	return w.patchRunIf(threadItemID,
-		func(entry map[string]any) bool { return entryActivity(entry) != ActivityCallingLLM },
-		func(entry, _ map[string]any) {
-			entry["activity"] = ActivityAwaitingLLM
-			if _, hasStatus := entry["status"]; !hasStatus {
-				entry["status"] = "processing_tools"
+		entryNotCallingLLM,
+		func(entry runEntry, _ map[string]any) {
+			entry.setActivity(ActivityAwaitingLLM)
+			if !entry.hasStatus() {
+				entry.setStatus(statusProcessingTools)
 			}
 		},
 	)
@@ -624,14 +579,10 @@ func (w *ConversationWorker) requestLLMAfterTools(threadItemID string) bool {
 // queued while another held the loop needs its dispatch carried across that
 // sweep, or it sits unanswered with the conversation reporting idle.
 func (w *ConversationWorker) queuedThreadIDExcept(exclude string) (string, bool) {
-	var best map[string]any
+	var best runEntry
 	bestKey := ""
-	for key, raw := range runsView(w.readProcessingState()) {
-		entry, ok := raw.(map[string]any)
-		if !ok || entryActivity(entry) != ActivityAwaitingLLM {
-			continue
-		}
-		if id, _ := entry["threadItemId"].(string); id == exclude {
+	for key, entry := range runsView(w.readProcessingState()) {
+		if entry.activity() != ActivityAwaitingLLM || entry.threadItemID() == exclude {
 			continue
 		}
 		if best == nil || preferRun(entry, key, best, bestKey) {
@@ -641,8 +592,7 @@ func (w *ConversationWorker) queuedThreadIDExcept(exclude string) (string, bool)
 	if best == nil {
 		return "", false
 	}
-	id, _ := best["threadItemId"].(string)
-	return id, true
+	return best.threadItemID(), true
 }
 
 // getProcessingThreadItemID reads the threadItemId from processingState.
@@ -661,20 +611,6 @@ func (w *ConversationWorker) processingThreadItemIDLocked() string {
 	return threadItemID
 }
 
-// phaseProgressFields are the mid-stream progress fields, which belong to the
-// phase that produced them: a token count from the last stream means nothing
-// beside "Running tools", and a provider activity line describes a call that
-// has ended.
-var phaseProgressFields = []string{"description", "phase", "inputTokens", "outputTokens", "cachedTokens"}
-
-// dropPhaseProgress clears a run entry's mid-stream progress fields, as every
-// change of phase must.
-func dropPhaseProgress(entry map[string]any) {
-	for _, field := range phaseProgressFields {
-		delete(entry, field)
-	}
-}
-
 // transitionToAwaitingLLM moves THIS turn's thread from "calling_llm" to
 // "awaiting_llm" and sets the UI status to "processing_tools". Used when the
 // strategy loop dispatches async tools and returns without blocking — the
@@ -685,13 +621,13 @@ func dropPhaseProgress(entry map[string]any) {
 // republishes the entry's own fields over the frame, and the UI reads the entry.
 func (r *run) transitionToAwaitingLLM() {
 	r.patchRunIf(r.t.thread.itemID,
-		func(map[string]any) bool { return true },
-		func(entry, _ map[string]any) {
-			entry["activity"] = ActivityAwaitingLLM
-			entry["status"] = "processing_tools"
-			entry["message"] = ""
-			delete(entry, "code")
-			dropPhaseProgress(entry)
+		anyEntry,
+		func(entry runEntry, _ map[string]any) {
+			entry.setActivity(ActivityAwaitingLLM)
+			entry.setStatus(statusProcessingTools)
+			entry.setMessage("")
+			entry.setCode("")
+			entry.dropPhaseProgress()
 		},
 	)
 }

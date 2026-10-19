@@ -764,12 +764,6 @@ type AckMessage struct {
 	Result any    `json:"result,omitempty"`
 }
 
-// CorruptionRepairedMessage notifies frontend that corruption was repaired on load
-type CorruptionRepairedMessage struct {
-	Type          string `json:"type"`          // "corruption-repaired"
-	RepairedCount int    `json:"repairedCount"` // Number of duplicate itemIds repaired
-}
-
 // =============================================================================
 // Browser-Requested Thread Creation Messages
 // =============================================================================

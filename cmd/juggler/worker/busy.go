@@ -46,13 +46,13 @@ package worker
 // specific target thread must ask, so an idle thread is never made to queue
 // behind an unrelated run.
 func (w *ConversationWorker) threadActivity(threadItemID string) string {
-	return entryActivity(runEntryOf(w.readProcessingState(), threadItemID))
+	return runEntryOf(w.readProcessingState(), threadItemID).activity()
 }
 
 // threadActivityLocked is threadActivity without the lock; callers MUST already
 // hold ycrdtMu.
 func (w *ConversationWorker) threadActivityLocked(threadItemID string) string {
-	return entryActivity(runEntryOf(w.readProcessingStateLocked(), threadItemID))
+	return runEntryOf(w.readProcessingStateLocked(), threadItemID).activity()
 }
 
 // getActivity reads the top-level processingState.activity projection — the
@@ -88,13 +88,11 @@ func (w *ConversationWorker) subtreeHasActiveRun(threadItemID string) bool {
 // subtreeHasActiveRunLocked is subtreeHasActiveRun for a caller already holding
 // ycrdtMu.
 func (w *ConversationWorker) subtreeHasActiveRunLocked(threadItemID string) bool {
-	for _, raw := range runsView(w.readProcessingStateLocked()) {
-		entry, ok := raw.(map[string]any)
-		if !ok || entryActivity(entry) == ActivityNone {
+	for _, entry := range runsView(w.readProcessingStateLocked()) {
+		if entry.activity() == ActivityNone {
 			continue
 		}
-		id, _ := entry["threadItemId"].(string)
-		if w.doc.markCoversLocked(threadItemID, id) {
+		if w.doc.markCoversLocked(threadItemID, entry.threadItemID()) {
 			return true
 		}
 	}

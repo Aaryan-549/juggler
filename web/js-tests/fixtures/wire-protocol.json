@@ -1,0 +1,147 @@
+{
+  "$comment": [
+    "The wire vocabulary shared by the Go server/worker and the JS UI. Each side's tests assert their own tables against this file:",
+    "Go: TestWireParity* in cmd/juggler/worker/wire_parity_test.go and cmd/juggler/server/wire_parity_test.go.",
+    "JS: unit:wire-protocol-parity (web/js-tests/unit-tests/wire-protocol-parity-test.js).",
+    "Adding a message type, status, kind or Y.Map key means adding it here; a test on whichever side you touched names what is missing.",
+    "A `note` records a known gap between the two sides rather than hiding it."
+  ],
+
+  "worker": {
+    "inbound": [
+      "init", "send-message", "inject-thread-message", "delivery-ended", "cancel", "pause", "unpause",
+      "provider-turn", "render-context-items-response", "tools-result", "strategy-hook-response",
+      "build-subthread-spec-response", "yjs-sync", "undo", "redo", "clear-history", "stop-undo-capturing",
+      "begin-undo-coalesce", "end-undo-coalesce", "retry-tool-approval", "retry-tool-action",
+      "update-tool-action-for-retry", "background-task-snapshot", "create-thread",
+      "resummarize-compaction-thread", "request-full-state", "resync-request", "resync-to-origin",
+      "tool-execution-report", "engine-trace", "rename-log", "request-auto-name", "clear-undo-stacks",
+      "get-transaction", "flush-persistence", "compact"
+    ],
+
+    "outbound": [
+      { "type": "ready", "goEmits": true, "jsHandler": true },
+      { "type": "yjs-sync", "goEmits": true, "jsHandler": true },
+      { "type": "resync-offer", "goEmits": true, "jsHandler": true },
+      { "type": "resync-response", "goEmits": true, "jsHandler": true },
+      { "type": "render-context-items-request", "goEmits": true, "jsHandler": true },
+      { "type": "request-tools", "goEmits": true, "jsHandler": true },
+      { "type": "build-subthread-spec", "goEmits": true, "jsHandler": true },
+      { "type": "run-strategy-hook", "goEmits": true, "jsHandler": true },
+      { "type": "run-context-hook", "goEmits": true, "jsHandler": true },
+      { "type": "evaluate-tool", "goEmits": true, "jsHandler": true },
+      { "type": "execute-tool", "goEmits": true, "jsHandler": true },
+      { "type": "cancel-tool", "goEmits": true, "jsHandler": true },
+      { "type": "cancel-strategy-execution", "goEmits": true, "jsHandler": true },
+      { "type": "create-thread-response", "goEmits": true, "jsHandler": true },
+      { "type": "error", "goEmits": true, "jsHandler": true },
+      { "type": "status", "goEmits": true, "jsHandler": true },
+      { "type": "ack", "goEmits": true, "jsHandler": true },
+      { "type": "pong", "goEmits": true, "jsHandler": false,
+        "note": "Test-only (worker_test_support.go); handled by js-tests/utilities/worker-test-hooks.js." },
+      { "type": "validation-error", "goEmits": false, "jsHandler": false,
+        "note": "Only ever a processingState status, inside a `status` message. Listed so the Go scan fails if a message of this type is ever sent: the viewer has no handler for one." }
+    ],
+
+    "providerTypes": {
+      "$comment": "Type strings in provider request bodies (llm_request.go, compaction_*.go), not worker messages. Listed so the Go scan can tell them apart.",
+      "types": ["user", "assistant", "thinking", "tool-use", "tool-result", "image", "provider-state", "message"]
+    },
+
+    "itemTypes": [
+      "user", "assistant", "thinking", "provider-state", "tool-action", "error", "meta-tool-result",
+      "thread", "system-reminder", "guidance", "system-prompt", "compaction-summary", "notice"
+    ],
+
+    "processingStatuses": [
+      { "status": "idle", "holdsClaim": false, "emitted": true },
+      { "status": "validation-error", "holdsClaim": false, "emitted": true },
+      { "status": "preparing", "holdsClaim": true, "emitted": true },
+      { "status": "streaming", "holdsClaim": true, "emitted": true },
+      { "status": "processing_tools", "holdsClaim": true, "emitted": true },
+      { "status": "retrying", "holdsClaim": true, "emitted": true },
+      { "status": "compacting", "holdsClaim": true, "emitted": true },
+      { "status": "mock-paused", "holdsClaim": true, "emitted": true, "note": "Mock-LLM test harness only (mock_llm.go)." }
+    ],
+
+    "activities": ["awaiting_llm", "calling_llm"],
+
+    "pendingRequest": {
+      "statuses": ["requested", "claimed", "completed", "error", "cancelled"],
+      "kinds": ["createThread", "continue", "deliverTaskOutput"]
+    },
+
+    "docKeys": {
+      "$comment": "Y.Map keys the worker reads or writes. `item` must equal ConversationItem's json tags exactly; every other group must equal what the worker source actually uses.",
+      "item": [
+        "type", "itemId", "content", "source", "summary", "timestamp", "toolUseId", "toolName", "toolInput",
+        "state", "category", "approvalOptions", "displayData", "isError", "data", "cancelled", "result", "hooks",
+        "goal", "items", "boundedCompaction", "compactionPromptItemId", "contextSeeded", "sessionName", "aliasOf",
+        "needsStrategyRun", "noAutoSelect", "noContextSeed", "forceTool", "handoffPromote", "foldedRuns",
+        "preventUserDeletion", "isNew", "error", "runToolUseId", "runToolName", "runToolInput", "runGoal",
+        "runStatus", "runResult", "continuation", "runItemId", "recoversError", "runResultFed", "transactionId",
+        "providerData", "attachments", "heldAssets", "taskSource"
+      ],
+      "itemUntyped": {
+        "$comment": "Keys the worker reads or writes on item maps that ConversationItem does not declare.",
+        "keys": [
+          "canSpawnThreads", "compactionAccounting", "compactionUnsummarized", "contextTokens", "delegated", "draft",
+          "executor", "llmCreated", "readOnly", "resultFedTurn", "resultSpec", "resultTokens", "runningEpoch",
+          "runningStartedAt"
+        ]
+      },
+      "modelConfig": ["model", "provider", "serviceTier", "thinking"],
+      "metadata": [
+        "activatedStrategyId", "completedTurns", "created", "currentStrategyId", "defaultModelConfig", "modelConfig",
+        "nextSteps", "pendingItems", "processingState", "undoState"
+      ],
+      "pendingItem": [
+        "id", "kind", "status", "cancelRequested", "completedAt", "threadItemId", "itemsBefore", "request", "goal",
+        "prompt", "parentThreadItemId", "strategyId", "modelConfig", "isContinuation", "taskId", "label", "convId",
+        "claimedBy", "error", "itemId", "result"
+      ],
+      "processingState": [
+        "status", "message", "code", "text", "startedAt", "threadItemId", "activity", "claimedAt", "runs",
+        "politeStops", "politePending", "explicitContinuation", "description", "phase", "inputTokens",
+        "outputTokens", "cachedTokens"
+      ]
+    }
+  },
+
+  "server": {
+    "inbound": [
+      "engine-heartbeat", "viewer-heartbeat", "viewer-fault", "shell-start", "shell-cancel", "engine-bridge",
+      "viewer-relay", "one-shot-result", "session-changed", "worker-message"
+    ],
+
+    "$outboundComment": "handledBy: routes = WebSocketService.TYPED_MESSAGE_ROUTES; handshake = websocket.js's session branch; session-handlers = App.SESSION_MESSAGE_HANDLERS (app.js); engine = the engine realm.",
+    "outbound": [
+      { "type": "__juggler_dc_chunk", "handledBy": "routes" },
+      { "type": "file-change", "handledBy": "routes" },
+      { "type": "project-changed", "handledBy": "routes" },
+      { "type": "plugin-changed", "handledBy": "routes" },
+      { "type": "settings-changed", "handledBy": "routes" },
+      { "type": "pinboard-changed", "handledBy": "routes" },
+      { "type": "pinboard-reveal", "handledBy": "routes" },
+      { "type": "workspaces-changed", "handledBy": "routes" },
+      { "type": "viewer-relay", "handledBy": "routes" },
+      { "type": "providers-update", "handledBy": "routes" },
+      { "type": "update-status", "handledBy": "routes" },
+      { "type": "clients-changed", "handledBy": "routes" },
+      { "type": "shell-output", "handledBy": "routes" },
+      { "type": "engine-bridge", "handledBy": "routes" },
+      { "type": "heartbeat", "handledBy": "routes" },
+      { "type": "session", "handledBy": "handshake" },
+      { "type": "worker-message", "handledBy": "session-handlers" },
+      { "type": "conversations-changed", "handledBy": "session-handlers" },
+      { "type": "notice", "handledBy": "session-handlers" },
+      { "type": "session-metadata-changed", "handledBy": "session-handlers" },
+      { "type": "session-changed", "handledBy": "session-handlers" },
+      { "type": "run-one-shot", "handledBy": "engine" },
+      { "type": "error", "handledBy": "engine",
+        "note": "Only the engine (engine-worker-main.js) reads it; a viewer sent conversationGoneFrame passes it to generic 'message' subscribers." },
+      { "type": "server-full", "handledBy": "routes" },
+      { "type": "server-shutdown", "handledBy": "routes" }
+    ]
+  }
+}

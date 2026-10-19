@@ -313,6 +313,38 @@ export async function runTests(_ctx) {
     assert(svc.connected === false, 'still marked down');
   });
 
+  // The server takes a fixed number of viewers and closes the socket of the
+  // one past it right after saying so. Retrying gets the same answer, on a
+  // backoff that never gives up, so the refusal ends the loop and is reported.
+  await run('a server that refuses the viewer as full is not retried', async () => {
+    const { svc, transport } = live();
+    let refused = 0;
+    svc.on('server-full', () => { refused++; });
+    const attempts = countEvent(svc, 'reconnect-attempt', () => {
+      svc._handleMessageData(JSON.stringify({ type: 'server-full', message: 'Too many clients are connected' }));
+      svc._onTransportClosed(new Event('close'), transport);
+    });
+    retire(svc);
+    assert(refused === 1, `the refusal must be reported once; got ${refused}`);
+    assert(attempts === 0, `a refused viewer must not reconnect; got ${attempts} attempts`);
+  });
+
+  // A server going down says so before it closes. The close is what matters —
+  // a restarted server answers the retry — so the notice is routed rather than
+  // handed to every 'message' subscriber, and the retry still happens.
+  await run('a shutdown notice is routed, and the close after it still reconnects', async () => {
+    const { svc, transport } = live();
+    let messages = 0;
+    svc.on('message', () => { messages++; });
+    const attempts = countEvent(svc, 'reconnect-attempt', () => {
+      svc._handleMessageData(JSON.stringify({ type: 'server-shutdown', message: 'Server is shutting down' }));
+      svc._onTransportClosed(new Event('close'), transport);
+    });
+    retire(svc);
+    assert(messages === 0, `the shutdown notice reached ${messages} generic message subscriber(s)`);
+    assert(attempts === 1, `the close after a shutdown notice must reconnect; got ${attempts} attempts`);
+  });
+
   await run('expected failed-probe close skips reconnect and clears the suppress flag', async () => {
     const svc = new WebSocketService();
     svc.connected = true;

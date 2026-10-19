@@ -96,7 +96,6 @@ import { runTests as runToolSchemaTests } from '../unit-tests/tool-schema-test.j
 import { runTests as runToolListReadinessTests } from '../unit-tests/tool-list-readiness-test.js';
 import { runTests as runTransactionToolListTests } from '../unit-tests/transaction-tool-list-test.js';
 import { runTests as runThreadToolInventoryTests } from '../unit-tests/thread-tool-inventory-test.js';
-import { runTests as runMcpApprovalToolNameTests } from '../unit-tests/mcp-approval-toolname-test.js';
 import { runTests as runMcpEvaluateToolNameTests } from '../unit-tests/mcp-evaluate-toolname-test.js';
 import { runTests as runMcpSettingsTests } from '../unit-tests/mcp-settings-test.js';
 import { runTests as runAcpSettingsTests } from '../unit-tests/acp-settings-test.js';
@@ -364,6 +363,7 @@ import { runTests as runSdkFacadeParityTests } from '../unit-tests/sdk-facade-pa
 import { runTests as runI18nTests } from '../unit-tests/i18n-test.js';
 import { runTests as runI18nFormatParityTests } from '../unit-tests/i18n-format-parity-test.js';
 import { runTests as runI18nPseudoParityTests } from '../unit-tests/i18n-pseudo-parity-test.js';
+import { runTests as runWireProtocolParityTests } from '../unit-tests/wire-protocol-parity-test.js';
 import { runTests as runFormatTimeAgoTests } from '../unit-tests/format-time-ago-test.js';
 import { runTests as runFormatUnitsTests } from '../unit-tests/format-units-test.js';
 import { runTests as runAppearanceTabTests } from '../unit-tests/appearance-tab-test.js';
@@ -598,7 +598,6 @@ const UNIT_TEST_SUITES = [
   { name: 'unit:tool-list-readiness', run: runToolListReadinessTests },
   { name: 'unit:transaction-tool-list', run: runTransactionToolListTests },
   { name: 'unit:thread-tool-inventory', run: runThreadToolInventoryTests },
-  { name: 'unit:mcp-approval-toolname', run: runMcpApprovalToolNameTests },
   { name: 'unit:mcp-evaluate-toolname', run: runMcpEvaluateToolNameTests },
   { name: 'unit:mcp-settings', run: runMcpSettingsTests },
   { name: 'unit:acp-settings', run: runAcpSettingsTests },
@@ -869,6 +868,7 @@ const UNIT_TEST_SUITES = [
   { name: 'unit:i18n', run: runI18nTests },
   { name: 'unit:i18n-format-parity', run: runI18nFormatParityTests },
   { name: 'unit:i18n-pseudo-parity', run: runI18nPseudoParityTests },
+  { name: 'unit:wire-protocol-parity', run: runWireProtocolParityTests },
   { name: 'unit:format-time-ago', run: runFormatTimeAgoTests },
   { name: 'unit:format-units', run: runFormatUnitsTests },
   { name: 'unit:appearance-tab', run: runAppearanceTabTests },

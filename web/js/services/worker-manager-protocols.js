@@ -345,21 +345,6 @@ export function sendBuildSubthreadSpecResponse(wm, conversationId, requestId, sp
   });
 }
 
-// ── approval-request + tool-action mutations ─────────────────────────
-
-/**
- * Dispatch an approval-request from the worker to the registered callback
- * (set via setOnApprovalRequest).
- * @param {any} wm
- * @param {string} conversationId
- * @param {any} data
- */
-export function handleApprovalRequest(wm, conversationId, data) {
-  if (wm._onApprovalRequest) {
-    wm._onApprovalRequest(data, conversationId);
-  }
-}
-
 // ── run-strategy-hook (worker-driven; engine-only) ───────────────────
 
 /**

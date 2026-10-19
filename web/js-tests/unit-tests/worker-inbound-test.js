@@ -144,17 +144,17 @@ export async function runTests(_ctx) {
     const wm = /** @type {any} */ (new WorkerManager());
     const conv = 'conv_inbound_reject';
     const handlers = /** @type {Map<string, any>} */ (INBOUND_HANDLERS);
-    const original = handlers.get('save-error');
-    handlers.set('save-error', async () => { throw new Error(`boom ${conv}`); });
+    const original = handlers.get('cancel-strategy-execution');
+    handlers.set('cancel-strategy-execution', async () => { throw new Error(`boom ${conv}`); });
     try {
       const { errors: logged } = await captureConsole(conv, async () => {
-        routeWorkerMessage(wm, conv, /** @type {any} */ ({ type: 'save-error' }));
+        routeWorkerMessage(wm, conv, /** @type {any} */ ({ type: 'cancel-strategy-execution' }));
         await new Promise((r) => setTimeout(r, 0));
       });
       assert(logged.length === 1, `expected one reported failure, got ${logged.length}`);
-      assert(logged[0].includes('save-error failed'), `the report must name the message type; got: ${logged[0]}`);
+      assert(logged[0].includes('cancel-strategy-execution failed'), `the report must name the message type; got: ${logged[0]}`);
     } finally {
-      handlers.set('save-error', original);
+      handlers.set('cancel-strategy-execution', original);
     }
   });
 
@@ -199,21 +199,6 @@ export async function runTests(_ctx) {
     const outcome = await soon(waiting, 'the failed ready wait');
     assert(outcome instanceof Error && isPseudoLocalized(outcome.message),
       `plain English under en-XA: ${outcome instanceof Error ? outcome.message : String(outcome)}`);
-  });
-
-  await run('en-XA: a validation-error carrying a message warns translated', async () => {
-    const conv = 'conv_inbound_validation_xa';
-    const wm = managerWithEntry(conv);
-    /** @type {string[]} */
-    const warnings = [];
-    const conversation = { showWarning: (/** @type {string} */ text) => warnings.push(text), restorePendingMessage: () => {} };
-    const english = 'Please select a model before sending a message';
-    await underPseudoLocale('worker-inbound-test', async () => {
-      wm._session = { conversations: new Map([[conv, conversation]]) };
-      routeWorkerMessage(wm, conv,
-        /** @type {any} */ ({ type: 'validation-error', message: english, text: { key: english } }));
-    });
-    assert(warnings.length === 1 && isPseudoLocalized(warnings[0]), `plain English under en-XA: ${JSON.stringify(warnings)}`);
   });
 
   await run('create-thread-response settles its request, a cancelled one as an AbortError', async () => {

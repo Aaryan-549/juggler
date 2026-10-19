@@ -33,7 +33,7 @@ import { underPseudoLocale } from '../utilities/pseudo-locale.js';
 const RUNNING = ['preparing', 'streaming', 'processing_tools', 'retrying', 'compacting', 'mock-paused'];
 
 /** Statuses the worker rests at. */
-const RESTING = ['idle', 'error', 'validation-error'];
+const RESTING = ['idle', 'validation-error'];
 
 /**
  * A Conversation carrying only what isTurnActive reads: the real prototype,

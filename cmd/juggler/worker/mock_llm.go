@@ -198,8 +198,8 @@ func (r *run) popMockResponse(turnID string, sink func(StreamChunk)) (*LLMRespon
 // very cancel.
 func (r *run) announceMockPause(threadItemID string) {
 	r.patchRunIf(threadItemID,
-		func(entry map[string]any) bool { return entryActivity(entry) != ActivityNone },
-		func(entry, _ map[string]any) { entry["status"] = "mock-paused" },
+		entryHoldsClaim,
+		func(entry runEntry, _ map[string]any) { entry.setStatus(statusMockPaused) },
 	)
 	r.send(map[string]any{"type": "status", "status": "mock-paused", "message": ""})
 }

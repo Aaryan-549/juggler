@@ -162,7 +162,7 @@ func (h *clientHub) run() {
 			op.listResult <- viewerDescriptors()
 		case hubShutdown:
 			shutdownMsg := map[string]any{
-				"type":    "server_shutdown",
+				"type":    "server-shutdown",
 				"message": "Server is shutting down",
 			}
 			for _, hc := range clients {

@@ -759,9 +759,9 @@ func TestReadOnlyChildrenRunSideBySide(t *testing.T) {
 		}
 	}
 	entryA, entryB := runEntryOf(state, readA), runEntryOf(state, readB)
-	if entryActivity(entryA) != ActivityCallingLLM || entryActivity(entryB) != ActivityCallingLLM {
+	if entryA.activity() != ActivityCallingLLM || entryB.activity() != ActivityCallingLLM {
 		t.Fatalf("both children should be calling the LLM; got %q and %q",
-			entryActivity(entryA), entryActivity(entryB))
+			entryA.activity(), entryB.activity())
 	}
 	// Each run carries its own elapsed anchor: the spinner in each column counts
 	// from when THAT child started, not from a single conversation-wide stamp.
@@ -871,9 +871,9 @@ func TestDelegatedReadOnlySiblingsRunSideBySide(t *testing.T) {
 	}
 
 	entryA, entryB := runEntryOf(state, children[0]), runEntryOf(state, children[1])
-	if entryActivity(entryA) != ActivityCallingLLM || entryActivity(entryB) != ActivityCallingLLM {
+	if entryA.activity() != ActivityCallingLLM || entryB.activity() != ActivityCallingLLM {
 		t.Fatalf("both delegated children should be calling the LLM; got %q and %q",
-			entryActivity(entryA), entryActivity(entryB))
+			entryA.activity(), entryB.activity())
 	}
 	// Each child was stamped from the tool's own claim, which is what admitted the
 	// second one beside the first. Asserted here because the whole result rests on

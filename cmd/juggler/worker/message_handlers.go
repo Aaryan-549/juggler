@@ -151,8 +151,6 @@ func (r *run) handleInit(payload json.RawMessage) {
 			if err := r.saveStateToDisk(); err != nil {
 				r.log.Error("Failed to save repaired state: %v", err)
 			}
-			// Notify frontend about the repair
-			r.sendCorruptionRepaired(repairedCount)
 		}
 
 		// Cancel tool-actions left running when the app was killed. Conversation-

@@ -3,13 +3,14 @@
 //   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
 
 /**
- * Worker-callback wiring for Session. Two factory functions, one for the
- * engine role (handles context requests, tool definitions, and approvals)
- * and one for the viewer role (handles approvals only). Each takes the
- * Session instance and registers the appropriate handlers on workerManager.
+ * Worker-callback wiring for Session, engine role only: the handlers that
+ * answer the worker's context, tool-definition and sub-thread-spec requests,
+ * registered on workerManager. A viewer registers none — those requests are
+ * broadcast, and the turn would run on whichever realm answered first.
  *
- * The internal helpers `updateToolActionApprovalOptions` and `formatToolInput`
- * live here too; they're used by the engine-role approval handlers below.
+ * Approval options are not built here: the worker commands `evaluate-tool`,
+ * and the engine's tool-call gate (model/conversation-tool-actions.js) writes
+ * them onto the tool action.
  * @module model/session-worker-callbacks
  */
 
@@ -36,167 +37,13 @@ import { FormattingHelpers } from '../../sdk/lib/formatting-helpers.js';
 import { resolveToolName } from '../services/tool-generator.js';
 import { buildToolInventory } from '../services/thread-tool-inventory.js';
 import { extractErrorMessage } from '../../sdk/lib/error-utils.js';
-import { buildApprovalButtons } from '../services/approval-options.js';
 import { assembleSystemPrompt, systemPositionItems as systemPositionItemsOf, contextPositionOf } from '../services/system-prompt-builder.js';
 import { buildExtensionSystemPromptContributions } from '../services/extensions.js';
 import { estimateTokens } from '../utils/token-estimate.js';
-import { t, markForTranslation } from '../../sdk/lib/i18n.js';
-import { capabilityTitle } from '../utils/capability-label.js';
 
 /**
- * Format tool input for display in approval dialog.
- * @param {Record<string, unknown>} toolInput - Tool input parameters
- * @returns {string} Formatted string
- */
-function formatToolInput(toolInput) {
-  if ('command' in toolInput && toolInput.command) {
-    return String(toolInput.command);
-  }
-  if ('path' in toolInput && toolInput.path) {
-    return String(toolInput.path);
-  }
-  return JSON.stringify(toolInput, null, 2);
-}
-
-/**
- * Update tool-action in Yjs with approval options.
- * @param {any} conv - Conversation
- * @param {string} toolUseId - Tool use ID
- * @param {object} approvalOptions - Approval options
- */
-function updateToolActionApprovalOptions(conv, toolUseId, approvalOptions) {
-  const messageThread = conv.findMessageThreadForToolUse(toolUseId);
-  if (!messageThread) {
-    console.warn(`[Session] Could not find tool-action ${toolUseId} to update approval options`);
-    return;
-  }
-  // Find the index of this tool-action within its context
-  const items = messageThread.items;
-  for (let i = 0; i < items.length; i++) {
-    if (items[i].get('type') === 'tool-action' && items[i].get('toolUseId') === toolUseId) {
-      messageThread.updateItemField(i, 'approvalOptions', approvalOptions);
-      return;
-    }
-  }
-  console.warn(`[Session] Could not find tool-action ${toolUseId} to update approval options`);
-}
-
-/**
- * The one-shot Allow / Deny option set — a fresh array each call. Used on
- * fallback paths where there is no owning plugin to define a meaningful "don't
- * ask again" choice (unknown tool, error building the UI), so the framework
- * offers only the one-shot decision. The labels are English data, like the
- * standard buttons' (`approval-options.js`): `<action-confirmation>` translates
- * them where it draws them.
- * @returns {Array<{label: string, value: string, style: string}>} A fresh option array
- */
-function allowDenyOptions() {
-  return [
-    { label: markForTranslation('Allow'), value: 'yes', style: 'primary' },
-    { label: markForTranslation('Deny'), value: 'no', style: 'secondary' }
-  ];
-}
-
-/**
- * Shared approval-request handler for BOTH the engine and viewer roles. The
- * worker broadcasts an approval request to every client; each builds the
- * approval options from the owning action plugin (which runs on the main
- * thread) and writes them onto the tool-action in Yjs. The two roles need
- * identical logic, so it lives here once and the engine/viewer setups can't
- * drift apart.
- *
- * The title and message it writes are in the user's language, as the plugin's
- * own `getTitle()`/`getApprovalConfig()` text beside them is: the engine
- * follows the UI locale, and the plugins that show the title show it as it is.
- * The base `getTitle()` is the capability's English manifest name, which
- * `capabilityTitle` translates in its extension's catalogue.
- * A validator's error is the model's English and is stored as given.
- * @param {any} session - Session instance
- * @param {*} request - Approval request from the worker
- * @param {string} conversationId - Conversation the request targets
- * @returns {Promise<void>} Resolves once approval options are written (or the action is auto-approved)
- */
-export async function handleApprovalRequest(session, request, conversationId) {
-  /** @type {{toolUseId: string, toolName: string, toolInput: object, config?: object}} */
-  const req = /** @type {*} */ (request);
-  const conv = session.conversations.get(conversationId);
-
-  if (!conv) {
-    console.error(`[Session] Approval request for unknown conversation: ${conversationId}`);
-    return;
-  }
-
-  try {
-    const ActionClass = contextItemRegistry.getByToolName(req.toolName);
-    if (!ActionClass) {
-      console.warn(`[Session] No action class for tool ${req.toolName}`);
-      updateToolActionApprovalOptions(conv, req.toolUseId, {
-        title: t('Approve: {name}', { name: req.toolName }),
-        message: JSON.stringify(req.toolInput),
-        options: allowDenyOptions()
-      });
-      return;
-    }
-
-    // Find the message thread containing this tool-action (fall back to root)
-    const messageThread = conv.findMessageThreadForToolUse(req.toolUseId) || conv.rootMessageThread;
-
-    /** @type {import('juggler/context-item').ItemContext} */
-    const actionContext = {
-      id: req.toolUseId,
-      session,
-      conversation: conv,
-      messageThread,
-      toolUseId: req.toolUseId,
-      // Lets a multi-tool class (e.g. the MCP bridge) route validate/approval to
-      // the invoked tool. Omitting it makes such a class validate with an empty
-      // name and reject its own call.
-      toolName: resolveToolName(req.toolName)
-    };
-    const action = new ActionClass(actionContext);
-
-    const toolInput = /** @type {Record<string, unknown>} */ (req.toolInput);
-    const validation = await action.validate(toolInput);
-    if (!validation.valid) {
-      updateToolActionApprovalOptions(conv, req.toolUseId, {
-        title: t('Invalid: {title}', { title: capabilityTitle(action) }),
-        message: validation.error || t('Invalid parameters'),
-        options: [{ label: markForTranslation('Cancel'), value: 'cancel', style: 'secondary' }]
-      });
-      return;
-    }
-
-    // Already permitted (wildcard patterns, write-file toggle, etc.) — auto-approve.
-    // Provenance is `rule`: a saved permission/toggle granted it, a prior
-    // explicit grant, so the UI leaves it un-flagged.
-    if (action.isPermitted(toolInput)) {
-      if (messageThread) {
-        messageThread.resolveApproval(req.toolUseId, 'yes', { source: 'rule' });
-      }
-      return;
-    }
-
-    const approvalConfig = await action.getApprovalConfig(validation.params || toolInput);
-    updateToolActionApprovalOptions(conv, req.toolUseId, {
-      title: approvalConfig?.title || capabilityTitle(action),
-      message: approvalConfig?.message || formatToolInput(toolInput),
-      options: approvalConfig?.options || buildApprovalButtons(action, validation.params || toolInput),
-      display: approvalConfig?.display
-    });
-  } catch (error) {
-    const errorMsg = extractErrorMessage(error);
-    console.error(`[Session] Error building approval options for ${req.toolUseId}:`, errorMsg);
-    updateToolActionApprovalOptions(conv, req.toolUseId, {
-      title: req.toolName,
-      message: t('Error building approval UI'),
-      options: allowDenyOptions()
-    });
-  }
-}
-
-/**
- * Install engine-role worker callbacks: context requests, tool definitions,
- * and approval requests. Idempotent w.r.t. the workerManager API — each
+ * Install engine-role worker callbacks: context requests, tool definitions
+ * and sub-thread specs. Idempotent w.r.t. the workerManager API — each
  * setter replaces any prior handler.
  * @param {any} session - Session instance
  */
@@ -426,20 +273,4 @@ export function setupWorkerCallbacks(session) {
       workerManager.sendBuildSubthreadSpecResponse(conversationId, req.requestId, null, errorMsg);
     }
   });
-
-  // Handle approval requests from workers (shared engine/viewer logic).
-  // Worker needs approval options from action plugins (which run on main thread).
-  workerManager.setOnApprovalRequest((request, conversationId) =>
-    handleApprovalRequest(session, request, conversationId));
-}
-
-/**
- * Install viewer-role worker callbacks. Viewer only handles approval
- * requests — context rendering and tool definitions are owned by the engine.
- * @param {any} session - Session instance
- */
-export function setupViewerWorkerCallbacks(session) {
-  // Same approval logic as the engine role — shared so the two can't drift.
-  workerManager.setOnApprovalRequest((request, conversationId) =>
-    handleApprovalRequest(session, request, conversationId));
 }

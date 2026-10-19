@@ -96,7 +96,7 @@ const RECONNECT_JITTER = 0.25;
 const LINK_STABLE_AFTER_MS = 10000;
 
 /**
- * @typedef {'open'|'close'|'error'|'message'|'session'|'file-change'|'project-changed'|'plugin-changed'|'retry'|'streaming-error'|'providers-update'|'providers-ready'|'shell-output'|'reconnect-attempt'|'engine-bridge'|'update-status'|'clients-changed'|'pinboard-changed'|'pinboard-reveal'|'viewer-relay'|'workspaces-changed'|'settings-changed'} WSEventType
+ * @typedef {'open'|'close'|'error'|'message'|'session'|'file-change'|'project-changed'|'plugin-changed'|'retry'|'streaming-error'|'providers-update'|'providers-ready'|'shell-output'|'reconnect-attempt'|'engine-bridge'|'update-status'|'clients-changed'|'pinboard-changed'|'pinboard-reveal'|'viewer-relay'|'workspaces-changed'|'settings-changed'|'server-full'} WSEventType
  */
 
 /**
@@ -267,7 +267,8 @@ class WebSocketService {
       'pinboard-reveal': [],
       'viewer-relay': [],
       'workspaces-changed': [],
-      'settings-changed': []
+      'settings-changed': [],
+      'server-full': []
     };
   }
 
@@ -811,7 +812,21 @@ class WebSocketService {
     // arrival is the entire message: _handleMessageData has already stamped it,
     // which is what the stall watchdog reads. Routed rather than left to fall
     // through so it is not delivered to every 'message' subscriber.
-    heartbeat: () => {}
+    heartbeat: () => {},
+
+    // The server already holds as many viewers as it takes (client_hub.go) and
+    // closes this socket right after saying so. A retry gets the same answer on
+    // a backoff that never gives up, so the close that follows must not start
+    // one; the refusal is reported instead, for the shell to explain.
+    'server-full': (ws) => {
+      ws._intentionalDisconnect = true;
+      ws._emit('server-full', undefined);
+    },
+
+    // The server is going down and closes this socket next. The close is the
+    // part that matters, and the ordinary reconnect is the right answer to it:
+    // a restarted server comes back under a new boot id and the page reloads.
+    'server-shutdown': () => {}
   };
 
   /**

@@ -38,7 +38,7 @@ import { extractErrorMessage } from '../../sdk/lib/error-utils.js';
 import { isEngine } from '../../sdk/lib/client-role.js';
 import { toSandboxRoot } from '../../sdk/lib/sandbox-runner.js';
 import { recordTape } from '../utils/event-tape.js';
-import { setupWorkerCallbacks, setupViewerWorkerCallbacks } from './session-worker-callbacks.js';
+import { setupWorkerCallbacks } from './session-worker-callbacks.js';
 import { normalizeAttachments } from '../utils/attachments.js';
 
 /** @typedef {import('./session.js').default} Session */
@@ -247,15 +247,12 @@ export default class SessionPersistence {
           apiBaseUrl: globalThis.location.origin
         }, host.session());
 
-        // Set up callbacks for worker requests, by role. Context rendering and
-        // tool definitions belong to the engine — a viewer holding those
+        // Set up callbacks for worker requests, engine only. Context rendering
+        // and tool definitions belong to the engine — a viewer holding those
         // callbacks answers the worker's broadcast requests as well, and the
-        // turn then runs on whichever realm's replica replied first. A viewer
-        // handles approvals and nothing else.
+        // turn then runs on whichever realm's replica replied first.
         if (isEngine()) {
           setupWorkerCallbacks(host.session());
-        } else {
-          setupViewerWorkerCallbacks(host.session());
         }
 
         this._workerManagerInitialized = true;

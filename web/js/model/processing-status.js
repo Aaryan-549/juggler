@@ -6,9 +6,9 @@
  * What a processingState status says about whether a turn is running.
  *
  * The worker writes the status and decides what it means: `statusHoldsClaim`
- * (`cmd/juggler/worker/activity_state.go`) treats `idle` and the two
- * terminal-error statuses as resting, and every other status as a phase of a
- * turn still in flight. A frame can stay at a terminal-error status
+ * (`cmd/juggler/worker/activity_state.go`) treats `idle` and the
+ * terminal-error status `validation-error` as resting, and every other status
+ * as a phase of a turn still in flight. A frame can stay at `validation-error`
  * indefinitely: a send refused for want of a model writes `validation-error`
  * and returns without running anything. So every reader of the frame asks
  * here rather than comparing against `'idle'`.
@@ -28,12 +28,12 @@
  */
 
 /** The statuses the worker rests at. */
-const RESTING_STATUSES = new Set(['idle', 'error', 'validation-error']);
+const RESTING_STATUSES = new Set(['idle', 'validation-error']);
 
 /**
  * Whether a status is one the worker rests at.
  * @param {string|undefined} status - processingState.status.
- * @returns {boolean} True for idle and the terminal-error statuses.
+ * @returns {boolean} True for idle and validation-error.
  */
 export function isRestingStatus(status) {
   return status !== undefined && RESTING_STATUSES.has(status);

@@ -53,8 +53,8 @@ type pendingEntrySnapshot struct {
 	index            int
 	ownerThreadID    string // thread whose own queue holds this entry ("" = root)
 	id               string
-	kind             string
-	status           string
+	kind             pendingKind
+	status           pendingStatus
 	cancelRequested  bool
 	completedAt      float64
 	threadItemID     string // set after createThread dispatch so we can find the thread Y.Map
@@ -81,16 +81,16 @@ func (r *run) scanPendingRequests() {
 	}
 	nowMs := time.Now().UnixMilli()
 	for _, e := range snapshot {
-		if e.cancelRequested && (e.status == "requested" || e.status == "claimed") {
+		if e.cancelRequested && (e.status == pendingRequested || e.status == pendingClaimed) {
 			r.cancelPendingEntry(e)
 			continue
 		}
 		switch e.status {
-		case "requested":
+		case pendingRequested:
 			r.claimAndDispatchPendingEntry(e)
-		case "claimed":
+		case pendingClaimed:
 			r.advanceClaimedPendingEntry(e)
-		case "completed", "error", "cancelled":
+		case pendingCompleted, pendingError, pendingCancelled:
 			if e.completedAt > 0 && nowMs-int64(e.completedAt) > pendingRequestsGCMs {
 				r.gcPendingEntry(e.ownerThreadID, e.id)
 			}
@@ -133,8 +133,10 @@ func (w *ConversationWorker) snapshotPendingEntries() []pendingEntrySnapshot {
 			}
 			snap := pendingEntrySnapshot{index: i, ownerThreadID: threadID}
 			snap.id, _ = ymap.Get("id").(string)
-			snap.kind, _ = ymap.Get("kind").(string)
-			snap.status, _ = ymap.Get("status").(string)
+			kind, _ := ymap.Get("kind").(string)
+			snap.kind = pendingKind(kind)
+			status, _ := ymap.Get("status").(string)
+			snap.status = pendingStatus(status)
 			snap.cancelRequested, _ = ymap.Get("cancelRequested").(bool)
 			if v, ok := ymap.Get("completedAt").(ycrdt.Number); ok {
 				snap.completedAt = float64(v)
@@ -220,7 +222,7 @@ func (w *ConversationWorker) pendingEntryByIDLocked(ownerThreadID, id string) (i
 // async on the worker and is detected by advanceClaimedPendingEntry on
 // subsequent scans).
 func (r *run) claimAndDispatchPendingEntry(e pendingEntrySnapshot) {
-	if e.kind == "createThread" || e.kind == "continue" {
+	if e.kind == pendingKindCreateThread || e.kind == pendingKindContinue {
 		if r.anyRunState() != StateIdle {
 			// Worker is busy with something else; leave entry in 'requested'
 			// for a later scan to re-attempt. Don't claim — claiming locks
@@ -236,18 +238,18 @@ func (r *run) claimAndDispatchPendingEntry(e pendingEntrySnapshot) {
 		ycrdtMu.Unlock()
 		return
 	}
-	if v, _ := ymap.Get("status").(string); v != "requested" {
+	if v, _ := ymap.Get("status").(string); v != string(pendingRequested) {
 		ycrdtMu.Unlock()
 		return
 	}
 	r.doc.transactTracked(func(t *ycrdt.Transaction) {
-		ymap.Set("status", "claimed")
+		ymap.Set("status", string(pendingClaimed))
 		ymap.Set("claimedBy", "worker")
 	})
 	ycrdtMu.Unlock()
 
 	switch e.kind {
-	case "createThread":
+	case pendingKindCreateThread:
 		threadItemID, err := r.dispatchThread(threadSpec{
 			Goal:               e.goal,
 			Prompt:             e.prompt,
@@ -261,9 +263,9 @@ func (r *run) claimAndDispatchPendingEntry(e pendingEntrySnapshot) {
 			return
 		}
 		r.setPendingEntryThreadID(e.ownerThreadID, e.id, threadItemID)
-	case "continue":
+	case pendingKindContinue:
 		r.dispatchPendingContinue(e)
-	case "deliverTaskOutput":
+	case pendingKindDeliverTaskOutput:
 		if r.deliveryIsForeign(e) {
 			r.writePendingEntryCompletedThread(e.ownerThreadID, e.id, "", "")
 			return
@@ -316,7 +318,7 @@ func (w *ConversationWorker) continuedItemsLength(e pendingEntrySnapshot) int {
 // thread's run settled; for continue, watch the items length.
 func (r *run) advanceClaimedPendingEntry(e pendingEntrySnapshot) {
 	switch e.kind {
-	case "createThread":
+	case pendingKindCreateThread:
 		if e.threadItemID == "" {
 			return // dispatch hasn't recorded the threadItemId yet
 		}
@@ -344,11 +346,11 @@ func (r *run) advanceClaimedPendingEntry(e pendingEntrySnapshot) {
 			result = summary
 		}
 		r.writePendingEntryCompletedThread(e.ownerThreadID, e.id, e.threadItemID, result)
-	case "continue":
+	case pendingKindContinue:
 		if r.continuedItemsLength(e) > e.itemsBefore {
 			r.writePendingEntryCompletedThread(e.ownerThreadID, e.id, "", "")
 		}
-	case "deliverTaskOutput":
+	case pendingKindDeliverTaskOutput:
 		if r.pumps.running(e.id) {
 			return // the pump owns this entry's lifecycle
 		}
@@ -393,14 +395,14 @@ func (w *ConversationWorker) deliveryIsForeign(e pendingEntrySnapshot) bool {
 // worker's normal cancellation path; its pending result remains claimed until
 // that path has made the thread quiescent and settled its run.
 func (r *run) cancelPendingEntry(e pendingEntrySnapshot) {
-	if e.kind == "deliverTaskOutput" {
+	if e.kind == pendingKindDeliverTaskOutput {
 		// Stop the pump and kill the task; do NOT forward to handleCancel (a
 		// delivery cancel must not abort an unrelated in-flight turn).
 		r.pumps.stop(e.id)
 		r.writePendingEntryCancelled(e.ownerThreadID, e.id, "")
 		return
 	}
-	if e.kind != "createThread" || e.threadItemID == "" {
+	if e.kind != pendingKindCreateThread || e.threadItemID == "" {
 		r.writePendingEntryCancelled(e.ownerThreadID, e.id, "")
 		return
 	}
@@ -513,7 +515,7 @@ func (w *ConversationWorker) setPendingEntryItemsBefore(ownerThreadID, id string
 func (w *ConversationWorker) writePendingEntryError(ownerThreadID, id, errMsg string) {
 	w.updatePendingEntry(ownerThreadID, id, func(ymap *ycrdt.YMap) {
 		ymap.Set("error", errMsg)
-		ymap.Set("status", "error")
+		ymap.Set("status", string(pendingError))
 		ymap.Set("completedAt", ycrdt.Number(time.Now().UnixMilli()))
 	})
 }
@@ -523,7 +525,7 @@ func (w *ConversationWorker) writePendingEntryCancelled(ownerThreadID, id, errMs
 		if errMsg != "" {
 			ymap.Set("error", errMsg)
 		}
-		ymap.Set("status", "cancelled")
+		ymap.Set("status", string(pendingCancelled))
 		ymap.Set("completedAt", ycrdt.Number(time.Now().UnixMilli()))
 	})
 }
@@ -538,7 +540,7 @@ func (w *ConversationWorker) writePendingEntryCompletedThread(ownerThreadID, id,
 			resultMap.Set("result", result)
 		}
 		ymap.Set("result", resultMap)
-		ymap.Set("status", "completed")
+		ymap.Set("status", string(pendingCompleted))
 		ymap.Set("completedAt", ycrdt.Number(time.Now().UnixMilli()))
 	})
 }
