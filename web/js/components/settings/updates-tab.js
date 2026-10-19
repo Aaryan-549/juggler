@@ -56,6 +56,11 @@ export class UpdatesTab {
     this._mode = 'automatic';
     /** @type {boolean} @private — whether an in-app updater is present. */
     this._updaterPresent = false;
+    /**
+     * @type {string} @private — the package manager that installs this build's
+     * updates (the server's update-status `managedBy`), or '' when it updates itself.
+     */
+    this._managedBy = '';
   }
 
   /** Build the static tab DOM and wire persistent listeners. */
@@ -94,6 +99,7 @@ export class UpdatesTab {
     for (const mode of MODES) {
       const row = document.createElement('label');
       row.className = 'settings-group provider-field updates-mode-row';
+      row.dataset.mode = mode.value;
 
       const info = document.createElement('div');
       info.className = 'provider-info';
@@ -170,7 +176,51 @@ export class UpdatesTab {
     const status = await fetchJson(apiUrl('/update-status'), { fallback: {} });
     const updater = await getUpdaterState();
     this._updaterPresent = !!updater.present;
+    this._applyManaged(status);
     this._renderVersion(status, updater);
+  }
+
+  /**
+   * Fit the mode choices to who installs updates. A package manager's install
+   * never downloads its own, so "Automatic" is not offered and a saved
+   * "automatic" reads as the notify choice it behaves as; "Off" still stops the
+   * scheduled checks.
+   * @private
+   * @param {any} status - An /api/update-status result.
+   */
+  _applyManaged(status) {
+    const managedBy = typeof status.managedBy === 'string' ? status.managedBy : '';
+    this._managedBy = managedBy;
+    for (const mode of MODES) {
+      const row = /** @type {HTMLElement|null} */ (
+        this.host.querySelector(`.updates-mode-row[data-mode="${mode.value}"]`));
+      if (!row) continue;
+      if (mode.value === 'automatic') row.hidden = !!managedBy;
+      if (mode.value !== 'notify') continue;
+      const name = row.querySelector('.provider-name');
+      const desc = row.querySelector('.provider-description');
+      if (name) name.textContent = managedBy ? t('Tell me about new versions') : t(mode.label);
+      if (desc) {
+        desc.textContent = managedBy
+          ? t('Check periodically and say when a new version is out. Install it through {packageManager}.',
+            { packageManager: managedBy })
+          : t(mode.description);
+      }
+    }
+    this._reflectMode(this._mode);
+  }
+
+  /**
+   * The sentence for an available update: where to get it, when that is not here.
+   * @private
+   * @param {string} version
+   * @returns {string} The translated sentence.
+   */
+  _availableText(version) {
+    return this._managedBy
+      ? t('Version {version} is available — update it through {packageManager}.',
+        { version, packageManager: this._managedBy })
+      : t('Version {version} is available.', { version });
   }
 
   /**
@@ -186,7 +236,7 @@ export class UpdatesTab {
     // Whole sentences, each one message, joined with a space.
     const parts = [t('Current version {version}.', { version: current })];
     if (status.updateAvailable && latest) {
-      parts.push(t('Version {version} is available.', { version: latest }));
+      parts.push(this._availableText(latest));
     } else if (status.unpublished) {
       // No comparison was made, and latest is usually newer than this build —
       // so it is reported as what it is, never as the version being run.
@@ -234,10 +284,12 @@ export class UpdatesTab {
    * @param {string} mode
    */
   _reflectMode(mode) {
+    // "Automatic" is hidden on a managed install, where it behaves as notify.
+    const shown = this._managedBy && mode === 'automatic' ? 'notify' : mode;
     const radios = this.host.querySelectorAll('.updates-mode-radio');
     radios.forEach((r) => {
       const input = /** @type {HTMLInputElement} */ (r);
-      input.checked = input.value === mode;
+      input.checked = input.value === shown;
     });
   }
 
@@ -276,15 +328,17 @@ export class UpdatesTab {
     try {
       // Kick the in-app updater's check-only probe first (fire-and-forget; the
       // result arrives via the pushed snapshot the header button consumes).
-      if (this._updaterPresent) void startCheck();
+      if (this._updaterPresent && !this._managedBy) void startCheck();
 
       const status = await fetchJson(apiUrl('/update-status/check'), { method: 'POST' });
+      if (!status.error) this._applyManaged(status);
       if (status.error) {
         this._setStatus(t('Couldn’t reach the update server. Try again later.'));
       } else if (status.updateAvailable) {
-        this._setStatus(t('Version {version} is available.', { version: status.latestVersion || '' }));
-        // Surface the full dialog (with download/install affordances).
-        window.dispatchEvent(new CustomEvent('juggler:open-update-dialog'));
+        this._setStatus(this._availableText(status.latestVersion || ''));
+        // Surface the full dialog (with download/install affordances) — unless
+        // the update is the package manager's to install, which the line says.
+        if (!this._managedBy) window.dispatchEvent(new CustomEvent('juggler:open-update-dialog'));
       } else if (status.unpublished) {
         this._setStatus(status.latestVersion
           ? t('Latest release is {version}; a build from source is never offered updates.', { version: status.latestVersion })

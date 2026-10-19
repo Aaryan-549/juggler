@@ -45,6 +45,9 @@ import { t, markForTranslation } from '../../sdk/lib/i18n.js';
  * @property {boolean} appManagedServer - Whether the app spawned this server.
  * @property {UpdateNoticeData|null} notice - Server-authored notice, if any.
  * @property {boolean} serverUpdateAvailable - Server says a newer version exists.
+ * @property {string} [managedBy] - The package manager that installs this
+ *   build's updates, or empty when it updates itself. When set the dialog
+ *   points there and offers nothing to download or install.
  * @property {boolean} [upToDate] - Menu "Check for Updates" found nothing new.
  */
 
@@ -285,6 +288,9 @@ class UpdateNotice extends JugglerElement {
    * @returns {boolean} True when the dialog may be dismissed.
    */
   _dismissible(vm) {
+    // A managed install can only be updated outside the app, so even a required
+    // notice must let the user go and do that.
+    if (vm.managedBy) return true;
     return !(vm.notice && vm.notice.severity === 'required');
   }
 
@@ -306,6 +312,7 @@ class UpdateNotice extends JugglerElement {
       vm.error || '',
       vm.appManagedServer ? 'managed' : 'external',
       vm.serverUpdateAvailable ? 'server' : '',
+      vm.managedBy || '',
       vm.notice ? vm.notice.id : '',
       vm.notice ? vm.notice.severity : '',
     ].join('|');
@@ -376,7 +383,9 @@ class UpdateNotice extends JugglerElement {
       return body;
     }
 
-    if (vm.notice && vm.notice.html) {
+    // The manifest's prose is written for a build that downloads its own
+    // updates, so a managed install gets the plain line and its package manager.
+    if (vm.notice && vm.notice.html && !vm.managedBy) {
       body.appendChild(sanitizeHTML(vm.notice.html));
     } else {
       const p = document.createElement('p');
@@ -384,6 +393,14 @@ class UpdateNotice extends JugglerElement {
         ? t('Version {version} is now available.', { version: vm.targetVersion })
         : t('A newer version is now available.');
       body.appendChild(p);
+    }
+
+    if (vm.managedBy) {
+      const managed = document.createElement('p');
+      managed.className = 'update-notice__managed';
+      managed.textContent = t('Juggler is updated through {packageManager}. Update it there to get this version.',
+        { packageManager: vm.managedBy });
+      body.appendChild(managed);
     }
 
     // Edge case 18: the viewed server was started outside the app, so an app
@@ -504,7 +521,8 @@ class UpdateNotice extends JugglerElement {
     const footer = document.createElement('footer');
     footer.className = 'update-notice__footer';
 
-    if (vm.upToDate) {
+    // A managed install is updated elsewhere: nothing to download or open here.
+    if (vm.upToDate || vm.managedBy) {
       footer.appendChild(this._button(t('OK'), 'btn-primary', () => this._dismiss()));
       return footer;
     }

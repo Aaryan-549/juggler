@@ -8,8 +8,22 @@ import (
 	"testing"
 	"time"
 
+	"juggler/cmd/juggler/core"
 	"juggler/internal/userpaths/userpathstest"
 )
+
+// TestUpdateCheckerManagedBy pins that the package manager a packager names
+// reaches the status every viewer reads, from the very first one served.
+func TestUpdateCheckerManagedBy(t *testing.T) {
+	t.Setenv(core.UpdatesManagedByEnv, "Nix")
+	if got := (&Server{}).newUpdateChecker().Current().ManagedBy; got != "Nix" {
+		t.Fatalf("ManagedBy = %q, want Nix", got)
+	}
+	t.Setenv(core.UpdatesManagedByEnv, "")
+	if got := (&Server{}).newUpdateChecker().Current().ManagedBy; got != "" {
+		t.Fatalf("unmanaged ManagedBy = %q, want empty", got)
+	}
+}
 
 // mark claims and drops the release, for cases that only care about the mark.
 func mark(at time.Time) int {

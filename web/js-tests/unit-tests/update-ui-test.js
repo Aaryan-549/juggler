@@ -70,6 +70,8 @@ const NOTICE_STATES = [
   { where: 'installing', vm: vmOf({ present: true, updaterState: 'installing' }) },
   { where: 'ready', vm: vmOf({ present: true, updaterState: 'ready', targetVersion: '9.8.7' }) },
   { where: 'idle updater', vm: vmOf({ present: true, updaterState: 'idle' }) },
+  // The package manager's name is data, so digits stand in for it here.
+  { where: 'managed install', vm: vmOf({ managedBy: '42', targetVersion: '9.8.7', notice: { id: '6', actions: [LINK] } }) },
 ];
 
 /**
@@ -168,6 +170,38 @@ export async function runTests() {
       assert(notice.querySelector('.update-notice__title').textContent === 'Juggler 2 is here', 'the manifest title is drawn as given');
       const labels = [...notice.querySelectorAll('.update-notice__button')].map((b) => b.textContent);
       assert(labels.includes('Get it'), `the manifest's action label is drawn as given: ${JSON.stringify(labels)}`);
+    } finally {
+      notice.close();
+      notice.remove();
+      btn.remove();
+    }
+  });
+
+  await test('a managed install points at its package manager and offers no install', () => {
+    const btn = quietButton();
+    const notice = /** @type {any} */ (document.createElement('update-notice'));
+    document.body.appendChild(notice);
+    try {
+      // Even with an updater that thinks it could install, the server's word wins.
+      btn._updater = { present: true, state: 'available', version: '9.8.7' };
+      btn._server = { updateAvailable: true, latestVersion: '9.8.7', managedBy: 'Nix' };
+      const vm = btn._viewModel();
+      assert(vm.managedBy === 'Nix', `managedBy reaches the model: ${JSON.stringify(vm.managedBy)}`);
+      assert(vm.present === false && vm.updaterState === null, `the updater is set aside: ${JSON.stringify(vm)}`);
+      btn.render();
+      assert(!btn.hidden, 'the button still says an update exists');
+
+      notice.open(vmOf({
+        managedBy: 'Nix',
+        targetVersion: '9.8.7',
+        notice: { id: 'm', severity: 'required', html: '<p><a href="https://x/">Download</a></p>', actions: [LINK] },
+      }));
+      const managed = notice.querySelector('.update-notice__managed');
+      assert(managed && managed.textContent === 'Juggler is updated through Nix. Update it there to get this version.',
+        `managed line: ${JSON.stringify(managed && managed.textContent)}`);
+      assert(!notice.querySelector('.update-notice__body a'), 'the manifest\'s own download prose is not shown');
+      const labels = [...notice.querySelectorAll('.update-notice__button')].map((b) => b.textContent);
+      assert(JSON.stringify(labels) === JSON.stringify(['OK']), `managed buttons: ${JSON.stringify(labels)}`);
     } finally {
       notice.close();
       notice.remove();

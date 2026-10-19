@@ -127,7 +127,10 @@ class UpdateButton extends JugglerElement {
    */
   _viewModel(extra = {}) {
     const s = this._server || {};
-    const u = this._updater || { present: false };
+    // A package manager installs this build's updates, so an in-app updater
+    // that is somehow running is set aside: nothing here may download.
+    const managedBy = typeof s.managedBy === 'string' ? s.managedBy : '';
+    const u = (!managedBy && this._updater) || { present: false };
     const present = !!u.present;
     const updaterState = present ? (u.state || null) : null;
     const total = Number(u.total) || 0;
@@ -151,6 +154,7 @@ class UpdateButton extends JugglerElement {
       appManagedServer: this._appManagedServer,
       notice,
       serverUpdateAvailable: !!s.updateAvailable,
+      managedBy,
       upToDate: false,
       ...extra,
     });

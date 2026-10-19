@@ -13,6 +13,7 @@ of changes; this project follows semantic versioning.
 - Slow startups, like logging in with apps reopening, no longer shut the server down
 - Extension ops `stat`, `mkdir`, `getTree`, `expandDirectory` and `fileHash` accept an AbortSignal
 - Extension shell ops take camelCase ids (`taskId`, `shellId`, `convId`); snake_case still works
+- Packagers can set `JUGGLER_UPDATES_MANAGED_BY` to hand updates to their package manager
 
 ## [0.7.7] - 2026-10-17
 

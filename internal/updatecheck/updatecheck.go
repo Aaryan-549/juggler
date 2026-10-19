@@ -102,6 +102,12 @@ type Status struct {
 	// often NEWER than CurrentVersion: a client that reads !UpdateAvailable as
 	// "current" will tell such a build it is running a release it has not got.
 	Unpublished bool `json:"unpublished,omitempty"`
+
+	// ManagedBy names the package manager that installs this build's updates
+	// (Config.ManagedBy), or "" when the build updates itself. An available
+	// update is then something to get through that package manager: nothing
+	// may offer to download or install it.
+	ManagedBy string `json:"managedBy,omitempty"`
 }
 
 // validate rejects responses that are not a recognisable manifest.
@@ -217,6 +223,13 @@ type Config struct {
 	// Consulted only on the gated scheduled path. CheckNow runs regardless of
 	// the Enabled gate, so it must not spend a mark the user has opted out of.
 	Mark func() (mark int, release func())
+	// Via is the package manager that installed this build, as a short
+	// lowercase token sent as ?via= on every check, scheduled and manual. ""
+	// sends no param.
+	Via string
+	// ManagedBy is the same package manager as its name is shown, stamped on
+	// every Status (see Status.ManagedBy). "" for a self-updating build.
+	ManagedBy string
 }
 
 // Checker polls the manifest and holds the latest computed Status in memory.
@@ -240,6 +253,7 @@ func New(cfg Config) *Checker {
 	}
 	c := &Checker{cfg: cfg}
 	init := ComputeStatus(nil, cfg.CurrentVersion)
+	init.ManagedBy = cfg.ManagedBy
 	c.status.Store(&init)
 	return c
 }
@@ -352,6 +366,7 @@ func (c *Checker) checkOnce(ctx context.Context, mark int, release func()) error
 	}
 
 	next := ComputeStatus(&m, c.cfg.CurrentVersion)
+	next.ManagedBy = c.cfg.ManagedBy
 	prev := c.Current()
 	c.status.Store(&next)
 	if next.UpdateAvailable {
@@ -383,6 +398,9 @@ func (c *Checker) requestURL(mark int) string {
 	}
 	if mark > 0 {
 		q.Set("countme", strconv.Itoa(mark))
+	}
+	if c.cfg.Via != "" {
+		q.Set("via", c.cfg.Via)
 	}
 	u.RawQuery = q.Encode()
 	return u.String()

@@ -339,6 +339,7 @@ func parseFlags(hasTerminal bool) (appFlags, bool) {
 		allowHosts = append(allowHosts, v)
 		return nil
 	})
+	flag.Func("updates-managed-by", "For packagers: the package manager (`name`, e.g. Nix) that installs Juggler's updates. Juggler then never updates itself, and points its update notices there. Same as setting "+core.UpdatesManagedByEnv, core.SetUpdatesManagedBy)
 	// WAN startup flags come from the tunnel-mode registry: each registered
 	// mode with a FlagName contributes one bool flag. A build with no
 	// registered modes has no WAN flags at all.

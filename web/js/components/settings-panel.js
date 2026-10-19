@@ -313,7 +313,7 @@ class SettingsPanel extends JugglerElement {
 
                     <section class="settings-tab-content" id="tab-updates">
                         <p class="settings-description">
-                            ${escapeHtml(t('Control whether Juggler checks for and downloads new versions, and check for one now. A check sends this build\'s version, OS and architecture.'))}
+                            ${escapeHtml(t('Control whether Juggler checks for and downloads new versions, and check for one now. A check sends this build\'s version, OS and architecture, and the package manager that installed it, if any.'))}
                         </p>
                         <div class="settings-form" id="updates-form"></div>
                     </section>

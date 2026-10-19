@@ -373,3 +373,46 @@ func TestCheckOnceMark(t *testing.T) {
 		}
 	})
 }
+
+func TestManagedInstall(t *testing.T) {
+	const manifest = `{"schema":"juggler-version","schemaVersion":1,"latest":"v9.9.9"}`
+	got := new(string)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		*got = r.URL.RawQuery
+		_, _ = w.Write([]byte(manifest))
+	}))
+	defer srv.Close()
+
+	stub := &markStub{mark: 1}
+	c := New(Config{
+		URL:            srv.URL,
+		CurrentVersion: "v0.0.8",
+		OS:             "linux",
+		Arch:           "amd64",
+		Mark:           stub.fn,
+		Via:            "nix",
+		ManagedBy:      "Nix",
+	})
+	if got := c.Current().ManagedBy; got != "Nix" {
+		t.Errorf("seeded status ManagedBy = %q, want Nix", got)
+	}
+
+	// The scheduled check still runs and still carries its mark.
+	if err := c.CheckOnce(context.Background()); err != nil {
+		t.Fatalf("CheckOnce: %v", err)
+	}
+	if want := "arch=amd64&countme=1&os=linux&v=v0.0.8&via=nix"; *got != want {
+		t.Errorf("scheduled query = %q, want %q", *got, want)
+	}
+	st := c.Current()
+	if !st.UpdateAvailable || st.ManagedBy != "Nix" {
+		t.Errorf("status = %+v, want an available update managed by Nix", st)
+	}
+
+	if err := c.CheckNow(context.Background()); err != nil {
+		t.Fatalf("CheckNow: %v", err)
+	}
+	if want := "arch=amd64&os=linux&v=v0.0.8&via=nix"; *got != want {
+		t.Errorf("manual query = %q, want %q", *got, want)
+	}
+}

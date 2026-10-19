@@ -37,6 +37,8 @@ func RunCommand(args []string) int {
 		allowHosts = append(allowHosts, v)
 		return nil
 	})
+	// Exported to the environment, which every session child inherits.
+	fs.Func("updates-managed-by", "For packagers: the package manager (`name`, e.g. Nix) that installs Juggler's updates. Juggler then never updates itself, and points its update notices there. Same as setting "+core.UpdatesManagedByEnv, core.SetUpdatesManagedBy)
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}

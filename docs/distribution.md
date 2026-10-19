@@ -60,6 +60,21 @@ binaries inside it), the winget package runs the same installer — so they inhe
 the same lock-step guarantee without introducing a way to install the two halves
 independently.
 
+## Packaging Juggler for a package manager
+
+A package manager (Nix, a distro package, Homebrew) owns the files it installs,
+so Juggler must not replace itself. Set `JUGGLER_UPDATES_MANAGED_BY` to the
+package manager's name in the environment Juggler runs in, or pass
+`--updates-managed-by <name>` to the server or to `juggler serve`:
+
+```sh
+JUGGLER_UPDATES_MANAGED_BY=Nix juggler
+```
+
+Juggler then never downloads or installs an update. It still tells the user when
+a new version is out, and says to update through the named package manager. The
+user can turn those notices off in Settings → Updates.
+
 ## The invariant, restated
 
 However Juggler reaches your machine, the desktop app and its server arrive and

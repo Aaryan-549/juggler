@@ -206,6 +206,44 @@ export async function runTests(_ctx) {
     });
   });
 
+  // A packager's install never updates itself, so "Automatic" (which downloads)
+  // is not on offer: the choice is between hearing about new versions and not.
+  await run('a managed install offers notify or off, and names its package manager', async () => {
+    const status = {
+      currentVersion: 'v1.0.0', latestVersion: 'v1.2.0', updateAvailable: true, managedBy: 'Nix',
+    };
+    await withPanel({ mode: 'automatic', status }, async (el, backend) => {
+      el._tabs.updates.show();
+      await settle();
+      foreignBroadcast();
+      const visible = [...el.querySelectorAll('.updates-mode-radio')]
+        .filter((r) => !r.closest('.updates-mode-row').hidden);
+      assert(JSON.stringify(visible.map((r) => r.value)) === JSON.stringify(['notify', 'off']),
+        `visible modes; got ${JSON.stringify(visible.map((r) => r.value))}`);
+      const notify = visible[0];
+      assert(notify.checked, 'a saved "automatic" shows as notify');
+      const name = notify.closest('.updates-mode-row').querySelector('.provider-name').textContent;
+      assert(name === 'Tell me about new versions', `notify label; got ${JSON.stringify(name)}`);
+      const desc = notify.closest('.updates-mode-row').querySelector('.provider-description').textContent;
+      assert(desc.includes('Nix'), `notify description names the package manager; got ${JSON.stringify(desc)}`);
+
+      const info = el.querySelector('#updates-version-info').textContent || '';
+      assert(info.includes('Version v1.2.0 is available — update it through Nix.'),
+        `version line; got ${JSON.stringify(info)}`);
+
+      visible[1].click();
+      await settle();
+      const put = backend.calls.find((c) => c.url === '/api/settings' && c.method === 'PUT');
+      assert(put && put.body.updates.mode === 'off', `off is saved; got ${JSON.stringify(put && put.body)}`);
+
+      el.querySelector('#updates-check-btn').click();
+      await settle();
+      const checked = el.querySelector('#updates-check-status').textContent || '';
+      assert(checked === 'Version v1.2.0 is available — update it through Nix.',
+        `manual check result; got ${JSON.stringify(checked)}`);
+    });
+  });
+
   /**
    * A settings document as the server broadcasts it.
    * @param {string} mode
@@ -263,8 +301,12 @@ export async function runTests(_ctx) {
     registerCatalog('updates-settings-test', PSEUDO_LOCALE, body.messages);
     const previous = setLocale(PSEUDO_LOCALE);
     try {
-      const status = { currentVersion: '1.0.0', latestVersion: '1.2.0', updateAvailable: true };
-      await withPanel({ status }, async (el) => {
+      // Once as a self-updating build, once as a managed one (whose package
+      // manager's name is data, so digits stand in for it).
+      for (const status of [
+        { currentVersion: '1.0.0', latestVersion: '1.2.0', updateAvailable: true },
+        { currentVersion: '1.0.0', latestVersion: '1.2.0', updateAvailable: true, managedBy: '42' },
+      ]) await withPanel({ status }, async (el) => {
         el._tabs.updates.show();
         await settle();
         el.querySelector('#updates-check-btn').click();

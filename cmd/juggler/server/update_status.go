@@ -45,6 +45,9 @@ func (s *Server) newUpdateChecker() *updatecheck.Checker {
 		// "automatic"/"notify" both poll. The manual endpoint bypasses this.
 		Enabled: func() bool { return s.updateMode() != core.UpdateModeOff },
 		Mark:    func() (int, func()) { return markFirstCheck(core.Version, time.Now()) },
+		// A packager's install still checks; it just never updates itself.
+		Via:       core.UpdatesVia(),
+		ManagedBy: core.UpdatesManagedBy(),
 	})
 }
 
