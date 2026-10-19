@@ -856,7 +856,7 @@ func openCompactionAdmissionConversation(t *testing.T, window, reserve int64) (*
 	if err != nil {
 		t.Fatal(err)
 	}
-	conversation, err := initialized.OpenConversation(context.Background(), "test-conv")
+	conversation, err := provider.OpenConversation(context.Background(), initialized, "test-conv")
 	if err != nil {
 		t.Fatal(err)
 	}

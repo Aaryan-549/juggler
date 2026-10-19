@@ -59,7 +59,7 @@ func TestLiveOllamaFinalCompactionShape(t *testing.T) {
 	if err != nil {
 		t.Fatalf("initialize ollama provider: %v", err)
 	}
-	conv, err := prov.OpenConversation(context.Background(), "oob-live-compaction")
+	conv, err := provider.OpenConversation(context.Background(), prov, "oob-live-compaction")
 	if err != nil {
 		t.Fatalf("open conversation: %v", err)
 	}

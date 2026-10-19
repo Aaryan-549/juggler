@@ -335,21 +335,19 @@ type admissionProvider struct {
 	contract     BudgetContract
 }
 
+// Unwrap exposes the wrapped provider so As can reach its other capabilities.
+func (p *admissionProvider) Unwrap() Provider { return p.Provider }
+
 func (p *admissionProvider) OpenConversation(ctx context.Context, convID string) (Conversation, error) {
-	cv, err := p.Provider.OpenConversation(ctx, convID)
+	inner, ok := As[ConversationProvider](p.Provider)
+	if !ok {
+		return nil, fmt.Errorf("provider %q does not support conversations", p.Name())
+	}
+	cv, err := inner.OpenConversation(ctx, convID)
 	if err != nil {
 		return nil, err
 	}
 	return &admissionConversation{Conversation: cv, capabilities: p.capabilities, contract: p.contract}, nil
-}
-
-type admissionUsageProvider struct {
-	*admissionProvider
-	usage UsageStatsProvider
-}
-
-func (p *admissionUsageProvider) UsageStats(ctx context.Context) (UsageStats, error) {
-	return p.usage.UsageStats(ctx)
 }
 
 type admissionConversation struct {

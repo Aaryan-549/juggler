@@ -276,7 +276,7 @@ func (cc *conversationCache) runActor() {
 			// wrapper instantly. claudecode's eventual stateful handle
 			// should likewise not do I/O here (just allocate; CLI spawn
 			// happens on first Submit).
-			conv, err := prov.OpenConversation(context.Background(), op.key.convID)
+			conv, err := provider.OpenConversation(context.Background(), prov, op.key.convID)
 			if err != nil {
 				op.respCh <- cacheResult{err: fmt.Errorf("open conversation: %w", err)}
 				continue

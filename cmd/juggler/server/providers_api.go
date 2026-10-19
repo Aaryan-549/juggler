@@ -369,7 +369,7 @@ func (s *Server) fetchUsageStats(ctx context.Context, providerName string, cred 
 	if err != nil {
 		return nil, err
 	}
-	statsProvider, ok := client.(provider.UsageStatsProvider)
+	statsProvider, ok := provider.As[provider.UsageStatsProvider](client)
 	if !ok {
 		return nil, nil
 	}
