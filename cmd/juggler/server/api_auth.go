@@ -6,6 +6,7 @@ package server
 
 import (
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/hex"
 	"net/http"
 	"slices"
@@ -33,6 +34,12 @@ func mintAPIToken() string {
 	return hex.EncodeToString(b)
 }
 
+// isAPIToken reports whether token is this instance's API token, in time that
+// does not depend on how much of it matches.
+func (s *Server) isAPIToken(token string) bool {
+	return subtle.ConstantTimeCompare([]byte(token), []byte(s.apiToken)) == 1
+}
+
 // exemptRoutes is the set of /api paths reachable without the per-instance
 // token, mapped to the methods admitted on each. A nil method list admits every
 // method the route is registered for.
@@ -53,7 +60,9 @@ func mintAPIToken() string {
 //     (see websocket_loop.go).
 //
 // None of these execute tools or expose credentials, so leaving them open does
-// not reopen the RCE vector the token closes.
+// not reopen the RCE vector the token closes. Those that change something are
+// still held to crossProcessRequest, so a web page cannot use one — any website
+// could otherwise stop the server mid-turn with a cross-site POST.
 //
 // The board delete is the only one that destroys anything, so it is admitted on
 // the narrowest terms available: that path for that method, and nothing else on
@@ -104,6 +113,32 @@ func apiAuthExempt(method, path string) bool {
 // control, which is what a rebinding page lacks.
 func (s *Server) hostAllowed(r *http.Request) bool {
 	return isRemoteIngress(r) || hostcheck.NamesThisMachine(r.Host) || s.allowedHosts.Has(r.Host)
+}
+
+// isSafeMethod reports whether method only reads.
+func isSafeMethod(method string) bool {
+	return method == http.MethodGet || method == http.MethodHead || method == http.MethodOptions
+}
+
+// crossProcessRequest admits a token-exempt request that changes something —
+// shutdown, a window's geometry, forgetting a board — only when it can be the
+// other Juggler process it is exempt for. Those are Go HTTP clients: they send
+// no Origin and no fetch metadata, and they address this machine. A browser
+// cannot be made to omit either header on a cross-site request, so a request
+// that carries a foreign Origin (or "null"), or that fetch metadata calls
+// cross-site or same-site, came from some web page and is refused. The Host
+// check is the DNS-rebinding defense (hostAllowed): a rebinding page is
+// same-origin to the browser, so it is the Host it chose that gives it away.
+func (s *Server) crossProcessRequest(r *http.Request) bool {
+	if !s.hostAllowed(r) {
+		return false
+	}
+	switch r.Header.Get("Sec-Fetch-Site") {
+	case "cross-site", "same-site":
+		return false
+	}
+	origin := r.Header.Get("Origin")
+	return origin == "" || origin == requestOrigin(r)
 }
 
 // hostGatedPaths are the routes outside apiAuthMiddleware's Host check that a
@@ -191,7 +226,15 @@ func fileTreeToken(r *http.Request) string {
 func (s *Server) apiAuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
-		if s.testMode || !strings.HasPrefix(path, "/api/") || apiAuthExempt(r.Method, path) {
+		if s.testMode || !strings.HasPrefix(path, "/api/") {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if apiAuthExempt(r.Method, path) {
+			if !isSafeMethod(r.Method) && !s.crossProcessRequest(r) {
+				http.Error(w, "Forbidden: this endpoint is for Juggler's own processes", http.StatusForbidden)
+				return
+			}
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -208,7 +251,7 @@ func (s *Server) apiAuthMiddleware(next http.Handler) http.Handler {
 		if token == "" {
 			token = fileTreeToken(r)
 		}
-		if token != s.apiToken {
+		if !s.isAPIToken(token) {
 			http.Error(w, "Unauthorized: missing or invalid session token", http.StatusUnauthorized)
 			return
 		}

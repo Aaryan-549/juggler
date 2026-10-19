@@ -200,7 +200,7 @@ const SCOPE_LABELS = {
  * message, or an example value that translates to itself, and is passed to
  * `t()` where it is drawn; the function hooks return text already translated,
  * and `notice` returns a message for `t()`.
- * @property {{list: () => Promise<any[]>, getConfig: () => Promise<any>, setConfig: (scope: 'global'|'project', map: object) => Promise<any>, restart?: (name: string) => Promise<any>, getLog?: (name: string) => Promise<string>}} ops - Backend adapters.
+ * @property {{list: () => Promise<any[]>, getConfig: () => Promise<any>, setConfig: (scope: 'global'|'project', map: object) => Promise<any>, restart?: (name: string) => Promise<any>, trust?: (name: string) => Promise<any>, getLog?: (name: string) => Promise<string>}} ops - Backend adapters. `trust` answers a row whose status is 'untrusted': a project entry whose command the backend will not run until the user has seen and accepted it.
  * @property {string} addLabel - Toolbar add-button label.
  * @property {string} emptyText - Empty-state text.
  * @property {(toolbar: HTMLElement) => void} [toolbarExtra] - Append extra toolbar content.
@@ -494,7 +494,15 @@ export class ConfigTabController {
     const btnRow = document.createElement('div');
     btnRow.className = 'mcp-btn-row';
 
-    if (enabled && spec.ops.restart) {
+    const untrusted = status.status === 'untrusted' && !!spec.ops.trust;
+    if (enabled && untrusted) {
+      const trust = document.createElement('button');
+      trust.type = 'button';
+      trust.className = 'settings-btn small';
+      trust.textContent = t('Trust and start');
+      trust.addEventListener('click', () => this._confirmTrust(name, trust));
+      btnRow.appendChild(trust);
+    } else if (enabled && spec.ops.restart) {
       const restart = document.createElement('button');
       restart.type = 'button';
       restart.className = 'settings-btn small';
@@ -561,6 +569,36 @@ export class ConfigTabController {
       await restart(name);
     } catch (e) {
       this.error = e instanceof Error ? errorText(e) : t('Failed to restart "{name}".', { name });
+    }
+    await this.refresh();
+  }
+
+  /**
+   * Show the user exactly what a project entry would run, and trust it only if
+   * they say so. The command, arguments and environment all come from a file
+   * that may have arrived with a cloned repository, so all three are shown.
+   * @param {string} name
+   * @param {HTMLButtonElement} btn
+   */
+  async _confirmTrust(name, btn) {
+    const trust = this.spec.ops.trust;
+    if (!trust) return;
+    const cfg = /** @type {any} */ (this.config?.project?.[name]) || {};
+    const command = [cfg.command, ...(Array.isArray(cfg.args) ? cfg.args : [])].filter(Boolean).join(' ');
+    const env = Object.entries(cfg.env || {}).map(([k, v]) => `${k}=${v}`).join(' ');
+    const ok = await showConfirm(
+      t('{hasEnv, select, yes {"{name}" comes from this project\'s .juggler/mcp.json and runs with your permissions: {command} (environment: {env}). Only trust it if you trust this project.} other {"{name}" comes from this project\'s .juggler/mcp.json and runs with your permissions: {command}. Only trust it if you trust this project.}}',
+        { name, command, env, hasEnv: env ? 'yes' : 'no' }),
+      t('Trust this MCP server?'),
+      { confirmText: t('Trust and start') }
+    );
+    if (!ok) return;
+    btn.disabled = true;
+    this.error = '';
+    try {
+      await trust(name);
+    } catch (e) {
+      this.error = e instanceof Error ? errorText(e) : t('Failed to trust "{name}".', { name });
     }
     await this.refresh();
   }

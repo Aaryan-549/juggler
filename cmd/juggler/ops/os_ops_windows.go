@@ -6,12 +6,18 @@
 
 package ops
 
-import "os/exec"
+import (
+	"os/exec"
 
-// newOpenCmds opens a path with its default Windows handler. `cmd /c start`
-// resolves the association; the empty "" is start's mandatory window-title arg.
+	"juggler/internal/sysopen"
+)
+
+// newOpenCmds opens a path with its default Windows handler, passed whole and
+// never through cmd.exe, which would run whatever follows an "&" in a file name
+// (see sysopen.Argv).
 func newOpenCmds(path string) []*exec.Cmd {
-	return []*exec.Cmd{exec.Command("cmd", "/c", "start", "", path)}
+	argv := sysopen.Argv("windows", path)
+	return []*exec.Cmd{exec.Command(argv[0], argv[1:]...)} //nolint:gosec // one argument, no shell
 }
 
 // newRevealCmds selects a path in Explorer. One way to ask, because Windows has
@@ -25,8 +31,9 @@ func newRevealCmds(path string) []*exec.Cmd {
 //
 // Not for a reveal: `explorer` returns a non-zero status as a matter of course,
 // having done exactly what was asked, so reading it would report every
-// successful reveal as a failure. `cmd /c start` is honest, and its status is
-// the only report of an association that could not be resolved.
+// successful reveal as a failure. The opener exits 0 whatever happens, so its
+// status is believed only in the sense that it never claims a failure; where no
+// association exists, Windows asks the user itself.
 func exitStatusMeansFailure(reveal bool) bool {
 	return !reveal
 }

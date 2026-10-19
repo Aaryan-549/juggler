@@ -649,17 +649,30 @@ export async function runTests(ctx) {
     }
   });
 
-  await test('a pin the agent made reads outside the project too', async () => {
-    // A pin shows the file to the person looking at the board and to nothing
-    // else — no byte of it reaches the model — so who asked for it changes
-    // nothing about what it may show.
+  await test('a pin the agent made is refused outside the project, and says so', async () => {
+    // The agent pins without asking, so its pin is held to the agent's own
+    // reach: the project. Reading past that would put any file on the machine —
+    // a key, a token — in front of whoever can see the board, remote viewers
+    // included, on nobody's say-so. The user pinning the same path is the grant.
     const outside = ctx.fixtureDir.replace(/[\\/][^\\/]+$/, '');
     assert(outside && outside !== ctx.fixtureDir, 'the fixture must have a parent to point at');
+    const fixtureName = ctx.fixtureDir.slice(outside.length + 1);
     const mounted = mount({ path: outside, isDirectory: true, agentRequested: true });
     try {
       const text = await settled(mounted.body);
-      assert(!text.includes('File not found') && !text.includes("Couldn't read"),
-        `an agent-made pin outside the project root still reads, got "${text}"`);
+      assert(text.includes('outside this project'), `the refusal says why, got "${text}"`);
+      assert(!text.includes(fixtureName), `and lists nothing of what is there, got "${text}"`);
+    } finally {
+      mounted.teardown();
+    }
+  });
+
+  await test('a pin the agent made reads inside the project', async () => {
+    const path = await writeFixture('agent-pinned.txt', 'the agent may show this');
+    const mounted = mount({ path, agentRequested: true });
+    try {
+      const text = await settled(mounted.body);
+      assert(text.includes('the agent may show this'), `an agent-made pin inside the project reads, got "${text}"`);
     } finally {
       mounted.teardown();
     }

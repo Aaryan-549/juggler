@@ -491,6 +491,64 @@ export async function runTests(_ctx) {
     }
   });
 
+  // A project server from a cloned repository does not run until the user has
+  // seen its command and trusted it, so its row offers that and nothing that
+  // would pretend to start it.
+  await run('trust: an untrusted project row offers Trust, not Restart', async () => {
+    const host = document.createElement('div');
+    const formHost = document.createElement('div');
+    formHost.id = 'trust-test-form';
+    host.appendChild(formHost);
+    const ctrl = new ConfigTabController(host, /** @type {any} */ ({
+      id: 'mcp',
+      noun: 'server',
+      formHostSelector: '#trust-test-form',
+      pollMs: 100000,
+      loadError: 'Failed to load MCP servers.',
+      addLabel: 'Add server',
+      emptyText: 'No MCP servers yet.',
+      ops: {
+        list: async () => [
+          { name: 'repo', status: 'untrusted', enabled: true },
+          { name: 'mine', status: 'running', enabled: true },
+        ],
+        getConfig: async () => ({
+          global: { mine: { command: 'my-tool' } },
+          project: { repo: { command: 'node', args: ['evil.js'] } },
+          hasProject: true,
+        }),
+        restart: async () => {},
+        trust: async () => {},
+      },
+      dotClass: (/** @type {any} */ s) => s.status,
+      dotTitle: () => '',
+      describe: () => '',
+      rowError: () => '',
+      validateName: () => '',
+    }));
+    try {
+      ctrl.show();
+      await ctrl.ready;
+      const rows = [...formHost.querySelectorAll('.mcp-row')];
+      /**
+       * @param {string} name - Server name
+       * @returns {string[]} The row's button labels
+       */
+      const buttons = (name) => {
+        const row = rows.find((r) => r.querySelector('.mcp-entry-name')?.textContent === name);
+        assert(row, `no row for ${name}`);
+        return [...row.querySelectorAll('button')].map((b) => b.textContent || '');
+      };
+      const repo = buttons('repo');
+      assert(repo.includes('Trust and start'), `untrusted row buttons: ${JSON.stringify(repo)}`);
+      assert(!repo.includes('Restart'), `untrusted row must not offer Restart: ${JSON.stringify(repo)}`);
+      const mine = buttons('mine');
+      assert(mine.includes('Restart') && !mine.includes('Trust and start'), `running row buttons: ${JSON.stringify(mine)}`);
+    } finally {
+      ctrl.stopPolling();
+    }
+  });
+
   await run('notice: nothing to say means no line', async () => {
     const { ctrl, formHost } = listController(async () => '');
     try {

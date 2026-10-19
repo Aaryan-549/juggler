@@ -69,7 +69,7 @@ type operations struct {
 
 // Execute dispatches an mcp operation. Operation names mirror the JS ops-api
 // wrappers (listServers, listTools, callTool, serverControl, getLog, getConfig,
-// setConfig).
+// setConfig, trustServer).
 func (o *operations) Execute(ctx context.Context, operation string, params map[string]any) (any, error) {
 	if manager == nil {
 		return nil, fmt.Errorf("mcp manager not initialized")
@@ -113,6 +113,16 @@ func (o *operations) Execute(ctx context.Context, operation string, params map[s
 
 	case "setConfig":
 		return o.setConfig(project, params)
+
+	case "trustServer":
+		// The settings UI's answer to an untrusted project server: record that the
+		// user trusts its command as it stands, and start it.
+		server, _ := params["server"].(string)
+		if err := trustProjectServer(project, server); err != nil {
+			return nil, err
+		}
+		manager.Reconcile(project)
+		return map[string]any{"servers": manager.ListServers()}, nil
 
 	default:
 		return nil, fmt.Errorf("unknown mcp operation: %s", operation)
@@ -186,8 +196,20 @@ func (o *operations) setConfig(project string, params map[string]any) (any, erro
 	default:
 		return nil, fmt.Errorf("unknown config scope %q (want 'global' or 'project')", target)
 	}
+	// What was on disk before, to tell the entries the user changed from those
+	// carried over. An unreadable file has nothing carried over.
+	var prev Config
+	if target == "project" {
+		prev, _ = readConfigFile(path)
+	}
 	if err := writeConfigFile(path, servers); err != nil {
 		return nil, err
+	}
+	if target == "project" {
+		// A command the user typed into the settings form is one they have seen.
+		if err := trustAuthored(project, prev.Servers, servers); err != nil {
+			return nil, err
+		}
 	}
 	manager.Reconcile(project)
 	return map[string]any{"servers": manager.ListServers()}, nil

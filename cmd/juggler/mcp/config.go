@@ -50,6 +50,11 @@ type ServerConfig struct {
 	// stop for the approval dialog. Honoured from the global mcp.json only — see
 	// loadMergedConfig.
 	AutoApprove bool `json:"autoApprove,omitempty"`
+
+	// untrusted marks a project stdio entry whose command the user has not
+	// trusted (trust.go). Set by loadMergedConfig, never read from or written to
+	// a file; the manager refuses to start such a server.
+	untrusted bool
 }
 
 // ToolFilter is a per-server tool visibility policy. Allow, when non-empty, is a
@@ -159,12 +164,14 @@ func readConfigFile(path string) (Config, error) {
 // never nil. Either file being absent is fine; a malformed file returns its
 // error so the caller can surface it.
 //
-// AutoApprove is dropped from every project entry. A project's mcp.json can
-// arrive with a cloned repository, and its servers start without asking, so the
-// approval dialog is the only thing between that repository's tools and their
-// first call — a file it supplies must not be able to switch the dialog off. A
-// project entry that replaces a pre-approved global one of the same name is a
-// different server, so it does not inherit the setting either.
+// A project's mcp.json can arrive with a cloned repository, so its entries are
+// held to two rules. A stdio entry is marked untrusted unless the user has
+// trusted that exact command (trust.go), and the manager will not start it. And
+// AutoApprove is dropped from every project entry: the approval dialog is what
+// stands between that repository's tools and their first call, so a file it
+// supplies must not be able to switch the dialog off. A project entry that
+// replaces a pre-approved or trusted global one of the same name is a different
+// server, so it inherits neither.
 func loadMergedConfig(projectRoot string) (map[string]ServerConfig, error) {
 	global, err := readConfigFile(globalConfigPath())
 	if err != nil {
@@ -178,28 +185,33 @@ func loadMergedConfig(projectRoot string) (map[string]ServerConfig, error) {
 	for name, sc := range global.Servers {
 		merged[name] = sc
 	}
+	var trusted map[string]bool
 	for name, sc := range project.Servers {
 		sc.AutoApprove = false
+		if needsTrust(sc) {
+			if trusted == nil {
+				trusted = readTrusted()
+			}
+			sc.untrusted = !trusted[trustFingerprint(projectRoot, name, sc)]
+		}
 		merged[name] = sc // project wins
 	}
 	return merged, nil
 }
 
 // writeConfigFile serializes servers to the given mcp.json path, creating parent
-// directories as needed. Used by the mcpSetConfig op.
+// directories as needed. Used by the mcpSetConfig op. The file can hold bearer
+// tokens (headers) and secrets (env), so it is owner-only and replaced
+// atomically.
 func writeConfigFile(path string, servers map[string]ServerConfig) error {
 	if servers == nil {
 		servers = map[string]ServerConfig{}
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
 	}
 	data, err := json.MarshalIndent(Config{Servers: servers}, "", "  ")
 	if err != nil {
 		return err
 	}
-	data = append(data, '\n')
-	return os.WriteFile(path, data, 0o644)
+	return writePrivateFile(path, append(data, '\n'))
 }
 
 // coerceServerConfig converts one JSON-decoded server entry (map[string]any)

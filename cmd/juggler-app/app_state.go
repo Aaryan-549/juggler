@@ -239,6 +239,7 @@ type appState struct {
 	app       *application.App
 	devMode   bool
 	ctlPort   int
+	ctlSecret string // authorises control requests; see control.go
 	workspace *workspaceStore
 
 	// gpuPolicy is the WebKitGTK hardware-acceleration policy applied to every
@@ -1112,7 +1113,7 @@ func (a *appState) buildLockedProjectWindow(spec windowSpec, message, inheritedT
 // showWindow once the app has launched.
 func (a *appState) buildWindow(spec windowSpec, serverURL string, serverProc *serverProc, saved core.WindowState, hasSaved bool, opts windowOpts) *winEntry {
 	id := <-a.ids
-	nativeCtl := fmt.Sprintf("http://127.0.0.1:%d/win/%s", a.ctlPort, id)
+	nativeCtl := a.controlBase(id)
 
 	// Resolve the startup appearance before building the URL/options, from what
 	// this window was last left in and what it inherits (see startupPrefs).

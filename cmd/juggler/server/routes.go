@@ -17,8 +17,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gorilla/mux"
-
 	"juggler/cmd/juggler/msg"
 	"juggler/cmd/juggler/ops"
 	"juggler/cmd/juggler/providers/provider"
@@ -675,53 +673,7 @@ func (s *Server) setupRoutes() {
 		s.serveEmbeddedTestAssets(vPrefix)
 	}
 
-	// Project-file module loader for the query_code sandbox worker. The worker
-	// (opaque origin, no import map) resolves user code's
-	// `import('<projectRoot>/...')` against its own http origin, so it arrives
-	// here as a request for that absolute path. We serve the real file straight
-	// off disk when it exists inside the project root (or a ready workspace root,
-	// which is where a bound conversation's `projectRoot` points) and is an
-	// importable module — this is what lets query_code load and test ANY
-	// JavaScript module in the user's own tree, not just the app's own web/
-	// assets. Registered before the web-root fallback below so a real on-disk
-	// file wins; when no such file exists the matcher declines and the request
-	// falls through. Only .js/.mjs/.cjs/.json are served (never arbitrary
-	// source/secrets) even though the response carries ACAO=* for the opaque
-	// worker, and path traversal outside the root is rejected.
-	s.router.MatcherFunc(func(r *http.Request, _ *mux.RouteMatch) bool {
-		_, ok := s.sandboxImportFile(r.URL.Path)
-		return ok
-	}).HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		mod, ok := s.sandboxImportFile(r.URL.Path)
-		if !ok {
-			http.NotFound(w, r)
-			return
-		}
-		serveSandboxImportFile(w, r, mod)
-	})
-
-	// Web-root fallback for the sandbox worker. When the absolute import path is
-	// `<projectRoot>/web/...` and has no real on-disk file (the common case when
-	// the user is developing juggler itself against embedded/served assets), we
-	// serve it from the web root — the server-side equivalent of the iframe
-	// import map's "<root>/web/" → "/v<ver>/" rewrite. Matched dynamically
-	// because the project path is not known at registration time; no project
-	// loaded ⇒ never matches.
-	s.router.MatcherFunc(func(r *http.Request, _ *mux.RouteMatch) bool {
-		root := sandboxImportRoot(s.ProjectPath())
-		return root != "" && strings.HasPrefix(sandboxImportPath(r.URL.Path, root), root+"/web/")
-	}).HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if staticFileServer == nil {
-			http.NotFound(w, r)
-			return
-		}
-		root := sandboxImportRoot(s.ProjectPath())
-		rest := strings.TrimPrefix(sandboxImportPath(r.URL.Path, root), root+"/web")
-		r2 := r.Clone(r.Context())
-		r2.URL.Path = rest
-		r2.URL.RawPath = ""
-		staticFileServer.ServeHTTP(w, r2)
-	})
+	s.registerSandboxImportRoutes(staticFileServer)
 
 	// Worker-compatible module loader. Module workers don't inherit the page
 	// import map, so the worker-backed engine (and every plugin module it pulls
@@ -762,12 +714,11 @@ func (s *Server) setupRoutes() {
 		s.extraRoutes(s.router)
 	}
 
-	// Unmatched requests: mirror corsMiddleware's non-/api headers so an
-	// unresolved sandbox import (a path that doesn't exist under the project
-	// root, e.g. a typo) returns a clean 404 the opaque-origin worker can read,
-	// instead of a bare 404 the browser surfaces as the misleading "Cross-Origin
-	// script load denied". mux does not run Use() middleware for the
-	// NotFoundHandler, so the headers are set here directly.
+	// Unmatched requests: mirror corsMiddleware's non-/api headers so a module
+	// the opaque-origin sandbox asks for and cannot have returns a clean 404 it
+	// can read, instead of a bare 404 the browser surfaces as the misleading
+	// "Cross-Origin script load denied". mux does not run Use() middleware for
+	// the NotFoundHandler, so the headers are set here directly.
 	s.router.NotFoundHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.HasPrefix(r.URL.Path, "/api/") {
 			w.Header().Set("Access-Control-Allow-Origin", "*")

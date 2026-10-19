@@ -23,6 +23,10 @@ import (
 // handshake is genuinely compatible) instead of running tests. The manager
 // spawns os.Args[0] with this env set as its "server command".
 func TestMain(m *testing.M) {
+	// A test that must know whether the command ever ran names a file here.
+	if marker := os.Getenv("MCP_FAKE_MARKER"); marker != "" {
+		_ = os.WriteFile(marker, []byte("ran\n"), 0o600)
+	}
 	switch os.Getenv("MCP_FAKE_MODE") {
 	case "":
 		os.Exit(m.Run())

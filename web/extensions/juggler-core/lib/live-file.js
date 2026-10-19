@@ -54,12 +54,12 @@ injectFileContentStyles();
  * a failure collapses to `exists: false` rather than throwing, because every
  * caller here has somewhere to show "not found" and nowhere to show a stack.
  *
- * The read is user-initiated by construction: someone named this path, in a
- * picker or an `@`-mention or by pinning it. That is what `userInitiated` says to
- * the read/tree ops, and it is what lets the path resolve WITHOUT the
- * working-directory containment check — for a relative `../…` as much as for an
- * absolute one. Without it a path outside the project root fails as "path is
- * outside the working directory".
+ * `userInitiated` says the user named this path themselves — in a picker, an
+ * `@`-mention, or by pinning it — and it is what lets the path resolve WITHOUT
+ * the working-directory containment check, for a relative `../…` as much as for
+ * an absolute one. It is the caller's to assert and is off unless the caller
+ * says so: a path the agent chose is held to the project, and a path outside it
+ * fails as "path is outside the working directory".
  *
  * Only the read op takes a signal; `stat` and `getTree` do not, so a caller that
  * can be torn down mid-read must check its own signal before using what comes
@@ -84,7 +84,7 @@ export async function fetchLiveFile(path, options = {}) {
   if (!path) {
     return { path: '', isDirectory: false, exists: false, content: '' };
   }
-  const userInitiated = options.userInitiated !== false;
+  const userInitiated = options.userInitiated === true;
   // All three reads go through one scope, so the probe below cannot answer for a
   // different tree than the read it is deciding.
   const ops = options.ops || { readFile, getTree, stat };
@@ -171,9 +171,10 @@ function errorText(err) {
  * Build the FileSource for a live result, for either realm's use of it: a viewer
  * renders it, the LLM-side extraction pulls text out of it.
  *
- * The source says the read was user-initiated for the same reason
- * {@link fetchLiveFile} does — without it the viewer's byte transport refuses a
- * file the user named from the Desktop, having just been shown its contents.
+ * The source carries the read's provenance: a read the user initiated says so,
+ * or the viewer's byte transport refuses a file the user named from the
+ * Desktop, having just been shown its contents. Like {@link fetchLiveFile}, it
+ * is off unless the caller says so.
  * @param {LiveFileResult} result - A live read.
  * @param {string} absolutePath - The path to attribute the bytes to.
  * @param {{conversationId?: string, userInitiated?: boolean}} [options] - Conversation
@@ -183,7 +184,7 @@ function errorText(err) {
 export function liveFileSource(result, absolutePath, options = {}) {
   return fileSourceFromReadResult(result, absolutePath || result.path || '', {
     conversationId: options.conversationId,
-    access: options.userInitiated === false ? {} : { userInitiated: true },
+    access: options.userInitiated === true ? { userInitiated: true } : {},
   });
 }
 

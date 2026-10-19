@@ -14,6 +14,10 @@
  * param — has no native host, so these calls are no-ops (windowControlURL
  * returns null and callers skip).
  *
+ * The value carries the secret that authorises control requests, in its path,
+ * so every endpoint built from it carries it too. It must never leave this
+ * window: not into a link, a report, or a URL handed to another page.
+ *
  * Resolved once at module load — the owner bakes the value into the URL and it
  * never changes for the life of the document.
  */

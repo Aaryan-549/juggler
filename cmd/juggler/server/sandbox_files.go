@@ -5,15 +5,90 @@
 package server
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/hex"
 	"net/http"
 	"path"
 	"path/filepath"
 	"strings"
 
 	"juggler/cmd/juggler/core"
+	"juggler/cmd/juggler/ops"
 	"juggler/cmd/juggler/webui"
 	"juggler/cmd/juggler/workspace"
 )
+
+// sandboxImportPrefix is where the query_code sandbox loads modules from:
+// "/sandbox-import/<capability>/<absolute path>". The sandbox runs with an
+// opaque origin, so these responses carry ACAO=* and CORP cross-origin — which
+// means any page that can reach the port can read them. The capability in the
+// path is what makes that safe: a page that knows the port and a project path
+// still cannot name a URL this route answers. It rides in the path rather than
+// a query string so a served module's own relative imports inherit it.
+const sandboxImportPrefix = "/sandbox-import/"
+
+// sandboxImportLabel is the HMAC message that derives the capability from the
+// API token. sandboxImportCapability in web/sdk/lib/sandbox-runner.js and
+// web/js/engine-sandbox-node.mjs derive the same value, so the realms that hold
+// the API token can build import URLs while the sandbox is handed only the
+// capability: a leaked one opens module reads here and nothing on /api.
+const sandboxImportLabel = "juggler-sandbox-import"
+
+// sandboxImportCapability derives the import capability from the API token.
+func sandboxImportCapability(apiToken string) string {
+	mac := hmac.New(sha256.New, []byte(apiToken))
+	mac.Write([]byte(sandboxImportLabel))
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
+// sandboxImportTarget strips a valid capability off an import URL path and
+// returns the absolute path it names (leading slash kept, as sandboxImportPath
+// expects), or ok=false when the prefix or the capability is wrong.
+func (s *Server) sandboxImportTarget(urlPath string) (string, bool) {
+	rest, ok := strings.CutPrefix(urlPath, sandboxImportPrefix)
+	if !ok || s.apiToken == "" {
+		return "", false
+	}
+	capability, target, ok := strings.Cut(rest, "/")
+	want := sandboxImportCapability(s.apiToken)
+	if !ok || subtle.ConstantTimeCompare([]byte(capability), []byte(want)) != 1 {
+		return "", false
+	}
+	return "/" + target, true
+}
+
+// registerSandboxImportRoutes mounts the query_code sandbox's module loader
+// under sandboxImportPrefix. A real module inside the project or a ready
+// workspace (sandboxImportFile) is served off disk — what lets query_code load
+// and test any JavaScript module in the user's own tree. Failing that, a path
+// under `<projectRoot>/web/` is served from the app's own web root, for the
+// common case of developing Juggler itself against its embedded assets. No
+// project loaded, or no staticFileServer, means only the first applies.
+func (s *Server) registerSandboxImportRoutes(staticFileServer http.Handler) {
+	s.router.PathPrefix(sandboxImportPrefix).HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		target, ok := s.sandboxImportTarget(r.URL.Path)
+		if !ok || (r.Method != http.MethodGet && r.Method != http.MethodHead) {
+			http.NotFound(w, r)
+			return
+		}
+		if mod, ok := s.sandboxImportFile(target); ok {
+			serveSandboxImportFile(w, r, mod)
+			return
+		}
+		root := sandboxImportRoot(s.ProjectPath())
+		rest, underWeb := strings.CutPrefix(sandboxImportPath(target, root), root+"/web/")
+		if root == "" || !underWeb || staticFileServer == nil {
+			http.NotFound(w, r)
+			return
+		}
+		r2 := r.Clone(r.Context())
+		r2.URL.Path = "/" + rest
+		r2.URL.RawPath = ""
+		staticFileServer.ServeHTTP(w, r2)
+	})
+}
 
 // sandboxImportRoot normalises a root (the project's, or a workspace's) for the
 // query_code sandbox's absolute-path module loader: forward slashes so it
@@ -42,13 +117,14 @@ type sandboxModule struct {
 	rel  string
 }
 
-// sandboxImportFile maps a query_code sandbox import URL to a real module inside
-// a tree the sandbox may import from, or reports ok=false. The sandbox worker
-// resolves user code's `import('<projectRoot>/rel/path')` against its http
-// origin, so the request path is that absolute path. We serve it only when it
-// (a) stays strictly inside one of those trees and (b) is an importable module,
-// so the ACAO=* response never exposes arbitrary files (secrets, source) to a
-// cross-origin reader — only JavaScript/JSON modules the sandbox can import().
+// sandboxImportFile maps the absolute path a sandbox import names (the request
+// path with its capability stripped by sandboxImportTarget) to a real module
+// inside a tree the sandbox may import from, or reports ok=false. We serve it
+// only when it (a) stays strictly inside one of those trees once symlinks are
+// resolved, (b) passes through no dot-directory — .juggler holds the session
+// and every transcript, .git and .env-style trees hold credentials — and (c) is
+// an importable module. The response is readable from any origin, so a leaked
+// capability yields project JavaScript/JSON modules and nothing else.
 //
 // The trees are the project and every ready workspace, because `projectRoot` is
 // the root of the tree the asking CONVERSATION works in: a bound one builds its
@@ -58,8 +134,6 @@ type sandboxModule struct {
 // there — and neither the module-extension list nor the containment check moves.
 // The file itself is read through the tree's own Open.
 func (s *Server) sandboxImportFile(urlPath string) (sandboxModule, bool) {
-	// Cheapest filter first: this runs as a route matcher, so every request that
-	// reaches the fallthrough asks it, and almost none of them name a module.
 	if !sandboxImportableExt(urlPath) {
 		return sandboxModule{}, false
 	}
@@ -96,6 +170,16 @@ func sandboxModuleIn(urlPath string, tree workspace.Workspace) (sandboxModule, b
 		return sandboxModule{}, false
 	}
 	mod := sandboxModule{tree: tree, rel: strings.TrimPrefix(p, root+"/")}
+	for _, seg := range strings.Split(mod.rel, "/") {
+		if strings.HasPrefix(seg, ".") {
+			return sandboxModule{}, false
+		}
+	}
+	// Open judges the path lexically and follows links, so a symlink planted in
+	// the tree would reach anywhere. The path scope resolves them first.
+	if res, err := ops.NewPathScope(tree.Root(), nil).Resolve(filepath.FromSlash(mod.rel)); err != nil || res == nil || !res.IsValid {
+		return sandboxModule{}, false
+	}
 	f, err := tree.Open(mod.rel)
 	if err != nil {
 		return sandboxModule{}, false

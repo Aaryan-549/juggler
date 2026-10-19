@@ -51,10 +51,13 @@ const ARRIVAL_CHECK_MS = [250, 500, 1000, 2000, 5000];
  * conversation's context. The agent may request that a file be shown, but the
  * board remains a one-way display surface rather than agent-readable context.
  *
- * Pin reads are treated as display-initiated rather than model context reads. That
- * remains true when the agent requested the pin: the bytes go only to the viewer,
- * and the agent has no board-reading path. A pin may therefore point outside the
- * project root, the same way a user-picked file or an `@`-mention may.
+ * A pin the user made is their own grant, like a user-picked file or an
+ * `@`-mention, so it may point outside the project root. A pin the agent made
+ * (`agentRequested`) is not: the agent pins without asking, and reading past
+ * the project for it would put any file on the machine in front of whoever can
+ * see the board, remote viewers included, on nobody's say-so. So it is held to
+ * the project, and one outside it says so instead of reading. The user pinning
+ * the same path is how to see it.
  * @class
  * @augments PinboardItemType
  */
@@ -247,7 +250,7 @@ class FilePin extends PinboardItemType {
           try {
             const metadata = await stat({
               path: absoluteFilePinPath(context.pin.config, context.active),
-              userInitiated: true,
+              userInitiated: userMade(context.pin.config),
             });
             present = metadata.exists !== false;
           } catch {
@@ -281,17 +284,25 @@ class FilePin extends PinboardItemType {
       const relative = projectRelative(path, context.active?.project?.path || '');
       body.setAttribute('data-code-ref-path', relative || path);
       body.toggleAttribute('data-code-ref-absolute', !relative);
+      const userInitiated = userMade(context.pin.config);
+      if (!userInitiated && !insideProject(relative)) {
+        body.replaceChildren(createElement('div', 'file-content-not-found',
+          t('The agent pinned {path}, which is outside this project. A pin the agent makes shows only files inside the project — pin it yourself to see it here.', { path })));
+        return;
+      }
       body.replaceChildren(createElement('div', 'file-content-loading', t('Loading…')));
 
       const result = await fetchLiveFile(path, {
         signal: context.signal,
         whole: true,
+        userInitiated,
       });
       if (mine !== generation || context.signal.aborted) return;
 
       renderLiveFileBody(body, result, {
         absolutePath: path,
         conversationId: context.active?.conversation?.id,
+        userInitiated,
         codeRefPath: relative || path,
         codeRefAbsolute: !relative,
       });
@@ -349,6 +360,27 @@ function projectRelative(path, project) {
   const rest = path.slice(project.length);
   if (!/^[/\\]/.test(rest)) return '';
   return rest.replace(/^[/\\]+/, '').replace(/\\/g, '/');
+}
+
+/**
+ * Whether a pin's reads are the user's own: true unless the agent made it.
+ * @param {Record<string, any>} config - The pin's config.
+ * @returns {boolean} True when the user made the pin.
+ */
+function userMade(config) {
+  return config?.agentRequested !== true;
+}
+
+/**
+ * Whether a project-relative path (from {@link projectRelative}) stays inside
+ * the project: '' is outside, and so is anything that climbs back out. The
+ * server holds the same line on every read; this is what lets the pin say so
+ * plainly instead of reporting a refused read.
+ * @param {string} relative - The project-relative path.
+ * @returns {boolean} True when the path is inside the project.
+ */
+function insideProject(relative) {
+  return relative !== '' && !relative.split('/').includes('..');
 }
 
 /**

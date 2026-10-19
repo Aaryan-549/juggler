@@ -26,6 +26,7 @@ import {
   mcpGetConfig,
   mcpSetConfig,
   mcpServerControl,
+  mcpTrustServer,
   mcpGetLog,
   mcpListTools,
   acpListAgents,
@@ -341,6 +342,7 @@ const STATUS_LABELS = {
   starting: markForTranslation('starting'),
   stopped: markForTranslation('stopped'),
   failed: markForTranslation('failed'),
+  untrusted: markForTranslation('not trusted'),
   available: markForTranslation('available'),
   unavailable: markForTranslation('unavailable'),
   disabled: markForTranslation('disabled'),
@@ -424,6 +426,7 @@ const MCP_SPEC = {
     getConfig: () => mcpGetConfig(),
     setConfig: (scope, servers) => mcpSetConfig({ scope, servers }),
     restart: (name) => mcpServerControl({ server: name, action: 'restart' }),
+    trust: (name) => mcpTrustServer({ server: name }),
     getLog: async (name) => (await mcpGetLog({ server: name })).log,
   },
   addLabel: markForTranslation('Add server'),
@@ -451,7 +454,10 @@ const MCP_SPEC = {
     return impl;
   },
   describe: (s) => formatMcpTokenCost(s),
-  rowError: (s) => (s.status === 'failed' && s.error) ? (String(s.error).split('\n')[0] || '') : '',
+  rowError: (s) => {
+    if (s.status === 'untrusted') return t("Not started: this command comes from the project's .juggler/mcp.json. Check it, then trust it to run it.");
+    return (s.status === 'failed' && s.error) ? (String(s.error).split('\n')[0] || '') : '';
+  },
   deleteConfirm: (name) => ({
     message: t('Remove the MCP server "{name}"? Its tools will disappear from conversations.', { name }),
     title: t('Remove server'),

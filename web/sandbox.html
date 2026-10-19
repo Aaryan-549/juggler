@@ -251,7 +251,7 @@ function skipString(s, i, quote) {
 }
 
 // The iframe posts {type:'init', code, timeoutMs, capabilities, projectRoot,
-// origin} plus a MessagePort on the worker's first 'message'. All further
+// importBase} plus a MessagePort on the worker's first 'message'. All further
 // traffic is on the port: capability calls go out as {kind, method, args, id};
 // the host's {kind:'reply', id, ...} comes back; the final {kind:'result', ...}
 // carries the script's value. This is the exact protocol the host
@@ -265,7 +265,10 @@ self.addEventListener('message', (event) => {
   const rawCode = data.code;
   const timeoutMs = data.timeoutMs;
   const projectRoot = data.projectRoot;
-  const origin = data.origin;
+  // "<origin>/sandbox-import/<capability>": the server serves project modules
+  // only beneath it (cmd/juggler/server/sandbox_files.go), and a module's own
+  // relative imports resolve beneath it too.
+  const importBase = data.importBase;
   const capabilities = data.capabilities;
 
   let nextId = 0;
@@ -291,9 +294,9 @@ self.addEventListener('message', (event) => {
   // import() resolver for user code. A blob worker's module base is the opaque
   // blob: URL, so a bare absolute path ("/Users/.../web/x.js") cannot resolve.
   // We rewrite every import(...) in the user code to sandboxImport(...) and
-  // resolve absolute paths against the server's http origin, which it CAN
-  // fetch cross-origin (CORS) and serve from the static tree. Already-qualified
-  // URLs (http:, blob:, data:) pass through unchanged.
+  // resolve absolute paths beneath importBase on the server's http origin, which
+  // it CAN fetch cross-origin (CORS). Already-qualified URLs (http:, blob:,
+  // data:) pass through unchanged.
   function sandboxImport(spec) {
     let url = spec;
     if (typeof spec === 'string' && (/^node:/.test(spec) || isNodeBuiltin(spec))) {
@@ -302,12 +305,12 @@ self.addEventListener('message', (event) => {
     if (typeof spec === 'string') {
       // A Windows absolute path (C:/... or C:\\...) also matches the URL-scheme
       // test below (its drive letter looks like a "c:" scheme), so detect it
-      // first and resolve it against the origin like any other absolute project
+      // first and resolve it beneath importBase like any other absolute project
       // path — the server serves "<projectRoot>/web/..." from the static tree.
-      if (/^[a-zA-Z]:[\\\\/]/.test(spec)) url = origin + '/' + spec.replace(/\\\\/g, '/');
+      if (/^[a-zA-Z]:[\\\\/]/.test(spec)) url = importBase + '/' + spec.replace(/\\\\/g, '/');
       else if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(spec)) url = spec;
-      else if (spec.startsWith('/')) url = origin + spec;
-      else url = origin + '/' + spec.replace(/^\\.\\//, '');
+      else if (spec.startsWith('/')) url = importBase + spec;
+      else url = importBase + '/' + spec.replace(/^\\.\\//, '');
     }
     return import(url);
   }
@@ -436,7 +439,10 @@ self.addEventListener('message', (event) => {
             if (!event.data || event.data.type !== 'sandbox-execute') return;
             const hostPort = event.ports[0];
             if (!hostPort) return;
-            const { code, timeoutMs, capabilities } = event.data;
+            const { code, timeoutMs, capabilities, importCapability } = event.data;
+            // The host derives the capability from the API token it holds; this
+            // frame never sees the token itself.
+            const importBase = ORIGIN + '/sandbox-import/' + (typeof importCapability === 'string' && importCapability ? importCapability : '-');
             // The engine passes its live project root so `projectRoot` tracks a
             // runtime project switch; fall back to the serve-time template value
             // (PROJECT_ROOT) when the host doesn't supply one.
@@ -519,7 +525,7 @@ self.addEventListener('message', (event) => {
             };
 
             worker.postMessage(
-                { type: 'init', code, timeoutMs, capabilities, projectRoot: effectiveProjectRoot, origin: ORIGIN },
+                { type: 'init', code, timeoutMs, capabilities, projectRoot: effectiveProjectRoot, importBase },
                 [channel.port2]
             );
         });

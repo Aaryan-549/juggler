@@ -1278,6 +1278,10 @@ settings-panel .mcp-status-dot.status-failed {
     background: var(--accent-red);
 }
 
+settings-panel .mcp-status-dot.status-untrusted {
+    background: var(--accent-orange);
+}
+
 settings-panel .mcp-status-dot.status-stopped {
     background: var(--text-tertiary);
 }

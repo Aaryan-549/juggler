@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -232,12 +233,18 @@ console.log(JSON.stringify({
 	}
 }
 
+// sandboxImportVector is the import capability for the API token
+// "test-instance-token-abc123". The Go server (sandbox_files_test.go) and both
+// JavaScript hosts derive it independently, and each is pinned to this value.
+const sandboxImportVector = "342cc23b510fab8fa687b3051f08a8801a0caf3a283d6432dc652c9041fb5638"
+
 // TestNodeSandboxCannotReachTheAPI pins that a program on the Node engine host
 // cannot use its module loader to reach the server's /api. The loader fetches
 // same-origin module URLs over HTTP; the browser sandbox's imports go out from
 // an opaque origin with no token, so /api refuses them, and the Node host must
 // be no stronger: an /api URL is refused before any request is made, and a
-// module that may be imported is fetched without the API token.
+// module that may be imported is fetched without the API token — beneath the
+// import capability derived from it, which is all the module route accepts.
 func TestNodeSandboxCannotReachTheAPI(t *testing.T) {
 	var got struct {
 		Relative string     `json:"relative"`
@@ -247,10 +254,11 @@ func TestNodeSandboxCannotReachTheAPI(t *testing.T) {
 	}
 	runNodeSandboxHarness(t, `
 const http = await import('node:http');
+globalThis.__jugglerToken = 'test-instance-token-abc123';
 const requests = [];
 const server = http.createServer((req, res) => {
   requests.push([req.url, req.headers['x-juggler-token'] || '']);
-  if (req.url === '/mod.mjs') { res.setHeader('content-type', 'text/javascript'); res.end('export default 42;'); return; }
+  if (req.url === '/sandbox-import/`+sandboxImportVector+`/mod.mjs') { res.setHeader('content-type', 'text/javascript'); res.end('export default 42;'); return; }
   res.setHeader('content-type', 'text/javascript');
   res.end('export default "reached";');
 });
@@ -268,10 +276,15 @@ server.close();
 console.log(JSON.stringify({ relative, absolute, allowed, requests }));
 `, &got)
 
-	for name, o := range map[string]string{"relative": got.Relative, "absolute": got.Absolute} {
-		if !strings.HasPrefix(o, "refused: ") {
-			t.Errorf("an %s /api import must be refused, got %q", name, o)
-		}
+	// A root-relative "/api/…" is a path beneath the import capability, like
+	// every other one, so it cannot name the API at all; the request loop below
+	// pins that it never arrives there.
+	if !strings.HasPrefix(got.Absolute, "refused: ") {
+		t.Errorf("an absolute /api import must be refused, got %q", got.Absolute)
+	}
+	wantRelative := "/sandbox-import/" + sandboxImportVector + "/api/session"
+	if !slices.ContainsFunc(got.Requests, func(r []string) bool { return r[0] == wantRelative }) {
+		t.Errorf("a relative /api import must go beneath the capability (%s); requests were %v", wantRelative, got.Requests)
 	}
 	if got.Allowed != "42" {
 		t.Errorf("an ordinary module import must still load, got %q", got.Allowed)
@@ -280,9 +293,24 @@ console.log(JSON.stringify({ relative, absolute, allowed, requests }));
 		if strings.HasPrefix(r[0], "/api") {
 			t.Errorf("the sandbox reached %s", r[0])
 		}
-		if r[1] != "" {
+		if r[1] != "" || strings.Contains(r[0], "test-instance-token-abc123") {
 			t.Errorf("the sandbox sent the API token with %s", r[0])
 		}
+	}
+}
+
+// The browser host derives the import capability with WebCrypto, the Node host
+// with node:crypto; both must name the value the server accepts.
+func TestSandboxImportCapabilityMatchesTheServer(t *testing.T) {
+	var got struct {
+		Browser string `json:"browser"`
+	}
+	runNodeSandboxHarness(t, `
+const { sandboxImportCapability } = await import(new URL('`+"sdk/lib/sandbox-runner.js"+`', 'file://' + process.cwd() + '/').href);
+console.log(JSON.stringify({ browser: await sandboxImportCapability('test-instance-token-abc123') }));
+`, &got)
+	if got.Browser != sandboxImportVector {
+		t.Errorf("sandbox-runner.js derived %q, want %q", got.Browser, sandboxImportVector)
 	}
 }
 

@@ -17,11 +17,14 @@
  * only end. The untrusted code never runs on this thread.
  */
 
+import { createHmac } from 'node:crypto';
+
 /**
  * Install the Node query_code sandbox delegate on globalThis, replacing the
  * boot-time "not supported" rejection.
- * The sandbox is given no API token: it loads modules only from routes that
- * need none (engine-sandbox-loader-hooks.mjs).
+ * The sandbox is given no API token. It loads project modules from beneath
+ * `<origin>/sandbox-import/<capability>`, where the capability is derived from
+ * the token here (sandboxImportCapability) and is good for nothing else.
  * @param {{ origin: string, projectRoot: string }} opts
  */
 export function installNodeSandboxDelegate({ origin, projectRoot }) {
@@ -36,6 +39,19 @@ export function installNodeSandboxDelegate({ origin, projectRoot }) {
    */
   /** @type {any} */ (globalThis).__hostSandboxDelegate = (code, capabilities, timeoutMs, callerRoot, hooks) =>
     runInWorkerSandbox(code, capabilities, timeoutMs, { origin, projectRoot }, callerRoot, hooks);
+}
+
+/**
+ * The capability project-module imports carry: HMAC-SHA256 of the label
+ * "juggler-sandbox-import" keyed by the API token, as hex — the same value as
+ * sandboxImportCapability in web/sdk/lib/sandbox-runner.js and the server's in
+ * cmd/juggler/server/sandbox_files.go, which answers only for it.
+ * @param {string} apiToken - The per-instance API token
+ * @returns {string} The capability, or "" with no token
+ */
+function sandboxImportCapability(apiToken) {
+  if (!apiToken) return '';
+  return createHmac('sha256', apiToken).update('juggler-sandbox-import').digest('hex');
 }
 
 /**
@@ -74,9 +90,12 @@ async function runInWorkerSandbox(code, capabilities, timeoutMs, env, callerRoot
   const liveProjectRoot =
     callerRoot || (/** @type {any} */ (globalThis).__jugglerProjectRoot ?? env.projectRoot);
 
+  const importBase = `${env.origin}/sandbox-import/${
+    sandboxImportCapability(/** @type {any} */ (globalThis).__jugglerToken || '') || '-'}`;
   const worker = new Worker(new URL('./engine-sandbox-worker.mjs', import.meta.url), {
     workerData: {
       origin: env.origin,
+      importBase,
       projectRoot: liveProjectRoot,
       code,
       timeoutMs,

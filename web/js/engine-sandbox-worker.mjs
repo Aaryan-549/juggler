@@ -34,7 +34,7 @@
 import { parentPort, workerData } from 'node:worker_threads';
 import { register } from 'node:module';
 
-const { origin, projectRoot, code: rawCode, timeoutMs, descriptors } = workerData;
+const { origin, importBase, projectRoot, code: rawCode, timeoutMs, descriptors } = workerData;
 
 // Register the http(s) import loader BEFORE any user import runs, so
 // sandboxImport's origin URLs resolve. Runs on a dedicated loader thread.
@@ -88,8 +88,8 @@ function sandboxImport(spec) {
   }
   let url;
   if (/^[a-zA-Z]:[\\/]/.test(spec)) {
-    // Windows absolute path: resolve against the origin like any project path.
-    url = origin + '/' + spec.replace(/\\/g, '/');
+    // Windows absolute path: resolve beneath importBase like any project path.
+    url = importBase + '/' + spec.replace(/\\/g, '/');
   } else if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(spec)) {
     // Already has a scheme: only same-origin http(s) is allowed.
     if (!origin || !spec.startsWith(origin)) {
@@ -97,9 +97,9 @@ function sandboxImport(spec) {
     }
     url = spec;
   } else if (spec.startsWith('/')) {
-    url = origin + spec;
+    url = importBase + spec;
   } else {
-    url = origin + '/' + spec.replace(/^\.\//, '');
+    url = importBase + '/' + spec.replace(/^\.\//, '');
   }
   return import(url);
 }

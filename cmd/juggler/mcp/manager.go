@@ -27,7 +27,13 @@ const (
 	statusStarting = "starting"
 	statusRunning  = "running"
 	statusFailed   = "failed"
+	// statusUntrusted is a project stdio server whose command the user has not
+	// trusted (trust.go). It is never started until they do.
+	statusUntrusted = "untrusted"
 )
+
+// untrustedMessage is the error an untrusted server reports.
+const untrustedMessage = "not started: this command comes from the project's .juggler/mcp.json — trust it in Settings → MCP to run it"
 
 const (
 	// maxRestartAttempts bounds crash-restart before a server is marked failed,
@@ -330,7 +336,9 @@ func (m *Manager) releaseSettleWaiters(servers map[string]*serverState) {
 // never be the one that gets latched.
 func discoveryComplete(servers map[string]*serverState) bool {
 	for _, s := range servers {
-		if s.cfg.IsEnabled() && s.status != statusRunning {
+		// An untrusted server changes only when the user acts, and that reconcile
+		// fires the change hook, so it holds nothing back.
+		if s.cfg.IsEnabled() && s.status != statusRunning && s.status != statusUntrusted {
 			return false
 		}
 	}
@@ -373,9 +381,11 @@ func (m *Manager) reconcile(servers map[string]*serverState, project string) {
 		if s.cfg.AutoApprove != dc.AutoApprove && len(s.tools) > 0 {
 			changed = true
 		}
+		wasUntrusted := s.status == statusUntrusted
 		s.cfg = dc
-		if dc.IsEnabled() && s.status == statusStopped {
+		if dc.IsEnabled() && (s.status == statusStopped || (wasUntrusted && !dc.untrusted)) {
 			m.startServer(s)
+			changed = changed || wasUntrusted
 		}
 	}
 	if changed {
@@ -394,6 +404,15 @@ func (m *Manager) failStart(s *serverState, msg string) {
 // startServer transitions a stopped server to starting and launches its connect
 // goroutine. Must run on the manager goroutine.
 func (m *Manager) startServer(s *serverState) {
+	// Every start — reconcile, a tool call, Start/Restart, a crash restart —
+	// comes through here, so this is the one gate on running a command a
+	// repository supplied.
+	if s.cfg.untrusted {
+		s.status = statusUntrusted
+		s.lastErr = untrustedMessage
+		m.drainWaiters(s, ensureResult{err: fmt.Errorf("mcp server %q %s", s.name, untrustedMessage)})
+		return
+	}
 	switch s.cfg.transportKind() {
 	case "stdio":
 		if strings.TrimSpace(s.cfg.Command) == "" {
@@ -653,7 +672,7 @@ func (m *Manager) handleEnsure(servers map[string]*serverState, req mcpReq) {
 		s.attempts = 0
 		s.waiters = append(s.waiters, forward(req.resp))
 		m.startServer(s)
-	case statusStopped:
+	case statusStopped, statusUntrusted:
 		s.waiters = append(s.waiters, forward(req.resp))
 		m.startServer(s)
 	default: // starting

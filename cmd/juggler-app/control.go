@@ -5,7 +5,11 @@
 package main
 
 import (
+	"crypto/rand"
+	"crypto/subtle"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -22,25 +26,71 @@ import (
 // The page is served by the (possibly remote) juggler server, so window-control
 // requests (theme repaint, minimise/maximise/close, new window) can't go to
 // that server — they target this loopback listener instead, addressed per
-// window as /win/<id>/<action>. The app bakes each window's base URL into its
-// page as the ?nativeCtl= query param. Bound to 127.0.0.1, so only same-host
-// callers can reach it regardless of the CORS origin echoed back.
+// window as /<secret>/win/<id>/<action>. The app bakes each window's base URL
+// into its page as the ?nativeCtl= query param.
+//
+// Loopback is not a boundary on its own: any web page in any browser on this
+// machine can POST to 127.0.0.1, and window ids are a counter. The secret is
+// what authorises a request. It is minted per launch, travels only in the URLs
+// of this app's own windows, and is checked before anything else — method,
+// routing, CORS — so a request without it learns nothing and is granted no
+// origin.
 
 // listenControl binds the control endpoint to an OS-assigned loopback port.
 func listenControl() (net.Listener, error) {
 	return net.Listen("tcp", "127.0.0.1:0")
 }
 
-// serveControl records the listener's loopback port (baked into window URLs as
-// ?nativeCtl=) and starts handling control requests on ln. Call once, before
-// building any window.
+// serveControl records the listener's loopback port and mints this launch's
+// secret (both baked into window URLs as ?nativeCtl=, see controlBase), then
+// starts handling control requests on ln. Call once, before building any
+// window.
 func (a *appState) serveControl(ln net.Listener) {
 	a.ctlPort = ln.Addr().(*net.TCPAddr).Port
-	mux := http.NewServeMux()
-	mux.HandleFunc("/win/", a.handleWindowControl)
-	go func() { _ = http.Serve(ln, mux) }()
+	a.ctlSecret = mintControlSecret()
+	go func() { _ = http.Serve(ln, http.HandlerFunc(a.handleControl)) }()
 }
 
+// mintControlSecret returns a random secret for the control endpoint.
+func mintControlSecret() string {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		// A guessable secret would reopen the endpoint to every local page;
+		// refusing to start is the lesser failure.
+		panic("control secret: crypto/rand failed: " + err.Error())
+	}
+	return hex.EncodeToString(b)
+}
+
+// controlBase is the ?nativeCtl= value for window id: the base every page-side
+// call appends its action to.
+func (a *appState) controlBase(id string) string {
+	return fmt.Sprintf("http://127.0.0.1:%d/%s/win/%s", a.ctlPort, a.ctlSecret, id)
+}
+
+// handleControl admits a request only when its path opens with this launch's
+// secret and it is a POST (or the CORS preflight for one), then hands the rest
+// of the path to handleWindowControl. Anything else is a bare 404 or 405 with
+// no CORS headers, so a page that lacks the secret cannot read even that.
+func (a *appState) handleControl(w http.ResponseWriter, r *http.Request) {
+	secret, rest, ok := strings.Cut(strings.TrimPrefix(r.URL.Path, "/"), "/")
+	if !ok || a.ctlSecret == "" || subtle.ConstantTimeCompare([]byte(secret), []byte(a.ctlSecret)) != 1 {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+	if r.Method != http.MethodPost && r.Method != http.MethodOptions {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	r2 := r.Clone(r.Context())
+	r2.URL.Path = "/" + rest
+	r2.URL.RawPath = ""
+	a.handleWindowControl(w, r2)
+}
+
+// setCORS lets the page read the reply. It runs only behind handleControl,
+// whose secret is what authorises the caller; the page's origin is whatever
+// server it was loaded from, so it is echoed rather than listed.
 func setCORS(w http.ResponseWriter, r *http.Request) {
 	origin := r.Header.Get("Origin")
 	if origin == "" {
@@ -92,8 +142,9 @@ var windowActions = map[string]windowAction{
 	"updater":   (*appState).handleUpdaterControl,
 }
 
-// handleWindowControl dispatches /win/<id>/<action>. The id selects the target
-// window from the registry; an unknown action or window is a 404.
+// handleWindowControl dispatches /win/<id>/<action>, for a request
+// handleControl has already authorised. The id selects the target window from
+// the registry; an unknown action or window is a 404.
 func (a *appState) handleWindowControl(w http.ResponseWriter, r *http.Request) {
 	if preflight(w, r) {
 		return

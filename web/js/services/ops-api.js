@@ -1549,6 +1549,19 @@ export async function mcpServerControl(params, signal) {
 }
 
 /**
+ * Trust a project server's command (from the project's .juggler/mcp.json) as it
+ * stands, and start it. A project stdio server never runs until this is called
+ * or the user writes it through setConfig.
+ * @param {{server: string}} params
+ * @param {AbortSignal} [signal]
+ * @returns {Promise<{servers: McpServerStatus[]}>} Updated server list
+ */
+export async function mcpTrustServer(params, signal) {
+  requireParam(params, 'server');
+  return callOp('mcp', 'trustServer', params, signal);
+}
+
+/**
  * Recent stderr for a server (diagnostics).
  * @param {{server: string}} params
  * @param {AbortSignal} [signal]

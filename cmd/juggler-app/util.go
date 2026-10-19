@@ -14,6 +14,7 @@ import (
 
 	"juggler/internal/jlog"
 	"juggler/internal/logpaths"
+	"juggler/internal/sysopen"
 )
 
 // initAppLogging brings up the shared jlog sink for the desktop app, writing to
@@ -79,16 +80,12 @@ func logf(format string, args ...any) {
 	jlog.Info("[juggler-app] "+format, args...)
 }
 
-// openInBrowser opens url in the user's default browser.
+// openInBrowser opens url in the user's default browser. The URL can come from
+// a link in rendered model output, so it is passed to the system opener whole
+// and never through a shell (see sysopen.Argv).
 func openInBrowser(url string) error {
-	switch runtime.GOOS {
-	case "darwin":
-		return exec.Command("open", url).Start()
-	case "windows":
-		return exec.Command("cmd", "/c", "start", "", url).Start()
-	default:
-		return exec.Command("xdg-open", url).Start()
-	}
+	argv := sysopen.Argv(runtime.GOOS, url)
+	return exec.Command(argv[0], argv[1:]...).Start() //nolint:gosec // isBrowserURL-checked, passed as one argument
 }
 
 // isBrowserURL reports whether s is a plain web URL safe to hand to the system

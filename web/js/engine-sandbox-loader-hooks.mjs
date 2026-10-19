@@ -23,7 +23,8 @@
  * the API.
  *
  * The fetch carries no API token, as the browser sandbox's carries none: the
- * module routes need none, and a program has no business with what does.
+ * module route is authorised by the capability already in its path
+ * (engine-sandbox-node.mjs), and a program has no business with what needs more.
  */
 
 /** @type {string} */ let origin = '';

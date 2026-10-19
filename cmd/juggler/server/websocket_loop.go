@@ -61,7 +61,7 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		// cannot do it. A token-less engine is still admitted: the webview host's
 		// socket runs in a worker with no token to send, and loopback plus the
 		// origin check is what has always vouched for it.
-		if token := r.URL.Query().Get("token"); token != "" && token != s.apiToken {
+		if token := r.URL.Query().Get("token"); token != "" && !s.isAPIToken(token) {
 			jlog.Info("Rejected an engine WS upgrade from %s carrying another instance's token — an engine outlived its server and found this one", r.RemoteAddr)
 			conn.Close()
 			return
@@ -82,7 +82,7 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	// Skipped entirely in test mode, where the headless harness drives many
 	// synthetic viewers without a token.
 	tokenExempt := role == ClientRoleEngine || isRemoteIngress(r)
-	if !s.testMode && !tokenExempt && r.URL.Query().Get("token") != s.apiToken {
+	if !s.testMode && !tokenExempt && !s.isAPIToken(r.URL.Query().Get("token")) {
 		jlog.Debug("Rejected viewer WS upgrade from %s: missing or invalid session token", r.RemoteAddr)
 		conn.Close()
 		return

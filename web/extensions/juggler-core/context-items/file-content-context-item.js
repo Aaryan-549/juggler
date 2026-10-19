@@ -428,9 +428,10 @@ class FileContentContextItem extends ContextItem {
    * Underlying single-shot fetch. Always returns a usable {@link LiveFileResult}
    * (errors collapse to `exists:false`); callers should not catch.
    *
-   * A pin is always user-initiated — the user explicitly chose this path via
-   * `@`-mention or the file picker, so it may legitimately point outside the
-   * project root — and the shared reader says so on its behalf.
+   * This item is always user-initiated — the user explicitly chose this path via
+   * `@`-mention or the file picker (the model has no way to create one), so it
+   * may legitimately point outside the project root — and it tells the shared
+   * reader so.
    *
    * The read carries this item's scope, so a relative path resolves in the tree
    * its conversation works in. That is what makes a seeded AGENTS.md the one the
@@ -440,7 +441,7 @@ class FileContentContextItem extends ContextItem {
    * @private
    */
   async _doFetch(path) {
-    return fetchLiveFile(path, { noIgnore: gitignoreDisabled(this), ops: this.ops });
+    return fetchLiveFile(path, { noIgnore: gitignoreDisabled(this), ops: this.ops, userInitiated: true });
   }
 
   /**
@@ -453,6 +454,7 @@ class FileContentContextItem extends ContextItem {
   _liveFileSource(r) {
     return liveFileSource(r, this.getAbsolutePath() || r.path || '', {
       conversationId: this.conversation?.id,
+      userInitiated: true,
     });
   }
 
@@ -569,6 +571,7 @@ class FileContentContextItem extends ContextItem {
       renderLiveFileBody(fileBody, r, {
         absolutePath: this.getAbsolutePath() || r.path || this.data.path,
         conversationId: this.conversation?.id,
+        userInitiated: true,
       });
     }).catch(err => {
       console.error('[FileContentContextItem] properties panel fetch failed:', err);

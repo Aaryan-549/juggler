@@ -38,6 +38,7 @@ func newAuthTestServer(t *testing.T) (*Server, *bool) {
 	}
 	s.router.HandleFunc("/api/ops/call", hit).Methods("POST")
 	s.router.HandleFunc("/api/health", hit).Methods("GET")
+	s.router.HandleFunc("/api/shutdown", hit).Methods("POST")
 	s.router.HandleFunc("/api/session/window-state", hit).Methods("GET", "PUT")
 	s.router.HandleFunc("/api/session/conversations/{convId}/assets/{sha}", hit).Methods("GET")
 	s.router.HandleFunc("/api/session/files/content", hit).Methods("GET")
@@ -404,6 +405,54 @@ func TestAPIAuthExemptEndpointsSkipToken(t *testing.T) {
 
 		if rec.Code != http.StatusOK || !*reached {
 			t.Fatalf("exempt %s %s: got %d reached=%v, want 200 reached=true", tc.method, tc.path, rec.Code, *reached)
+		}
+	}
+}
+
+// The token-exempt routes that change something are exempt for other Juggler
+// processes, which never send an Origin. Any web page can send a cross-site POST
+// with no preflight, and a rebinding page is same-origin to the browser so needs
+// none for a PUT or DELETE either — but a browser always says where a request
+// came from. So a request a browser marks as foreign is refused, as is one whose
+// Host a rebinding page chose. Left open, any website could stop the server
+// mid-turn.
+func TestAPIAuthMutatingExemptRoutesRefuseBrowsers(t *testing.T) {
+	s, reached := newAuthTestServer(t)
+
+	for _, route := range []struct{ method, path string }{
+		{http.MethodPost, apipaths.Shutdown},
+		{http.MethodPut, apipaths.SessionWindowState},
+		{http.MethodDelete, apipaths.SessionPinboardBoards},
+	} {
+		for _, tc := range []struct {
+			name    string
+			host    string
+			headers map[string]string
+			want    int
+		}{
+			{"a cross-site page", "127.0.0.1:4000", map[string]string{"Origin": "https://evil.example"}, http.StatusForbidden},
+			{"an opaque-origin page", "127.0.0.1:4000", map[string]string{"Origin": "null"}, http.StatusForbidden},
+			{"a request fetch metadata calls cross-site", "127.0.0.1:4000", map[string]string{"Sec-Fetch-Site": "cross-site"}, http.StatusForbidden},
+			{"a rebinding page", "attacker.example:4000", nil, http.StatusForbidden},
+			{"another Juggler process", "127.0.0.1:4000", nil, http.StatusOK},
+			{"this server's own page", "127.0.0.1:4000", map[string]string{"Origin": "http://127.0.0.1:4000", "Sec-Fetch-Site": "same-origin"}, http.StatusOK},
+		} {
+			t.Run(route.method+" "+route.path+"/"+tc.name, func(t *testing.T) {
+				*reached = false
+				req := httptest.NewRequest(route.method, route.path, nil)
+				req.Host = tc.host
+				for k, v := range tc.headers {
+					req.Header.Set(k, v)
+				}
+				rec := httptest.NewRecorder()
+				s.router.ServeHTTP(rec, req)
+				if rec.Code != tc.want {
+					t.Fatalf("got %d, want %d", rec.Code, tc.want)
+				}
+				if *reached != (tc.want == http.StatusOK) {
+					t.Fatalf("handler reached = %v", *reached)
+				}
+			})
 		}
 	}
 }

@@ -5,10 +5,14 @@
 package server
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/gorilla/mux"
 
 	"juggler/cmd/juggler/core"
 )
@@ -69,6 +73,70 @@ func TestSandboxImportServesWorkspaceModules(t *testing.T) {
 			}
 			if got := filepath.Join(mod.tree.Root(), filepath.FromSlash(mod.rel)); got != filepath.FromSlash(tc.abs) {
 				t.Fatalf("resolved to %q, want %q", got, tc.abs)
+			}
+		})
+	}
+}
+
+// The route answers every origin (ACAO=*, CORP cross-origin), because the
+// sandbox that imports through it has an opaque one. So it must be a capability:
+// a page that knows the port and a project path learns nothing without it, and
+// even with it, nothing under a dot-directory (.juggler holds the session and
+// every transcript) or behind a symlink out of the tree comes back.
+func TestSandboxImportRouteIsACapability(t *testing.T) {
+	s := newWorkspaceTurnServer(t)
+	s.apiToken = testAPIToken
+	s.router = mux.NewRouter()
+	s.registerSandboxImportRoutes(nil)
+	s.router.Use(corsMiddleware)
+
+	project := s.ProjectPath()
+	module := writeSandboxFile(t, project, "module.js")
+	if err := os.MkdirAll(filepath.Join(project, ".juggler"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	session := filepath.Join(project, ".juggler", "session.json")
+	if err := os.WriteFile(session, []byte(`{"secret":true}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	outside := filepath.Join(t.TempDir(), "outside.json")
+	if err := os.WriteFile(outside, []byte(`{"secret":true}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(project, "planted.json")
+	if err := os.Symlink(outside, link); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+
+	// The JavaScript hosts derive this independently; web/engine_sandbox_node_test.go
+	// pins them to the same vector.
+	capability := "342cc23b510fab8fa687b3051f08a8801a0caf3a283d6432dc652c9041fb5638"
+	if got := sandboxImportCapability(testAPIToken); got != capability {
+		t.Fatalf("sandboxImportCapability = %s, want %s", got, capability)
+	}
+
+	get := func(urlPath string) int {
+		rec := httptest.NewRecorder()
+		s.router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, urlPath, nil))
+		return rec.Code
+	}
+	for _, tc := range []struct {
+		name string
+		url  string
+		want int
+	}{
+		{"a module, with the capability", "/sandbox-import/" + capability + sandboxURLPath(module), http.StatusOK},
+		{"a module, by bare path", sandboxURLPath(module), http.StatusNotFound},
+		{"a module, with the wrong capability", "/sandbox-import/" + strings.Repeat("0", 64) + sandboxURLPath(module), http.StatusNotFound},
+		{"a module, with the API token itself", "/sandbox-import/" + testAPIToken + sandboxURLPath(module), http.StatusNotFound},
+		{"the session file, by bare path", sandboxURLPath(session), http.StatusNotFound},
+		{"the session file, with the capability", "/sandbox-import/" + capability + sandboxURLPath(session), http.StatusNotFound},
+		{"a symlink out of the project, by bare path", sandboxURLPath(link), http.StatusNotFound},
+		{"a symlink out of the project, with the capability", "/sandbox-import/" + capability + sandboxURLPath(link), http.StatusNotFound},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := get(tc.url); got != tc.want {
+				t.Fatalf("GET %s = %d, want %d", tc.url, got, tc.want)
 			}
 		})
 	}

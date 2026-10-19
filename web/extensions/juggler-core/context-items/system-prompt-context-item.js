@@ -23,6 +23,7 @@ const MCP_STATUS_LABELS = {
   starting: markForTranslation('starting'),
   stopped: markForTranslation('stopped'),
   failed: markForTranslation('failed'),
+  untrusted: markForTranslation('not trusted'),
   disabled: markForTranslation('disabled'),
 };
 

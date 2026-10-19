@@ -80,5 +80,28 @@ export async function runTests() {
     errors.push(`en-XA: ${e.message}`);
   }
 
+  // `userInitiated` lifts the project-root containment on the read, so it is
+  // something a caller asserts about a user gesture, never something it gets by
+  // saying nothing.
+  try {
+    /** @type {Array<Record<string, any>>} */
+    const asked = [];
+    const record = async (/** @type {Record<string, any>} */ params) => { asked.push(params); return { exists: true, content: '' }; };
+    const ops = /** @type {any} */ ({ stat: record, readFile: record, getTree: record });
+    await fetchLiveFile('/elsewhere/x.txt', { ops });
+    if (!asked.length || asked.some((p) => p.userInitiated !== false)) {
+      throw new Error(`a read nobody vouched for went out as ${JSON.stringify(asked)}`);
+    }
+    asked.length = 0;
+    await fetchLiveFile('/elsewhere/x.txt', { ops, userInitiated: true });
+    if (!asked.length || asked.some((p) => p.userInitiated !== true)) {
+      throw new Error(`a user-initiated read went out as ${JSON.stringify(asked)}`);
+    }
+    passed++;
+  } catch (/** @type {any} */ e) {
+    failed++;
+    errors.push(`userInitiated default: ${e.message}`);
+  }
+
   return { passed, failed, errors };
 }

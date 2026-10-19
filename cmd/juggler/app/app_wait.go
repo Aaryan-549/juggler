@@ -17,6 +17,7 @@ import (
 
 	"juggler/cmd/juggler/server"
 	"juggler/internal/jlog"
+	"juggler/internal/sysopen"
 
 	"github.com/mattn/go-isatty"
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -403,16 +404,9 @@ func readKeys(serverURL string, quit func(), launchWindow, togglePublic func(), 
 	}
 }
 
-// openInBrowser launches the user's default browser pointed at url.
+// openInBrowser launches the user's default browser pointed at url, passed to
+// the system opener whole and never through a shell (see sysopen.Argv).
 func openInBrowser(url string) error {
-	var cmd *exec.Cmd
-	switch goruntime.GOOS {
-	case "darwin":
-		cmd = exec.Command("open", url)
-	case "windows":
-		cmd = exec.Command("cmd", "/c", "start", "", url)
-	default:
-		cmd = exec.Command("xdg-open", url)
-	}
-	return cmd.Start()
+	argv := sysopen.Argv(goruntime.GOOS, url)
+	return exec.Command(argv[0], argv[1:]...).Start() //nolint:gosec // one argument, no shell
 }

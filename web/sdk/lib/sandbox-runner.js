@@ -47,6 +47,36 @@ export function toSandboxRoot(root) {
   return (root || '').replace(/\\/g, '/');
 }
 
+/** @type {Map<string, Promise<string>>} */
+const _importCapabilities = new Map();
+
+/**
+ * The capability the sandbox's module imports carry: HMAC-SHA256 of the
+ * fixed label "juggler-sandbox-import", keyed by the API token, as hex. The
+ * server answers `/sandbox-import/<capability>/<absolute path>` only for this
+ * value (sandboxImportCapability, cmd/juggler/server/sandbox_files.go), and
+ * that route is readable from any origin — the sandbox's own is opaque — so
+ * the capability is what keeps other pages out. The sandbox is handed this
+ * value and never the token it is derived from. "" when this realm holds no
+ * token or has no WebCrypto, in which case project imports are refused.
+ * @param {string} apiToken - The per-instance API token
+ * @returns {Promise<string>} The capability as lowercase hex, or ""
+ */
+export function sandboxImportCapability(apiToken) {
+  if (!apiToken || !globalThis.crypto?.subtle) return Promise.resolve('');
+  let derived = _importCapabilities.get(apiToken);
+  if (!derived) {
+    const enc = new TextEncoder();
+    derived = globalThis.crypto.subtle
+      .importKey('raw', enc.encode(apiToken), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
+      .then((key) => globalThis.crypto.subtle.sign('HMAC', key, enc.encode('juggler-sandbox-import')))
+      .then((sig) => Array.from(new Uint8Array(sig), (b) => b.toString(16).padStart(2, '0')).join(''))
+      .catch(() => '');
+    _importCapabilities.set(apiToken, derived);
+  }
+  return derived;
+}
+
 /**
  * How long the frame has to signal readiness before the attempt is abandoned.
  *
@@ -211,6 +241,7 @@ export async function runInSandbox(code, { capabilities = {}, timeoutMs = 30000,
   }
 
   const iframe = await withCancel(getSandboxFrame());
+  const importCapability = await sandboxImportCapability(/** @type {any} */ (globalThis).__jugglerToken || '');
   const channel = new MessageChannel();
   const port = channel.port1;
 
@@ -253,7 +284,7 @@ export async function runInSandbox(code, { capabilities = {}, timeoutMs = 30000,
   const contentWindow = iframe.contentWindow;
   if (!contentWindow) throw new Error('sandbox iframe has no contentWindow');
   const descriptors = Object.entries(capabilities).map(([name, cap]) => ({ name, callable: typeof cap === 'function' }));
-  contentWindow.postMessage({ type: 'sandbox-execute', code, timeoutMs, capabilities: descriptors, projectRoot: root }, '*', [channel.port2]);
+  contentWindow.postMessage({ type: 'sandbox-execute', code, timeoutMs, capabilities: descriptors, projectRoot: root, importCapability }, '*', [channel.port2]);
 
   // A deadline only when there is one to keep. With timeoutMs 0 the caller keeps
   // its own clock and the signal is the only thing that ends the run.

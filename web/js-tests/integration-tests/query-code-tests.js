@@ -126,9 +126,9 @@ export const tests = [
   ),
 
   // Absolute-path import: an LLM-natural `import('/abs/path/web/...')`
-  // must resolve. The sandbox's import map rewrites the project-root
-  // prefix to /v<ver>/, served same-origin with ACAO=*. Without the
-  // rewrite this throws "Cross-origin script load denied".
+  // must resolve. The sandbox sends it beneath its import capability, and the
+  // server answers a `<projectRoot>/web/` path with no file on disk from the
+  // app's own web root.
   queryTest(
     'query-absolute-path-import',
     'query_code: can import() absolute project paths',
