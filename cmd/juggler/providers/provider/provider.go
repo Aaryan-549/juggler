@@ -650,6 +650,10 @@ type Unwrapper interface {
 // As reports whether p, or any provider it wraps, implements T, and returns the
 // outermost match. It walks the Unwrap chain the way errors.As does, so a
 // wrapper never needs a type of its own per optional capability.
+//
+// Capabilities that must pass through admission control are the exception: the
+// wrapper claims them whether or not the provider under it has them, so look
+// those up with their own helper (AsConversationProvider), not with As.
 func As[T any](p Provider) (T, bool) {
 	for p != nil {
 		if t, ok := p.(T); ok {
