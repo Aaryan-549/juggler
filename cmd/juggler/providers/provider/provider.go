@@ -7,6 +7,7 @@ package provider
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"math"
 	"time"
 
@@ -608,12 +609,10 @@ type UsageStatsProvider interface {
 	UsageStats(ctx context.Context) (UsageStats, error)
 }
 
-// Provider is the factory for Conversation handles. Per-conversation
-// state — session tokens, pending tool calls, live subprocess handles —
-// lives on the Conversation, not the Provider. Most providers' Client
-// is just metadata (model, credentials, HTTP client) and OpenConversation
-// returns a thin per-turn dispatcher; claudecode is the stateful outlier
-// (each handle owns a live CLI subprocess + session bookkeeping).
+// Provider is the base identity every provider has: a registry name and a
+// model listing. What else a provider can do (open chat conversations, report
+// usage stats) is expressed by separate optional interfaces that callers
+// discover with As, so a provider offers only the capabilities it has.
 type Provider interface {
 	// Name returns the provider's registry name (e.g., "anthropic", "gemini").
 	Name() string
@@ -623,7 +622,15 @@ type Provider interface {
 	// If the provider doesn't expose context window info via API, returns
 	// models with hardcoded fallback values (FromAPI = false).
 	ListModelsWithInfo(ctx context.Context) ([]ModelInfo, error)
+}
 
+// ConversationProvider is the factory for Conversation handles. Per-conversation
+// state — session tokens, pending tool calls, live subprocess handles —
+// lives on the Conversation, not the Provider. Most providers' Client
+// is just metadata (model, credentials, HTTP client) and OpenConversation
+// returns a thin per-turn dispatcher; claudecode is the stateful outlier
+// (each handle owns a live CLI subprocess + session bookkeeping).
+type ConversationProvider interface {
 	// OpenConversation returns a handle for sending and receiving on a
 	// single conversation. Implementations may return a thin stateless
 	// wrapper (most providers; the handle just holds the client + model)
@@ -632,6 +639,52 @@ type Provider interface {
 	// MessageRequest.ThreadID). The handle is reused across turns and
 	// should be Close()d when the conversation is deleted.
 	OpenConversation(ctx context.Context, convID string) (Conversation, error)
+}
+
+// Unwrapper is implemented by Provider wrappers (such as the admission-control
+// layer) so that As can find the capabilities of the provider underneath.
+type Unwrapper interface {
+	Unwrap() Provider
+}
+
+// As reports whether p, or any provider it wraps, implements T, and returns the
+// outermost match. It walks the Unwrap chain the way errors.As does, so a
+// wrapper never needs a type of its own per optional capability.
+func As[T any](p Provider) (T, bool) {
+	for p != nil {
+		if t, ok := p.(T); ok {
+			return t, true
+		}
+		u, ok := p.(Unwrapper)
+		if !ok {
+			break
+		}
+		p = u.Unwrap()
+	}
+	var zero T
+	return zero, false
+}
+
+// AsConversationProvider returns the ConversationProvider for p. When p is
+// wrapped by admission control the wrapper is returned, not the provider under
+// it, so callers cannot open a conversation that skips the context-window check.
+func AsConversationProvider(p Provider) (ConversationProvider, bool) {
+	if a, ok := p.(*admissionProvider); ok {
+		if _, ok := As[ConversationProvider](a.Provider); !ok {
+			return nil, false
+		}
+		return a, true
+	}
+	return As[ConversationProvider](p)
+}
+
+// OpenConversation opens a conversation on p, or fails if p cannot chat.
+func OpenConversation(ctx context.Context, p Provider, convID string) (Conversation, error) {
+	cp, ok := AsConversationProvider(p)
+	if !ok {
+		return nil, fmt.Errorf("provider %q does not support conversations", p.Name())
+	}
+	return cp.OpenConversation(ctx, convID)
 }
 
 // Conversation is one logical LLM dialogue, with provider-side state (if

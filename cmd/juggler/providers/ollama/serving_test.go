@@ -254,7 +254,7 @@ func TestMaxOutputOverrideReachesTheWire(t *testing.T) {
 	if err != nil {
 		t.Fatalf("initialize ollama provider: %v", err)
 	}
-	conv, err := prov.OpenConversation(context.Background(), "max-output-override")
+	conv, err := provider.OpenConversation(context.Background(), prov, "max-output-override")
 	if err != nil {
 		t.Fatalf("open conversation: %v", err)
 	}

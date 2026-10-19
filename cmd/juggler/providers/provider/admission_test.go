@@ -64,7 +64,7 @@ func openAdmissionTestConversation(t *testing.T, cfg Config) (*admissionTestConv
 	if err != nil {
 		t.Fatal(err)
 	}
-	conversation, err := initialized.OpenConversation(context.Background(), "conversation")
+	conversation, err := OpenConversation(context.Background(), initialized, "conversation")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -313,7 +313,7 @@ func TestInitializeProviderWrapsEveryStatefulConversation(t *testing.T) {
 	}
 
 	for _, convID := range []string{"first", "second"} {
-		conversation, openErr := initialized.OpenConversation(context.Background(), convID)
+		conversation, openErr := OpenConversation(context.Background(), initialized, convID)
 		if openErr != nil {
 			t.Fatal(openErr)
 		}

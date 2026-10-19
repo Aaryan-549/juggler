@@ -157,7 +157,7 @@ func (s *Server) QuickComplete(ctx context.Context, req QuickCompleteRequest) (Q
 		return QuickCompleteResult{}, fmt.Errorf("quick complete: initialize provider %q: %w", req.Model.Provider, err)
 	}
 
-	conv, err := prov.OpenConversation(ctx, ephemeralConvID())
+	conv, err := provider.OpenConversation(ctx, prov, ephemeralConvID())
 	if err != nil {
 		return QuickCompleteResult{}, fmt.Errorf("quick complete: open conversation: %w", err)
 	}
