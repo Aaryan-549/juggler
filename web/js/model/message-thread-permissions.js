@@ -268,6 +268,26 @@ export function getAllowedPaths(mt) {
 }
 
 /**
+ * The roots a read may reach without asking: the allowed paths, plus the
+ * project when the conversation works in a workspace it can honour.
+ *
+ * This is the read half of the boundary the server draws for a workspace
+ * (`workspace/local.go` scope): rooted at the workspace, with the project
+ * added as a READ root so a worktree conversation can consult the tree it
+ * branched from. Writes and shell commands keep to {@link getAllowedPaths},
+ * where the project is a different tree's business. A binding that cannot be
+ * honoured adds nothing, for the reason given on {@link getWorkspaceRootEntry}.
+ * @param {any} mt @returns {string[]}
+ */
+export function getReadablePaths(mt) {
+  const allowed = getAllowedPaths(mt);
+  const conversation = mt?.conversation;
+  const project = conversation?.session?.projectPath;
+  if (!conversation?.workspaceId || !getWorkingRoot(mt) || !project) return allowed;
+  return allowed.includes(project) ? allowed : [...allowed, project];
+}
+
+/**
  * The explicit (user-added) allowed-path grants only — session- and
  * conversation-scoped entries WITHOUT the implicit root the conversation works
  * in.

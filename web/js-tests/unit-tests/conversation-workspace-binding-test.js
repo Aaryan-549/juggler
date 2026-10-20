@@ -31,6 +31,7 @@ import {
   isShellCommandPermitted,
   isShellCommandCatastrophic
 } from '../../extensions/juggler-core/context-items/execute/command-permission.js';
+import { isPathAllowed } from '../../extensions/juggler-core/context-items/path-approval.js';
 import { setupRows } from '../../js/services/workspace-places.js';
 import { ensureWorkspaceBanner, removeAllElements } from '../../js/components/conversation-area-rendering.js';
 import { followSession, setGitWorkspace } from '../../js/services/git-workspace.js';
@@ -624,6 +625,33 @@ export async function runTests() {
         bound.workspaceId = 'ws_never_registered';
         assert(!bound.rootMessageThread.getAllowedPaths().includes(session.projectPath),
           `and a binding that cannot be honoured grants nothing, rather than quietly granting the project, got ${JSON.stringify(bound.rootMessageThread.getAllowedPaths())}`);
+      } finally {
+        session.workspaces = saved;
+      }
+    });
+
+    await run('a bound conversation reads the project without asking, but does not write to it', async () => {
+      // The server widens a workspace's READ boundary with the project, so a
+      // read there is one it will serve. Prompting for it anyway asks the user to
+      // approve what is already allowed — and only for `read`, since the
+      // ungated batch read of the same file goes straight through.
+      const saved = session.workspaces;
+      session.workspaces = [workspaceRow('ws_read', '/tmp/read-tree')];
+      try {
+        const bound = await makeConversation(session, 'reads-the-project', { workspaceId: 'ws_read' });
+        release(bound);
+        const item = { messageThread: bound.rootMessageThread, session };
+        const inProject = `${session.projectPath}/AGENTS.md`;
+        assert(isPathAllowed(item, inProject),
+          `a read of the project from a worktree is not asked about, read roots ${JSON.stringify(bound.rootMessageThread.getReadablePaths())}`);
+        assert(isPathAllowed(item, '/tmp/read-tree/a.js'),
+          'nor is a read of its own tree');
+        assert(!bound.rootMessageThread.getAllowedPaths().includes(session.projectPath),
+          'while writing to the project is still asked about');
+
+        bound.workspaceId = 'ws_never_registered';
+        assert(!isPathAllowed(item, inProject),
+          'and a binding that cannot be honoured reads nothing implicitly, the project included');
       } finally {
         session.workspaces = saved;
       }

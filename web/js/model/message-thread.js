@@ -1670,6 +1670,12 @@ export default class MessageThread {
   getAllowedPaths() { return permissionsHelpers.getAllowedPaths(this); }
 
   /**
+   * @returns {string[]} Roots a read may reach without asking: the allowed
+   *   paths, plus the project for a conversation working in a workspace
+   */
+  getReadablePaths() { return permissionsHelpers.getReadablePaths(this); }
+
+  /**
    * Explicit (user-added) allowed roots, WITHOUT the implicit project root.
    * Sent to read/search/tree backend ops, which are already rooted at the
    * server's live project path — see getExplicitAllowedPaths.

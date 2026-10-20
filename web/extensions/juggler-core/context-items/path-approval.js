@@ -152,13 +152,15 @@ export function tildeify(p, home) {
 }
 
 /**
- * Does `path` resolve inside the project root or the user's standing
- * allowed-paths grant? A path we can't resolve is treated as out-of-root so the
- * tool prompts. Mirrors EditBase._isPathAllowed so one folder grant widens read,
- * write, and shell access identically.
+ * Does `path` resolve inside a root a read may reach without asking — where the
+ * conversation works, the user's standing allowed-paths grant, and, for a
+ * conversation working in a workspace, the project it branched from (the
+ * server's read boundary includes it)? A path we can't resolve is treated as
+ * out-of-root so the tool prompts. Otherwise mirrors EditBase._isPathAllowed, so
+ * one folder grant widens read, write, and shell access identically.
  * @param {{messageThread?: any, session?: any}} item - The context-item instance
  * @param {string} path - Target path
- * @returns {boolean} True if the path is within an allowed root
+ * @returns {boolean} True if the path is within a readable root
  */
 export function isPathAllowed(item, path) {
   if (!path) return false;
@@ -166,7 +168,7 @@ export function isPathAllowed(item, path) {
   if (!mt) return false;
   return isPathInsideAllowedRoots(
     path,
-    mt.getAllowedPaths(),
+    mt.getReadablePaths?.() ?? mt.getAllowedPaths(),
     item.session?.home || '',
     item.session?.platform || ''
   );
