@@ -15,31 +15,84 @@ import (
 
 // Build-injection seams for the desktop app.
 //
-// These are the two extension points a packaged build can attach behaviour to
+// These are the extension points a packaged build can attach behaviour to
 // without the stock source carrying the implementation. The stock build leaves
 // them at the inert defaults below — it builds and runs exactly as written. A
-// packaged build may overlay a single file into this package that reassigns
-// them in an init() (its files depend only on this module), so the added
-// behaviour is compiled in for that build alone and the stock source stays
-// free of it. Keeping the seams as swappable vars is what makes the source
-// carry the call sites but none of the injected code.
+// packaged build may compile extra files into this package (`go build
+// -overlay`, passed through APP_GOFLAGS in the Makefile) that reassign them
+// from an init(), so the added behaviour is compiled in for that build alone and
+// the stock source stays free of it. Keeping the seams as swappable vars is what
+// makes the source carry the call sites but none of the injected code.
+//
+// This file is the whole surface such files are written against: the seams,
+// desktopHost, appMenuItem, UpdaterSnapshot, and the package logger logf. The
+// rest of the package (the window registry, the menu builder, appState itself)
+// is free to change under them.
 
-// afterAppInit runs once, immediately after the Wails App is constructed (so
-// a.app is live), from initApplication. Default: no-op.
-var afterAppInit = func(*appState) {}
+// desktopHost is the running app as afterAppInit hands it to injected code.
+type desktopHost struct {
+	// app is the live Wails App: its Updater, Event bus and Quit.
+	app *application.App
+	// broadcastJS runs script in every open window's page, on the main thread.
+	// Nothing about the script is escaped; the caller builds a safe one.
+	broadcastJS func(script string)
+}
+
+// host is the desktopHost for a, once a.app is live.
+func (a *appState) host() desktopHost {
+	return desktopHost{app: a.app, broadcastJS: a.execJSInAllWindows}
+}
+
+// execJSInAllWindows runs script in the page of every open window.
+func (a *appState) execJSInAllWindows(script string) {
+	var wins []*application.WebviewWindow
+	a.reg(func(st *regState) {
+		for _, e := range st.windows {
+			if e.win != nil {
+				wins = append(wins, e.win)
+			}
+		}
+	})
+	for _, win := range wins {
+		application.InvokeAsync(func() { win.ExecJS(script) })
+	}
+}
+
+// afterAppInit runs once, immediately after the Wails App is constructed and
+// before the menu is built, from initApplication. Default: no-op.
+var afterAppInit = func(desktopHost) {}
+
+// appMenuItem is an entry a build adds to the application menu, right after
+// About. Its label is rendered in the UI language and relabelled with it.
+type appMenuItem struct {
+	label   msg.Message
+	onClick func()
+}
+
+// appMenuItems returns the entries to add to the application menu. It is asked
+// once, after afterAppInit, when the menu is built. Default: none.
+var appMenuItems = func() []appMenuItem { return nil }
 
 // buildAppMenu installs the application menu onto the root menu, from
-// installAppMenu. Default: the platform application menu, no extra items.
+// installAppMenu: appMenuNode, with appMenuItems after About.
 //
-// The menu itself is appMenuNode. Like Wails' AppMenu role, it is macOS-only:
-// nothing else shows an application menu (Linux is suppressed a caller up, and
-// the frameless Windows window displays no menu bar at all). A replacement adds
-// it with a.addMenuNode, so its labels follow the UI language.
-var buildAppMenu = func(a *appState, menu *application.Menu) {
+// Like Wails' AppMenu role, it is macOS-only: nothing else shows an application
+// menu (Linux is suppressed a caller up, and the frameless Windows window
+// displays no menu bar at all).
+func buildAppMenu(a *appState, menu *application.Menu) {
 	if runtime.GOOS != "darwin" {
 		return
 	}
-	a.addMenuNode(menu, appMenuNode(a))
+	var extra []menuNode
+	for _, it := range appMenuItems() {
+		onClick := it.onClick
+		extra = append(extra, menuNode{label: it.label, onClick: func(*application.Context) {
+			if onClick != nil {
+				onClick()
+			}
+		}})
+	}
+	a.addMenuNode(menu, appMenuNode(a, extra...))
 }
 
 // UpdaterSnapshot is the in-app updater's current state, marshalled to the page

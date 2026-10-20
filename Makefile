@@ -140,7 +140,7 @@ ifeq ($(UNAME_S),Darwin)
 	@mkdir -p $(MAC_STAGE)
 	@rm -f $(MAC_STAGE)/$(BINARY_NAME) $(MAC_STAGE)/juggler-app
 	@$(GOBUILD) -ldflags "$(LDFLAGS)" -o $(MAC_STAGE)/$(BINARY_NAME) ./cmd/juggler
-	@$(GOBUILD) -ldflags "$(LDFLAGS)" -o $(MAC_STAGE)/juggler-app ./cmd/juggler-app
+	@$(GOBUILD) $(APP_GOFLAGS) -ldflags "$(LDFLAGS)" -o $(MAC_STAGE)/juggler-app ./cmd/juggler-app
 	@mv -f $(MAC_STAGE)/$(BINARY_NAME) $(MAC_APP_BIN)
 	@mv -f $(MAC_STAGE)/juggler-app $(MAC_APP_APP_BIN)
 	@$(MAKE) --no-print-directory mac-app-meta
@@ -149,7 +149,7 @@ ifeq ($(UNAME_S),Darwin)
 	@ln -sfn Juggler.app/Contents/MacOS/juggler-app $(BUILD_DIR)/juggler-app
 else
 	@$(GOBUILD) -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME)$(BIN_EXT) ./cmd/juggler
-	@$(GOBUILD) -ldflags "$(LDFLAGS) $(APP_LDFLAGS)" -o $(BUILD_DIR)/juggler-app$(BIN_EXT) ./cmd/juggler-app
+	@$(GOBUILD) $(APP_GOFLAGS) -ldflags "$(LDFLAGS) $(APP_LDFLAGS)" -o $(BUILD_DIR)/juggler-app$(BIN_EXT) ./cmd/juggler-app
 endif
 	@$(GOBUILD) -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/juggler-test$(BIN_EXT) ./cmd/juggler-test
 	@echo "✓ built juggler, juggler-app, juggler-test ($(VERSION_STAMP))"
@@ -189,7 +189,7 @@ ifeq ($(UNAME_S),Darwin)
 	@rm -f $(MAC_STAGE)/$(BINARY_NAME) $(MAC_STAGE)/juggler-app
 	$(GOBUILD_RELEASE) -ldflags "$(LDFLAGS)" -o $(MAC_STAGE)/$(BINARY_NAME) ./cmd/juggler
 	@echo "Building juggler-app $(VERSION_STAMP) [release]..."
-	$(GOBUILD_RELEASE) -ldflags "$(LDFLAGS)" -o $(MAC_STAGE)/juggler-app ./cmd/juggler-app
+	$(GOBUILD_RELEASE) $(APP_GOFLAGS) -ldflags "$(LDFLAGS)" -o $(MAC_STAGE)/juggler-app ./cmd/juggler-app
 	@mv -f $(MAC_STAGE)/$(BINARY_NAME) $(MAC_APP_BIN)
 	@mv -f $(MAC_STAGE)/juggler-app $(MAC_APP_APP_BIN)
 	@$(MAKE) --no-print-directory mac-app-meta
@@ -199,7 +199,7 @@ ifeq ($(UNAME_S),Darwin)
 else
 	$(GOBUILD_RELEASE) -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME)$(BIN_EXT) ./cmd/juggler
 	@echo "Building juggler-app $(VERSION_STAMP) [release]..."
-	$(GOBUILD_RELEASE) -ldflags "$(LDFLAGS) $(APP_LDFLAGS)" -o $(BUILD_DIR)/juggler-app$(BIN_EXT) ./cmd/juggler-app
+	$(GOBUILD_RELEASE) $(APP_GOFLAGS) -ldflags "$(LDFLAGS) $(APP_LDFLAGS)" -o $(BUILD_DIR)/juggler-app$(BIN_EXT) ./cmd/juggler-app
 endif
 
 ## build-windows: Cross-compile the Windows .exe binaries from any host. Wails
@@ -228,7 +228,7 @@ build-windows: app-icon-embed wails-runtime-embed
 		CGO_ENABLED=0 GOOS=windows GOARCH=amd64 $(GOBUILD) -ldflags "$(LDFLAGS_BASE)" -o $(WIN_BUILD_DIR)/$(BINARY_NAME).exe ./cmd/juggler; \
 	fi && \
 	echo "Building juggler-app.exe (windowsgui) $(VERSION_STAMP)..." && \
-	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 $(GOBUILD_RELEASE) -ldflags "$(LDFLAGS_BASE) -H windowsgui" -o $(WIN_BUILD_DIR)/juggler-app.exe ./cmd/juggler-app
+	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 $(GOBUILD_RELEASE) $(APP_GOFLAGS) -ldflags "$(LDFLAGS_BASE) -H windowsgui" -o $(WIN_BUILD_DIR)/juggler-app.exe ./cmd/juggler-app
 	@echo "→ $(WIN_BUILD_DIR)/$(BINARY_NAME).exe (console), $(WIN_BUILD_DIR)/juggler-app.exe (GUI)"
 
 # ── Distribution: one indivisible unit per platform ─────────────────────────
@@ -243,6 +243,12 @@ build-windows: app-icon-embed wails-runtime-embed
 # repo's single implementation. The server package itself is never referenced
 # from outside this module — only the finished binary is injected.
 SERVER_BIN ?=
+
+# APP_GOFLAGS (optional): extra `go build` flags for the desktop app
+# (./cmd/juggler-app) only, on every target that compiles it — for instance
+# -overlay=<json> to compile extra files into the package without writing them
+# into this tree. Unset = the stock app, exactly as written.
+APP_GOFLAGS ?=
 
 ## release-build-mac: Build the Juggler.app for distribution.
 ## Both the server (juggler) and app (juggler-app) are built based on the
@@ -266,7 +272,7 @@ endif
 		CGO_ENABLED=1 GOOS=darwin GOARCH=$(GOARCH_HOST) $(GOBUILD_RELEASE) -ldflags "$(LDFLAGS)" -o $(MAC_STAGE)/$(BINARY_NAME) ./cmd/juggler || exit 1; \
 	fi
 	@echo "  → juggler-app ($(GOARCH_HOST))"
-	@CGO_ENABLED=1 GOOS=darwin GOARCH=$(GOARCH_HOST) $(GOBUILD_RELEASE) -ldflags "$(LDFLAGS)" -o $(MAC_STAGE)/juggler-app ./cmd/juggler-app || exit 1
+	@CGO_ENABLED=1 GOOS=darwin GOARCH=$(GOARCH_HOST) $(GOBUILD_RELEASE) $(APP_GOFLAGS) -ldflags "$(LDFLAGS)" -o $(MAC_STAGE)/juggler-app ./cmd/juggler-app || exit 1
 	@mv -f $(MAC_STAGE)/$(BINARY_NAME) $(MAC_APP_BIN)
 	@mv -f $(MAC_STAGE)/juggler-app $(MAC_APP_APP_BIN)
 	@$(MAKE) --no-print-directory mac-app-meta
@@ -348,7 +354,7 @@ linux-binaries: app-icon-embed wails-runtime-embed
 		CGO_ENABLED=1 GOOS=linux GOARCH=$(GOARCH) $(GOBUILD_RELEASE) -ldflags "$(LDFLAGS_BASE)" -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/juggler; \
 	fi
 	@echo "  → juggler-app ($(GOARCH))"
-	@CGO_ENABLED=1 GOOS=linux GOARCH=$(GOARCH) $(GOBUILD_RELEASE) -ldflags "$(LDFLAGS_BASE)" -o $(BUILD_DIR)/juggler-app ./cmd/juggler-app
+	@CGO_ENABLED=1 GOOS=linux GOARCH=$(GOARCH) $(GOBUILD_RELEASE) $(APP_GOFLAGS) -ldflags "$(LDFLAGS_BASE)" -o $(BUILD_DIR)/juggler-app ./cmd/juggler-app
 
 ## linux-compat-server: Build a linux/amd64 server binary inside Ubuntu 22.04,
 ## for running it on a distribution older than the one a release is built on.

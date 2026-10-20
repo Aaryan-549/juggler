@@ -439,7 +439,7 @@ func (a *appState) initApplication() {
 		a.openDroppedFolder(event.Context().Filename())
 	})
 
-	afterAppInit(a)
+	afterAppInit(a.host())
 	installAppMenu(a, a.devMode)
 }
 
