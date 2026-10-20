@@ -279,9 +279,10 @@ class MemoryContextItem extends ContextItem {
   /**
    * Gate for auto-instantiation: only seed a memory item when the file already
    * exists, so empty projects gain no item (and unrelated conversations stay
-   * unchanged). A first `remember` creates the file and seeds the item onto its
-   * own thread (see `_ensureSeeded`); from then on new conversations seed it
-   * here. Mirrors how CLAUDE.md is auto-added only when present.
+   * unchanged). A first `remember` creates the file but adds no item to its own
+   * conversation, whose system prompt stays as it began; from then on new
+   * conversations seed it here. Mirrors how CLAUDE.md is auto-added only when
+   * present.
    * @param {string} [path] - Path to probe (defaults to the project memory file)
    * @returns {Promise<boolean>} True if the memory file exists
    */
@@ -297,9 +298,8 @@ class MemoryContextItem extends ContextItem {
   /**
    * Seed the memory item by FREEZING the stored entries into the conversation
    * doc. Runs when the item auto-instantiates at the start of a conversation
-   * (via executeContextItem → handleToolCall), or when a first `remember` seeds
-   * the item into a conversation that began before the file existed
-   * (`_ensureSeeded`). Write-once: a later reuse (mergeOrReplace) that re-enters
+   * (via executeContextItem → handleToolCall). Write-once: a later reuse
+   * (mergeOrReplace) that re-enters
    * here keeps the original snapshot, so the injected block — and the cached
    * system prefix it rides — never moves under a running conversation.
    * @param {string} _toolName - Tool name (unused)
@@ -343,23 +343,6 @@ class MemoryContextItem extends ContextItem {
   }
 
   /**
-   * Ensure a persistent memory item exists on this thread so memory injects
-   * immediately after a write, even in a conversation created before the file
-   * existed. Idempotent via mergeOrReplace (singleton).
-   * @returns {Promise<void>}
-   * @private
-   */
-  async _ensureSeeded() {
-    try {
-      if (this.messageThread && this._memoryPath() === MemoryContextItem.DEFAULT_PATH) {
-        await this.messageThread.executeContextItem('memory', {});
-      }
-    } catch {
-      // Best-effort: a failed seed must never fail the remember/forget tool.
-    }
-  }
-
-  /**
    * Validate tool parameters.
    * @override
    * @param {Record<string, unknown>} toolInput - Raw parameters from LLM
@@ -395,7 +378,11 @@ class MemoryContextItem extends ContextItem {
   }
 
   /**
-   * Execute a remember/forget action against the on-disk memory file.
+   * Execute a remember/forget action against the on-disk memory file. Only the
+   * file changes: this conversation's block, or its absence when the
+   * conversation began without a memory item, stays exactly as it was, because
+   * adding one mid-conversation would move the cached system prefix. The write
+   * reaches new conversations.
    * @param {Record<string, any>} params - Validated params
    * @returns {Promise<{action: string, fact?: string, match?: string, removed?: string[], entryCount: number}>} Result
    */
@@ -407,7 +394,6 @@ class MemoryContextItem extends ContextItem {
       const fact = String(params.fact || '').trim();
       const updated = appendEntry(existing, fact, this._today());
       await this._write(path, updated);
-      await this._ensureSeeded();
       return { action: 'remember', fact, entryCount: parseMemory(updated).entries.length };
     }
 
@@ -415,7 +401,6 @@ class MemoryContextItem extends ContextItem {
       const match = String(params.match || '');
       const { content, removed } = removeMatching(existing, match);
       await this._write(path, content);
-      await this._ensureSeeded();
       return { action: 'forget', match, removed, entryCount: parseMemory(content).entries.length };
     }
 

@@ -86,26 +86,23 @@ export const memorySeededWhenFileExistsTest = {
 };
 
 /**
- * The assembled system prompt is a pure function of conversation-document state
- * across a mid-conversation `memory remember` round-trip: the memory block
- * appears EXACTLY ONCE and carries both the pre-existing and the newly-
- * remembered entry — not duplicated. A duplicated block would change the cached
- * system-prefix bytes for the same meaningful state and spuriously cold-start
- * the warm claudecode CLI resume.
+ * A `memory remember` in a conversation that began without a memory item leaves
+ * that conversation's system prompt untouched: no memory item appears on the
+ * thread and no memory block enters the prompt, so the fact reaches FUTURE
+ * conversations only. Adding the block mid-conversation would change the cached
+ * system prefix, and the claudecode provider answers a changed system prompt
+ * with a cold start that re-sends the whole history uncached.
  *
- * Both facts are present here because this conversation carries no memory item
- * until the tool's own `_ensureSeeded` creates one, DURING the round-trip and
- * after the write — so the snapshot frozen at that moment already includes the
- * new fact. A conversation seeded earlier would keep its own snapshot instead;
- * that freeze is pinned by the unit tests in `_tests/memory-item-test.js`.
+ * A conversation that was seeded at its start keeps its own frozen snapshot
+ * across a write instead; that freeze is pinned by the unit tests in
+ * `_tests/memory-item-test.js`.
  *
- * This guards against a double render — the system-position memory item
- * materialising more than once. The memory item defines `execute()`, so the
- * tool is dispatched through the ACTION path (`_runActionAndComplete`), whose
- * result is stamped `resultType:'action'`; the assertions below pin that
- * shape and the single standing item, so a change that re-routed memory
- * through the context-item path trips this test rather than silently
- * regressing cache stability.
+ * The memory item defines `execute()`, so the tool is dispatched through the
+ * ACTION path (`_runActionAndComplete`), whose result is stamped
+ * `resultType:'action'`; the assertions pin that shape, so a change that
+ * re-routed memory through the context-item path (which instantiates a
+ * standing item) trips this test rather than silently regressing cache
+ * stability.
  *
  * Touches the fixed `.juggler/MEMORY.md` at the project root, so it is
  * scheduled alone via needsExclusiveRun.
@@ -113,19 +110,14 @@ export const memorySeededWhenFileExistsTest = {
  */
 export const memorySystemPromptStableAcrossRememberTest = {
   name: 'memory-system-prompt-stable-across-remember',
-  description: 'A memory remember round-trip leaves the assembled system prompt with the memory block exactly once',
+  description: 'A first memory remember leaves the running conversation\'s system prompt without a memory block',
   fixture: 'unit-test-fixture',
   needsExclusiveRun: true,
 
-  // Seed the project memory file so the memory block has prior content.
-  // The default harness conversation was created BEFORE this write, so it
-  // carries NO standing memory item yet — the memory tool's own _ensureSeeded
-  // is what instantiates the single standing item, in the engine, during the
-  // round-trip. (Driving the tool on the default conversation, rather than a
-  // freshly-created one, keeps the engine's copy of the system-position memory
-  // item in sync for the follow-up turn's context-render — a brand-new
-  // conversation would race that sync and stall the render-context request.)
-  // The runner deletes this path in cleanup, so the appended fact never leaks.
+  // Seed the project memory file so the store has prior content. The default
+  // harness conversation was created BEFORE this write, so it carries NO
+  // standing memory item — the case where a write must not add one. The
+  // runner deletes this path in cleanup, so the appended fact never leaks.
   setupFiles: { '.juggler/MEMORY.md': '# Memory\n\n- [2026-06-14] Seeded fact\n' },
 
   // The model calls the memory tool to remember a new fact, then replies.
@@ -147,11 +139,11 @@ export const memorySystemPromptStableAcrossRememberTest = {
     const root = conversation.rootMessageThread;
     const contextItems = root.contextItems;
 
-    // Exactly one standing memory context item — not one per tool-action.
+    // No standing memory context item: the write reaches future conversations.
     const memItems = contextItems.filter((/** @type {any} */ i) => i.type === 'memory');
-    if (memItems.length !== 1) {
+    if (memItems.length !== 0) {
       throw new Error(
-        `expected exactly ONE memory context item, found ${memItems.length}.\n` +
+        `expected NO memory context item in a conversation that began without one, found ${memItems.length}.\n` +
 				`      ${dumpMemoryItems(conversation)}`
       );
     }
@@ -183,11 +175,11 @@ export const memorySystemPromptStableAcrossRememberTest = {
     const seededCount = countOccurrences(prompt, 'Seeded fact');
     const newCount = countOccurrences(prompt, 'Newly learned fact');
 
-    if (blockCount !== 1 || seededCount !== 1 || newCount !== 1) {
+    if (blockCount !== 0 || seededCount !== 0 || newCount !== 0) {
       throw new Error(
-        `assembled system prompt is not a pure function of state — ` +
-				`memory block ×${blockCount} (want 1), "Seeded fact" ×${seededCount} (want 1), ` +
-				`"Newly learned fact" ×${newCount} (want 1).\n` +
+        `a remember changed the running conversation's system prompt — ` +
+				`memory block ×${blockCount}, "Seeded fact" ×${seededCount}, ` +
+				`"Newly learned fact" ×${newCount} (want 0 of each).\n` +
 				`      ${dumpMemoryItems(conversation)}\n` +
 				`--- assembled prompt ---\n${prompt}`
       );

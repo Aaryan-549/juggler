@@ -94,8 +94,7 @@ export async function runTests(ctx) {
       conversation,
       messageThread: conversation.rootMessageThread
     });
-    // Isolated path so this never touches the project's real memory file —
-    // and never the DEFAULT_PATH, so _ensureSeeded stays inert here.
+    // Isolated path so this never touches the project's real memory file.
     item.data.path = `${ctx.fixtureDir}/_memory_sp/m${pathCounter}/MEMORY.md`;
     return item;
   }
