@@ -18,7 +18,6 @@ package main
 
 import (
 	"flag"
-	"io"
 	"os"
 	"strings"
 
@@ -101,15 +100,37 @@ func normalizeURL(u string) string {
 }
 
 // parseLaunchArgs extracts --url and --project from a second instance's argv
-// (args[0] is the program). Unknown flags and parse errors are ignored — we
-// only care about the two that route a window.
+// (args[0] is the program), in either flag spelling (-x or --x, with the value
+// after = or as the next argument). Every other argument is stepped over rather
+// than ending the scan, as a flag.FlagSet would at the first flag it did not
+// declare: a dev-mode server opens its window with --dev ahead of --url, and
+// macOS can add a -psn_ argument of its own. A later value wins, as with flag.
 func parseLaunchArgs(args []string) (url, project string) {
-	fs := flag.NewFlagSet("juggler-app-second", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	u := fs.String("url", "", "")
-	p := fs.String("project", "", "")
-	if len(args) > 1 {
-		_ = fs.Parse(args[1:])
+	for i := 1; i < len(args); i++ {
+		name, ok := strings.CutPrefix(args[i], "-")
+		if !ok {
+			continue
+		}
+		if name == "-" {
+			break // "--" ends the flags
+		}
+		name = strings.TrimPrefix(name, "-")
+		name, value, hasValue := strings.Cut(name, "=")
+		if name != "url" && name != "project" {
+			continue
+		}
+		if !hasValue {
+			if i+1 >= len(args) {
+				break
+			}
+			i++
+			value = args[i]
+		}
+		if name == "url" {
+			url = value
+		} else {
+			project = value
+		}
 	}
-	return strings.TrimSpace(*u), strings.TrimSpace(*p)
+	return strings.TrimSpace(url), strings.TrimSpace(project)
 }

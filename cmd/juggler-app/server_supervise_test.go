@@ -18,13 +18,27 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"juggler/cmd/juggler/core"
+	"juggler/internal/apipaths"
 )
 
 // fakeServerEnv makes this test binary act as a juggler server when the app
 // spawns it: it binds the --port it is given the way the real server does (the
-// next free one when that is taken), reports JUGGLER_ADDR, answers every request
-// with its pid, and exits on an interrupt or when its parent goes.
+// next free one when that is taken), takes the --project's instance lock as the
+// real server does, reports JUGGLER_ADDR, answers every request with its pid,
+// and exits on an interrupt, on a POST to the shutdown route, or when its parent
+// goes.
 const fakeServerEnv = "JUGGLER_APP_TEST_FAKE_SERVER"
+
+// fakeServerDeafEnv makes the fake ignore an interrupt, the way a server on
+// Windows never receives one, so the only polite way to stop it is the
+// shutdown route.
+const fakeServerDeafEnv = "JUGGLER_APP_TEST_FAKE_SERVER_DEAF"
+
+// fakeServerExitDelayEnv is how long, as a Go duration, the fake takes to exit
+// once asked to over HTTP — a server finishing an exchange in flight.
+const fakeServerExitDelayEnv = "JUGGLER_APP_TEST_FAKE_SERVER_EXIT_DELAY"
 
 func TestMain(m *testing.M) {
 	if os.Getenv(fakeServerEnv) == "1" {
@@ -36,9 +50,16 @@ func TestMain(m *testing.M) {
 
 func runFakeServer(args []string) {
 	port := 0
+	project := ""
 	for i, arg := range args {
-		if arg == "--port" && i+1 < len(args) {
+		if i+1 >= len(args) {
+			break
+		}
+		switch arg {
+		case "--port":
 			port, _ = strconv.Atoi(args[i+1])
+		case "--project":
+			project = args[i+1]
 		}
 	}
 	var ln net.Listener
@@ -52,6 +73,14 @@ func runFakeServer(args []string) {
 		fmt.Fprintln(os.Stderr, "fake server:", err)
 		os.Exit(2)
 	}
+	if project != "" {
+		addr := ln.Addr().(*net.TCPAddr)
+		lock := core.NewInstanceLock(project)
+		if res, err := lock.TryAcquire(addr.Port, addr.IP.String()); err != nil || !res.Acquired {
+			fmt.Fprintln(os.Stderr, "fake server: project lock:", err)
+			os.Exit(2)
+		}
+	}
 	fmt.Printf("JUGGLER_ADDR=%s\n", ln.Addr())
 
 	parent := os.Getppid()
@@ -62,13 +91,26 @@ func runFakeServer(args []string) {
 			}
 		}
 	}()
-	go func() {
-		sig := make(chan os.Signal, 1)
-		signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
-		<-sig
-		os.Exit(0)
-	}()
-	_ = http.Serve(ln, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	if os.Getenv(fakeServerDeafEnv) == "1" {
+		signal.Ignore(os.Interrupt)
+	} else {
+		go func() {
+			sig := make(chan os.Signal, 1)
+			signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
+			<-sig
+			os.Exit(0)
+		}()
+	}
+	exitDelay, _ := time.ParseDuration(os.Getenv(fakeServerExitDelayEnv))
+	_ = http.Serve(ln, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == apipaths.Shutdown {
+			w.WriteHeader(http.StatusAccepted)
+			go func() {
+				time.Sleep(exitDelay)
+				os.Exit(0)
+			}()
+			return
+		}
 		_, _ = io.WriteString(w, strconv.Itoa(os.Getpid()))
 	}))
 }

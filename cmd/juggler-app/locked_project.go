@@ -6,6 +6,7 @@ package main
 
 import (
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"html"
 	"strconv"
@@ -33,6 +34,14 @@ type lockedProjectError struct {
 
 func newLockedProjectError(project string, info *core.InstanceInfo) *lockedProjectError {
 	return &lockedProjectError{project: project, info: info}
+}
+
+// asLockedProject finds a lockedProjectError anywhere in err's chain, so one
+// that picked up context on its way back is still shown as a locked project.
+func asLockedProject(err error) (*lockedProjectError, bool) {
+	var e *lockedProjectError
+	ok := errors.As(err, &e)
+	return e, ok
 }
 
 func (e *lockedProjectError) Error() string {

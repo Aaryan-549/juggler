@@ -168,7 +168,7 @@ func (a *appState) controlRetryServer(w http.ResponseWriter, _ *http.Request, e 
 		w.WriteHeader(http.StatusConflict)
 		return
 	}
-	a.openWindow(spec, windowOpts{theme: e.currentTheme, replaces: e.id})
+	a.openWindow(spec, windowOpts{theme: a.windowTheme(e), replaces: e.id})
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -181,7 +181,7 @@ func (a *appState) controlOpenLocal(w http.ResponseWriter, _ *http.Request, e *w
 		w.WriteHeader(http.StatusConflict)
 		return
 	}
-	a.openWindow(windowSpec{}, windowOpts{theme: e.currentTheme, replaces: e.id})
+	a.openWindow(windowSpec{}, windowOpts{theme: a.windowTheme(e), replaces: e.id})
 	w.WriteHeader(http.StatusNoContent)
 }
 

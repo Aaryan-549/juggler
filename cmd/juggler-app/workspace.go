@@ -6,9 +6,12 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 
+	"juggler/internal/atomicio"
 	"juggler/internal/userpaths"
 )
 
@@ -130,7 +133,12 @@ type wsSaveReq struct {
 }
 
 func newWorkspaceStore() *workspaceStore {
-	w := &workspaceStore{saves: make(chan wsSaveReq, 16), path: workspaceFilePath()}
+	return newWorkspaceStoreAt(workspaceFilePath())
+}
+
+// newWorkspaceStoreAt is newWorkspaceStore keeping its document at path.
+func newWorkspaceStoreAt(path string) *workspaceStore {
+	w := &workspaceStore{saves: make(chan wsSaveReq, 16), path: path}
 	go func() {
 		// Hold the whole document in memory so a windows-only or theme-only save
 		// preserves the other field. Seed from disk once; this goroutine is the
@@ -225,18 +233,34 @@ func workspaceFilePath() string {
 
 // readWorkspaceFile parses the document, returning a zero value when the file is
 // missing or corrupt (callers then fall back to their defaults).
+//
+// A corrupt file is moved aside to path+".corrupt" and logged, rather than left
+// for the next save to overwrite: the windows it held are lost to this launch
+// either way, but not to the person who goes looking for them.
 func readWorkspaceFile(path string) workspaceFile {
-	data, err := os.ReadFile(path)
+	data, err := atomicio.RobustReadFile(path)
 	if err != nil {
+		if !errors.Is(err, fs.ErrNotExist) {
+			logf("workspace: read failed: %v", err)
+		}
 		return workspaceFile{}
 	}
 	var f workspaceFile
-	if json.Unmarshal(data, &f) != nil {
+	if err := json.Unmarshal(data, &f); err != nil {
+		aside := path + ".corrupt"
+		if rerr := atomicio.RobustRename(path, aside); rerr != nil {
+			logf("workspace: %s is corrupt (%v), and could not be moved aside: %v", path, err, rerr)
+		} else {
+			logf("workspace: %s is corrupt (%v); kept it as %s and started with no saved windows", path, err, aside)
+		}
 		return workspaceFile{}
 	}
 	return f
 }
 
+// writeWorkspaceFile replaces the document whole (atomicio.WriteFile), so a
+// write cut short by a crash or a full disk leaves the previous workspace
+// rather than a torn file that would read back as none.
 func writeWorkspaceFile(path string, doc workspaceFile) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		logf("workspace: mkdir failed: %v", err)
@@ -244,9 +268,10 @@ func writeWorkspaceFile(path string, doc workspaceFile) {
 	}
 	data, err := json.MarshalIndent(doc, "", "  ")
 	if err != nil {
+		logf("workspace: encode failed: %v", err)
 		return
 	}
-	if err := os.WriteFile(path, data, 0o644); err != nil {
+	if err := atomicio.WriteFile(path, data, 0o644); err != nil {
 		logf("workspace: write failed: %v", err)
 	}
 }

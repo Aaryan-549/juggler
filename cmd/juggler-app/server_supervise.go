@@ -8,8 +8,11 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"strconv"
 	"sync/atomic"
 	"time"
+
+	"juggler/cmd/juggler/core"
 )
 
 // A window views one server address for its whole life, and the page in it
@@ -59,27 +62,84 @@ func (p *serverProc) running() bool {
 
 // interrupt asks the server to exit without waiting for it. Used from the
 // terminate hook, where the process is about to exit and can't block.
+//
+// The signal is instant where there is one to send. Windows cannot deliver an
+// interrupt to another process, so there the shutdown request goes over HTTP
+// instead, on a goroutine of its own: a local server acknowledges it within
+// milliseconds, before the app's teardown reaches stopAllServers, which asks
+// again and waits. A server neither reaches is caught by its own
+// --exit-with-parent watchdog.
 func (p *serverProc) interrupt() {
 	if !p.running() {
 		return
 	}
 	p.stopping.Store(true)
-	_ = p.cmd.Process.Signal(os.Interrupt)
+	if p.cmd.Process.Signal(os.Interrupt) != nil {
+		go p.requestShutdown()
+	}
+}
+
+// requestShutdown asks the server over HTTP to shut down the way an interrupt
+// would have it — writing its conversations to disk before it goes — and
+// reports whether it agreed to. It is the one request every platform can make.
+func (p *serverProc) requestShutdown() bool {
+	info := p.shutdownInfo()
+	if info == nil {
+		return false
+	}
+	ok, err := core.RequestGracefulShutdown(info)
+	if err != nil {
+		logf("asking the server for project=%q at %s to shut down: %v", p.project, p.addr, err)
+	}
+	return ok
+}
+
+// shutdownInfo is the instance a shutdown request for p goes to. For a project
+// that is the record the server wrote under the project's lock, which is what
+// every other caller of core.RequestGracefulShutdown reads and so carries
+// whatever the server needs to believe the request — used only when it names
+// this very process, since the lock may since have passed to another. A server
+// with no project has no such record, and is reached at the address it
+// reported. Nil when there is no address to reach.
+func (p *serverProc) shutdownInfo() *core.InstanceInfo {
+	host, port, err := net.SplitHostPort(p.addr)
+	if err != nil {
+		return nil
+	}
+	n, err := strconv.Atoi(port)
+	if err != nil {
+		return nil
+	}
+	pid := 0
+	if p.running() {
+		pid = p.cmd.Process.Pid
+	}
+	if abs := expandProject(p.project); abs != "" && pid != 0 {
+		if locked, info, _ := core.CheckProjectLocked(abs); locked && info != nil && info.PID == pid && info.Port == n {
+			return info
+		}
+	}
+	return &core.InstanceInfo{PID: pid, Host: host, Port: n}
 }
 
 // stop asks the server to exit (the clean-close path: a window closed, or the
-// app is quitting) and waits for it. It tries a graceful interrupt first, then
-// force-kills once serverStopGrace elapses. On Windows, where
-// Signal(os.Interrupt) to another process is unsupported and returns an error,
-// it force-kills immediately rather than waiting out a grace period for a signal
-// that was never delivered. The crash/hard-kill path is covered separately by
-// the server's own --exit-with-parent watchdog (waitParentExit).
+// app is quitting) and waits for it, force-killing it once serverStopGrace has
+// passed since the ask.
+//
+// The ask is the HTTP shutdown request first, on every platform, so the path
+// Windows depends on is the one every platform runs and tests. A server that
+// does not acknowledge it — its HTTP side wedged, or nothing listening — is sent
+// an interrupt instead, and only one that cannot be reached either way is
+// killed at once rather than waited on for a request it never received. The
+// crash/hard-kill path is covered separately by the server's own
+// --exit-with-parent watchdog (waitParentExit).
 func (p *serverProc) stop() {
 	if !p.running() {
 		return
 	}
 	p.stopping.Store(true)
-	if err := p.cmd.Process.Signal(os.Interrupt); err != nil {
+	asked := p.requestShutdown() || p.cmd.Process.Signal(os.Interrupt) == nil
+	if !asked {
 		_ = p.cmd.Process.Kill()
 		<-p.exited
 		return
@@ -87,6 +147,7 @@ func (p *serverProc) stop() {
 	select {
 	case <-p.exited:
 	case <-time.After(serverStopGrace):
+		logf("server for project=%q at %s did not exit within %s of being asked; killing it", p.project, p.addr, serverStopGrace)
 		_ = p.cmd.Process.Kill()
 		<-p.exited
 	}

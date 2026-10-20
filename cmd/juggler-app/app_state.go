@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -141,8 +142,10 @@ type winEntry struct {
 	openedBy string
 
 	// currentTheme is the last page-reported theme for this native window. It is
-	// used to paint chrome immediately on show and as the inherited theme for
-	// Session ▸ New Window.
+	// what showWindow paints the chrome in (through chromeTheme), and the theme
+	// a window opened in this one's place starts in (connect_server.go). Owned by
+	// the registry goroutine: setWindowTheme writes it there, from the control
+	// endpoint's goroutines.
 	currentTheme string
 
 	// geom holds the frame this window persists, owned by the save loop. It
@@ -539,7 +542,7 @@ func (a *appState) run(specs []windowSpec) error {
 func (a *appState) tryBuildInitial(spec windowSpec) *winEntry {
 	serverURL, proc, err := spec.resolve()
 	if err != nil {
-		if locked, ok := err.(*lockedProjectError); ok {
+		if locked, ok := asLockedProject(err); ok {
 			return a.buildLockedProjectWindow(spec, a.lockedMessage(locked), "")
 		}
 		logf("restore: skipping %+v: %v", spec.entry(), err)
@@ -689,7 +692,7 @@ func (a *appState) openWindow(spec windowSpec, opts windowOpts) {
 	go func() {
 		serverURL, proc, err := spec.resolve()
 		if err != nil {
-			if locked, ok := err.(*lockedProjectError); ok {
+			if locked, ok := asLockedProject(err); ok {
 				application.InvokeAsync(func() {
 					// A locked window shows a static recovery page, not the app —
 					// there is no root font-size to scale, so zoom is not threaded,
@@ -950,7 +953,11 @@ const cascadeStep = 30
 // buildWindow's dynamic-window path (the only caller that can collide) already
 // runs there, and the very first window has no peers to collide with.
 func (a *appState) cascadeFrom(x, y int) (int, int) {
-	taken := a.openWindowOrigins()
+	return cascade(x, y, a.openWindowOrigins())
+}
+
+// cascade is cascadeFrom against a given set of taken top-left corners.
+func cascade(x, y int, taken map[[2]int]bool) (int, int) {
 	for i := 0; i < 10 && taken[[2]int{x, y}]; i++ {
 		x += cascadeStep
 		y += cascadeStep
@@ -1386,11 +1393,26 @@ func (a *appState) showWindow(e *winEntry) {
 	if a.devMode {
 		enableWebInspector(e.win)
 	}
-	theme := e.currentTheme
+	applyWindowChrome(e.win, themeColours[a.chromeTheme(e)])
+}
+
+// windowTheme is the last theme e's page reported, or "" before any has. Read on
+// the registry goroutine, which owns the field — the page's reports write it
+// from the control endpoint's HTTP goroutines while the main thread paints.
+func (a *appState) windowTheme(e *winEntry) string {
+	var theme string
+	a.reg(func(*regState) { theme = e.currentTheme })
+	return theme
+}
+
+// chromeTheme is the theme to paint e's native chrome in: the last one its page
+// reported, else dark.
+func (a *appState) chromeTheme(e *winEntry) string {
+	theme := a.windowTheme(e)
 	if theme == "" {
 		theme = "dark"
 	}
-	applyWindowChrome(e.win, themeColours[theme])
+	return theme
 }
 
 // claimClose gives exactly one caller the right to tear e down, reporting
@@ -1660,7 +1682,8 @@ func (a *appState) awaitFlush(id string, done chan struct{}, deadline time.Time)
 }
 
 // sortedWindows returns the open window entries in stable open order
-// (ascending window number). Must be called while holding the reg lock.
+// (ascending window number). Must run on the registry goroutine, inside a reg
+// op.
 func sortedWindows(st *regState) []*winEntry {
 	ids := make([]string, 0, len(st.windows))
 	for id := range st.windows {
@@ -1731,25 +1754,40 @@ func winNum(id string) int {
 	return n
 }
 
-// stopAllServers stops every server this app spawned, waiting briefly for each.
+// stopAllServers stops every server this app spawned and waits for them all.
 // Called after the event loop returns (the clean-exit path).
+//
+// The servers are taken out of the registry first and stopped outside it, side
+// by side: each can take up to serverStopGrace to finish an exchange in flight,
+// and every window operation waits on the registry, so stopping them inside it
+// one after another would freeze the app for the sum of their shutdowns.
 func (a *appState) stopAllServers() {
+	var procs []*serverProc
 	a.reg(func(st *regState) {
 		for url, proc := range st.servers {
-			proc.stop()
+			procs = append(procs, proc)
 			delete(st.servers, url)
 		}
 	})
+	var wg sync.WaitGroup
+	for _, proc := range procs {
+		wg.Go(proc.stop)
+	}
+	wg.Wait()
 }
 
-// signalAllServers sends a graceful interrupt to every spawned server without
-// waiting. Used from the terminate hook, where the process is about to exit and
-// can't block — the servers shut down on the signal, and their --exit-with-parent
-// watchdog catches any that miss it.
+// signalAllServers asks every spawned server to exit without waiting for any of
+// them. Used from the terminate hook, where the process is about to exit and
+// can't block — the servers shut down on the request, and their
+// --exit-with-parent watchdog catches any that miss it.
 func (a *appState) signalAllServers() {
+	var procs []*serverProc
 	a.reg(func(st *regState) {
 		for _, proc := range st.servers {
-			proc.interrupt()
+			procs = append(procs, proc)
 		}
 	})
+	for _, proc := range procs {
+		proc.interrupt()
+	}
 }

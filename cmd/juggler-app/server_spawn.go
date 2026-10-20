@@ -26,8 +26,8 @@ import (
 // print its bound address before giving up.
 const serverStartTimeout = 20 * time.Second
 
-// serverStopGrace bounds how long stopServer waits after the interrupt before
-// force-killing a spawned server.
+// serverStopGrace bounds how long serverProc.stop waits, once it has asked a
+// spawned server to shut down, before force-killing it.
 //
 // It must stay above the server's own shutdown budget, because that teardown is
 // what writes conversation documents to disk — and a conversation with an LLM
