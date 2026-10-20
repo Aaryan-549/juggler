@@ -20,6 +20,7 @@ import actionExecutor from '../../../js/services/action-executor.js';
 import contextItemRegistry from '../../../js/registries/context-item-registry.js';
 import { programChangeReport } from '../../../js/utils/program-changes.js';
 import { decideToolCall } from '../../../js/model/conversation-tool-actions.js';
+import { handOverToHeldCall } from '../../../js/services/worker-manager-protocols.js';
 import { runProgramSuite } from './run-code-program-helpers.js';
 
 /**
@@ -107,6 +108,36 @@ export async function runTests(_ctx) {
         toolInput: { command }, toolUseId: `${id}_again`
       });
       assert(again.verdict === 'approve', `"don't ask again" saved a bash rule: ${again.verdict}`);
+    });
+
+    // A rule saved from anywhere else — "don't ask again" on another pending
+    // call of the same tool — re-checks every pending approval. A held call is
+    // pending as its program's item, so it is checked as the call it holds.
+    await test('a rule saved elsewhere that covers a held call approves it, and the call runs', async () => {
+      const log = `rc-rule-held-${Date.now()}.txt`;
+      const command = heldCommand(log);
+      const code = `const r = await tools.bash({ command: ${JSON.stringify(command)} }); return String(r).trim();`;
+      const { conversation, mt, item } = await setup(code, { strategy: 'default' });
+      const id = item.toolUseId;
+      await assertParks(conversation, mt, command);
+      const finished = startAsAction(conversation, mt, id);
+      const parked = await waitHeld(mt, id, 'bash');
+      const button = (parked.approvalOptions?.options || [])
+        .find((/** @type {any} */ o) => String(o.value).startsWith('yes-always') && o.rules && o.itemType);
+      assert(button, `a "don't ask again" grant for bash: ${JSON.stringify(parked.approvalOptions)}`);
+      const ymap = mt.getToolAction(id);
+      let state = '';
+      let delivered = false;
+      mt.transact(() => {
+        for (const r of button.rules) mt.addRule(button.itemType, { kind: r.kind, value: r.value, scope: r.scope });
+        state = ymap.get('state');
+        // The engine's handover of the approval, as handleExecuteTool makes it.
+        delivered = handOverToHeldCall(conversation, mt, ymap, id);
+      });
+      if (!delivered) mt.refuseApproval(id, 'not approved by the rule');
+      const done = await finished;
+      assert(state === 'approved' && delivered, `the saved rule approves the held call: ${state}`);
+      assert(done.state === 'completed' && done.result?.content === 'ran', `and the program goes on: ${JSON.stringify(done.result)}`);
     });
 
     await test('a held call refused on the user\'s behalf ends the program with that refusal', async () => {

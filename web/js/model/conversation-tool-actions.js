@@ -847,6 +847,19 @@ export function saveAutoApprovalPermission(c, ymap, messageThread) {
 }
 
 /**
+ * The call a pending item's running program holds for the user, if it holds
+ * one: its card says `held`, and `heldCall` names the call.
+ * @param {any} toolAction - The pending tool-action Y.Map
+ * @returns {{name: string, input: Record<string, unknown>}|null} The held call, or null
+ */
+function heldCallOf(toolAction) {
+  if (!plain(toolAction.get('approvalOptions'))?.held) return null;
+  const call = plain(toolAction.get('heldCall'));
+  if (typeof call?.name !== 'string') return null;
+  return { name: call.name, input: call.input || {} };
+}
+
+/**
  * Re-check all currently pending approvals against the conversation's latest
  * permission rules, approving any that the owning plugin now permits.
  *
@@ -864,8 +877,12 @@ export function approvePermittedPendingApprovals(c, options = {}) {
     const pending = messageThread.getPendingApprovalMessages();
     for (const toolAction of pending) {
       const toolUseId = toolAction.get('toolUseId');
-      const toolName = toolAction.get('toolName');
-      const toolInputPlain = yGet(toolAction, 'toolInput');
+      // A call a running program holds for the user (services/held-calls.js)
+      // waits as the program's own item, and is permitted or not as the call
+      // it holds: the program's tool is never what the rule names.
+      const held = heldCallOf(toolAction);
+      const toolName = held ? held.name : toolAction.get('toolName');
+      const toolInputPlain = held ? held.input : yGet(toolAction, 'toolInput');
       const ActionClass = contextItemRegistry.getByToolName(toolName);
       if (!ActionClass) continue;
 
@@ -875,7 +892,8 @@ export function approvePermittedPendingApprovals(c, options = {}) {
         id: actionId,
         session: c._session,
         conversation: c,
-        messageThread
+        messageThread,
+        toolName
       });
 
       try {
