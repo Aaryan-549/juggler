@@ -66,6 +66,15 @@ func userInterjectedAfterPendingTools(sess *activeSession, messages []provider.M
 	return false
 }
 
+// systemPromptChanged reports whether systemPrompt differs from the one the live
+// CLI was spawned with. The CLI takes its prompt from --system-prompt at spawn
+// and never re-reads it, so a parked CLI cannot carry an edited prompt: feeding
+// it tool results would keep the old one for its whole lifetime. A session with
+// no recorded prompt hash reports no change.
+func systemPromptChanged(sess *activeSession, systemPrompt string) bool {
+	return sess.sentSystemHash != 0 && hashSystemPrompt(systemPrompt) != sess.sentSystemHash
+}
+
 // deltaCarriesToolResult reports whether any message in messages[start:end] is a
 // tool-result. A tool_result reaches the CLI exactly two ways: live, over the MCP
 // control stream (regimeContinue), or paired into resumed history by the
@@ -95,8 +104,8 @@ const (
 	regimeStartFresh
 
 	// regimeContinue feeds tool_results to the parked CLI via MCP.
-	// Requires a live CLI, results for every pendingTool, and no user
-	// content past the matching tool-results.
+	// Requires a live CLI, results for every pendingTool, no user content
+	// past the matching tool-results, and an unchanged system prompt.
 	regimeContinue
 
 	// regimeResumeDelta spawns/reuses `claude --resume <uuid>` and pipes
@@ -142,7 +151,8 @@ func classifyRegime(sess *activeSession, currentModel, systemPrompt string, mess
 	if sess == nil || sess.sessionUUID == "" {
 		return regimeDecision{Regime: regimeStartFresh, Reason: "no-session"}
 	}
-	if continuationCovers(sess, messages) && liveCLI && !userInterjectedAfterPendingTools(sess, messages) {
+	if continuationCovers(sess, messages) && liveCLI && !userInterjectedAfterPendingTools(sess, messages) &&
+		!systemPromptChanged(sess, systemPrompt) {
 		return regimeDecision{Regime: regimeContinue}
 	}
 	// claude --resume against a different model does not share cache.

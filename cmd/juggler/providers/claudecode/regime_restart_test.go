@@ -129,6 +129,32 @@ func TestClassifyRegime_UnpairedToolResultStaysFresh(t *testing.T) {
 	}
 }
 
+// TestClassifyRegime_SystemPromptEditWhileParkedDoesNotContinue: the user edits
+// the system prompt while the CLI is parked inside a tools/call. The live CLI
+// took its prompt from --system-prompt at spawn, so feeding the tool results to
+// it (regimeContinue) would run the rest of the conversation on the old prompt —
+// and continueSession would record the new prompt's hash, so no later turn would
+// notice either. The edit must route to a fresh start that respawns the CLI.
+func TestClassifyRegime_SystemPromptEditWhileParkedDoesNotContinue(t *testing.T) {
+	fed := []provider.Message{userMsg("do the thing")}
+	sess := &activeSession{
+		sessionUUID:  "uuid-parked",
+		pendingTools: []pendingToolMeta{{ID: "t1", Name: "bash"}},
+	}
+	sess.captureSentPrefix("old prompt", fed)
+	answered := append(append([]provider.Message{}, fed...),
+		toolUseMsg("t1", "bash"),
+		toolResultMsg("t1", "ok"))
+
+	if dec := classifyRegime(sess, "", "old prompt", answered, true); dec.Regime != regimeContinue {
+		t.Fatalf("unchanged prompt must continue the parked CLI; got regime=%d reason=%q", dec.Regime, dec.Reason)
+	}
+	dec := classifyRegime(sess, "", "new prompt", answered, true)
+	if dec.Regime != regimeStartFresh || dec.Reason != "diverged" {
+		t.Fatalf("edited prompt must start fresh (diverged), not continue the CLI spawned with the old one; got regime=%d reason=%q", dec.Regime, dec.Reason)
+	}
+}
+
 // TestClassifyRegime_PlainUserDeltaStillResumesWarm guards that the fix is
 // narrow: a delta that carries NO tool_result (an ordinary new user turn after a
 // restart) still resumes warm via regimeResumeDelta. Only tool_result-bearing

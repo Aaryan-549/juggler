@@ -57,7 +57,9 @@
 //   - regimeContinue: a live CLI from a previous turn is parked mid-LLM-
 //     turn awaiting tool results. continueSession feeds those results to
 //     the parked CLI via the control protocol — no new spawn — and reads
-//     the rest of the turn off the same stdio.
+//     the rest of the turn off the same stdio. Not taken when the system
+//     prompt has changed since spawn: the CLI only reads --system-prompt at
+//     start, so an edit made while it is parked routes to a fresh start.
 //
 // regimeResumeDelta with SoftReset=true is the user-interjection path:
 // pending tool calls didn't get results before the user typed something
