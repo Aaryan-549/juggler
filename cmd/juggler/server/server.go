@@ -385,7 +385,7 @@ func New(cfg Config) (*Server, error) {
 	sessionAPI.SetWorkspaceResolver(func(id string) (workspace.Workspace, error) { return s.Workspaces().Resolve(id) })
 
 	configAPI, err := handlers.NewConfigAPI(s.ProjectPath, s.RefreshProviders, func() {
-		s.broadcastToAll(map[string]any{"type": "plugin-changed", "path": "config/plugins"})
+		s.broadcastToAll(pluginChangedFrame{Type: framePluginChanged, Path: "config/plugins"})
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create config API: %w", err)

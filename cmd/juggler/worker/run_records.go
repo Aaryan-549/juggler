@@ -410,19 +410,19 @@ func shownRunOutcomeLocked(nested *ycrdt.YArray, runItemID, toolUseID string) (s
 		if !isMap {
 			continue
 		}
-		if itemType, _ := m.Get("type").(string); itemType != ItemTypeUser {
+		if itemType := yMapString(m, keyType); itemType != ItemTypeUser {
 			continue
 		}
-		id, _ := m.Get("itemId").(string)
-		call, _ := m.Get("runToolUseId").(string)
+		id := yMapString(m, keyItemID)
+		call := yMapString(m, keyRunToolUseID)
 		if runItemID != "" && id != runItemID {
 			continue
 		}
 		if runItemID == "" && call != toolUseID {
 			continue
 		}
-		status, _ = m.Get("runStatus").(string)
-		result, _ = m.Get("runResult").(string)
+		status = yMapString(m, keyRunStatus)
+		result = yMapString(m, keyRunResult)
 		return status, result, true
 	}
 	return "", "", false
@@ -594,13 +594,13 @@ func threadRunSettledLocked(threadYMap *ycrdt.YMap) bool {
 	if threadYMap == nil {
 		return false
 	}
-	if bounded, _ := threadYMap.Get("boundedCompaction").(bool); !bounded {
-		nested, _ := threadYMap.Get("items").(*ycrdt.YArray)
+	if bounded := yMapBool(threadYMap, keyBoundedCompaction); !bounded {
+		nested, _ := yMapArray(threadYMap, keyItems)
 		if settled, hasRuns := runSettlementLocked(nested); hasRuns {
 			return settled
 		}
 	}
-	result, _ := threadYMap.Get("result").(string)
+	result := yMapString(threadYMap, keyResult)
 	return result != ""
 }
 
@@ -616,14 +616,14 @@ func runSettlementLocked(nested *ycrdt.YArray) (settled, hasRuns bool) {
 		if !ok {
 			continue
 		}
-		itemType, _ := m.Get("type").(string)
-		status, _ := m.Get("runStatus").(string)
+		itemType := yMapString(m, keyType)
+		status := yMapString(m, keyRunStatus)
 		// Only user items carry run records; a nested thread item's identical
 		// coordinates are its own run selector (ConversationItem.AliasOf).
 		if itemType == ItemTypeUser {
 			if status != "" {
 				hasRuns = true
-			} else if coordinates, _ := m.Get("runToolUseId").(string); coordinates != "" {
+			} else if coordinates := yMapString(m, keyRunToolUseID); coordinates != "" {
 				hasRuns = true
 			}
 		}
@@ -645,7 +645,7 @@ func latestRunOutcomeLocked(threadYMap *ycrdt.YMap) (status, result string) {
 	if threadYMap == nil {
 		return "", ""
 	}
-	nested, _ := threadYMap.Get("items").(*ycrdt.YArray)
+	nested, _ := yMapArray(threadYMap, keyItems)
 	if nested == nil {
 		return "", ""
 	}
@@ -654,8 +654,8 @@ func latestRunOutcomeLocked(threadYMap *ycrdt.YMap) (status, result string) {
 		if !ok {
 			continue
 		}
-		if s, _ := m.Get("runStatus").(string); s != "" {
-			r, _ := m.Get("runResult").(string)
+		if s := yMapString(m, keyRunStatus); s != "" {
+			r := yMapString(m, keyRunResult)
 			return s, r
 		}
 	}
@@ -689,10 +689,10 @@ func openRunMessagesLocked(nested *ycrdt.YArray) []*ycrdt.YMap {
 		if !ok {
 			continue
 		}
-		if t, _ := m.Get("type").(string); t != ItemTypeUser {
+		if t := yMapString(m, keyType); t != ItemTypeUser {
 			continue
 		}
-		if s, _ := m.Get("runStatus").(string); s != "" {
+		if s := yMapString(m, keyRunStatus); s != "" {
 			break
 		}
 		open = append(open, m)
@@ -799,11 +799,11 @@ func trailingSessionItemLocked(arr *ycrdt.YArray, canonicalID string) *ycrdt.YMa
 		if !ok {
 			continue
 		}
-		if t, _ := m.Get("type").(string); t != ItemTypeThread {
+		if t := yMapString(m, keyType); t != ItemTypeThread {
 			continue
 		}
-		id, _ := m.Get("itemId").(string)
-		aliasOf, _ := m.Get("aliasOf").(string)
+		id := yMapString(m, keyItemID)
+		aliasOf := yMapString(m, keyAliasOf)
 		if id != canonicalID && aliasOf != canonicalID {
 			continue
 		}
@@ -858,10 +858,10 @@ func (w *ConversationWorker) fedResultUnansweredLocked(threadItemID string, pare
 		if !ok {
 			continue
 		}
-		if id, _ := m.Get("itemId").(string); id == trailingID {
+		if id := yMapString(m, keyItemID); id == trailingID {
 			return silent
 		}
-		if t, _ := m.Get("type").(string); t == ItemTypeThread {
+		if t := yMapString(m, keyType); t == ItemTypeThread {
 			return false
 		}
 		if len(itemWireMessages(yMapToConversationItem(m), nil)) > 0 {
@@ -915,17 +915,17 @@ func (w *ConversationWorker) reportRunToParentLocked(threadItemID string, thread
 	if trailing == nil {
 		return
 	}
-	selector, _ := trailing.Get("runToolUseId").(string)
-	runItemID, _ := trailing.Get("runItemId").(string)
+	selector := yMapString(trailing, keyRunToolUseID)
+	runItemID := yMapString(trailing, keyRunItemID)
 	if selector == "" && runItemID == "" {
 		return
 	}
 	if runItemID == starterID {
 		return // already the item this run reports to
 	}
-	trailingID, _ := trailing.Get("itemId").(string)
-	fed, _ := trailing.Get("runResultFed").(bool)
-	nested, _ := threadYMap.Get("items").(*ycrdt.YArray)
+	trailingID := yMapString(trailing, keyItemID)
+	fed := yMapBool(trailing, keyRunResultFed)
+	nested, _ := yMapArray(threadYMap, keyItems)
 	recovers := status == runStatusRest && lastReadRunFailedLocked(parentArr, nested, threadItemID)
 	if !fed || w.fedResultUnansweredLocked(threadItemID, parentArr, trailingID) {
 		// Unread, or read by a turn that produced nothing, so this item absorbs the
@@ -935,15 +935,15 @@ func (w *ConversationWorker) reportRunToParentLocked(threadItemID string, thread
 		// would report something other than what it sent. A call whose OWN run this
 		// is needs no such note.
 		if runItemID != "" || starterCall != selector {
-			trailing.Set("runItemId", starterID)
+			trailing.Set(keyRunItemID, starterID)
 		}
 		// An unread receipt reports the run it now names, so whether it recovers
 		// an error is that run's question too.
 		if selector == "" {
 			if recovers {
-				trailing.Set("recoversError", true)
+				trailing.Set(keyRecoversError, true)
 			} else {
-				trailing.Delete("recoversError")
+				trailing.Delete(keyRecoversError)
 			}
 		}
 		return
@@ -958,8 +958,8 @@ func (w *ConversationWorker) reportRunToParentLocked(threadItemID string, thread
 		return
 	}
 
-	goal, _ := threadYMap.Get("goal").(string)
-	sessionName, _ := threadYMap.Get("sessionName").(string)
+	goal := yMapString(threadYMap, keyGoal)
+	sessionName := yMapString(threadYMap, keySessionName)
 	receipt := receiptItem(threadItemID, goal, sessionName, starterID)
 	receipt.RecoversError = recovers
 	parentArr.Insert(ycrdt.Number(int(parentArr.GetLength())), ycrdt.ArrayAny{conversationItemToYMap(receipt)})
@@ -981,19 +981,19 @@ func lastReadRunFailedLocked(parentArr, nested *ycrdt.YArray, canonicalID string
 		if !ok {
 			continue
 		}
-		if t, _ := m.Get("type").(string); t != ItemTypeThread {
+		if t := yMapString(m, keyType); t != ItemTypeThread {
 			continue
 		}
-		id, _ := m.Get("itemId").(string)
-		aliasOf, _ := m.Get("aliasOf").(string)
+		id := yMapString(m, keyItemID)
+		aliasOf := yMapString(m, keyAliasOf)
 		if id != canonicalID && aliasOf != canonicalID {
 			continue
 		}
-		if fed, _ := m.Get("runResultFed").(bool); !fed {
+		if fed := yMapBool(m, keyRunResultFed); !fed {
 			continue
 		}
-		runItemID, _ := m.Get("runItemId").(string)
-		selector, _ := m.Get("runToolUseId").(string)
+		runItemID := yMapString(m, keyRunItemID)
+		selector := yMapString(m, keyRunToolUseID)
 		status, _, found := shownRunOutcomeLocked(nested, runItemID, selector)
 		return found && status == runStatusError
 	}
@@ -1054,11 +1054,11 @@ func (w *ConversationWorker) settleThreadRun(threadItemID string, cancelled bool
 		if threadYMap == nil {
 			return
 		}
-		if boundedCompaction, _ := threadYMap.Get("boundedCompaction").(bool); boundedCompaction {
+		if boundedCompaction := yMapBool(threadYMap, keyBoundedCompaction); boundedCompaction {
 			return
 		}
-		nested, _ := threadYMap.Get("items").(*ycrdt.YArray)
-		threadResult, _ := threadYMap.Get("result").(string)
+		nested, _ := yMapArray(threadYMap, keyItems)
+		threadResult := yMapString(threadYMap, keyResult)
 
 		var items []ConversationItem
 		if nested != nil {
@@ -1085,20 +1085,20 @@ func (w *ConversationWorker) settleThreadRun(threadItemID string, cancelled bool
 		if len(open) > 0 {
 			// openRunMessagesLocked walks backwards, so the last entry is the message
 			// that STARTED this run — the one a parent item selects it by.
-			starterID, _ = open[len(open)-1].Get("itemId").(string)
-			starterCall, _ = open[len(open)-1].Get("runToolUseId").(string)
+			starterID = yMapString(open[len(open)-1], keyItemID)
+			starterCall = yMapString(open[len(open)-1], keyRunToolUseID)
 		}
 		contextTokens, resultTokens := threadTokenFigures(items, result)
 		w.doc.transactTracked(func(_ *ycrdt.Transaction) {
 			for _, m := range open {
-				m.Set("runStatus", status)
-				m.Set("runResult", result)
+				m.Set(keyRunStatus, status)
+				m.Set(keyRunResult, result)
 			}
 			if summarises && result != threadResult {
-				threadYMap.Set("result", result)
+				threadYMap.Set(keyResult, result)
 			}
-			threadYMap.Set("contextTokens", ycrdt.Number(contextTokens))
-			threadYMap.Set("resultTokens", ycrdt.Number(resultTokens))
+			threadYMap.Set(keyContextTokens, ycrdt.Number(contextTokens))
+			threadYMap.Set(keyResultTokens, ycrdt.Number(resultTokens))
 			w.reportRunToParentLocked(threadItemID, threadYMap, starterID, starterCall, status, result)
 		})
 		wrote = true

@@ -415,13 +415,9 @@ func (s *Server) runProviderRefreshActor() {
 			cancel()
 			s.providersList.Store(&list)
 			s.markProvidersReady()
-			s.broadcastToAll(map[string]any{
-				"type":      "providers-update",
-				"providers": list,
-				// This snapshot is the settled, post-compute list — clients that gate
-				// startup decisions on real provider availability should trust it.
-				"ready": true,
-			})
+			// This snapshot is the settled, post-compute list — clients that gate
+			// startup decisions on real provider availability should trust it.
+			s.broadcastToAll(providersUpdateFrame{Type: frameProvidersUpdate, Providers: list, Ready: true})
 		}
 	}
 }

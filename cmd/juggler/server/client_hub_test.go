@@ -23,22 +23,14 @@ func nextClientsChanged(t *testing.T, c *WSClient) (int, []clientDescriptor) {
 	t.Helper()
 	select {
 	case msg := <-c.send:
-		m, ok := msg.json.(map[string]any)
+		f, ok := msg.json.(clientsChangedFrame)
 		if !ok {
-			t.Fatalf("expected map message, got %T", msg.json)
+			t.Fatalf("expected a clients-changed frame, got %T", msg.json)
 		}
-		if m["type"] != "clients-changed" {
-			t.Fatalf("expected clients-changed, got %v", m["type"])
+		if f.Type != frameClientsChanged {
+			t.Fatalf("expected clients-changed, got %v", f.Type)
 		}
-		n, ok := m["count"].(int)
-		if !ok {
-			t.Fatalf("expected int count, got %T", m["count"])
-		}
-		list, ok := m["clients"].([]clientDescriptor)
-		if !ok {
-			t.Fatalf("expected []clientDescriptor clients, got %T", m["clients"])
-		}
-		return n, list
+		return f.Count, f.Clients
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for clients-changed")
 		return 0, nil

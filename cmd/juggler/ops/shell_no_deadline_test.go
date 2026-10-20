@@ -250,7 +250,11 @@ func TestWantsNoDeadline(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := wantsNoDeadline(tc.params); got != tc.want {
+			p, err := decodeParams[shellParams](tc.params)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := wantsNoDeadline(p.Timeout); got != tc.want {
 				t.Errorf("wantsNoDeadline(%+v) = %v, want %v", tc.params, got, tc.want)
 			}
 		})

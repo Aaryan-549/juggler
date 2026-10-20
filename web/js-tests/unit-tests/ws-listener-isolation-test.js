@@ -73,6 +73,28 @@ export async function runTests() {
       `the fault must carry what was thrown, got ${faults[0].message}`);
   });
 
+  // A frame is told apart by its `type` and nothing else. One without a type is
+  // a 'message' whatever its fields happen to be called — no key it carries
+  // promotes it to an event of its own.
+  await run('a frame without a type is a message, whatever fields it carries', () => {
+    const typeless = [
+      { error: 'x', message: 'y', conversationId: 'conv_x' },
+      { retry: true, attempt: 1, maxRetries: 3, conversationId: 'conv_x' },
+    ];
+    for (const frame of typeless) {
+      const ws = new WebSocketService();
+      /** @type {string[]} */
+      const emitted = [];
+      const emit = ws._emit.bind(ws);
+      ws._emit = (/** @type {any} */ event, /** @type {any} */ data) => { emitted.push(event); emit(event, data); };
+
+      ws._handleMessageData(JSON.stringify(frame));
+
+      assert(emitted.join() === 'message',
+        `${JSON.stringify(frame)} must be delivered as 'message' and nothing else, emitted [${emitted.join(', ')}]`);
+    }
+  });
+
   // Every event rides the same fan-out, so the rule is the emitter's, not the
   // message route's: a connection event is held to it too.
   await run('a throwing listener does not escape the emitter', (/** @type {any} */ faults) => {

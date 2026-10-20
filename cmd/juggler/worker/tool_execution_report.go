@@ -98,14 +98,14 @@ func (w *ConversationWorker) finalizeToolsAbsentFromExecReportExcept(liveThreads
 			if liveThreads[threadID] {
 				return false
 			}
-			if t, _ := m.Get("type").(string); t != ItemTypeToolAction {
+			if t := yMapString(m, keyType); t != ItemTypeToolAction {
 				return false
 			}
 			// The wedge shape only: still running, no result.
-			if state, _ := m.Get("state").(string); state != StateRunning {
+			if state := yMapString(m, keyState); state != StateRunning {
 				return false
 			}
-			if m.Get("result") != nil {
+			if m.Get(keyResult) != nil {
 				return false
 			}
 			// Cond 2: worker-executed tools never appear in an engine report — the
@@ -113,18 +113,18 @@ func (w *ConversationWorker) finalizeToolsAbsentFromExecReportExcept(liveThreads
 			// stamp (written at evaluate) and the create_thread fallback (docs predating
 			// the stamp). Only create_thread is worker-managed today, so these two cover
 			// every worker-executed tool; a future one would carry the stamp.
-			if ex, _ := m.Get("executor").(string); ex == "worker" {
+			if ex := yMapString(m, keyExecutor); ex == "worker" {
 				return false
 			}
-			if name, _ := m.Get("toolName").(string); name == "create_thread" {
+			if name := yMapString(m, keyToolName); name == "create_thread" {
 				return false
 			}
-			id, _ := m.Get("toolUseId").(string)
+			id := yMapString(m, keyToolUseID)
 			if id == "" {
 				return false
 			}
-			epoch, _ := docNumberToInt64(m.Get("runningEpoch"))
-			started, _ := docNumberToInt64(m.Get("runningStartedAt"))
+			epoch, _ := yMapInt64(m, keyRunningEpoch)
+			started, _ := yMapInt64(m, keyRunningStartedAt)
 			// Cond 3+4 must hold for BOTH consecutive reports (the belt).
 			if !w.engine.provesAbsent(id, epoch, started) {
 				return false
@@ -135,7 +135,7 @@ func (w *ConversationWorker) finalizeToolsAbsentFromExecReportExcept(liveThreads
 	})
 
 	for _, c := range cands {
-		if w.finalizeStuckRunningToolOnField(c.id, "runningEpoch", float64(c.epoch), "exec-report-absent") {
+		if w.finalizeStuckRunningToolOnField(c.id, keyRunningEpoch, float64(c.epoch), "exec-report-absent") {
 			// Settle the parked turn now that the tool reached terminal.
 			w.sched.markReconcile()
 		}

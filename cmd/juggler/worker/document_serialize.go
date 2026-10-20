@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 
 	ycrdt "github.com/skyterra/y-crdt"
+
+	"juggler/internal/jlog"
 )
 
 // ToJSON returns the document as JSON (unified storage - context items are in items).
@@ -124,14 +126,67 @@ func fromYcrdt(value any) any {
 
 // yMapString reads a string field from a Y.Map, returning "" if absent or wrong type.
 func yMapString(m *ycrdt.YMap, key string) string {
-	v, _ := m.Get(key).(string)
+	v, _ := yMapStringOK(m, key)
 	return v
 }
 
 // yMapBool reads a bool field from a Y.Map, returning false if absent or wrong type.
 func yMapBool(m *ycrdt.YMap, key string) bool {
-	v, _ := m.Get(key).(bool)
+	v, _ := yMapBoolOK(m, key)
 	return v
+}
+
+// The (value, ok) readers below report ok=false alike for a key that is absent
+// and one holding another kind, and ok=true for a present zero value. Callers
+// that only want the value use yMapString / yMapBool.
+
+// yMapStringOK reads a string field from a Y.Map.
+func yMapStringOK(m *ycrdt.YMap, key string) (string, bool) {
+	v, ok := m.Get(key).(string)
+	return v, ok
+}
+
+// yMapBoolOK reads a bool field from a Y.Map.
+func yMapBoolOK(m *ycrdt.YMap, key string) (bool, bool) {
+	v, ok := m.Get(key).(bool)
+	return v, ok
+}
+
+// yMapInt64 reads a numeric field from a Y.Map as an integer, whichever kind
+// the encoding produced (see yNumberInt64).
+func yMapInt64(m *ycrdt.YMap, key string) (int64, bool) {
+	return yNumberInt64(m.Get(key))
+}
+
+// yNumberInt64 reads a number the doc stores, reporting whether v was one. Go
+// writes ycrdt.Number (int), and convertToYcrdt narrows an integral float64 to
+// it; a JS client's integer past 31 bits decodes as float64, or float32 when
+// that is exact, and a bigint as int64.
+func yNumberInt64(v any) (int64, bool) {
+	switch n := v.(type) {
+	case int64:
+		return n, true
+	case float64:
+		return int64(n), true
+	case float32:
+		return int64(n), true
+	case int:
+		return int64(n), true
+	default:
+		return 0, false
+	}
+}
+
+// yMapArray reads a nested Y.Array field from a Y.Map.
+func yMapArray(m *ycrdt.YMap, key string) (*ycrdt.YArray, bool) {
+	v, ok := m.Get(key).(*ycrdt.YArray)
+	return v, ok && v != nil
+}
+
+// yMapMap reads a nested Y.Map field from a Y.Map.
+func yMapMap(m *ycrdt.YMap, key string) (*ycrdt.YMap, bool) {
+	v, ok := m.Get(key).(*ycrdt.YMap)
+	return v, ok && v != nil
 }
 
 // yMapRawJSON reads a field from a Y.Map and marshals it to json.RawMessage.
@@ -171,7 +226,7 @@ func yMapRawJSON(m *ycrdt.YMap, key string) json.RawMessage {
 // the JS `draft` accessor in web/js/model/message-thread.js. Caller MUST hold
 // ycrdtMu.
 func (cd *ConversationDocument) collectDraftAssetIDsLocked(dst map[string]bool) {
-	addDraftAssetIDs(yMapRawJSON(cd.metadata, "draft"), dst)
+	addDraftAssetIDs(yMapRawJSON(cd.metadata, keyDraft), dst)
 	if arr := cd.getItems(); arr != nil {
 		collectDraftAssetIDsFromArray(arr, dst)
 	}
@@ -187,8 +242,8 @@ func collectDraftAssetIDsFromArray(arr *ycrdt.YArray, dst map[string]bool) {
 		if !ok {
 			continue
 		}
-		addDraftAssetIDs(yMapRawJSON(m, "draft"), dst)
-		if nested, ok := m.Get("items").(*ycrdt.YArray); ok {
+		addDraftAssetIDs(yMapRawJSON(m, keyDraft), dst)
+		if nested, ok := yMapArray(m, keyItems); ok {
 			collectDraftAssetIDsFromArray(nested, dst)
 		}
 	}
@@ -235,15 +290,43 @@ func conversationItemToYMap(item ConversationItem) *ycrdt.YMap {
 	if err := json.Unmarshal(data, &m); err != nil {
 		return ycrdt.NewYMap(nil)
 	}
+	return itemMapToYMap(m)
+}
 
+// nestedItemYMap builds the Y.Map for one of a thread's nested items, given as
+// JSON. An item that fits ConversationItem goes through it, as every item
+// written from the struct does. One that does not — a field holding another
+// kind, which a client or plugin can write — is converted as it stands rather
+// than dropped, and logged: losing an item from a transcript is worse than
+// keeping one whose odd field readers will see as unset. ok is false only for
+// an entry that is not a JSON object at all.
+func nestedItemYMap(raw json.RawMessage) (m *ycrdt.YMap, ok bool) {
+	var item ConversationItem
+	err := json.Unmarshal(raw, &item)
+	if err == nil {
+		return conversationItemToYMap(item), true
+	}
+	var fields map[string]any
+	if json.Unmarshal(raw, &fields) != nil || fields == nil {
+		jlog.Error("[doc] dropped a nested item that is not a JSON object: %.80s", raw)
+		return nil, false
+	}
+	id, _ := fields[keyItemID].(string)
+	jlog.Error("[doc] nested item %q does not fit ConversationItem (%v); kept as written", id, err)
+	return itemMapToYMap(fields), true
+}
+
+// itemMapToYMap builds an item's Y.Map from its JSON form, giving a thread's
+// nested items a Y.Array of their own.
+func itemMapToYMap(m map[string]any) *ycrdt.YMap {
 	// Extract nested items before converting; threads need a Y.Array, not raw slice.
 	var nestedItems []any
-	if itemType, _ := m["type"].(string); itemType == ItemTypeThread {
-		if rawItems, ok := m["items"]; ok {
+	if itemType, _ := m[keyType].(string); itemType == ItemTypeThread {
+		if rawItems, ok := m[keyItems]; ok {
 			if arr, ok := rawItems.([]any); ok {
 				nestedItems = arr
 			}
-			delete(m, "items")
+			delete(m, keyItems)
 		}
 	}
 
@@ -263,21 +346,17 @@ func conversationItemToYMap(item ConversationItem) *ycrdt.YMap {
 		// reversed.
 		children := make(ycrdt.ArrayAny, 0, len(nestedItems))
 		for _, rawItem := range nestedItems {
-			if itemMap, ok := rawItem.(map[string]any); ok {
-				itemData, err := json.Marshal(itemMap)
-				if err != nil {
-					continue
-				}
-				var nestedItem ConversationItem
-				if err := json.Unmarshal(itemData, &nestedItem); err != nil {
-					continue
-				}
-				children = append(children, conversationItemToYMap(nestedItem))
+			itemData, err := json.Marshal(rawItem)
+			if err != nil {
+				continue
+			}
+			if child, ok := nestedItemYMap(itemData); ok {
+				children = append(children, child)
 			}
 		}
 		yarr := ycrdt.NewYArray()
 		yarr.Push(children)
-		ymap.Set("items", yarr)
+		ymap.Set(keyItems, yarr)
 	}
 
 	return ymap
@@ -397,78 +476,93 @@ func fillYMap(m *ycrdt.YMap, n yNode) {
 // yMapToConversationItem converts a *ycrdt.YMap back to a ConversationItem.
 func yMapToConversationItem(m *ycrdt.YMap) ConversationItem {
 	item := ConversationItem{
-		Type:                   yMapString(m, "type"),
-		ItemID:                 yMapString(m, "itemId"),
-		Content:                yMapString(m, "content"),
-		Summary:                yMapString(m, "summary"),
-		Timestamp:              yMapString(m, "timestamp"),
-		ToolUseID:              yMapString(m, "toolUseId"),
-		ToolName:               yMapString(m, "toolName"),
-		ToolInput:              yMapRawJSON(m, "toolInput"),
-		State:                  yMapString(m, "state"),
-		Category:               yMapString(m, "category"),
-		IsError:                yMapBool(m, "isError"),
-		Cancelled:              yMapBool(m, "cancelled"),
-		Result:                 yMapRawJSON(m, "result"),
-		Hooks:                  yMapRawJSON(m, "hooks"),
-		Goal:                   yMapString(m, "goal"),
-		Items:                  yMapRawJSON(m, "items"),
-		BoundedCompaction:      yMapBool(m, "boundedCompaction"),
-		CompactionPromptItemID: yMapString(m, "compactionPromptItemId"),
-		ContextSeeded:          yMapBool(m, "contextSeeded"),
-		SessionName:            yMapString(m, "sessionName"),
-		AliasOf:                yMapString(m, "aliasOf"),
-		RunToolUseID:           yMapString(m, "runToolUseId"),
-		RunToolName:            yMapString(m, "runToolName"),
-		RunToolInput:           yMapRawJSON(m, "runToolInput"),
-		RunGoal:                yMapString(m, "runGoal"),
-		RunStatus:              yMapString(m, "runStatus"),
-		RunResult:              yMapString(m, "runResult"),
-		Continuation:           yMapBool(m, "continuation"),
-		RunItemID:              yMapString(m, "runItemId"),
-		RecoversError:          yMapBool(m, "recoversError"),
-		RunResultFed:           yMapBool(m, "runResultFed"),
+		Type:                   yMapString(m, keyType),
+		ItemID:                 yMapString(m, keyItemID),
+		Content:                yMapString(m, keyContent),
+		Source:                 yMapString(m, keySource),
+		Summary:                yMapString(m, keySummary),
+		Timestamp:              yMapString(m, keyTimestamp),
+		ToolUseID:              yMapString(m, keyToolUseID),
+		ToolName:               yMapString(m, keyToolName),
+		ToolInput:              yMapRawJSON(m, keyToolInput),
+		State:                  yMapString(m, keyState),
+		Category:               yMapString(m, keyCategory),
+		IsError:                yMapBool(m, keyIsError),
+		Cancelled:              yMapBool(m, keyCancelled),
+		Result:                 yMapRawJSON(m, keyResult),
+		Hooks:                  yMapRawJSON(m, keyHooks),
+		Goal:                   yMapString(m, keyGoal),
+		Items:                  yMapRawJSON(m, keyItems),
+		BoundedCompaction:      yMapBool(m, keyBoundedCompaction),
+		CompactionPromptItemID: yMapString(m, keyCompactionPromptItemID),
+		ContextSeeded:          yMapBool(m, keyContextSeeded),
+		SessionName:            yMapString(m, keySessionName),
+		AliasOf:                yMapString(m, keyAliasOf),
+		NeedsStrategyRun:       yMapBool(m, keyNeedsStrategyRun),
+		NoAutoSelect:           yMapBool(m, keyNoAutoSelect),
+		NoContextSeed:          yMapBool(m, keyNoContextSeed),
+		ForceTool:              yMapString(m, keyForceTool),
+		HandoffPromote:         yMapBool(m, keyHandoffPromote),
+		RunToolUseID:           yMapString(m, keyRunToolUseID),
+		RunToolName:            yMapString(m, keyRunToolName),
+		RunToolInput:           yMapRawJSON(m, keyRunToolInput),
+		RunGoal:                yMapString(m, keyRunGoal),
+		RunStatus:              yMapString(m, keyRunStatus),
+		RunResult:              yMapString(m, keyRunResult),
+		Continuation:           yMapBool(m, keyContinuation),
+		RunItemID:              yMapString(m, keyRunItemID),
+		RecoversError:          yMapBool(m, keyRecoversError),
+		RunResultFed:           yMapBool(m, keyRunResultFed),
 
-		PreventUserDeletion: yMapBool(m, "preventUserDeletion"),
-		IsNew:               yMapBool(m, "isNew"),
-		Error:               yMapString(m, "error"),
+		LLMCreated:      yMapBool(m, keyLLMCreated),
+		StrategyCreated: yMapBool(m, keyStrategyCreated),
+		CanSpawnThreads: yMapBool(m, keyCanSpawnThreads),
+		Delegated:       yMapBool(m, keyDelegated),
+		ReadOnly:        yMapBool(m, keyReadOnly),
+		ResultSpec:      yMapString(m, keyResultSpec),
+		Draft:           yMapRawJSON(m, keyDraft),
+		Executor:        yMapString(m, keyExecutor),
 
-		TransactionID: yMapString(m, "transactionId"),
+		PreventUserDeletion: yMapBool(m, keyPreventUserDeletion),
+		IsNew:               yMapBool(m, keyIsNew),
+		Error:               yMapString(m, keyError),
 
-		ApprovalOptions: yMapRawJSON(m, "approvalOptions"),
-		DisplayData:     yMapRawJSON(m, "displayData"),
-		Data:            yMapRawJSON(m, "data"),
+		TransactionID: yMapString(m, keyTransactionID),
+
+		ApprovalOptions: yMapRawJSON(m, keyApprovalOptions),
+		DisplayData:     yMapRawJSON(m, keyDisplayData),
+		Data:            yMapRawJSON(m, keyData),
 	}
 
-	if raw := yMapRawJSON(m, "providerData"); raw != nil {
+	if raw := yMapRawJSON(m, keyProviderData); raw != nil {
 		var pd map[string]any
 		if json.Unmarshal(raw, &pd) == nil {
 			item.ProviderData = pd
 		}
 	}
 
-	if raw := yMapRawJSON(m, "attachments"); raw != nil {
+	if raw := yMapRawJSON(m, keyAttachments); raw != nil {
 		var atts []AssetRef
 		if json.Unmarshal(raw, &atts) == nil {
 			item.Attachments = atts
 		}
 	}
 
-	if raw := yMapRawJSON(m, "heldAssets"); raw != nil {
+	if raw := yMapRawJSON(m, keyHeldAssets); raw != nil {
 		var held []string
 		if json.Unmarshal(raw, &held) == nil {
 			item.HeldAssets = held
 		}
 	}
 
-	if raw := yMapRawJSON(m, "foldedRuns"); raw != nil {
+	if raw := yMapRawJSON(m, keyFoldedRuns); raw != nil {
 		var runs []FoldedRun
 		if json.Unmarshal(raw, &runs) == nil {
 			item.FoldedRuns = runs
 		}
 	}
 
-	if raw := yMapRawJSON(m, "taskSource"); raw != nil {
+	if raw := yMapRawJSON(m, keyTaskSource); raw != nil {
 		var ts TaskSourceRef
 		if json.Unmarshal(raw, &ts) == nil && ts.TaskID != "" {
 			item.TaskSource = &ts

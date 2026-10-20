@@ -558,7 +558,7 @@ func TestPendingRequests_PerThreadIsolation(t *testing.T) {
 		ycrdtMu.Unlock()
 		t.Fatal("b1 must live in thread B's own pendingRequests array")
 	}
-	if w.doc.metadata.Get(pendingRequestsKey) != nil {
+	if w.doc.metadata.Get(keyPendingRequests) != nil {
 		ycrdtMu.Unlock()
 		t.Fatal("pendingRequests must NOT be stored on conversation metadata anymore")
 	}

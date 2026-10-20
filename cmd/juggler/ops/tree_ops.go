@@ -50,80 +50,66 @@ func (ops *TreeOperations) Execute(ctx context.Context, operation string, params
 	}
 }
 
+// getTreeParams are getTree's params. Depth's range is MaxTreeDepth's
+// (TestGetTreeDepthRangeIsMaxTreeDepth), the guard against stack overflow.
+type getTreeParams struct {
+	Path          string   `param:"path"`
+	UserInitiated bool     `param:"userInitiated"`
+	Depth         *int     `param:"depth,min=1,max=50"`
+	MaxTokens     *float64 `param:"maxTokens,strict"`
+	Pattern       string   `param:"pattern,strict"`
+	FileType      string   `param:"fileType,strict"`
+	ShowAll       bool     `param:"showAll,strict"`
+	NoIgnore      bool     `param:"noIgnore,strict"`
+}
+
 // getTree returns the file tree structure with token budget awareness
 func (ops *TreeOperations) getTree(params map[string]any) (any, error) {
+	p, err := decodeParams[getTreeParams](params)
+	if err != nil {
+		return nil, err
+	}
 	path := "."
-	if p, ok := params["path"].(string); ok && p != "" {
-		path = p
+	if p.Path != "" {
+		path = p.Path
 	}
 
 	// SECURITY: Validate path. A user-initiated tree (a folder pinned via
 	// @-mention or the file picker) may point outside the project root, just
 	// like a user-initiated file read; the escape hatch covers relative
 	// (../sibling) and absolute mentions alike. LLM tool calls stay contained.
-	userInitiated, _ := params["userInitiated"].(bool)
-	absPath, err := ops.scope.ResolveUserInitiated(path, userInitiated)
+	absPath, err := ops.scope.ResolveUserInitiated(path, p.UserInitiated)
 	if err != nil {
 		return nil, err
 	}
 
-	// SECURITY: Validate depth parameter (prevent stack overflow)
 	depth := 2
-	if d, ok := params["depth"]; ok {
-		validatedDepth, err := ValidateTreeDepth(d)
-		if err != nil {
-			return nil, err
-		}
-		depth = validatedDepth
+	if p.Depth != nil {
+		depth = *p.Depth
 	}
 
-	// Get maxTokens parameter (default: 2000 as fallback)
+	// maxTokens defaults to 2000, and is never under a reasonable minimum of 100.
 	maxTokens := 2000
-	if mt, ok := params["maxTokens"].(float64); ok {
-		maxTokens = max(int(mt),
-			// Minimum reasonable budget
-			100)
-	} else if params["maxTokens"] != nil {
-		return nil, fmt.Errorf("maxTokens must be a number, got %T", params["maxTokens"])
+	if p.MaxTokens != nil {
+		maxTokens = max(int(*p.MaxTokens), 100)
 	}
 
 	// Get pattern filter (glob matching)
-	pattern := ""
-	if p, ok := params["pattern"].(string); ok {
-		pattern = p
-	} else if params["pattern"] != nil {
-		return nil, fmt.Errorf("pattern must be a string, got %T", params["pattern"])
-	}
+	pattern := p.Pattern
 
 	// Get fileType filter (all, files, dirs)
 	fileType := "all"
-	if ft, ok := params["fileType"].(string); ok {
-		if ft == "files" || ft == "dirs" {
-			fileType = ft
-		}
-	} else if params["fileType"] != nil {
-		return nil, fmt.Errorf("fileType must be a string, got %T", params["fileType"])
+	if p.FileType == "files" || p.FileType == "dirs" {
+		fileType = p.FileType
 	}
 
 	// Get showAll parameter (default: false)
 	// When true: include hidden files and ignore .gitignore
-	showAll := false
-	if sa, ok := params["showAll"].(bool); ok {
-		showAll = sa
-	} else if params["showAll"] != nil {
-		return nil, fmt.Errorf("showAll must be a boolean, got %T", params["showAll"])
-	}
+	showAll := p.ShowAll
 
 	// Get noIgnore parameter (default: false). Unlike showAll it only releases
 	// .gitignore filtering; hidden files stay hidden. showAll implies it.
-	noIgnore := showAll
-	if ni, ok := params["noIgnore"].(bool); ok && ni {
-		noIgnore = true
-	} else if params["noIgnore"] != nil {
-		if _, ok := params["noIgnore"].(bool); !ok {
-			return nil, fmt.Errorf("noIgnore must be a boolean, got %T", params["noIgnore"])
-		}
-	}
+	noIgnore := showAll || p.NoIgnore
 
 	// Ensure path exists
 	if _, err = os.Stat(absPath); err != nil {
@@ -481,37 +467,44 @@ func shouldSkipEntry(name string, relPath string, isDir bool, ctx *buildContext)
 }
 
 // glob returns files matching a glob pattern, sorted by modification time
+// globParams are glob's params.
+type globParams struct {
+	Pattern           string `param:"pattern"`
+	Path              string `param:"path"`
+	UserInitiated     bool   `param:"userInitiated"`
+	OutOfRootApproved bool   `param:"outOfRootApproved"`
+	NoIgnore          bool   `param:"noIgnore"`
+}
+
 func (ops *TreeOperations) glob(ctx context.Context, params map[string]any) (any, error) {
-	pattern, ok := params["pattern"].(string)
-	if !ok || pattern == "" {
+	p, err := decodeParams[globParams](params)
+	if err != nil {
+		return nil, err
+	}
+	pattern := p.Pattern
+	if pattern == "" {
 		return nil, fmt.Errorf("pattern is required")
 	}
 
 	// Get optional path parameter (directory to search in)
 	searchPath := "."
-	if p, ok := params["path"].(string); ok && p != "" {
-		searchPath = p
+	if p.Path != "" {
+		searchPath = p.Path
 	}
 
 	// SECURITY: Validate path. ResolveRead honours a user-initiated pin and the
 	// JS out-of-root approval (the glob `pattern` is expanded within this
 	// resolved dir and cannot escape it), so an approved out-of-project glob
 	// resolves instead of being rejected.
-	userInitiated, _ := params["userInitiated"].(bool)
-	approved, _ := params["outOfRootApproved"].(bool)
-	absPath, err := ops.scope.ResolveRead(searchPath, userInitiated, approved)
+	absPath, err := ops.scope.ResolveRead(searchPath, p.UserInitiated, p.OutOfRootApproved)
 	if err != nil {
 		return nil, err
 	}
 
 	// Build a gitignore matcher unless opted out (nil = filtering off), rooted
 	// at the resolved search directory.
-	noIgnore := false
-	if ni, ok := params["noIgnore"].(bool); ok {
-		noIgnore = ni
-	}
 	var ign *gitignore.Matcher
-	if !noIgnore {
+	if !p.NoIgnore {
 		ign = gitignore.NewMatcher(absPath)
 	}
 
@@ -608,11 +601,22 @@ func (ops *TreeOperations) glob(ctx context.Context, params map[string]any) (any
 }
 
 // expandDirectory expands a directory to show its contents
+// expandDirectoryParams are expandDirectory's params. Path is a pointer
+// because an empty one is a path (the working directory) and only a missing
+// one is an error.
+type expandDirectoryParams struct {
+	Path *string `param:"path"`
+}
+
 func (ops *TreeOperations) expandDirectory(params map[string]any) (any, error) {
-	path, ok := params["path"].(string)
-	if !ok {
+	p, err := decodeParams[expandDirectoryParams](params)
+	if err != nil {
+		return nil, err
+	}
+	if p.Path == nil {
 		return nil, fmt.Errorf("missing or invalid 'path' parameter")
 	}
+	path := *p.Path
 
 	// Resolve and confirm the path stays within the working directory (or an
 	// allowed root), using the same containment check as the other

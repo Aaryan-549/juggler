@@ -447,7 +447,7 @@ func (t *OperationTracker) CreateThread(c threadCreation) (string, error) {
 	ycrdt.Transact(t.doc.doc, func(_ *ycrdt.Transaction) {
 		threadYMap, nested = t.doc.insertThreadCore(parent, int(parent.GetLength()), c.Goal)
 	}, t.doc.authorID, true)
-	threadItemID, _ := threadYMap.Get("itemId").(string)
+	threadItemID := yMapString(threadYMap, keyItemID)
 
 	if c.Stamp != nil {
 		t.doc.transactTracked(func(_ *ycrdt.Transaction) { c.Stamp(threadYMap) })
@@ -497,7 +497,7 @@ func (t *OperationTracker) ResumeThread(res threadResume) error {
 	threadYMap := findThreadYMap(root, res.ThreadID)
 	var nested *ycrdt.YArray
 	if threadYMap != nil {
-		nested, _ = threadYMap.Get("items").(*ycrdt.YArray)
+		nested, _ = yMapArray(threadYMap, keyItems)
 	}
 	if nested == nil {
 		return fmt.Errorf("session thread %s not found", res.ThreadID)
@@ -513,18 +513,18 @@ func (t *OperationTracker) ResumeThread(res threadResume) error {
 	t.stopCapturingLocked()
 	mergeFrom := t.undoStackLenLocked()
 
-	goal, _ := threadYMap.Get("goal").(string)
-	resultSpec, _ := threadYMap.Get("resultSpec").(string)
-	sessionName, _ := threadYMap.Get("sessionName").(string)
+	goal := yMapString(threadYMap, keyGoal)
+	resultSpec := yMapString(threadYMap, keyResultSpec)
+	sessionName := yMapString(threadYMap, keySessionName)
 	setGoal := res.Goal != "" && res.Goal != goal
 	setResultSpec := res.ResultSpec != "" && res.ResultSpec != resultSpec
 	if setGoal || setResultSpec {
 		t.doc.transactTracked(func(_ *ycrdt.Transaction) {
 			if setGoal {
-				threadYMap.Set("goal", res.Goal)
+				threadYMap.Set(keyGoal, res.Goal)
 			}
 			if setResultSpec {
-				threadYMap.Set("resultSpec", res.ResultSpec)
+				threadYMap.Set(keyResultSpec, res.ResultSpec)
 			}
 		})
 		if setGoal {
@@ -770,7 +770,7 @@ func (t *OperationTracker) emitUndoState() {
 		canRedo = len(t.undoManager.RedoStack) > 0
 	}
 	t.undoSeq++
-	t.doc.setMetadata("undoState", map[string]any{
+	t.doc.setMetadata(keyUndoState, map[string]any{
 		"canUndo": canUndo,
 		"canRedo": canRedo,
 		"seq":     t.undoSeq,

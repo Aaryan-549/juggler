@@ -89,11 +89,6 @@ export async function runTests(_ctx) {
     assert(message.includes(`48${NBSP}KB`), `status message = "${message}"`);
   });
 
-  test('a retry attempt is bound to its count', () => {
-    const message = StatusMessageBuilder.buildRetryStatus({ attempt: 3, maxRetries: 5 });
-    assert(message.includes(`attempt${NBSP}3 of${NBSP}5`), `status message = "${message}"`);
-  });
-
   test('the clause separator never opens a line', () => {
     const message = StatusMessageBuilder.buildStreamingStatus({ inputTokens: 2000, cachedTokens: 1800, outputTokens: 30, elapsedTime: 4000 });
     assert(!message.includes(' ·'), `status message = "${message}", want a non-breaking space before every bullet`);
@@ -106,7 +101,6 @@ export async function runTests(_ctx) {
       StatusMessageBuilder.buildStreamingStatus({ inputTokens: 1_500_000, cachedTokens: 1_200_000, outputTokens: 12_000, elapsedTime: 3000 }),
       StatusMessageBuilder.buildStreamingStatus({ outputTokens: 5, elapsedTime: 3000 }),
       StatusMessageBuilder.buildUploadingStatus({ payloadSize: 1_500_000, elapsedTime: 3000 }),
-      StatusMessageBuilder.buildRetryStatus({ attempt: 2, maxRetries: 3, elapsedTime: 3000 }),
     ];
     for (const message of messages) {
       const splittable = message.match(/\d[,.\d]*[kM]?%? (tokens?|KB|cached|·|→)/);

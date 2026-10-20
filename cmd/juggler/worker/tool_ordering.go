@@ -42,7 +42,7 @@ type turnCall struct {
 // hasRun reports whether a tool-action has been claimed to run at least once:
 // every claim stamps a runningEpoch above zero, and nothing removes it.
 func hasRun(m *ycrdt.YMap) bool {
-	epoch, _ := docNumberToInt64(m.Get("runningEpoch"))
+	epoch, _ := yMapInt64(m, keyRunningEpoch)
 	return epoch > 0
 }
 

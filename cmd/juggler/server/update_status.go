@@ -38,7 +38,7 @@ func (s *Server) newUpdateChecker() *updatecheck.Checker {
 		// Proxy-aware so update checks work from behind a proxy.
 		Client: httpx.Client(10 * time.Second),
 		OnChange: func(st updatecheck.Status) {
-			s.broadcastToAll(updateStatusMsg{Type: "update-status", Status: st})
+			s.broadcastToAll(updateStatusMsg{Type: frameUpdateStatus, Status: st})
 		},
 		// Gate the scheduled poll on the user's update mode: "off" suspends
 		// automatic checking (the ticker keeps running but no-ops), while
@@ -146,7 +146,7 @@ func claimFirstCheck(now time.Time) (int, func()) {
 // (currentVersion, latestVersion, updateAvailable, notice) to the top level
 // alongside the type tag, matching the /api/update-status response shape.
 type updateStatusMsg struct {
-	Type string `json:"type"`
+	Type frameType `json:"type"`
 	updatecheck.Status
 }
 

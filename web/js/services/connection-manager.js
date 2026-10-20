@@ -184,18 +184,6 @@ class ConnectionManager {
     };
     this._wsUnsubscribes.push(wsService.on('message', messageCallback));
 
-    // Handle retry notifications
-    const retryCallback = (/** @type {any} */ data) => {
-      this._handleRetryNotification(data);
-    };
-    this._wsUnsubscribes.push(wsService.on('retry', retryCallback));
-
-    // Handle streaming error notifications
-    const streamingErrorCallback = (/** @type {any} */ data) => {
-      this._handleStreamingError(data);
-    };
-    this._wsUnsubscribes.push(wsService.on('streaming-error', streamingErrorCallback));
-
     // Connect only now that all listeners are registered. The studio adopt path
     // flushes buffered realtime frames and emits 'open' synchronously inside
     // connect(); registering first guarantees the flushed 'session' frame is
@@ -247,46 +235,6 @@ class ConnectionManager {
       await session.persistence.refreshFromServer();
     } catch (error) {
       console.error('[ConnectionManager] Couldn\'t refresh the session after reconnect:', extractErrorMessage(error));
-    }
-  }
-
-  /**
-   * Handle retry notification from backend
-   * @param {any} data - Retry data
-   * @private
-   */
-  _handleRetryNotification(data) {
-    if (!this._session) {
-      return;
-    }
-
-    // Route to specific conversation if conversationId is provided
-    const conversationId = data.conversationId;
-    if (conversationId) {
-      const conversation = this._session.getConversation(conversationId);
-      if (conversation) {
-        conversation.handleRetry(data.attempt, data.maxRetries, data.reason);
-      }
-    }
-  }
-
-  /**
-   * Handle streaming error notification from backend
-   * @param {any} data - Error data with message and conversationId
-   * @private
-   */
-  _handleStreamingError(data) {
-    if (!this._session) {
-      return;
-    }
-
-    // Route to specific conversation if conversationId is provided
-    const conversationId = data.conversationId;
-    if (conversationId) {
-      const conversation = this._session.getConversation(conversationId);
-      if (conversation) {
-        conversation.handleStreamingError(data.message);
-      }
     }
   }
 

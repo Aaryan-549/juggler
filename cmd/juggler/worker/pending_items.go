@@ -40,7 +40,7 @@ func (cd *ConversationDocument) getPendingArrayLocked(threadItemID string) *ycrd
 	if parent == nil {
 		return nil
 	}
-	if arr, ok := parent.Get("pendingItems").(*ycrdt.YArray); ok {
+	if arr, ok := yMapArray(parent, keyPendingItems); ok {
 		return arr
 	}
 	return nil
@@ -53,12 +53,12 @@ func (cd *ConversationDocument) ensurePendingArrayLocked(threadItemID string) *y
 	if parent == nil {
 		return nil
 	}
-	if arr, ok := parent.Get("pendingItems").(*ycrdt.YArray); ok {
+	if arr, ok := yMapArray(parent, keyPendingItems); ok {
 		return arr
 	}
 	arr := ycrdt.NewYArray()
 	cd.doc.Transact(func(_ *ycrdt.Transaction) {
-		parent.Set("pendingItems", arr)
+		parent.Set(keyPendingItems, arr)
 	}, cd.txOrigin())
 	return arr
 }
@@ -225,7 +225,7 @@ func collectPendingAssetIDsFromMap(parent *ycrdt.YMap, dst map[string]bool) {
 	if parent == nil {
 		return
 	}
-	arr, ok := parent.Get("pendingItems").(*ycrdt.YArray)
+	arr, ok := yMapArray(parent, keyPendingItems)
 	if !ok {
 		return
 	}
@@ -254,7 +254,7 @@ func collectPendingAssetIDsFromArray(arr *ycrdt.YArray, dst map[string]bool) {
 			continue
 		}
 		collectPendingAssetIDsFromMap(m, dst)
-		if nested, ok := m.Get("items").(*ycrdt.YArray); ok {
+		if nested, ok := yMapArray(m, keyItems); ok {
 			collectPendingAssetIDsFromArray(nested, dst)
 		}
 	}

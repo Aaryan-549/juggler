@@ -261,7 +261,7 @@ func (r *run) runOneTurn(st *strategyRunState, explicitContinuation bool) turnVe
 	// blob is written below regardless of outcome, so on LLM failure the
 	// user message + error item both link to a viewable blob.
 	if userMsgToStamp != "" {
-		r.updateRunItem(userMsgToStamp, "transactionId", txnID)
+		r.updateRunItem(userMsgToStamp, keyTransactionID, txnID)
 	}
 
 	startTime := time.Now()

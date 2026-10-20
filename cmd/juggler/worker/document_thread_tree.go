@@ -35,17 +35,17 @@ func walkThreadsWithParent(arr *ycrdt.YArray, parentID string, visit func(m *ycr
 		if !ok {
 			continue
 		}
-		if itemType, _ := m.Get("type").(string); itemType != ItemTypeThread {
+		if itemType := yMapString(m, keyType); itemType != ItemTypeThread {
 			continue
 		}
-		if aliasOf, _ := m.Get("aliasOf").(string); aliasOf != "" {
+		if aliasOf := yMapString(m, keyAliasOf); aliasOf != "" {
 			continue
 		}
-		nested, _ := m.Get("items").(*ycrdt.YArray)
+		nested, _ := yMapArray(m, keyItems)
 		if visit(m, nested, parentID) {
 			return true
 		}
-		myID, _ := m.Get("itemId").(string)
+		myID := yMapString(m, keyItemID)
 		if walkThreadsWithParent(nested, myID, visit) {
 			return true
 		}
@@ -68,9 +68,9 @@ func walkAllItems(arr *ycrdt.YArray, currentThreadID string, visit func(m *ycrdt
 		if visit(m, currentThreadID) {
 			return true
 		}
-		if itemType, _ := m.Get("type").(string); itemType == ItemTypeThread {
-			if nested, _ := m.Get("items").(*ycrdt.YArray); nested != nil {
-				myID, _ := m.Get("itemId").(string)
+		if itemType := yMapString(m, keyType); itemType == ItemTypeThread {
+			if nested, _ := yMapArray(m, keyItems); nested != nil {
+				myID := yMapString(m, keyItemID)
 				if walkAllItems(nested, myID, visit) {
 					return true
 				}
@@ -154,7 +154,7 @@ func (cd *ConversationDocument) UpdateItemByIDInThread(threadItemID, itemID, fie
 func findThreadItemsArray(arr *ycrdt.YArray, threadItemID string) *ycrdt.YArray {
 	var result *ycrdt.YArray
 	walkThreads(arr, func(m *ycrdt.YMap, nested *ycrdt.YArray, _ string) bool {
-		if id, _ := m.Get("itemId").(string); id == threadItemID {
+		if id := yMapString(m, keyItemID); id == threadItemID {
 			result = nested
 			return true
 		}
@@ -212,7 +212,7 @@ func (cd *ConversationDocument) settledLLMChildParent(threadItemID string) (pare
 	if m == nil {
 		return "", false
 	}
-	if llmCreated, _ := m.Get("llmCreated").(bool); !llmCreated || !threadRunSettledLocked(m) {
+	if llmCreated := yMapBool(m, keyLLMCreated); !llmCreated || !threadRunSettledLocked(m) {
 		return "", false
 	}
 	return cd.findParentThreadID(threadItemID), true
@@ -222,7 +222,7 @@ func (cd *ConversationDocument) settledLLMChildParent(threadItemID string) (pare
 func findThreadYMap(arr *ycrdt.YArray, threadItemID string) *ycrdt.YMap {
 	var result *ycrdt.YMap
 	walkThreads(arr, func(m *ycrdt.YMap, _ *ycrdt.YArray, _ string) bool {
-		if id, _ := m.Get("itemId").(string); id == threadItemID {
+		if id := yMapString(m, keyItemID); id == threadItemID {
 			result = m
 			return true
 		}
@@ -250,7 +250,7 @@ func (cd *ConversationDocument) ParentThreadID(threadItemID string) string {
 func (cd *ConversationDocument) findParentThreadID(threadItemID string) string {
 	var result string
 	walkThreads(cd.getItems(), func(m *ycrdt.YMap, _ *ycrdt.YArray, parent string) bool {
-		if id, _ := m.Get("itemId").(string); id == threadItemID {
+		if id := yMapString(m, keyItemID); id == threadItemID {
 			result = parent
 			return true
 		}
@@ -297,7 +297,7 @@ func (cd *ConversationDocument) liveThreadCount() int {
 	defer ycrdtMu.Unlock()
 	n := 0
 	walkThreads(cd.getItems(), func(m *ycrdt.YMap, _ *ycrdt.YArray, _ string) bool {
-		llmCreated, _ := m.Get("llmCreated").(bool)
+		llmCreated := yMapBool(m, keyLLMCreated)
 		if llmCreated && !threadRunSettledLocked(m) {
 			n++
 		}
@@ -324,11 +324,11 @@ func (cd *ConversationDocument) firstLiveThreadID(excluding string) string {
 	defer ycrdtMu.Unlock()
 	id := ""
 	walkThreads(cd.getItems(), func(m *ycrdt.YMap, _ *ycrdt.YArray, _ string) bool {
-		itemID, _ := m.Get("itemId").(string)
+		itemID := yMapString(m, keyItemID)
 		if itemID == "" || itemID == excluding {
 			return false
 		}
-		llmCreated, _ := m.Get("llmCreated").(bool)
+		llmCreated := yMapBool(m, keyLLMCreated)
 		if llmCreated && !threadRunSettledLocked(m) {
 			id = itemID
 			return true
@@ -350,7 +350,7 @@ func (cd *ConversationDocument) FindThreadIDForToolUseID(toolUseID string) (thre
 func findThreadIDForToolUseID(arr *ycrdt.YArray, toolUseID string) (string, bool) {
 	var resultThreadID string
 	found := walkAllItems(arr, "", func(m *ycrdt.YMap, currentThreadID string) bool {
-		if id, _ := m.Get("toolUseId").(string); id == toolUseID {
+		if id := yMapString(m, keyToolUseID); id == toolUseID {
 			resultThreadID = currentThreadID
 			return true
 		}
@@ -380,10 +380,10 @@ func (cd *ConversationDocument) updateToolActionsWhere(match func(m *ycrdt.YMap,
 	defer ycrdtMu.Unlock()
 	var written []string
 	walkAllItems(cd.getItems(), "", func(m *ycrdt.YMap, threadID string) bool {
-		if t, _ := m.Get("type").(string); t != ItemTypeToolAction {
+		if t := yMapString(m, keyType); t != ItemTypeToolAction {
 			return false
 		}
-		id, _ := m.Get("toolUseId").(string)
+		id := yMapString(m, keyToolUseID)
 		if id == "" || !match(m, threadID) {
 			return false
 		}
@@ -404,15 +404,15 @@ func (cd *ConversationDocument) UpdateToolActionDisplayDataRecursive(toolUseID, 
 	ycrdtMu.Lock()
 	defer ycrdtMu.Unlock()
 	return walkAllItems(cd.getItems(), "", func(m *ycrdt.YMap, _ string) bool {
-		if id, _ := m.Get("toolUseId").(string); id != toolUseID {
+		if id := yMapString(m, keyToolUseID); id != toolUseID {
 			return false
 		}
 		cd.doc.Transact(func(_ *ycrdt.Transaction) {
-			if displayData, ok := m.Get("displayData").(*ycrdt.YMap); ok {
+			if displayData, ok := yMapMap(m, keyDisplayData); ok {
 				displayData.Set(key, convertToYcrdt(value))
 				return
 			}
-			m.Set("displayData", convertToYcrdt(map[string]any{key: value}))
+			m.Set(keyDisplayData, convertToYcrdt(map[string]any{key: value}))
 		}, docInternalOrigin)
 		return true
 	})
@@ -421,7 +421,7 @@ func (cd *ConversationDocument) UpdateToolActionDisplayDataRecursive(toolUseID, 
 // updateToolActionFieldsInArray finds the Y.Map whose toolUseId matches and updates all fields atomically.
 func updateToolActionFieldsInArray(doc *ycrdt.Doc, origin string, arr *ycrdt.YArray, toolUseID string, fields map[string]any) bool {
 	return walkAllItems(arr, "", func(m *ycrdt.YMap, _ string) bool {
-		if id, _ := m.Get("toolUseId").(string); id != toolUseID {
+		if id := yMapString(m, keyToolUseID); id != toolUseID {
 			return false
 		}
 		doc.Transact(func(_ *ycrdt.Transaction) {
@@ -446,10 +446,10 @@ func (cd *ConversationDocument) UpdateThreadItemFieldsRecursive(itemID string, f
 	ycrdtMu.Lock()
 	defer ycrdtMu.Unlock()
 	return walkAllItems(cd.getItems(), "", func(m *ycrdt.YMap, _ string) bool {
-		if id, _ := m.Get("itemId").(string); id != itemID {
+		if id := yMapString(m, keyItemID); id != itemID {
 			return false
 		}
-		if t, _ := m.Get("type").(string); t != ItemTypeThread {
+		if t := yMapString(m, keyType); t != ItemTypeThread {
 			return false
 		}
 		cd.doc.Transact(func(_ *ycrdt.Transaction) {
@@ -468,10 +468,10 @@ func (cd *ConversationDocument) UpdateThreadItemFieldsRecursive(itemID string, f
 func (cd *ConversationDocument) extractModelConfigFromMap(raw any) *ModelConfig {
 	switch v := raw.(type) {
 	case *ycrdt.YMap:
-		provider, _ := v.Get("provider").(string)
-		model, _ := v.Get("model").(string)
-		thinking, _ := v.Get("thinking").(string)
-		serviceTier, _ := v.Get("serviceTier").(string)
+		provider := yMapString(v, keyProvider)
+		model := yMapString(v, keyModel)
+		thinking := yMapString(v, keyThinking)
+		serviceTier := yMapString(v, keyServiceTier)
 		if provider != "" && model != "" {
 			return &ModelConfig{Provider: provider, Model: model, Thinking: thinking, ServiceTier: serviceTier}
 		}
@@ -501,7 +501,7 @@ func (cd *ConversationDocument) ResolveEffectiveStrategyID(threadItemID string) 
 func (cd *ConversationDocument) resolveEffectiveStrategyID(threadItemID string) string {
 	if threadItemID != "" {
 		if threadMap := findThreadYMap(cd.getItems(), threadItemID); threadMap != nil {
-			if s, _ := threadMap.Get("currentStrategyId").(string); s != "" {
+			if s := yMapString(threadMap, keyCurrentStrategyID); s != "" {
 				return s
 			}
 		}
@@ -509,7 +509,7 @@ func (cd *ConversationDocument) resolveEffectiveStrategyID(threadItemID string) 
 			return cd.resolveEffectiveStrategyID(parentID)
 		}
 	}
-	if s, _ := cd.metadata.Get("currentStrategyId").(string); s != "" {
+	if s := yMapString(cd.metadata, keyCurrentStrategyID); s != "" {
 		return s
 	}
 	return defaultStrategyID
@@ -524,11 +524,11 @@ func (cd *ConversationDocument) GetActivatedStrategyID(threadItemID string) stri
 	ycrdtMu.Lock()
 	defer ycrdtMu.Unlock()
 	if threadItemID == "" {
-		s, _ := cd.metadata.Get("activatedStrategyId").(string)
+		s := yMapString(cd.metadata, keyActivatedStrategyID)
 		return s
 	}
 	if m := findThreadYMap(cd.getItems(), threadItemID); m != nil {
-		s, _ := m.Get("activatedStrategyId").(string)
+		s := yMapString(m, keyActivatedStrategyID)
 		return s
 	}
 	return ""
@@ -539,10 +539,10 @@ func (cd *ConversationDocument) GetActivatedStrategyID(threadItemID string) stri
 // self-locking SetMetadata / SetThreadField, so callers must NOT hold ycrdtMu.
 func (cd *ConversationDocument) SetActivatedStrategyID(threadItemID, strategyID string) {
 	if threadItemID == "" {
-		cd.SetMetadata("activatedStrategyId", strategyID)
+		cd.SetMetadata(keyActivatedStrategyID, strategyID)
 		return
 	}
-	cd.SetThreadField(threadItemID, "activatedStrategyId", strategyID)
+	cd.SetThreadField(threadItemID, keyActivatedStrategyID, strategyID)
 }
 
 // ResolveEffectiveModelConfig resolves the model config for a thread by walking
@@ -557,7 +557,7 @@ func (cd *ConversationDocument) resolveEffectiveModelConfig(threadItemID string)
 	if threadItemID != "" {
 		threadMap := findThreadYMap(cd.getItems(), threadItemID)
 		if threadMap != nil {
-			raw := threadMap.Get("modelConfig")
+			raw := threadMap.Get(keyModelConfig)
 			if mc := cd.extractModelConfigFromMap(raw); mc != nil {
 				return mc
 			}
@@ -575,9 +575,9 @@ func (cd *ConversationDocument) resolveEffectiveModelConfig(threadItemID string)
 	// was persisted under it still resolves, rather than being stuck on "please
 	// select a model" despite holding a real default. The new key wins when both
 	// are present, so the fallback never shadows a current default.
-	raw := cd.metadata.Get("defaultModelConfig")
+	raw := cd.metadata.Get(keyDefaultModelConfig)
 	if raw == nil {
-		raw = cd.metadata.Get("modelConfig")
+		raw = cd.metadata.Get(keyModelConfig)
 	}
 	if raw == nil {
 		return nil

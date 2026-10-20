@@ -8,8 +8,6 @@ import (
 	"fmt"
 	"time"
 
-	ycrdt "github.com/skyterra/y-crdt"
-
 	"juggler/cmd/juggler/providers/provider"
 )
 
@@ -202,12 +200,12 @@ func (w *ConversationWorker) currentRunStarterID(threadItemID string) string {
 	if m == nil {
 		return ""
 	}
-	nested, _ := m.Get("items").(*ycrdt.YArray)
+	nested, _ := yMapArray(m, keyItems)
 	open := openRunMessagesLocked(nested)
 	if len(open) == 0 {
 		return ""
 	}
-	id, _ := open[len(open)-1].Get("itemId").(string)
+	id := yMapString(open[len(open)-1], keyItemID)
 	return id
 }
 
@@ -247,10 +245,10 @@ func (r *run) runBudgetGoverned() bool {
 	if threadItemID == "" {
 		return false
 	}
-	if !r.doc.threadFlag(threadItemID, "llmCreated") {
+	if !r.doc.threadFlag(threadItemID, keyLLMCreated) {
 		return false
 	}
-	return !r.doc.threadFlag(threadItemID, "canSpawnThreads")
+	return !r.doc.threadFlag(threadItemID, keyCanSpawnThreads)
 }
 
 // runBudgetSpent reports whether this run has used its budget: its tokens, or

@@ -124,7 +124,7 @@ func (h *clientHub) run() {
 	// viewers; the engine ignores it.
 	broadcastViewers := func() {
 		list := viewerDescriptors()
-		msg := map[string]any{"type": "clients-changed", "count": len(list), "clients": list}
+		msg := clientsChangedFrame{Type: frameClientsChanged, Count: len(list), Clients: list}
 		for _, hc := range clients {
 			if hc.c.ClientRole() == ClientRoleViewer {
 				hc.mb.Enqueue(outboundMsg{json: msg})
@@ -183,10 +183,7 @@ func (h *clientHub) run() {
 		case hubViewerList:
 			op.listResult <- viewerDescriptors()
 		case hubShutdown:
-			shutdownMsg := map[string]any{
-				"type":    "server-shutdown",
-				"message": "Server is shutting down",
-			}
+			shutdownMsg := messageFrame{Type: frameServerShutdown, Message: "Server is shutting down"}
 			for _, hc := range clients {
 				// Sent inline, and deliberately not through the mailbox: the
 				// notice exists to be read on the way out, and the ordering with

@@ -72,13 +72,11 @@ func (r *run) requestContextAndToolsForItemIDs(itemIDs []string) (*ContextResult
 	toolsRequestID := generateRequestID()
 	toolsReply, unregisterTools := r.engine.toolsReply.register(toolsRequestID)
 	defer unregisterTools()
-	r.send(map[string]any{
-		"type":         "request-tools",
-		"requestId":    toolsRequestID,
-		"threadItemId": r.t.thread.itemID,
-		// Echoed back with the engine's own marks so a slow answer can be
-		// attributed to a stage rather than guessed at (roundtrip_timing.go).
-		"sentAt": time.Now().UnixMilli(),
+	r.send(RequestToolsMessage{
+		Type:         msgRequestTools,
+		RequestID:    toolsRequestID,
+		ThreadItemID: r.t.thread.itemID,
+		SentAt:       time.Now().UnixMilli(),
 	})
 
 	ctxRaw, toolsRaw, err := r.waitForContextAndTools(ContextTimeout, contextReply, toolsReply)
@@ -238,7 +236,7 @@ func (w *ConversationWorker) filterToolsForThreadID(tools []ToolDefinition, thre
 		return tools
 	}
 
-	canSpawn := w.doc.threadFlag(threadID, "canSpawnThreads")
+	canSpawn := w.doc.threadFlag(threadID, keyCanSpawnThreads)
 	cannotDelegate := w.delegationBlocked(threadID) != ""
 	if canSpawn && !cannotDelegate {
 		return tools
@@ -266,7 +264,7 @@ func (r *run) resolveForcedToolChoice(tools []ToolDefinition) map[string]any {
 	if r.t.thread.itemID == "" {
 		return nil
 	}
-	forceTool := r.doc.threadString(r.t.thread.itemID, "forceTool")
+	forceTool := r.doc.threadString(r.t.thread.itemID, keyForceTool)
 	if forceTool == "" {
 		return nil
 	}

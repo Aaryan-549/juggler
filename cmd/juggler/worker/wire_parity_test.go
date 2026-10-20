@@ -6,6 +6,7 @@ package worker
 
 import (
 	"encoding/json"
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -82,7 +83,28 @@ func loadWireManifest(t *testing.T) wireManifest {
 // workerSource is this package's production code, parsed: the vocabulary is
 // read from what the worker actually does, not from a list kept beside it.
 type workerSource struct {
+	fset  *token.FileSet
 	files map[string]*ast.File
+	// docKeys is the key constants by name: the Y.Map keys a call site names
+	// through a constant instead of a literal. They are doc_keys.go's
+	// constants, plus the meta* constants a feature declares beside the code
+	// that owns that metadata key (isDocKeyConst).
+	docKeys map[string]string
+	// otherConsts is every other package-level constant, by name.
+	otherConsts map[string]bool
+}
+
+// docKeysFile declares the Y.Map key constants.
+const docKeysFile = "doc_keys.go"
+
+// isDocKeyConst reports whether a package-level constant is a key constant:
+// one declared in doc_keys.go, or a metadata key named meta* and declared
+// beside the feature that owns it, where its documentation belongs.
+func isDocKeyConst(file, name string) bool {
+	if file == docKeysFile {
+		return true
+	}
+	return len(name) > 4 && strings.HasPrefix(name, "meta") && name[4] >= 'A' && name[4] <= 'Z'
 }
 
 func parseWorkerSource(t *testing.T) workerSource {
@@ -91,8 +113,8 @@ func parseWorkerSource(t *testing.T) workerSource {
 	if err != nil {
 		t.Fatal(err)
 	}
-	src := workerSource{files: map[string]*ast.File{}}
 	fset := token.NewFileSet()
+	src := workerSource{fset: fset, files: map[string]*ast.File{}, docKeys: map[string]string{}, otherConsts: map[string]bool{}}
 	for _, p := range paths {
 		if strings.HasSuffix(p, "_test.go") {
 			continue
@@ -103,7 +125,101 @@ func parseWorkerSource(t *testing.T) workerSource {
 		}
 		src.files[p] = f
 	}
+	for p, f := range src.files {
+		for _, decl := range f.Decls {
+			gen, ok := decl.(*ast.GenDecl)
+			if !ok || gen.Tok != token.CONST {
+				continue
+			}
+			for _, spec := range gen.Specs {
+				vs := spec.(*ast.ValueSpec)
+				for i, name := range vs.Names {
+					if !isDocKeyConst(p, name.Name) {
+						src.otherConsts[name.Name] = true
+						continue
+					}
+					if i < len(vs.Values) {
+						if v := strLit(vs.Values[i]); v != "" {
+							src.docKeys[name.Name] = v
+						}
+					}
+				}
+			}
+		}
+	}
 	return src
+}
+
+// keyForwarders are the functions that take a Y.Map key as a parameter and
+// pass it on to Get/Set/Delete, keyed by name to the index of that parameter.
+// A key reaches the doc through them as surely as through Get, so their key
+// arguments are held to the same rules. TestWireParityDocKeysAreConstants
+// checks each entry still names a string parameter of a function that exists.
+// Deliberately absent: UpdateToolActionDisplayDataRecursive, whose key is one
+// inside displayData — extension payload, not a doc key.
+var keyForwarders = map[string]int{
+	"threadFlag": 1, "threadString": 1, "setThreadFlag": 1, "SetThreadField": 1,
+	"setFlagOnUnfinishedFold": 1, "updateRunItem": 1, "updateTargetItemByID": 1,
+	"updateMessage": 1, "UpdateMessage": 1, "UpdateItemByID": 1, "UpdateItemByToolUseID": 1,
+	"UpdateItemByIDInArray": 2, "updateItemByIDInArray": 2,
+	"UpdateItemByToolUseIDInArray": 2, "updateItemByToolUseIDInArray": 2,
+	"UpdateItemByIDInThread": 2, "finalizeStuckRunningToolOnField": 1, "insertThread": 3,
+}
+
+var (
+	yMapMethods     = setOf("Get", "Set", "Delete", "Has")
+	metadataMethods = setOf("GetMetadata", "SetMetadata", "DeleteMetadata", "setMetadata", "getMetadataValue")
+)
+
+// keySite is one argument through which a Y.Map key reaches the doc.
+type keySite struct {
+	file     string
+	arg      ast.Expr
+	metadata bool // a key of the document's metadata map
+}
+
+// keySites calls fn for every key-bearing argument in the worker source: the
+// key of a Y.Map Get/Set/Delete/Has, of a metadata accessor, of a yMap* reader,
+// and of a keyForwarders call.
+func (s workerSource) keySites(fn func(keySite)) {
+	s.inspect(func(file string, n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok || len(call.Args) == 0 {
+			return true
+		}
+		name := ""
+		switch f := call.Fun.(type) {
+		case *ast.SelectorExpr:
+			name = f.Sel.Name
+			if yMapMethods[name] {
+				fn(keySite{file: file, arg: call.Args[0]})
+				return true
+			}
+			if metadataMethods[name] {
+				fn(keySite{file: file, arg: call.Args[0], metadata: true})
+				return true
+			}
+		case *ast.Ident:
+			name = f.Name
+			if strings.HasPrefix(name, "yMap") && len(call.Args) >= 2 {
+				fn(keySite{file: file, arg: call.Args[1]})
+				return true
+			}
+		}
+		if i, ok := keyForwarders[name]; ok && i < len(call.Args) {
+			fn(keySite{file: file, arg: call.Args[i]})
+		}
+		return true
+	})
+}
+
+// keyArg is the Y.Map key a call argument names: a string literal's value, a
+// doc_keys.go constant's value, or "" for anything else.
+func (s workerSource) keyArg(e ast.Expr) string {
+	if id, ok := e.(*ast.Ident); ok {
+		return s.docKeys[id.Name]
+	}
+	return strLit(e)
 }
 
 func (s workerSource) inspect(fn func(file string, n ast.Node) bool) {
@@ -200,101 +316,29 @@ func requireAtLeast(t *testing.T, what string, got stringSet, n int) {
 // manifest following fails here.
 func TestWireParityWorkerInbound(t *testing.T) {
 	m := loadWireManifest(t)
-	src := parseWorkerSource(t)
 
-	found := stringSet{}
-	src.inspect(func(_ string, n ast.Node) bool {
-		fn, ok := n.(*ast.FuncDecl)
-		if !ok || fn.Name.Name != "dispatchMessage" || fn.Recv == nil {
-			return true
-		}
-		ast.Inspect(fn.Body, func(n ast.Node) bool {
-			sw, ok := n.(*ast.SwitchStmt)
-			if !ok {
-				return true
-			}
-			if sel, ok := sw.Tag.(*ast.SelectorExpr); !ok || sel.Sel.Name != "Type" {
-				return true
-			}
-			for _, stmt := range sw.Body.List {
-				for _, e := range stmt.(*ast.CaseClause).List {
-					if v := strLit(e); v != "" {
-						found[v] = true
-					}
-				}
-			}
-			return false
-		})
-		return false
-	})
-
-	requireAtLeast(t, "worker inbound", found, 30)
-	requireSameSet(t, "worker inbound message types", found, setOf(m.Worker.Inbound...))
+	handled := stringSet{}
+	for typ := range workerInbound {
+		handled[string(typ)] = true
+	}
+	requireAtLeast(t, "worker inbound", handled, 30)
+	requireSameSet(t, "workerInbound (worker.go) message types", handled, setOf(m.Worker.Inbound...))
 	requireSameSet(t, "allWorkerInbound (wire_vocab.go)", vocabSet(allWorkerInbound), setOf(m.Worker.Inbound...))
 }
 
 // TestWireParityWorkerOutbound pins the message types the worker sends.
 //
-// A type the manifest says the worker emits must appear as a string in its
-// source (tool commands, for one, are chosen into a variable before they are
-// sent, so "appears" is the strongest claim that holds for every sender). A
-// type the manifest says it never emits must not appear where a message type
-// goes — a `Type:` field, a `"type":` map key or a hand-built JSON head — and
-// every string found there must be declared somewhere in the manifest.
+// allWorkerOutbound is the list, and it must equal the manifest's goEmits
+// entries exactly. Each of its constants must be used by production code
+// outside wire_vocab.go — a type nothing sends is not emitted, whatever the
+// list says. A worker message type written as a literal where a message type
+// goes (a `Type:` field or a `"type":` map key) fails: the constants are the
+// vocabulary. Literals stay legal for what is not a worker message — provider
+// request bodies and item types — and in the hand-built JSON heads sync.go
+// writes for speed, which are still checked against the manifest.
 func TestWireParityWorkerOutbound(t *testing.T) {
 	m := loadWireManifest(t)
 	src := parseWorkerSource(t)
-
-	rawHead := regexp.MustCompile(`"type":"([^"]+)"`)
-	anyLiteral := stringSet{}
-	typePosition := stringSet{}
-	src.inspect(func(_ string, n ast.Node) bool {
-		switch n := n.(type) {
-		case *ast.BasicLit:
-			if v := strLit(n); v != "" {
-				anyLiteral[v] = true
-				for _, sub := range rawHead.FindAllStringSubmatch(v, -1) {
-					typePosition[sub[1]] = true
-					anyLiteral[sub[1]] = true
-				}
-			}
-		case *ast.KeyValueExpr:
-			v := strLit(n.Value)
-			if v == "" {
-				return true
-			}
-			if id, ok := n.Key.(*ast.Ident); ok && id.Name == "Type" {
-				typePosition[v] = true
-			}
-			if strLit(n.Key) == "type" {
-				typePosition[v] = true
-			}
-		}
-		return true
-	})
-	requireAtLeast(t, "worker type-position literals", typePosition, 15)
-
-	known := setOf(m.Worker.Inbound...)
-	for _, v := range m.Worker.ProviderTypes.Types {
-		known[v] = true
-	}
-	for _, v := range m.Worker.ItemTypes {
-		known[v] = true
-	}
-	// The envelope the worker builds around its own messages for the server.
-	known["worker-message"] = true
-	for _, o := range m.Worker.Outbound {
-		known[o.Type] = true
-		switch {
-		case o.GoEmits && !anyLiteral[o.Type]:
-			t.Errorf("%s says the worker emits %q, but no such string appears in its source — set goEmits false, or remove the entry", wireFixture, o.Type)
-		case !o.GoEmits && typePosition[o.Type]:
-			t.Errorf("%s says the worker never emits %q, but it is used as a message type in the worker — set goEmits true", wireFixture, o.Type)
-		}
-	}
-	if undeclared := typePosition.missingFrom(known); len(undeclared) > 0 {
-		t.Errorf("the worker uses %v as message types, which %s does not declare — add each to worker.outbound (or providerTypes, if it is a provider request body type)", undeclared, wireFixture)
-	}
 
 	emits := stringSet{}
 	for _, o := range m.Worker.Outbound {
@@ -303,6 +347,90 @@ func TestWireParityWorkerOutbound(t *testing.T) {
 		}
 	}
 	requireSameSet(t, "allWorkerOutbound (wire_vocab.go)", vocabSet(allWorkerOutbound), emits)
+
+	// The constant behind each outbound value, and every name production code
+	// outside wire_vocab.go uses.
+	constOf := map[string]string{}
+	used := stringSet{}
+	src.inspect(func(file string, n ast.Node) bool {
+		switch n := n.(type) {
+		case *ast.ValueSpec:
+			if typ, ok := n.Type.(*ast.Ident); ok && typ.Name == "wireMsgType" {
+				for i, name := range n.Names {
+					if i < len(n.Values) {
+						constOf[strLit(n.Values[i])] = name.Name
+					}
+				}
+			}
+			return file != "wire_vocab.go"
+		case *ast.Ident:
+			if file != "wire_vocab.go" {
+				used[n.Name] = true
+			}
+		}
+		return true
+	})
+	for _, typ := range allWorkerOutbound {
+		name := constOf[string(typ)]
+		if name == "" {
+			t.Errorf("allWorkerOutbound has %q, which no wireMsgType constant declares", typ)
+		} else if !used[name] {
+			t.Errorf("%s (%q) is in allWorkerOutbound but nothing outside wire_vocab.go uses it — the worker does not send it", name, typ)
+		}
+	}
+
+	workerTypes := setOf(m.Worker.Inbound...)
+	for _, o := range m.Worker.Outbound {
+		workerTypes[o.Type] = true
+	}
+	known := stringSet{}
+	maps.Copy(known, workerTypes)
+	for _, v := range m.Worker.ProviderTypes.Types {
+		known[v] = true
+	}
+	for _, v := range m.Worker.ItemTypes {
+		known[v] = true
+	}
+	// The envelope the worker builds around its own messages for the server.
+	known["worker-message"] = true
+
+	rawHead := regexp.MustCompile(`"type":"([^"]+)"`)
+	typePosition := stringSet{}
+	var literal []string
+	src.inspect(func(file string, n ast.Node) bool {
+		switch n := n.(type) {
+		case *ast.BasicLit:
+			for _, sub := range rawHead.FindAllStringSubmatch(strLit(n), -1) {
+				typePosition[sub[1]] = true
+			}
+		case *ast.KeyValueExpr:
+			v := strLit(n.Value)
+			if v == "" {
+				return true
+			}
+			id, isField := n.Key.(*ast.Ident)
+			if (isField && id.Name == "Type") || strLit(n.Key) == "type" {
+				typePosition[v] = true
+				if workerTypes[v] {
+					literal = append(literal, fmt.Sprintf("%s:%d: message type %q", file, src.fset.Position(n.Pos()).Line, v))
+				}
+			}
+		}
+		return true
+	})
+	requireAtLeast(t, "worker type-position literals", typePosition, 10)
+	sort.Strings(literal)
+	for _, l := range literal {
+		t.Error(l + " is a literal — use its wireMsgType constant (wire_vocab.go)")
+	}
+	for _, o := range m.Worker.Outbound {
+		if !o.GoEmits && typePosition[o.Type] {
+			t.Errorf("%s says the worker never emits %q, but it is used as a message type in the worker — set goEmits true", wireFixture, o.Type)
+		}
+	}
+	if undeclared := typePosition.missingFrom(known); len(undeclared) > 0 {
+		t.Errorf("the worker uses %v as message types, which %s does not declare — add each to worker.outbound (or providerTypes, if it is a provider request body type)", undeclared, wireFixture)
+	}
 }
 
 // TestWireParityProcessingStatuses ties the statuses the worker writes to the
@@ -516,32 +644,16 @@ func TestWireParityDocKeys(t *testing.T) {
 	}
 	requireSameSet(t, "ConversationItem json tags (docKeys.item)", tags, setOf(keys.Item...))
 
-	mapOps := setOf("Get", "Set", "Delete", "Has")
-	metaOps := setOf("GetMetadata", "SetMetadata", "DeleteMetadata")
 	used, meta := stringSet{}, stringSet{}
-	src.inspect(func(_ string, n ast.Node) bool {
-		call, ok := n.(*ast.CallExpr)
-		if !ok || len(call.Args) == 0 {
-			return true
+	src.keySites(func(site keySite) {
+		v := src.keyArg(site.arg)
+		switch {
+		case v == "":
+		case site.metadata:
+			meta[v] = true
+		default:
+			used[v] = true
 		}
-		switch fn := call.Fun.(type) {
-		case *ast.SelectorExpr:
-			if v := strLit(call.Args[0]); v != "" {
-				if mapOps[fn.Sel.Name] {
-					used[v] = true
-				}
-				if metaOps[fn.Sel.Name] {
-					meta[v] = true
-				}
-			}
-		case *ast.Ident:
-			if strings.HasPrefix(fn.Name, "yMap") && len(call.Args) >= 2 {
-				if v := strLit(call.Args[1]); v != "" {
-					used[v] = true
-				}
-			}
-		}
-		return true
 	})
 	requireAtLeast(t, "Y.Map keys", used, 50)
 	requireAtLeast(t, "metadata keys", meta, 5)
@@ -583,6 +695,75 @@ func TestWireParityDocKeys(t *testing.T) {
 			t.Errorf("runProjectedFields has %q, which docKeys.processingState does not declare", f)
 		}
 	}
+}
+
+// TestWireParityDocKeysAreConstants requires every key that reaches the doc to
+// be named by a key constant (isDocKeyConst), so the constants are the whole
+// of the worker's key vocabulary and TestWireParityDocKeys compares that
+// vocabulary, not a scan for spellings. A string literal fails, and so does any
+// other package constant; a local variable or parameter passes, since it is how
+// a forwarder hands on the key its caller named. Out of scope: map literals
+// written into the doc whole (yNode copies, provider bodies), whose keys are
+// data rather than call arguments.
+func TestWireParityDocKeysAreConstants(t *testing.T) {
+	src := parseWorkerSource(t)
+
+	for name, i := range keyForwarders {
+		if !src.funcHasStringParam(name, i) {
+			t.Errorf("keyForwarders[%q] = %d, but no function %s has a string parameter there", name, i, name)
+		}
+	}
+
+	var bad []string
+	src.keySites(func(site keySite) {
+		if site.file == docKeysFile {
+			return
+		}
+		pos := src.fset.Position(site.arg.Pos())
+		switch a := site.arg.(type) {
+		case *ast.BasicLit:
+			if a.Kind == token.STRING {
+				bad = append(bad, fmt.Sprintf("%s:%d: key %s is a literal", site.file, pos.Line, a.Value))
+			}
+		case *ast.Ident:
+			if src.otherConsts[a.Name] {
+				bad = append(bad, fmt.Sprintf("%s:%d: key %s is a constant that is not a key constant", site.file, pos.Line, a.Name))
+			}
+		}
+	})
+	sort.Strings(bad)
+	for _, b := range bad {
+		t.Error(b + " — name it with a " + docKeysFile + " constant, or a meta* one beside the feature that owns it, and declare it in " + wireFixture + " under worker.docKeys")
+	}
+}
+
+// funcHasStringParam reports whether a function or method called name exists
+// with a string parameter at index i.
+func (s workerSource) funcHasStringParam(name string, i int) bool {
+	found := false
+	s.inspect(func(_ string, n ast.Node) bool {
+		fd, ok := n.(*ast.FuncDecl)
+		if !ok || fd.Name.Name != name {
+			return true
+		}
+		idx := 0
+		for _, field := range fd.Type.Params.List {
+			names := len(field.Names)
+			if names == 0 {
+				names = 1
+			}
+			for range names {
+				if idx == i {
+					if id, ok := field.Type.(*ast.Ident); ok && id.Name == "string" {
+						found = true
+					}
+				}
+				idx++
+			}
+		}
+		return false
+	})
+	return found
 }
 
 // TestWireParityValidationCodes pins the codes a validation-error status

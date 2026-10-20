@@ -111,7 +111,8 @@ func (w *ConversationWorker) driveToolActionsExcept(liveThreads map[string]bool)
 	}
 
 	type toolCmd struct {
-		id, state, action string
+		id, state string
+		action    wireMsgType
 	}
 	var cmds []toolCmd
 	// Every tool-action of each turn, in emission order, for the turn-order
@@ -131,25 +132,25 @@ func (w *ConversationWorker) driveToolActionsExcept(liveThreads map[string]bool)
 			if liveThreads[threadID] {
 				return false
 			}
-			if t, _ := m.Get("type").(string); t != ItemTypeToolAction {
+			if t := yMapString(m, keyType); t != ItemTypeToolAction {
 				return false
 			}
-			id, _ := m.Get("toolUseId").(string)
+			id := yMapString(m, keyToolUseID)
 			if id == "" {
 				return false
 			}
-			state, _ := m.Get("state").(string)
-			if txnID, _ := m.Get("transactionId").(string); txnID != "" {
-				category, _ := m.Get("category").(string)
+			state := yMapString(m, keyState)
+			if txnID := yMapString(m, keyTransactionID); txnID != "" {
+				category := yMapString(m, keyCategory)
 				key := [2]string{threadID, txnID}
 				turns[key] = append(turns[key], turnCall{id: id, state: state, category: category, ran: hasRun(m)})
 			}
-			var action string
+			var action wireMsgType
 			switch state {
 			case StateUnevaluated:
-				action = "evaluate-tool"
+				action = msgEvaluateTool
 			case StateApproved:
-				action = "execute-tool"
+				action = msgExecuteTool
 			case StatePending:
 				if w.tools.commandedAt(id, StateApproved) {
 					holding = append(holding, id)
@@ -265,7 +266,7 @@ func (w *ConversationWorker) reevaluatePendingToolsOnStrategyChangeExcept(liveTh
 	var threadIDs []string
 	withYDoc(func() {
 		walkThreads(w.doc.getItems(), func(m *ycrdt.YMap, _ *ycrdt.YArray, _ string) bool {
-			if id, _ := m.Get("itemId").(string); id != "" {
+			if id := yMapString(m, keyItemID); id != "" {
 				threadIDs = append(threadIDs, id)
 			}
 			return false
@@ -293,7 +294,7 @@ func (w *ConversationWorker) reevaluatePendingToolsOnStrategyChangeExcept(liveTh
 		if !changed[threadID] {
 			return false
 		}
-		state, _ := m.Get("state").(string)
+		state := yMapString(m, keyState)
 		return state == StatePending
 	}, map[string]any{
 		"state":            StateUnevaluated,
@@ -360,7 +361,7 @@ func (w *ConversationWorker) cascadeBatchDenialsExcept(liveThreads map[string]bo
 	arrays := []threadArray{{id: "", arr: w.doc.getItems()}}
 	walkThreads(w.doc.getItems(), func(m *ycrdt.YMap, nested *ycrdt.YArray, _ string) bool {
 		if nested != nil {
-			id, _ := m.Get("itemId").(string)
+			id := yMapString(m, keyItemID)
 			arrays = append(arrays, threadArray{id: id, arr: nested})
 		}
 		return false
@@ -408,11 +409,11 @@ func (w *ConversationWorker) cascadeBatchDenialsExcept(liveThreads map[string]bo
 		_, refusable := scanTrailingBatch(ta.arr, commanded)
 		var ids []string
 		for _, m := range refusable {
-			id, _ := m.Get("toolUseId").(string)
+			id := yMapString(m, keyToolUseID)
 			ids = append(ids, id)
 			w.doc.transactTracked(func(_ *ycrdt.Transaction) {
-				m.Set("state", StateCancelled)
-				m.Set("result", cancelledResult)
+				m.Set(keyState, StateCancelled)
+				m.Set(keyResult, cancelledResult)
 			})
 		}
 		w.tape.Record("deny-cascade", map[string]any{"thread": ta.id, "refused": ids})
@@ -442,7 +443,7 @@ func scanTrailingBatch(arr *ycrdt.YArray, commanded func(id string) bool) (cance
 		if !ok {
 			break
 		}
-		t, _ := m.Get("type").(string)
+		t := yMapString(m, keyType)
 		if t != ItemTypeToolAction && t != ItemTypeThread && t != ItemTypeMetaToolResult {
 			break
 		}
@@ -457,16 +458,16 @@ func scanTrailingBatch(arr *ycrdt.YArray, commanded func(id string) bool) (cance
 		if !ok {
 			continue
 		}
-		if t, _ := m.Get("type").(string); t != ItemTypeToolAction {
+		if t := yMapString(m, keyType); t != ItemTypeToolAction {
 			continue
 		}
-		id, _ := m.Get("toolUseId").(string)
+		id := yMapString(m, keyToolUseID)
 		if id == "" {
 			continue
 		}
-		state, _ := m.Get("state").(string)
-		if txnID, _ := m.Get("transactionId").(string); txnID != "" {
-			category, _ := m.Get("category").(string)
+		state := yMapString(m, keyState)
+		if txnID := yMapString(m, keyTransactionID); txnID != "" {
+			category := yMapString(m, keyCategory)
 			turns[txnID] = append(turns[txnID], turnCall{id: id, state: state, category: category, ran: hasRun(m)})
 		}
 		switch state {
@@ -490,7 +491,7 @@ func scanTrailingBatch(arr *ycrdt.YArray, commanded func(id string) bool) (cance
 
 // dispatchToolCommand marshals and sends one ToolCommand to the engine only. The
 // conversationId is stamped by the outbound envelope (FormatWorkerMessage).
-func (w *ConversationWorker) dispatchToolCommand(action, toolUseID string) {
+func (w *ConversationWorker) dispatchToolCommand(action wireMsgType, toolUseID string) {
 	w.dispatchToolCommandEpoch(action, toolUseID, 0)
 }
 
@@ -498,7 +499,7 @@ func (w *ConversationWorker) dispatchToolCommand(action, toolUseID string) {
 // generation, so a cancel-tool command aborts only the incarnation it was
 // issued against (see ToolCommand.RunningEpoch). Epoch 0 is omitted from the
 // wire and means "unscoped" — the value passed by every non-cancel command.
-func (w *ConversationWorker) dispatchToolCommandEpoch(action, toolUseID string, runningEpoch int64) {
+func (w *ConversationWorker) dispatchToolCommandEpoch(action wireMsgType, toolUseID string, runningEpoch int64) {
 	data, err := json.Marshal(ToolCommand{Type: action, ToolUseID: toolUseID, RunningEpoch: runningEpoch})
 	if err != nil {
 		w.log.Error("[worker] marshal tool-command %s: %v", action, err)
@@ -671,12 +672,12 @@ func (w *ConversationWorker) escalateStaleToolCommand(id, expectState string) {
 	}
 	toolName := ""
 	failed := w.doc.updateToolActionsWhere(func(m *ycrdt.YMap, _ string) bool {
-		if tid, _ := m.Get("toolUseId").(string); tid != id {
+		if tid := yMapString(m, keyToolUseID); tid != id {
 			return false
 		}
-		toolName, _ = m.Get("toolName").(string)
-		state, _ := m.Get("state").(string)
-		return state == expectState && m.Get("result") == nil
+		toolName = yMapString(m, keyToolName)
+		state := yMapString(m, keyState)
+		return state == expectState && m.Get(keyResult) == nil
 	}, map[string]any{
 		"state": StateCompleted,
 		"result": map[string]any{

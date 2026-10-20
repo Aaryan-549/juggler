@@ -570,16 +570,6 @@ func ValidateFileSize(path string) error {
 	return nil
 }
 
-// ValidateTreeDepth validates a tree depth parameter
-func ValidateTreeDepth(depth any) (int, error) {
-	depthInt, err := ValidateIntParam(depth, 1, MaxTreeDepth, "depth")
-	if err != nil {
-		return 0, err
-	}
-
-	return depthInt, nil
-}
-
 // IsBinaryFile detects if a file contains binary (non-text) content
 // Returns true if the file appears to be binary
 func IsBinaryFile(path string) (bool, error) {

@@ -46,7 +46,7 @@ type webrtcICEConfig struct {
 var defaultICEServers = []webrtc.ICEServer{{URLs: []string{"stun:stun.l.google.com:19302"}}}
 
 const (
-	webRTCChunkType = "__juggler_dc_chunk"
+	webRTCChunkType = frameDataChannelChunk
 	webRTCChunkSize = 16 * 1024
 )
 
@@ -61,11 +61,11 @@ const dataChannelIngressKind = "datachannel"
 const RendezvousProtocolVersion = 2
 
 type webRTCChunk struct {
-	Type  string `json:"type"`
-	ID    string `json:"id"`
-	Index int    `json:"index"`
-	Total int    `json:"total"`
-	Data  string `json:"data"`
+	Type  frameType `json:"type"`
+	ID    string    `json:"id"`
+	Index int       `json:"index"`
+	Total int       `json:"total"`
+	Data  string    `json:"data"`
 }
 
 type webRTCChunkAssembly struct {
@@ -503,7 +503,7 @@ func (c *webRTCClient) sendTextChunked(payload []byte) error {
 
 func isWebRTCChunk(data []byte) bool {
 	var hdr struct {
-		Type string `json:"type"`
+		Type frameType `json:"type"`
 	}
 	return json.Unmarshal(data, &hdr) == nil && hdr.Type == webRTCChunkType
 }

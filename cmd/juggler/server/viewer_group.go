@@ -331,26 +331,20 @@ type serverBroadcaster struct {
 // the ONLY thing it's for — any conversation-list mutation must go
 // through BroadcastConversationsChanged, never here.
 func (b serverBroadcaster) BroadcastSessionChanged() {
-	b.srv.broadcastToAll(map[string]any{"type": "session-changed"})
+	b.srv.broadcastToAll(bareFrame{Type: frameSessionChanged})
 }
 
 // BroadcastSessionMetadataChanged publishes a targeted metadata patch. Unlike
 // session-changed, clients can apply this without refetching the full session.
 func (b serverBroadcaster) BroadcastSessionMetadataChanged(metadata map[string]any) {
-	b.srv.broadcastToAll(map[string]any{
-		"type":     "session-metadata-changed",
-		"metadata": metadata,
-	})
+	b.srv.broadcastToAll(sessionMetadataChangedFrame{Type: frameSessionMetadataChanged, Metadata: metadata})
 }
 
 // BroadcastWorkspacesChanged publishes the whole workspace table after an edit,
 // so every viewer converges on it — and so a window that is only watching sees a
 // workspace appear, become usable, and be finished with, without asking.
 func (b serverBroadcaster) BroadcastWorkspacesChanged(workspaces []workspace.Row) {
-	b.srv.broadcastToAll(map[string]any{
-		"type":       "workspaces-changed",
-		"workspaces": workspaces,
-	})
+	b.srv.broadcastToAll(workspacesChangedFrame{Type: frameWorkspacesChanged, Workspaces: workspaces})
 }
 
 // BroadcastPinboardChanged publishes one board's whole composition after an
@@ -363,26 +357,14 @@ func (b serverBroadcaster) BroadcastWorkspacesChanged(workspaces []workspace.Row
 // ignore it, and the frame is small enough that this is cheaper than tracking
 // the answer would be.
 func (b serverBroadcaster) BroadcastPinboardChanged(board string, pins []core.Pin) {
-	b.srv.broadcastToAll(map[string]any{
-		"type":  "pinboard-changed",
-		"board": board,
-		"pins":  pins,
-	})
+	b.srv.broadcastToAll(pinboardChangedFrame{Type: framePinboardChanged, Board: board, Pins: pins})
 }
 
 // BroadcastPinboardReveal asks viewers to open one board on one pin. The request
 // is advisory: from identifies the conversation that made it, and each viewer
 // decides whether following it would interrupt unrelated work or a draft.
 func (b serverBroadcaster) BroadcastPinboardReveal(board, pin, from string) {
-	msg := map[string]any{
-		"type":  "pinboard-reveal",
-		"board": board,
-		"pin":   pin,
-	}
-	if from != "" {
-		msg["from"] = from
-	}
-	b.srv.broadcastToAll(msg)
+	b.srv.broadcastToAll(pinboardRevealFrame{Type: framePinboardReveal, Board: board, Pin: pin, From: from})
 }
 
 // BroadcastConversationsChanged publishes a single op-tagged
@@ -392,11 +374,7 @@ func (b serverBroadcaster) BroadcastPinboardReveal(board, pin, from string) {
 // `name` is the canonical folder name; included on the wire only when
 // non-empty (created / renamed / restored).
 func (b serverBroadcaster) BroadcastConversationsChanged(op, id, name string) {
-	msg := map[string]any{"type": "conversations-changed", "op": op, "id": id}
-	if name != "" {
-		msg["name"] = name
-	}
-	b.srv.broadcastToAll(msg)
+	b.srv.broadcastToAll(conversationsChangedFrame{Type: frameConversationsChanged, Op: op, ID: id, Name: name})
 }
 
 // BroadcastConversationFocus asks viewers to switch to a conversation. Rides
@@ -404,11 +382,7 @@ func (b serverBroadcaster) BroadcastConversationsChanged(op, id, name string) {
 // the conversation that requested the switch and is included on the wire only
 // when non-empty (an unattributed request every viewer follows).
 func (b serverBroadcaster) BroadcastConversationFocus(id, from string) {
-	msg := map[string]any{"type": "conversations-changed", "op": "focus", "id": id}
-	if from != "" {
-		msg["from"] = from
-	}
-	b.srv.broadcastToAll(msg)
+	b.srv.broadcastToAll(conversationsChangedFrame{Type: frameConversationsChanged, Op: "focus", ID: id, From: from})
 }
 
 // BroadcastNotice publishes a short, human-readable message for every viewer to
@@ -418,7 +392,7 @@ func (b serverBroadcaster) BroadcastConversationFocus(id, from string) {
 // in the conversation, not here. The frame carries the English as `message`
 // and the message itself as `text`, for the client to show translated.
 func (b serverBroadcaster) BroadcastNotice(m msg.Message) {
-	b.srv.broadcastToAll(map[string]any{"type": "notice", "message": m.English(), "text": m})
+	b.srv.broadcastToAll(textFrame{Type: frameNotice, Message: m.English(), Text: m})
 }
 
 // BroadcastConversationsReordered publishes a drag-reorder as the full new
@@ -426,11 +400,7 @@ func (b serverBroadcaster) BroadcastNotice(m msg.Message) {
 // `op:"reordered"` and an `order` array carrying the post-reorder ids in
 // display order.
 func (b serverBroadcaster) BroadcastConversationsReordered(order []string) {
-	b.srv.broadcastToAll(map[string]any{
-		"type":  "conversations-changed",
-		"op":    "reordered",
-		"order": order,
-	})
+	b.srv.broadcastToAll(conversationsReorderedFrame{Type: frameConversationsChanged, Op: "reordered", Order: order})
 }
 
 // shutdownAllClients sends shutdown notice to all clients and waits for completion.

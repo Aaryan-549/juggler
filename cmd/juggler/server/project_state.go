@@ -290,10 +290,7 @@ func (s *Server) SwitchProject(newPath string) error {
 	mcp.StartDiscovery(newPath)
 
 	// Notify all clients.
-	s.broadcastToAll(map[string]any{
-		"type":        "project-changed",
-		"projectPath": newPath,
-	})
+	s.broadcastToAll(projectChangedFrame{Type: frameProjectChanged, ProjectPath: newPath})
 
 	jlog.Info("📁 Switched project to %q", newPath)
 	return nil

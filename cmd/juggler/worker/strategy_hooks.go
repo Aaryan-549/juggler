@@ -53,7 +53,7 @@ func (w *ConversationWorker) ensureEngineReady() bool {
 // strategy is never installed over the root's.
 func (w *ConversationWorker) dispatchStrategyHook(requestID, hook, strategyID, threadID, previousStrategyID string) {
 	data, err := json.Marshal(RunStrategyHookRequest{
-		Type:               "run-strategy-hook",
+		Type:               msgRunStrategyHook,
 		RequestID:          requestID,
 		Hook:               hook,
 		StrategyID:         strategyID,
@@ -163,7 +163,7 @@ func (r *run) dispatchWorkerIdleHook() {
 func (r *run) dispatchContextTurnHook() {
 	turn := r.turnCounter.Load()
 	data, err := json.Marshal(RunContextHookRequest{
-		Type:      "run-context-hook",
+		Type:      msgRunContextHook,
 		Hook:      "onTurnEnd",
 		TurnIndex: int(turn),
 	})
@@ -179,9 +179,7 @@ func (r *run) dispatchContextTurnHook() {
 // engine-driven strategy execution for this conversation (the plan driver's
 // AbortController). Fire-and-forget; targeted at the engine only.
 func (w *ConversationWorker) dispatchCancelStrategyExecution() {
-	data, err := json.Marshal(map[string]any{
-		"type": "cancel-strategy-execution",
-	})
+	data, err := json.Marshal(bareMessage{Type: msgCancelStrategyExecution})
 	if err != nil {
 		return
 	}

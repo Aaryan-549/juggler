@@ -2072,40 +2072,6 @@ class Conversation {
   }
 
   /**
-   * Handle retry notification for this conversation
-   * @param {number} attempt - Current retry attempt
-   * @param {number} maxRetries - Maximum retries
-   * @param {string} [reason] - Reason for retry (e.g., 'timeout', 'network')
-   */
-  handleRetry(attempt, maxRetries, reason) {
-    if (!this._llmState.isConversationProcessing(this.id)) {
-      return;
-    }
-
-    this._llmState.updateStatus(this.id, 'retry', {
-      attempt,
-      maxRetries,
-      reason
-    });
-  }
-
-  /**
-   * Handle streaming error notification from backend
-   * @param {string} errorMessage - Detailed error message from LLM provider
-   */
-  handleStreamingError(errorMessage) {
-    if (!this._llmState.isConversationProcessing(this.id)) {
-      return;
-    }
-
-    // The Go worker writes the error item via Yjs sync.
-
-    this._llmState.updateStatus(this.id, 'error', {
-      message: errorMessage
-    });
-  }
-
-  /**
    * Handle final response from backend. Only the usage is read: the Go worker
    * owns the turn — it writes the response's blocks and decides what follows —
    * so the viewer's part is recording the counts against the right thread.

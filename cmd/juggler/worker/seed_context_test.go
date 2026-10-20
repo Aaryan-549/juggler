@@ -313,7 +313,7 @@ func TestSeedThreadIfUnseededSkipsRunningThread(t *testing.T) {
 		t.Fatalf("a thread with turns behind it must not be seeded: %d -> %d", before, got)
 	}
 	// And it is marked, so the check is paid for once rather than every turn.
-	if seeded, _ := doc.GetThreadYMap(childID).Get(threadContextSeededField).(bool); !seeded {
+	if !yMapBool(doc.GetThreadYMap(childID), keyContextSeeded) {
 		t.Errorf("a skipped thread should still be marked seeded")
 	}
 }

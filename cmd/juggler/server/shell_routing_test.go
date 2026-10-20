@@ -97,7 +97,7 @@ func nextShellOutput(t *testing.T, c *WSClient) map[string]any {
 	t.Helper()
 	select {
 	case msg := <-c.send:
-		m, _ := msg.json.(map[string]any)
+		m, _ := frameMap(msg.json)
 		return m
 	case <-time.After(2 * time.Second):
 		t.Fatal("no shell-output arrived")
@@ -115,7 +115,7 @@ func awaitShellDone(t *testing.T, c *WSClient, shellID string) bool {
 	for {
 		select {
 		case msg := <-c.send:
-			m, ok := msg.json.(map[string]any)
+			m, ok := frameMap(msg.json)
 			if !ok {
 				continue
 			}

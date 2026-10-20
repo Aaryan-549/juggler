@@ -2550,6 +2550,11 @@ export async function runTests(_ctx) {
   heldConversationPeak = 0;
   sessionMapPeak = 0;
   const claimsAtSuiteStart = snapshotOwnConversationIds();
+  // Each case's wall time, release included. The cases share one budget, so the
+  // case that times out is only the one left holding what the others spent; a
+  // failure reports the slowest cases so the one that spent it can be named.
+  /** @type {Array<[string, number]>} */
+  const caseTimes = [];
 
   for (const test of tests) {
     // Per-case guard, riding the suite's budget. Its job is attribution — so a
@@ -2564,6 +2569,7 @@ export async function runTests(_ctx) {
       continue;
     }
     const claimsBeforeCase = snapshotOwnConversationIds();
+    const caseStartedAt = performance.now();
     try {
       logger.info(`[undo-redo-test] Running: ${test.name}`);
       const timeoutPromise = new Promise((_, reject) =>
@@ -2584,7 +2590,14 @@ export async function runTests(_ctx) {
       // Sample before the release, so the peak is what the case actually held.
       noteConversationPeak(session, claimsAtSuiteStart);
       await releaseCaseConversations(session, claimsBeforeCase, test.name);
+      caseTimes.push([test.name, Math.round(performance.now() - caseStartedAt)]);
     }
+  }
+
+  if (failed > 0) {
+    const slowest = [...caseTimes].sort((a, b) => b[1] - a[1]).slice(0, 6)
+      .map(([name, ms]) => `${name} ${ms}ms`).join(', ');
+    errors.push(`  CASE TIMES (slowest of ${caseTimes.length} run): ${slowest}`);
   }
 
   return { passed, failed, errors };

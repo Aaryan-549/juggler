@@ -171,13 +171,13 @@ func (s *Server) StartOneShot(req OneShotRequest) (<-chan OneShotResult, error) 
 		return nil, err
 	}
 
-	if !client.Send(map[string]any{
-		"type":       "run-one-shot",
-		"requestId":  requestID,
-		"prompt":     req.Prompt,
-		"strategyId": req.StrategyID,
-		"name":       req.Name,
-		"timeoutMs":  req.Timeout.Milliseconds(),
+	if !client.Send(runOneShotFrame{
+		Type:       frameRunOneShot,
+		RequestID:  requestID,
+		Prompt:     req.Prompt,
+		StrategyID: req.StrategyID,
+		Name:       req.Name,
+		TimeoutMs:  req.Timeout.Milliseconds(),
 	}) {
 		s.oneShot.disarm()
 		return nil, fmt.Errorf("the engine's connection closed before the run could be sent")

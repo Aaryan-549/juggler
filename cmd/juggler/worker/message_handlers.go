@@ -168,8 +168,8 @@ func (r *run) handleInit(payload json.RawMessage) {
 	if msg.Conversation.ModelConfig != nil &&
 		msg.Conversation.ModelConfig.Provider != "" &&
 		msg.Conversation.ModelConfig.Model != "" &&
-		r.doc.GetMetadata("defaultModelConfig") == nil &&
-		r.doc.GetMetadata("modelConfig") == nil {
+		r.doc.GetMetadata(keyDefaultModelConfig) == nil &&
+		r.doc.GetMetadata(keyModelConfig) == nil {
 		seed := map[string]any{
 			"provider": msg.Conversation.ModelConfig.Provider,
 			"model":    msg.Conversation.ModelConfig.Model,
@@ -183,13 +183,13 @@ func (r *run) handleInit(payload json.RawMessage) {
 		if msg.Conversation.ModelConfig.ServiceTier != "" {
 			seed["serviceTier"] = msg.Conversation.ModelConfig.ServiceTier
 		}
-		r.doc.SetMetadata("defaultModelConfig", seed)
+		r.doc.SetMetadata(keyDefaultModelConfig, seed)
 	}
 
 	// Initialize created timestamp in doc metadata for new conversations.
 	// (The name lives on the on-disk folder name, not in the Yjs doc.)
-	if msg.Conversation.Created != "" && r.doc.GetMetadata("created") == nil {
-		r.doc.SetMetadata("created", msg.Conversation.Created)
+	if msg.Conversation.Created != "" && r.doc.GetMetadata(keyCreated) == nil {
+		r.doc.SetMetadata(keyCreated, msg.Conversation.Created)
 	}
 
 	// The name itself stays on the folder, but its PROVENANCE is doc state: seed
@@ -215,14 +215,14 @@ func (r *run) handleInit(payload json.RawMessage) {
 	//     in) plan/research still fires onActivate.
 	// Only seed when absent: a conversation activated under this feature has its
 	// own persisted value that must win.
-	if r.doc.GetMetadata("activatedStrategyId") == nil {
+	if r.doc.GetMetadata(keyActivatedStrategyID) == nil {
 		seed := defaultStrategyID
 		if loadedFromDisk {
-			if cur, ok := r.doc.GetMetadata("currentStrategyId").(string); ok && cur != "" {
+			if cur, ok := r.doc.GetMetadata(keyCurrentStrategyID).(string); ok && cur != "" {
 				seed = cur
 			}
 		}
-		r.doc.SetMetadata("activatedStrategyId", seed)
+		r.doc.SetMetadata(keyActivatedStrategyID, seed)
 	}
 
 	// For new conversations, save the initial state immediately so the .yjs file
@@ -900,7 +900,7 @@ func (w *ConversationWorker) handleResyncRequest(payload json.RawMessage) {
 	// Targeted at the requester: only the client that reconnected asked, and its
 	// catch-up delta is meaningless (and potentially large) to everyone else.
 	w.reply(ResyncResponseMessage{
-		Type:        "resync-response",
+		Type:        msgResyncResponse,
 		Bytes:       w.doc.GetStateUpdate(msg.StateVector),
 		StateVector: w.doc.GetStateVector(),
 	})
@@ -933,7 +933,7 @@ func (w *ConversationWorker) handleResyncToOrigin() {
 	if !w.initialized {
 		return
 	}
-	w.reply(ResyncOfferMessage{Type: "resync-offer"})
+	w.reply(ResyncOfferMessage{Type: msgResyncOffer})
 	// A freshly (re)attached engine has commanded none of this conversation's
 	// tools yet. Drop all command bookkeeping so every non-terminal tool-action is
 	// dispatched afresh against the new engine instance (the previous engine's
@@ -973,10 +973,10 @@ func (w *ConversationWorker) resetRunningToolsForReattach() {
 	currentTurn := w.docTurnCounter()
 
 	reset := w.doc.updateToolActionsWhere(func(m *ycrdt.YMap, _ string) bool {
-		if state, _ := m.Get("state").(string); state != StateRunning {
+		if state := yMapString(m, keyState); state != StateRunning {
 			return false
 		}
-		if m.Get("result") != nil {
+		if m.Get(keyResult) != nil {
 			return false // already finished
 		}
 		// A result for this still-running tool was already delivered to the
@@ -986,7 +986,7 @@ func (w *ConversationWorker) resetRunningToolsForReattach() {
 		// This is the resultFedTurn CURE (doc.go's "Tool-delivery desync" section,
 		// claudecode provider). Field absence (rawFed == nil) means never fed →
 		// fall through and reset.
-		if rawFed := m.Get("resultFedTurn"); rawFed != nil {
+		if rawFed := m.Get(keyResultFedTurn); rawFed != nil {
 			var fedTurn int64
 			switch v := rawFed.(type) {
 			case int64:
@@ -1005,10 +1005,10 @@ func (w *ConversationWorker) resetRunningToolsForReattach() {
 		// Prefer the executor='worker' stamp (written at evaluate); fall back to
 		// the create_thread name for docs predating the stamp. Only create_thread
 		// is worker-managed today, so these two cover every worker-executed tool.
-		if ex, _ := m.Get("executor").(string); ex == "worker" {
+		if ex := yMapString(m, keyExecutor); ex == "worker" {
 			return false
 		}
-		if name, _ := m.Get("toolName").(string); name == "create_thread" {
+		if name := yMapString(m, keyToolName); name == "create_thread" {
 			return false // worker-managed: not executed by the engine
 		}
 		return true
@@ -1166,7 +1166,7 @@ func (r *run) handleUndoOrRedo(fn func() bool, payload json.RawMessage) {
 	// idle, etc.) they would overwrite the just-restored state. Cancelling
 	// first puts the worker on a path to Idle so the undo lands cleanly.
 	if !r.cancelAndWaitForIdle() {
-		r.reply(map[string]any{"type": "ack", "ackId": msg.AckID, "result": false})
+		r.reply(AckMessage{Type: msgAck, AckID: msg.AckID, Result: false})
 		return
 	}
 
@@ -1203,11 +1203,7 @@ func (r *run) handleUndoOrRedo(fn func() bool, payload json.RawMessage) {
 
 	// Flush Yjs sync BEFORE ACK so frontend state is updated when undo()/redo() returns
 	r.batcher.Flush()
-	r.reply(map[string]any{
-		"type":   "ack",
-		"ackId":  msg.AckID,
-		"result": success,
-	})
+	r.reply(AckMessage{Type: msgAck, AckID: msg.AckID, Result: success})
 }
 
 // handleBeginUndoCoalesce snapshots the current undo-stack height so a
@@ -1233,10 +1229,7 @@ func (w *ConversationWorker) handleEndUndoCoalesce(payload json.RawMessage) {
 		w.tracker.StopCapturing()
 	}
 	w.batcher.Flush()
-	w.reply(map[string]any{
-		"type":  "ack",
-		"ackId": ackID,
-	})
+	w.reply(AckMessage{Type: msgAck, AckID: ackID})
 }
 
 // cancelAndWaitForIdle stops any in-flight strategy loop and blocks (briefly)
@@ -1326,11 +1319,7 @@ func (r *run) handleResummarizeCompactionThread(payload json.RawMessage) {
 		r.setThreadNeedsStrategyRun(msg.ThreadItemID)
 	}
 	r.batcher.Flush()
-	r.reply(map[string]any{
-		"type":   "ack",
-		"ackId":  msg.AckID,
-		"result": handled,
-	})
+	r.reply(AckMessage{Type: msgAck, AckID: msg.AckID, Result: handled})
 	if handled {
 		r.checkForNewThreads()
 	}

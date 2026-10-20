@@ -641,7 +641,7 @@ func (m *Manager) SeedNewConversation(conversationID, name, projectPath, created
 		modelConfig = &seed
 	}
 	init := &InitMessage{
-		Type: "init",
+		Type: msgInit,
 		Conversation: SerializedConversation{
 			ID:          conversationID,
 			Name:        name,

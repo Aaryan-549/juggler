@@ -38,7 +38,6 @@ import (
 )
 
 const (
-	pendingRequestsKey  = "pendingRequests"
 	pendingRequestsGCMs = 30000
 
 	// cancelledThreadResult is the outcome text a pending request reports for a
@@ -104,7 +103,7 @@ func (r *run) scanPendingRequests() {
 func (w *ConversationWorker) pendingRequestThreadIDsLocked() []string {
 	ids := []string{""}
 	walkThreads(w.doc.getItems(), func(m *ycrdt.YMap, _ *ycrdt.YArray, _ string) bool {
-		if id, _ := m.Get("itemId").(string); id != "" {
+		if id := yMapString(m, keyItemID); id != "" {
 			ids = append(ids, id)
 		}
 		return false
@@ -133,30 +132,30 @@ func (w *ConversationWorker) snapshotPendingEntries() []pendingEntrySnapshot {
 				continue
 			}
 			snap := pendingEntrySnapshot{index: i, ownerThreadID: threadID}
-			snap.id, _ = ymap.Get("id").(string)
-			kind, _ := ymap.Get("kind").(string)
+			snap.id = yMapString(ymap, keyID)
+			kind := yMapString(ymap, keyKind)
 			snap.kind = pendingKind(kind)
-			status, _ := ymap.Get("status").(string)
+			status := yMapString(ymap, keyStatus)
 			snap.status = pendingStatus(status)
-			snap.cancelRequested, _ = ymap.Get("cancelRequested").(bool)
-			if v, ok := ymap.Get("completedAt").(ycrdt.Number); ok {
+			snap.cancelRequested = yMapBool(ymap, keyCancelRequested)
+			if v, ok := yMapInt64(ymap, keyCompletedAt); ok {
 				snap.completedAt = float64(v)
 			}
-			snap.threadItemID, _ = ymap.Get("threadItemId").(string)
-			if v, ok := ymap.Get("itemsBefore").(ycrdt.Number); ok {
+			snap.threadItemID = yMapString(ymap, keyThreadItemID)
+			if v, ok := yMapInt64(ymap, keyItemsBefore); ok {
 				snap.itemsBefore = int(v)
 			}
-			if req, ok := ymap.Get("request").(*ycrdt.YMap); ok {
-				snap.goal, _ = req.Get("goal").(string)
-				snap.prompt, _ = req.Get("prompt").(string)
-				snap.parentThreadID, _ = req.Get("parentThreadItemId").(string)
-				snap.strategyID, _ = req.Get("strategyId").(string)
-				snap.modelConfigJSON, _ = req.Get("modelConfig").(string)
-				snap.isContinuation, _ = req.Get("isContinuation").(bool)
-				snap.continueThreadID, _ = req.Get("threadItemId").(string)
-				snap.deliverTaskID, _ = req.Get("taskId").(string)
-				snap.deliverLabel, _ = req.Get("label").(string)
-				snap.deliverConvID, _ = req.Get("convId").(string)
+			if req, ok := yMapMap(ymap, keyRequest); ok {
+				snap.goal = yMapString(req, keyGoal)
+				snap.prompt = yMapString(req, keyPrompt)
+				snap.parentThreadID = yMapString(req, keyParentThreadItemID)
+				snap.strategyID = yMapString(req, keyStrategyID)
+				snap.modelConfigJSON = yMapString(req, keyModelConfig)
+				snap.isContinuation = yMapBool(req, keyIsContinuation)
+				snap.continueThreadID = yMapString(req, keyThreadItemID)
+				snap.deliverTaskID = yMapString(req, keyTaskID)
+				snap.deliverLabel = yMapString(req, keyLabel)
+				snap.deliverConvID = yMapString(req, keyConvID)
 			}
 			out = append(out, snap)
 		}
@@ -173,7 +172,7 @@ func (w *ConversationWorker) pendingRequestsArrayLocked(threadItemID string) *yc
 	if parent == nil {
 		return nil
 	}
-	arr, _ := parent.Get(pendingRequestsKey).(*ycrdt.YArray)
+	arr, _ := yMapArray(parent, keyPendingRequests)
 	return arr
 }
 
@@ -185,12 +184,12 @@ func (w *ConversationWorker) ensurePendingRequestsArrayLocked(threadItemID strin
 	if parent == nil {
 		return nil
 	}
-	if arr, ok := parent.Get(pendingRequestsKey).(*ycrdt.YArray); ok {
+	if arr, ok := yMapArray(parent, keyPendingRequests); ok {
 		return arr
 	}
 	arr := ycrdt.NewYArray()
 	w.doc.doc.Transact(func(_ *ycrdt.Transaction) {
-		parent.Set(pendingRequestsKey, arr)
+		parent.Set(keyPendingRequests, arr)
 	}, w.doc.txOrigin())
 	return arr
 }
@@ -210,7 +209,7 @@ func (w *ConversationWorker) pendingEntryByIDLocked(ownerThreadID, id string) (i
 		if !ok || ymap == nil {
 			continue
 		}
-		if v, _ := ymap.Get("id").(string); v == id {
+		if v := yMapString(ymap, keyID); v == id {
 			return i, ymap, true
 		}
 	}
@@ -239,12 +238,12 @@ func (r *run) claimAndDispatchPendingEntry(e pendingEntrySnapshot) {
 		if !ok {
 			return
 		}
-		if v, _ := ymap.Get("status").(string); v != string(pendingRequested) {
+		if v := yMapString(ymap, keyStatus); v != string(pendingRequested) {
 			return
 		}
 		r.doc.transactTracked(func(t *ycrdt.Transaction) {
-			ymap.Set("status", string(pendingClaimed))
-			ymap.Set("claimedBy", "worker")
+			ymap.Set(keyStatus, string(pendingClaimed))
+			ymap.Set(keyClaimedBy, "worker")
 		})
 		claimed = true
 	})
@@ -292,7 +291,7 @@ func (r *run) dispatchPendingContinue(e pendingEntrySnapshot) {
 	// own inbound channel. Going through the normal message path keeps the
 	// state machine consistent.
 	sm := SendMessageMessage{
-		Type:           "send-message",
+		Type:           msgSendMessage,
 		Text:           "",
 		IsContinuation: true,
 		ThreadItemID:   e.continueThreadID,
@@ -302,7 +301,7 @@ func (r *run) dispatchPendingContinue(e pendingEntrySnapshot) {
 		r.writePendingEntryError(e.ownerThreadID, e.id, err.Error())
 		return
 	}
-	r.Send("send-message", payload)
+	r.Send(string(msgSendMessage), payload)
 }
 
 // continuedItemsLength is the length of the items array a continue entry's
@@ -338,7 +337,7 @@ func (r *run) advanceClaimedPendingEntry(e pendingEntrySnapshot) {
 			found = true
 			settled = threadRunSettledLocked(threadYMap)
 			status, runResult = latestRunOutcomeLocked(threadYMap)
-			summary, _ = threadYMap.Get("result").(string)
+			summary = yMapString(threadYMap, keyResult)
 		})
 		if !found || !settled {
 			return
@@ -508,7 +507,7 @@ func (w *ConversationWorker) updatePendingEntry(ownerThreadID, id string, mutate
 // advanceClaimedPendingEntry can find the thread Y.Map on the next scan.
 func (w *ConversationWorker) setPendingEntryThreadID(ownerThreadID, id, threadItemID string) {
 	w.updatePendingEntry(ownerThreadID, id, func(ymap *ycrdt.YMap) {
-		ymap.Set("threadItemId", threadItemID)
+		ymap.Set(keyThreadItemID, threadItemID)
 	})
 }
 
@@ -516,25 +515,25 @@ func (w *ConversationWorker) setPendingEntryThreadID(ownerThreadID, id, threadIt
 // for continue requests.
 func (w *ConversationWorker) setPendingEntryItemsBefore(ownerThreadID, id string, itemsBefore int) {
 	w.updatePendingEntry(ownerThreadID, id, func(ymap *ycrdt.YMap) {
-		ymap.Set("itemsBefore", ycrdt.Number(itemsBefore))
+		ymap.Set(keyItemsBefore, ycrdt.Number(itemsBefore))
 	})
 }
 
 func (w *ConversationWorker) writePendingEntryError(ownerThreadID, id, errMsg string) {
 	w.updatePendingEntry(ownerThreadID, id, func(ymap *ycrdt.YMap) {
-		ymap.Set("error", errMsg)
-		ymap.Set("status", string(pendingError))
-		ymap.Set("completedAt", ycrdt.Number(time.Now().UnixMilli()))
+		ymap.Set(keyError, errMsg)
+		ymap.Set(keyStatus, string(pendingError))
+		ymap.Set(keyCompletedAt, ycrdt.Number(time.Now().UnixMilli()))
 	})
 }
 
 func (w *ConversationWorker) writePendingEntryCancelled(ownerThreadID, id, errMsg string) {
 	w.updatePendingEntry(ownerThreadID, id, func(ymap *ycrdt.YMap) {
 		if errMsg != "" {
-			ymap.Set("error", errMsg)
+			ymap.Set(keyError, errMsg)
 		}
-		ymap.Set("status", string(pendingCancelled))
-		ymap.Set("completedAt", ycrdt.Number(time.Now().UnixMilli()))
+		ymap.Set(keyStatus, string(pendingCancelled))
+		ymap.Set(keyCompletedAt, ycrdt.Number(time.Now().UnixMilli()))
 	})
 }
 
@@ -542,14 +541,14 @@ func (w *ConversationWorker) writePendingEntryCompletedThread(ownerThreadID, id,
 	w.updatePendingEntry(ownerThreadID, id, func(ymap *ycrdt.YMap) {
 		resultMap := ycrdt.NewYMap(nil)
 		if threadItemID != "" {
-			resultMap.Set("threadItemId", threadItemID)
+			resultMap.Set(keyThreadItemID, threadItemID)
 		}
 		if result != "" {
-			resultMap.Set("result", result)
+			resultMap.Set(keyResult, result)
 		}
-		ymap.Set("result", resultMap)
-		ymap.Set("status", string(pendingCompleted))
-		ymap.Set("completedAt", ycrdt.Number(time.Now().UnixMilli()))
+		ymap.Set(keyResult, resultMap)
+		ymap.Set(keyStatus, string(pendingCompleted))
+		ymap.Set(keyCompletedAt, ycrdt.Number(time.Now().UnixMilli()))
 	})
 }
 

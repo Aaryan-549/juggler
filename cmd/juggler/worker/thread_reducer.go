@@ -806,12 +806,12 @@ func (w *ConversationWorker) clearThreadResult(threadItemID string) bool {
 	if threadYMap == nil {
 		return false
 	}
-	if existingResult, _ := threadYMap.Get("result").(string); existingResult == "" {
+	if existingResult := yMapString(threadYMap, keyResult); existingResult == "" {
 		return false // already open
 	}
 	w.tracker.stopCapturingLocked()
 	w.doc.transactTracked(func(_ *ycrdt.Transaction) {
-		threadYMap.Set("result", nil)
+		threadYMap.Set(keyResult, nil)
 	})
 	return true
 }

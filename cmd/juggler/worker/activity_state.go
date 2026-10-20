@@ -59,21 +59,11 @@ func runsView(state map[string]any) runRegistry {
 		}
 		return runs
 	}
-	activity, _ := state[runFieldActivity].(string)
-	if activity == ActivityNone {
+	entry := runEntryFromLegacy(state)
+	if entry == nil {
 		return nil
 	}
-	threadItemID, _ := state[runFieldThreadItemID].(string)
-	entry := runEntry{}
-	entry.setActivity(activity)
-	entry.setThreadItemID(threadItemID)
-	if claimedAt, ok := state[runFieldClaimedAt]; ok {
-		entry[runFieldClaimedAt] = claimedAt
-	}
-	if explicit, _ := state[runFieldExplicitContinuation].(bool); explicit {
-		entry.setExplicitContinuation()
-	}
-	return runRegistry{runKey(threadItemID): entry}
+	return runRegistry{runKey(entry.threadItemID()): entry}
 }
 
 // runEntryOf returns one thread's run entry, or nil when that thread holds no
@@ -142,16 +132,6 @@ func preferRun(a runEntry, aKey string, b runEntry, bKey string) bool {
 	return aKey < bKey
 }
 
-// runProjectedFields are the spinner fields a run owns: what it is doing, since
-// when, and how much has flowed. Each live run carries its own copy in its entry
-// — two runs streaming at once each describe themselves — and the projection
-// republishes the chosen run's copy at the top level for the conversation-wide
-// readers.
-var runProjectedFields = []string{
-	runFieldStatus, runFieldMessage, runFieldCode, runFieldStartedAt,
-	runFieldDescription, runFieldPhase, runFieldInputTokens, runFieldOutputTokens, runFieldCachedTokens,
-}
-
 // projectLiveRun refreshes the top-level activity/threadItemId/claimedAt fields
 // from the registry. threadItemId is deliberately left in place when no run is
 // live: a released claim keeps naming the thread it was released from, which is
@@ -163,22 +143,7 @@ func projectLiveRun(state map[string]any, runs runRegistry, touchedThreadID stri
 		delete(state, runFieldClaimedAt)
 		return
 	}
-	state[runFieldActivity] = entry.activity()
-	for _, field := range runProjectedFields {
-		if value, ok := entry[field]; ok {
-			state[field] = value
-		} else {
-			delete(state, field)
-		}
-	}
-	if id, ok := entry[runFieldThreadItemID].(string); ok {
-		state[runFieldThreadItemID] = id
-	}
-	if claimedAt, ok := entry[runFieldClaimedAt]; ok {
-		state[runFieldClaimedAt] = claimedAt
-	} else {
-		delete(state, runFieldClaimedAt)
-	}
+	entry.projectInto(state)
 }
 
 // patchRunIf is the per-thread compare-and-set every activity transition is
@@ -339,7 +304,7 @@ func (w *ConversationWorker) patchProcessingStateIfLocked(
 ) bool {
 	var applied bool
 	w.doc.transactTracked(func(_ *ycrdt.Transaction) {
-		raw := w.doc.metadata.Get("processingState")
+		raw := w.doc.metadata.Get(keyProcessingState)
 		existing, _ := fromYcrdt(raw).(map[string]any)
 		if !cond(existing) {
 			return
@@ -349,7 +314,7 @@ func (w *ConversationWorker) patchProcessingStateIfLocked(
 			updated[k] = v
 		}
 		mutate(updated)
-		w.doc.metadata.Set("processingState", toYcrdt(updated))
+		w.doc.metadata.Set(keyProcessingState, toYcrdt(updated))
 		applied = true
 	})
 	return applied
@@ -369,13 +334,13 @@ func (w *ConversationWorker) replaceProcessingState(
 ) {
 	ycrdtMu.Lock()
 	defer ycrdtMu.Unlock()
-	existing, _ := fromYcrdt(w.doc.metadata.Get("processingState")).(map[string]any)
+	existing, _ := fromYcrdt(w.doc.metadata.Get(keyProcessingState)).(map[string]any)
 	runs := copyRuns(existing)
 	updateRuns(runs)
 	w.refreshPoliteStopsLocked(stateMap, runs)
 	storeRuns(stateMap, runs)
 	projectLiveRun(stateMap, runs, touchedThreadID)
-	w.doc.setMetadata("processingState", stateMap)
+	w.doc.setMetadata(keyProcessingState, stateMap)
 }
 
 // patchProcessingStateLocked applies mutate to a shallow copy of the doc's
@@ -456,7 +421,7 @@ func (w *ConversationWorker) readProcessingState() map[string]any {
 // MUST already hold ycrdtMu. The lock is not reentrant, so a routine that is
 // already inside a transaction has to read the frame this way (ycrdt_watchdog).
 func (w *ConversationWorker) readProcessingStateLocked() map[string]any {
-	raw := w.doc.metadata.Get("processingState")
+	raw := w.doc.metadata.Get(keyProcessingState)
 	existing, _ := fromYcrdt(raw).(map[string]any)
 	return existing
 }
@@ -490,7 +455,7 @@ func statusHoldsClaim(status string) bool {
 // 0 but the persisted doc may already hold a higher value, and the fence
 // observing it must never see the count go backwards.
 func (w *ConversationWorker) docTurnCounter() int64 {
-	switch v := w.doc.GetMetadata("completedTurns").(type) {
+	switch v := w.doc.GetMetadata(keyCompletedTurns).(type) {
 	case int64:
 		return v
 	case float64:

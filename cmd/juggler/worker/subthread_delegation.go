@@ -79,7 +79,7 @@ func (w *ConversationWorker) withinDelegatedThread(threadItemID string) bool {
 	items := w.doc.getItems()
 	for tid := threadItemID; tid != ""; tid = w.doc.findParentThreadID(tid) {
 		if m := findThreadYMap(items, tid); m != nil {
-			if delegated, _ := m.Get("delegated").(bool); delegated {
+			if delegated := yMapBool(m, keyDelegated); delegated {
 				return true
 			}
 		}
@@ -105,7 +105,7 @@ func (w *ConversationWorker) threadIsReadOnly(threadItemID string) bool {
 	if m == nil {
 		return false
 	}
-	readOnly, _ := m.Get("readOnly").(bool)
+	readOnly := yMapBool(m, keyReadOnly)
 	return readOnly
 }
 
@@ -276,7 +276,7 @@ func (r *run) tryDelegateTool(toolUseID, toolName string, toolInput json.RawMess
 // dispatchStrategyHook.
 func (w *ConversationWorker) dispatchBuildSubthreadSpec(requestID, toolUseID, toolName string, toolInput json.RawMessage) {
 	data, err := json.Marshal(BuildSubthreadSpecRequest{
-		Type:      "build-subthread-spec",
+		Type:      msgBuildSubthreadSpec,
 		RequestID: requestID,
 		ToolUseID: toolUseID,
 		ToolName:  toolName,

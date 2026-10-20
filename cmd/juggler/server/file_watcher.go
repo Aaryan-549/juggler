@@ -73,10 +73,7 @@ func (s *Server) flushFileChangeBatch(changes []core.FileChange) {
 		deduped = append(deduped, c)
 	}
 
-	s.broadcastToAll(map[string]any{
-		"type":    "file-change",
-		"changes": deduped,
-	})
+	s.broadcastToAll(fileChangeFrame{Type: frameFileChange, Changes: deduped})
 }
 
 // startPluginWatcher watches the extension container directories
@@ -195,10 +192,7 @@ func (s *Server) broadcastPluginChanged(path string, bustCache bool) {
 	if bustCache && s.extensionsAPI != nil {
 		s.extensionsAPI.BumpEpoch()
 	}
-	s.broadcastToAll(map[string]any{
-		"type": "plugin-changed",
-		"path": path,
-	})
+	s.broadcastToAll(pluginChangedFrame{Type: framePluginChanged, Path: path})
 }
 
 // isExtensionEvent reports whether a filesystem event happened inside the

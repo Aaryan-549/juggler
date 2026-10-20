@@ -187,7 +187,7 @@ func TestReattachReset_PreservesRunningEpoch(t *testing.T) {
 	if rs := readToolActionField(w, "tu-3", "runningStartedAt"); rs != nil {
 		t.Fatalf("reset should clear runningStartedAt, got %v", rs)
 	}
-	epoch, ok := docNumberToInt64(readToolActionField(w, "tu-3", "runningEpoch"))
+	epoch, ok := yNumberInt64(readToolActionField(w, "tu-3", "runningEpoch"))
 	if !ok || epoch != 3 {
 		t.Fatalf("reset must preserve runningEpoch: want 3, got %v (ok=%v)", epoch, ok)
 	}

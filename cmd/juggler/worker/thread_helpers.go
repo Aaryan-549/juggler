@@ -146,10 +146,10 @@ func (w *ConversationWorker) findThreadWithIncompleteTool() (string, bool) {
 	defer ycrdtMu.Unlock()
 	var threadID string
 	found := walkAllItems(w.doc.getItems(), "", func(m *ycrdt.YMap, currentThreadID string) bool {
-		if t, _ := m.Get("type").(string); t != ItemTypeToolAction {
+		if t := yMapString(m, keyType); t != ItemTypeToolAction {
 			return false
 		}
-		state, _ := m.Get("state").(string)
+		state := yMapString(m, keyState)
 		if isTerminalToolState(state) {
 			return false
 		}
@@ -234,7 +234,7 @@ type toolCancelRef struct {
 // engine claimed approved→running but that write hasn't synced back yet.
 func (w *ConversationWorker) dispatchCancelTools(refs []toolCancelRef) {
 	for _, ref := range refs {
-		w.dispatchToolCommandEpoch("cancel-tool", ref.ToolUseID, ref.RunningEpoch)
+		w.dispatchToolCommandEpoch(msgCancelTool, ref.ToolUseID, ref.RunningEpoch)
 	}
 }
 
@@ -282,9 +282,9 @@ func scanApprovalBlock(arr *ycrdt.YArray) (hasPending, hasExecuting bool) {
 		if !ok {
 			continue
 		}
-		switch t, _ := m.Get("type").(string); t {
+		switch t := yMapString(m, keyType); t {
 		case ItemTypeToolAction:
-			switch state, _ := m.Get("state").(string); state {
+			switch state := yMapString(m, keyState); state {
 			case StatePending:
 				hasPending = true
 			case StateApproved, StateRunning:
@@ -295,13 +295,13 @@ func scanApprovalBlock(arr *ycrdt.YArray) (hasPending, hasExecuting bool) {
 			// stands in this same array and is scanned on its own. Reading one
 			// here would find no items and no result and call it executing
 			// forever, wedging the desktop quit guard.
-			if aliasOf, _ := m.Get("aliasOf").(string); aliasOf != "" {
+			if aliasOf := yMapString(m, keyAliasOf); aliasOf != "" {
 				continue
 			}
 			// Recurse first so we can tell a genuinely-working sub-thread from
 			// one that is itself only parked on approvals.
 			var np, ne bool
-			if nested, ok := m.Get("items").(*ycrdt.YArray); ok {
+			if nested, ok := yMapArray(m, keyItems); ok {
 				np, ne = scanApprovalBlock(nested)
 			}
 			hasPending = hasPending || np
@@ -358,7 +358,7 @@ func (w *ConversationWorker) cancelToolsInArray(arr *ycrdt.YArray, includeApprov
 		if !ok {
 			continue
 		}
-		itemType, _ := m.Get("type").(string)
+		itemType := yMapString(m, keyType)
 		switch itemType {
 		case ItemTypeToolAction:
 			item := yMapToConversationItem(m)
@@ -390,37 +390,20 @@ func (w *ConversationWorker) cancelToolsInArray(arr *ycrdt.YArray, includeApprov
 				// Capture the generation under the lock so the cancel command
 				// targets exactly this incarnation. Absent (approved, never
 				// claimed) → 0 → unscoped.
-				epoch, _ := docNumberToInt64(m.Get("runningEpoch"))
+				epoch, _ := yMapInt64(m, keyRunningEpoch)
 				executingIDs = append(executingIDs, toolCancelRef{ToolUseID: item.ToolUseID, RunningEpoch: epoch})
 			}
 			w.doc.transactTracked(func(_ *ycrdt.Transaction) {
-				m.Set("state", StateCancelled)
-				m.Set("result", interruptedResult)
+				m.Set(keyState, StateCancelled)
+				m.Set(keyResult, interruptedResult)
 			})
 		case ItemTypeThread:
-			if nested, ok := m.Get("items").(*ycrdt.YArray); ok {
+			if nested, ok := yMapArray(m, keyItems); ok {
 				executingIDs = append(executingIDs, w.cancelToolsInArray(nested, includeApproved, includePending)...)
 			}
 		}
 	}
 	return executingIDs
-}
-
-// docNumberToInt64 coerces a numeric value read from the Yjs doc to int64. A doc
-// number can surface as int (ycrdt.Number), int64, or float64 depending on
-// whether it was written via convertToYcrdt (which narrows integral float64 to
-// int) or synced from the browser. Returns ok=false for a non-numeric value.
-func docNumberToInt64(v any) (int64, bool) {
-	switch n := v.(type) {
-	case int:
-		return int64(n), true
-	case int64:
-		return n, true
-	case float64:
-		return int64(n), true
-	default:
-		return 0, false
-	}
 }
 
 // finalizeStuckRunningToolOnField stamps a single tool-action state=cancelled +
@@ -460,19 +443,19 @@ func (w *ConversationWorker) finalizeStuckRunningToolOnField(toolUseID, epochFie
 	var cancelEpoch int64
 	withYDoc(func() {
 		walkAllItems(w.doc.getItems(), "", func(m *ycrdt.YMap, _ string) bool {
-			if t, _ := m.Get("type").(string); t != ItemTypeToolAction {
+			if t := yMapString(m, keyType); t != ItemTypeToolAction {
 				return false
 			}
-			if id, _ := m.Get("toolUseId").(string); id != toolUseID {
+			if id := yMapString(m, keyToolUseID); id != toolUseID {
 				return false
 			}
 			// Found the tool-action. Only finalize the exact wedge shape: still
 			// running, no result yet. Anything else (approved re-run, or already
 			// terminal) is left untouched. Stop the walk either way.
-			if state, _ := m.Get("state").(string); state != StateRunning {
+			if state := yMapString(m, keyState); state != StateRunning {
 				return true
 			}
-			if r := m.Get("result"); r != nil {
+			if r := m.Get(keyResult); r != nil {
 				return true
 			}
 			// Epoch guard: only finalize the exact execution the caller observed. A
@@ -480,13 +463,13 @@ func (w *ConversationWorker) finalizeStuckRunningToolOnField(toolUseID, epochFie
 			// A missing or non-numeric stamp reads as 0. The doc stamp round-trips as
 			// int/int64/float64 depending on its write path, so it is coerced before
 			// the compare.
-			if de, _ := docNumberToInt64(m.Get(epochField)); de != int64(epoch) {
+			if de, _ := yMapInt64(m, epochField); de != int64(epoch) {
 				return true
 			}
 			// Capture the execution generation under the lock so the belt cancel below
 			// aborts exactly this incarnation, not a re-run that re-claims the id.
-			cancelEpoch, _ = docNumberToInt64(m.Get("runningEpoch"))
-			toolName, _ := m.Get("toolName").(string)
+			cancelEpoch, _ = yMapInt64(m, keyRunningEpoch)
+			toolName := yMapString(m, keyToolName)
 			w.tape.Record("tool-state", map[string]any{
 				"toolUseId": toolUseID,
 				"toolName":  toolName,
@@ -496,8 +479,8 @@ func (w *ConversationWorker) finalizeStuckRunningToolOnField(toolUseID, epochFie
 				"reason":    reason,
 			})
 			w.doc.transactTracked(func(_ *ycrdt.Transaction) {
-				m.Set("state", StateCancelled)
-				m.Set("result", interruptedResult)
+				m.Set(keyState, StateCancelled)
+				m.Set(keyResult, interruptedResult)
 			})
 			wrote = true
 			return true

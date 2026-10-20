@@ -70,9 +70,6 @@ export async function runTests() {
       see('tools', B.buildProcessingToolsStatus());
       see('tools long', B.buildProcessingToolsStatus({ elapsedTime: 6 * 60 * 1000 }));
       see('executing', B.buildExecutingActionStatus({ elapsedTime: 3000 }));
-      see('retry', B.buildRetryStatus({ attempt: 2, maxRetries: 3 }));
-      see('retry+elapsed', B.buildRetryStatus({ attempt: 2, maxRetries: 3, elapsedTime: 3000 }));
-      see('error', B.buildErrorStatus('7'));
       see('cancelled', B.buildCancelledStatus());
       see('streaming bare', B.buildStreamingStatus({}));
       see('streaming 1 out', B.buildStreamingStatus({ outputTokens: 1 }));
@@ -104,8 +101,6 @@ export async function runTests() {
         see('llm retrying fallback', llm.getStatusMessage(convId));
         publish({ status: 'compacting', startedAt });
         see('llm compacting fallback', llm.getStatusMessage(convId));
-        llm.updateStatus(convId, 'error', {});
-        see('llm unknown error', llm.getStatusMessage(convId));
       } finally {
         llm.stop(convId);
       }

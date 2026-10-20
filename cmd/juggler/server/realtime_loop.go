@@ -81,10 +81,7 @@ func (s *Server) runRealtimeClientLoop(ctx context.Context, client RealtimeClien
 	// A client sent its session starts loading the app, so one the limit turns
 	// away is told only that, and closed.
 	if !s.reserveClientSlot(client) {
-		client.Send(map[string]any{
-			"type":    "server-full",
-			"message": "Too many clients are connected",
-		})
+		client.Send(messageFrame{Type: frameServerFull, Message: "Too many clients are connected"})
 		client.Close()
 		return
 	}
@@ -98,12 +95,7 @@ func (s *Server) runRealtimeClientLoop(ctx context.Context, client RealtimeClien
 	// The viewer id is echoed back as the server accepted it, which is empty when
 	// the client sent nothing usable — so a viewer can tell whether anything can
 	// address it before it hands its id to another viewer.
-	client.Send(map[string]string{
-		"type":     "session",
-		"clientId": client.ClientID(),
-		"viewerId": client.ViewerID(),
-		"bootId":   s.bootID,
-	})
+	client.Send(sessionFrame{Type: frameSession, ClientID: client.ClientID(), ViewerID: client.ViewerID(), BootID: s.bootID})
 
 	// Register with server state for broadcasts. Done AFTER the session send so
 	// the client already knows its own id before the first clients-changed
@@ -120,11 +112,7 @@ func (s *Server) runRealtimeClientLoop(ctx context.Context, client RealtimeClien
 	// Seed providers snapshot. `ready` is false until the first refresh has
 	// computed real availability, so clients don't mistake the empty/stale connect
 	// seed for a settled "no providers configured" result.
-	client.Send(map[string]any{
-		"type":      "providers-update",
-		"providers": s.cachedProviders(),
-		"ready":     s.providersReadyNow(),
-	})
+	client.Send(providersUpdateFrame{Type: frameProvidersUpdate, Providers: s.cachedProviders(), Ready: s.providersReadyNow()})
 
 	// Join viewer group for multi-view broadcasting.
 	s.joinViewerGroup(client)
@@ -191,18 +179,18 @@ func (s *Server) runRealtimeClientLoop(ctx context.Context, client RealtimeClien
 				s.noteEngineAlive()
 			}
 
-			switch generic.Type {
-			case "engine-heartbeat":
+			switch frameType(generic.Type) {
+			case frameEngineHeartbeat:
 				// Liveness only; the stamp above is the whole effect. Sent from the
 				// engine's module worker, the realm that must be running for a tool to
 				// execute, so it cannot be answered by a transport whose page has
 				// stopped (see engine_liveness.go).
 
-			case "viewer-heartbeat":
+			case frameViewerHeartbeat:
 				// Liveness only, same as above: a viewer saying it is still there on a
 				// link that has carried nothing else (see link_liveness.go).
 
-			case "viewer-fault":
+			case frameViewerFault:
 				fault, ok := unmarshalWS[ViewerFault](msgBytes, "viewer-fault")
 				if !ok {
 					continue
@@ -216,7 +204,7 @@ func (s *Server) runRealtimeClientLoop(ctx context.Context, client RealtimeClien
 					labelled(" detail=", fault.Detail),
 					fault.Stack)
 
-			case "shell-start":
+			case frameShellStart:
 				shellReq, ok := unmarshalWS[ShellStartRequest](msgBytes, "shell-start")
 				if !ok {
 					continue
@@ -227,7 +215,7 @@ func (s *Server) runRealtimeClientLoop(ctx context.Context, client RealtimeClien
 					jlog.Error("Realtime: shell-start channel full, dropping")
 				}
 
-			case "shell-cancel":
+			case frameShellCancel:
 				shellCancel, ok := unmarshalWS[ShellCancelRequest](msgBytes, "shell-cancel")
 				if !ok {
 					continue
@@ -237,33 +225,29 @@ func (s *Server) runRealtimeClientLoop(ctx context.Context, client RealtimeClien
 				default:
 				}
 
-			case "engine-bridge":
+			case frameEngineBridge:
 				s.viewerSendRawToAll(msgBytes)
 
-			case "viewer-relay":
+			case frameViewerRelay:
 				relay, ok := unmarshalWS[ViewerRelay](msgBytes, "viewer-relay")
 				if !ok {
 					continue
 				}
 				// `from` is the sending connection's own id rather than anything in
 				// the message, so a relay always says truthfully who sent it.
-				s.viewerSendToViewer(relay.To, map[string]any{
-					"type":    "viewer-relay",
-					"from":    client.ViewerID(),
-					"payload": relay.Payload,
-				})
+				s.viewerSendToViewer(relay.To, viewerRelayFrame{Type: frameViewerRelay, From: client.ViewerID(), Payload: relay.Payload})
 
-			case "one-shot-result":
+			case frameOneShotResult:
 				res, ok := unmarshalWS[OneShotResult](msgBytes, "one-shot-result")
 				if !ok {
 					continue
 				}
 				s.oneShot.deliver(res)
 
-			case "session-changed":
-				s.broadcastToAll(map[string]any{"type": "session-changed"})
+			case frameSessionChanged:
+				s.broadcastToAll(bareFrame{Type: frameSessionChanged})
 
-			case "worker-message":
+			case frameWorkerMessage:
 				if s.workerManager == nil {
 					continue
 				}
@@ -317,12 +301,7 @@ func (s *Server) runRealtimeClientLoop(ctx context.Context, client RealtimeClien
 				// Route the rejection to the requester (not the viewer group) so
 				// the engine's shellStreaming settles. Matches the
 				// output-delivery path in processShellRequest.
-				client.Send(map[string]any{
-					"type":    "shell-output",
-					"shellId": shellReq.ShellID,
-					"done":    true,
-					"error":   "Shell ID already in use",
-				})
+				client.Send(shellRefusedFrame(shellReq.ShellID, "Shell ID already in use"))
 				continue
 			}
 			go s.processShellRequest(ctx, shellReq, client, shellCompleteChan)
@@ -386,7 +365,7 @@ func labelled(label, value string) string {
 
 // conversationGoneFrame is the error a client is sent for a conversation the
 // server declined to open: binned, or its folder gone.
-func conversationGoneFrame() map[string]any {
+func conversationGoneFrame() textFrame {
 	m := msg.New("Couldn't open this conversation: the server no longer has it.")
-	return map[string]any{"type": "error", "message": m.English(), "text": m}
+	return textFrame{Type: frameError, Message: m.English(), Text: m}
 }

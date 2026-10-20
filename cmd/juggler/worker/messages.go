@@ -209,7 +209,7 @@ type Message struct {
 
 // InitMessage bootstraps the worker with conversation data
 type InitMessage struct {
-	Type         string                 `json:"type"` // "init"
+	Type         wireMsgType            `json:"type"` // "init"
 	Conversation SerializedConversation `json:"conversation"`
 	Config       WorkerConfig           `json:"config"`
 
@@ -252,11 +252,11 @@ type WorkerConfig struct {
 
 // SendMessageMessage contains a user message to process
 type SendMessageMessage struct {
-	Type           string     `json:"type"` // "send-message"
-	Text           string     `json:"text"`
-	IsContinuation bool       `json:"isContinuation,omitempty"`
-	ThreadItemID   string     `json:"threadItemId,omitempty"`
-	Attachments    []AssetRef `json:"attachments,omitempty"`
+	Type           wireMsgType `json:"type"` // "send-message"
+	Text           string      `json:"text"`
+	IsContinuation bool        `json:"isContinuation,omitempty"`
+	ThreadItemID   string      `json:"threadItemId,omitempty"`
+	Attachments    []AssetRef  `json:"attachments,omitempty"`
 	// Skills lists Agent Skill names the user explicitly chose to load before
 	// this turn (via the composer `$name` mention or picker). Each is loaded as a
 	// real `skill` tool-action — the same visible, auto-approved action the model
@@ -305,8 +305,8 @@ func (u UserMessageInput) isEmpty() bool {
 // constants below. It exists solely so the log can say who stopped the turn: a
 // cancel is otherwise indistinguishable from a turn that simply ended.
 type CancelMessage struct {
-	Type   string `json:"type"` // "cancel"
-	Reason string `json:"reason,omitempty"`
+	Type   wireMsgType `json:"type"` // "cancel"
+	Reason string      `json:"reason,omitempty"`
 }
 
 // cancelReason is a short human-readable cause for a cancel, written to the
@@ -388,7 +388,7 @@ func sanitizeCancelReason(reason string) cancelReason {
 // best-effort, not guaranteed. The handler lands it as a normal assistant
 // turn in the root conversation.
 type ProviderTurnMessage struct {
-	Type                   string              `json:"type"` // "provider-turn"
+	Type                   wireMsgType         `json:"type"` // "provider-turn"
 	Blocks                 []LLMResponseBlock  `json:"blocks"`
 	StopReason             provider.StopReason `json:"stopReason"`
 	InputTokens            int                 `json:"inputTokens"`
@@ -491,7 +491,7 @@ type LLMResponseBlock struct {
 
 // RenderContextItemsResponse contains rendered context item contexts for LLM
 type RenderContextItemsResponse struct {
-	Type         string        `json:"type"` // "render-context-items-response"
+	Type         wireMsgType   `json:"type"` // "render-context-items-response"
 	RequestID    string        `json:"requestId"`
 	Contexts     []ItemContext `json:"contexts"`
 	SystemPrompt string        `json:"systemPrompt,omitempty"` // Full system prompt built by frontend
@@ -511,7 +511,7 @@ type ItemContext struct {
 
 // ToolsResultMessage contains tool definitions from browser
 type ToolsResultMessage struct {
-	Type      string           `json:"type"` // "tools-result"
+	Type      wireMsgType      `json:"type"` // "tools-result"
 	RequestID string           `json:"requestId"`
 	Tools     []ToolDefinition `json:"tools"`
 }
@@ -567,9 +567,9 @@ type ToolDefinition struct {
 // web/js/model/conversation-tool-actions.js); the worker applies them with
 // a non-nil, non-tracked origin so they bypass the UndoManager.
 type YjsSyncMessage struct {
-	Type          string `json:"type"` // "yjs-sync"
-	Bytes         []byte `json:"bytes"`
-	EngineDerived bool   `json:"engineDerived,omitempty"`
+	Type          wireMsgType `json:"type"` // "yjs-sync"
+	Bytes         []byte      `json:"bytes"`
+	EngineDerived bool        `json:"engineDerived,omitempty"`
 }
 
 // ResyncRequestMessage asks the worker to send only the Yjs ops the client is
@@ -578,8 +578,8 @@ type YjsSyncMessage struct {
 // state (or reloading the page) on every transient link drop — is what burned
 // gigabytes over a remote tunnel. StateVector is base64 in JSON.
 type ResyncRequestMessage struct {
-	Type        string `json:"type"` // "resync-request"
-	StateVector []byte `json:"stateVector"`
+	Type        wireMsgType `json:"type"` // "resync-request"
+	StateVector []byte      `json:"stateVector"`
 }
 
 // ResyncOfferMessage tells a freshly attached engine that this conversation is
@@ -598,7 +598,7 @@ type ResyncRequestMessage struct {
 // the ordinary way (see ConversationLoader.autoLoad in web/js/services/conversation-loader.js),
 // which arrives at full state through init.
 type ResyncOfferMessage struct {
-	Type string `json:"type"` // "resync-offer"
+	Type wireMsgType `json:"type"` // "resync-offer"
 }
 
 // ResyncResponseMessage answers a resync-request in BOTH directions. Bytes is
@@ -613,9 +613,9 @@ type ResyncOfferMessage struct {
 // than YjsSyncMessage so the streaming sync path (many frames per second)
 // never carries it. Both fields are base64 in JSON.
 type ResyncResponseMessage struct {
-	Type        string `json:"type"` // "resync-response"
-	Bytes       []byte `json:"bytes"`
-	StateVector []byte `json:"stateVector"`
+	Type        wireMsgType `json:"type"` // "resync-response"
+	Bytes       []byte      `json:"bytes"`
+	StateVector []byte      `json:"stateVector"`
 }
 
 // ResummarizeCompactionThreadMessage requests a fresh summary for a compaction
@@ -626,9 +626,9 @@ type ResyncResponseMessage struct {
 // through the ordinary close turn would append a "summarise this thread"
 // instruction into the very transcript being summarized.
 type ResummarizeCompactionThreadMessage struct {
-	Type         string `json:"type"` // "resummarize-compaction-thread"
-	ThreadItemID string `json:"threadItemId"`
-	AckID        string `json:"ackId,omitempty"`
+	Type         wireMsgType `json:"type"` // "resummarize-compaction-thread"
+	ThreadItemID string      `json:"threadItemId"`
+	AckID        string      `json:"ackId,omitempty"`
 }
 
 // =============================================================================
@@ -637,9 +637,9 @@ type ResummarizeCompactionThreadMessage struct {
 
 // RenderContextItemsRequest requests rendered context item content for LLM context
 type RenderContextItemsRequest struct {
-	Type      string   `json:"type"` // "render-context-items-request"
-	RequestID string   `json:"requestId"`
-	ItemIDs   []string `json:"itemIds"`
+	Type      wireMsgType `json:"type"` // "render-context-items-request"
+	RequestID string      `json:"requestId"`
+	ItemIDs   []string    `json:"itemIds"`
 	// SentAt is the wall-clock millisecond this request left the worker. The
 	// engine echoes it back beside its own marks so a slow round-trip can be
 	// split into the stage that was slow (roundtrip_timing.go).
@@ -659,12 +659,12 @@ type RenderContextItemsRequest struct {
 // is per-thread, so the engine must run the hook on THAT thread's strategy and
 // leave every other thread's alone.
 type RunStrategyHookRequest struct {
-	Type               string `json:"type"` // "run-strategy-hook"
-	RequestID          string `json:"requestId,omitempty"`
-	Hook               string `json:"hook"`       // "onActivate" | "onWorkerIdle"
-	StrategyID         string `json:"strategyId"` // the worker's authoritative active strategy
-	ThreadItemID       string `json:"threadItemId,omitempty"`
-	PreviousStrategyID string `json:"previousStrategyId,omitempty"`
+	Type               wireMsgType `json:"type"` // "run-strategy-hook"
+	RequestID          string      `json:"requestId,omitempty"`
+	Hook               string      `json:"hook"`       // "onActivate" | "onWorkerIdle"
+	StrategyID         string      `json:"strategyId"` // the worker's authoritative active strategy
+	ThreadItemID       string      `json:"threadItemId,omitempty"`
+	PreviousStrategyID string      `json:"previousStrategyId,omitempty"`
 }
 
 // StrategyHookResponse returns the guidance the hook asked to inject. The engine
@@ -673,7 +673,7 @@ type RunStrategyHookRequest struct {
 // already-promoted user message, giving a deterministic order with no
 // two-writer CRDT race against the user message.
 type StrategyHookResponse struct {
-	Type      string         `json:"type"` // "strategy-hook-response"
+	Type      wireMsgType    `json:"type"` // "strategy-hook-response"
 	RequestID string         `json:"requestId"`
 	Guidance  []GuidanceItem `json:"guidance"`
 }
@@ -695,9 +695,9 @@ type GuidanceItem struct {
 // (sendToEngine), never broadcast, so each hook runs exactly once with no
 // per-viewer ownership election.
 type RunContextHookRequest struct {
-	Type      string `json:"type"`      // "run-context-hook"
-	Hook      string `json:"hook"`      // "onTurnEnd"
-	TurnIndex int    `json:"turnIndex"` // completedTurns counter at this idle transition
+	Type      wireMsgType `json:"type"`      // "run-context-hook"
+	Hook      string      `json:"hook"`      // "onTurnEnd"
+	TurnIndex int         `json:"turnIndex"` // completedTurns counter at this idle transition
 }
 
 // SubthreadSpec is the seed for a delegated child thread, produced by the
@@ -732,7 +732,7 @@ type SubthreadSpec struct {
 // spec (or null → run the tool client-side). Targeted at the engine only, so
 // the decision runs exactly once. Mirrors RunStrategyHookRequest.
 type BuildSubthreadSpecRequest struct {
-	Type      string          `json:"type"` // "build-subthread-spec"
+	Type      wireMsgType     `json:"type"` // "build-subthread-spec"
 	RequestID string          `json:"requestId"`
 	ToolUseID string          `json:"toolUseId"`
 	ToolName  string          `json:"toolName"`
@@ -743,7 +743,7 @@ type BuildSubthreadSpecRequest struct {
 // "do not delegate — run the ordinary client-side execute()". A non-empty Error
 // is treated the same as a null spec (fall back), with the reason logged.
 type BuildSubthreadSpecResponse struct {
-	Type      string         `json:"type"` // "build-subthread-spec-response"
+	Type      wireMsgType    `json:"type"` // "build-subthread-spec-response"
 	RequestID string         `json:"requestId"`
 	Spec      *SubthreadSpec `json:"spec"`
 	Error     string         `json:"error,omitempty"`
@@ -751,17 +751,63 @@ type BuildSubthreadSpecResponse struct {
 
 // ErrorMessage reports an unhandled exception
 type ErrorMessage struct {
-	Type    string `json:"type"` // "error"
-	Message string `json:"message"`
-	Summary string `json:"summary,omitempty"`
-	Stack   string `json:"stack,omitempty"`
+	Type    wireMsgType `json:"type"` // "error"
+	Message string      `json:"message"`
+	Summary string      `json:"summary,omitempty"`
+	Stack   string      `json:"stack,omitempty"`
 }
 
 // AckMessage acknowledges an operation
 type AckMessage struct {
-	Type   string `json:"type"` // "ack"
-	AckID  string `json:"ackId"`
-	Result any    `json:"result,omitempty"`
+	Type   wireMsgType `json:"type"` // "ack"
+	AckID  string      `json:"ackId"`
+	Result any         `json:"result,omitempty"`
+}
+
+// StatusMessage is the status event sendStatusWithCode emits beside every
+// processingState transition. threadItemId is always present ("" for the root),
+// since the client attributes the notice by it.
+type StatusMessage struct {
+	Type         wireMsgType  `json:"type"` // "status"
+	Status       string       `json:"status"`
+	Message      string       `json:"message"`
+	ThreadItemID string       `json:"threadItemId"`
+	Code         string       `json:"code,omitempty"`
+	Text         *msg.Message `json:"text,omitempty"`
+}
+
+// mockPausedStatus is the status the mock LLM sends when a scripted test holds
+// the turn; unlike StatusMessage it names no thread.
+type mockPausedStatus struct {
+	Type    wireMsgType `json:"type"` // "status"
+	Status  string      `json:"status"`
+	Message string      `json:"message"`
+}
+
+// ReadyMessage answers an init once the state asked for has been sent.
+// Metadata is an any so an empty map is still sent — omitempty drops only a
+// nil interface, and a reconnect's metadata is sent even when it has no keys.
+type ReadyMessage struct {
+	Type                wireMsgType `json:"type"` // "ready"
+	Metadata            any         `json:"metadata,omitempty"`
+	SummarizationPrompt string      `json:"summarizationPrompt"`
+}
+
+// RequestToolsMessage asks the engine for the tools a turn may offer. The
+// thread is always named ("" for the root): the engine filters the list through
+// that thread's strategy.
+type RequestToolsMessage struct {
+	Type         wireMsgType `json:"type"` // "request-tools"
+	RequestID    string      `json:"requestId"`
+	ThreadItemID string      `json:"threadItemId"`
+	// SentAt is echoed back with the engine's own marks so a slow answer can be
+	// attributed to a stage rather than guessed at (roundtrip_timing.go).
+	SentAt int64 `json:"sentAt"`
+}
+
+// bareMessage is a message that is its type and nothing else.
+type bareMessage struct {
+	Type wireMsgType `json:"type"`
 }
 
 // =============================================================================
@@ -773,21 +819,21 @@ type AckMessage struct {
 // does NOT come this way — it goes through pendingRequests (see
 // handleCreateThread, which answers this one).
 type CreateThreadMessage struct {
-	Type           string `json:"type"` // "create-thread"
-	RequestID      string `json:"requestId"`
-	Goal           string `json:"goal"`
-	Prompt         string `json:"prompt"`
-	ThreadItemID   string `json:"threadItemId,omitempty"`   // parent thread (empty = root)
-	IsContinuation bool   `json:"isContinuation,omitempty"` // continue thread without inserting a user prompt
+	Type           wireMsgType `json:"type"` // "create-thread"
+	RequestID      string      `json:"requestId"`
+	Goal           string      `json:"goal"`
+	Prompt         string      `json:"prompt"`
+	ThreadItemID   string      `json:"threadItemId,omitempty"`   // parent thread (empty = root)
+	IsContinuation bool        `json:"isContinuation,omitempty"` // continue thread without inserting a user prompt
 }
 
 // CreateThreadResponse answers a CreateThreadMessage.
 type CreateThreadResponse struct {
-	Type         string `json:"type"` // "create-thread-response"
-	RequestID    string `json:"requestId"`
-	ThreadItemID string `json:"threadItemId,omitempty"`
-	Result       string `json:"result,omitempty"`
-	Error        string `json:"error,omitempty"`
+	Type         wireMsgType `json:"type"` // "create-thread-response"
+	RequestID    string      `json:"requestId"`
+	ThreadItemID string      `json:"threadItemId,omitempty"`
+	Result       string      `json:"result,omitempty"`
+	Error        string      `json:"error,omitempty"`
 }
 
 // =============================================================================
@@ -803,17 +849,17 @@ type GetYjsStateMessage struct {
 // ClearUndoStacksMessage wipes undo/redo history after a conversation's
 // non-user seeding (handleClearUndoStacks reads its ack id through ackIDOf).
 type ClearUndoStacksMessage struct {
-	Type  string `json:"type"` // "clear-undo-stacks"
-	AckID string `json:"ackId,omitempty"`
+	Type  wireMsgType `json:"type"` // "clear-undo-stacks"
+	AckID string      `json:"ackId,omitempty"`
 }
 
 // GetTransactionMessage requests the on-disk blob for one LLM round-trip.
 // The worker responds with an AckMessage whose Result is the parsed JSON
 // blob (or null if the blob is missing).
 type GetTransactionMessage struct {
-	Type          string `json:"type"` // "get-transaction"
-	AckID         string `json:"ackId"`
-	TransactionID string `json:"transactionId"`
+	Type          wireMsgType `json:"type"` // "get-transaction"
+	AckID         string      `json:"ackId"`
+	TransactionID string      `json:"transactionId"`
 }
 
 // CompactMessage is the browser /compact + /handoff request: fold the
@@ -822,9 +868,9 @@ type GetTransactionMessage struct {
 // the existing pickup summarize it. HandoffPromote tags the thread so the browser
 // promotes its result into the continued tab's parked first message.
 type CompactMessage struct {
-	Type           string `json:"type"` // "compact"
-	AckID          string `json:"ackId"`
-	HandoffPromote bool   `json:"handoffPromote,omitempty"`
+	Type           wireMsgType `json:"type"` // "compact"
+	AckID          string      `json:"ackId"`
+	HandoffPromote bool        `json:"handoffPromote,omitempty"`
 }
 
 // RequestAutoNameMessage asks for an out-of-band tab-title derivation from the
@@ -834,8 +880,8 @@ type CompactMessage struct {
 // /handoff sends false — a background rename that must respect a user who turned
 // auto-naming off, or who named the source tab by hand.
 type RequestAutoNameMessage struct {
-	Type  string `json:"type"` // "request-auto-name"
-	Force bool   `json:"force,omitempty"`
+	Type  wireMsgType `json:"type"` // "request-auto-name"
+	Force bool        `json:"force,omitempty"`
 }
 
 // SetMockResponsesMessage injects mock LLM responses for testing.
@@ -921,9 +967,9 @@ const (
 // evaluate-tool/execute-tool and for pre-claim cancels of an approved tool
 // (no epoch stamped yet), where the abort stays unscoped.
 type ToolCommand struct {
-	Type         string `json:"type"`
-	ToolUseID    string `json:"toolUseId"`
-	RunningEpoch int64  `json:"runningEpoch,omitempty"`
+	Type         wireMsgType `json:"type"`
+	ToolUseID    string      `json:"toolUseId"`
+	RunningEpoch int64       `json:"runningEpoch,omitempty"`
 }
 
 // Activity constants for the `activity` field of processingState metadata.
@@ -1018,6 +1064,31 @@ type ConversationItem struct {
 	// items — some live, some carried by the fold sitting where they used to be
 	// (threadRunRecords). Set only on fold threads.
 	FoldedRuns []FoldedRun `json:"foldedRuns,omitempty"`
+
+	// Thread provenance and capability, stamped when a thread is made or a human
+	// first engages it (threads.go). LLMCreated: a model's create_thread call
+	// made it, which puts it under the run budget and spend ceiling.
+	// StrategyCreated: a dispatched thread or /thread made it; nothing reads it
+	// back. CanSpawnThreads: a human steers it, so its model may call
+	// create_thread (filterToolsForThread). Delegated: a delegating tool's child
+	// (withinDelegatedThread). ReadOnly: that tool declared the child changes
+	// nothing outside its own transcript (threadIsReadOnly). ResultSpec: the
+	// caller's return contract, handed again when the session is resumed.
+	LLMCreated      bool   `json:"llmCreated,omitempty"`
+	StrategyCreated bool   `json:"strategyCreated,omitempty"`
+	CanSpawnThreads bool   `json:"canSpawnThreads,omitempty"`
+	Delegated       bool   `json:"delegated,omitempty"`
+	ReadOnly        bool   `json:"readOnly,omitempty"`
+	ResultSpec      string `json:"resultSpec,omitempty"`
+
+	// Draft is a thread's unsent composer state, owned by the browser
+	// (MessageThread#draft). The doc holds it as a Y.Map; here it is that map's
+	// JSON, kept so a round-trip through the struct does not drop it.
+	Draft json.RawMessage `json:"draft,omitempty"`
+
+	// Executor is "worker" on a tool-action the worker runs itself, stamped by
+	// the browser at evaluate; the liveness checks skip such an action.
+	Executor string `json:"executor,omitempty"`
 
 	// Context-item specific fields
 	PreventUserDeletion bool   `json:"preventUserDeletion,omitempty"` // Whether context item cannot be deleted by user

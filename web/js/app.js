@@ -51,7 +51,8 @@ import { MAX_CONVERSATIONS } from './model/session.js';
 import { normalizeAttachments } from './utils/attachments.js';
 import { itemField } from '../sdk/lib/message.js';
 import { showNotice } from './components/modal-dialog.js';
-import { failedModulesMessage, noticeText, showConversationLimitAlert } from './services/app-notices.js';
+import { failedModulesMessage, showConversationLimitAlert } from './services/app-notices.js';
+import { SESSION_MESSAGE_HANDLERS } from './protocol/session-message-handlers.js';
 import { markUntranslated } from '../sdk/lib/i18n.js';
 import { openCommandManager } from './components/command-editor-dialog.js';
 import { exportConversation } from './components/conversation-export-dialog.js';
@@ -656,47 +657,6 @@ class JugglerApp {
   }
 
   /**
-   * Session-scoped server messages, keyed by `type`. These carry no
-   * `conversationId` — they are dispatched before the conversation lookup in
-   * {@link JugglerApp#_handleServerMessage}.
-   * @type {Record<string, (app: JugglerApp, session: import('./model/session.js').default, data: any) => void>}
-   */
-  static SESSION_MESSAGE_HANDLERS = {
-    // Worker traffic is forwarded verbatim; workerManager owns its routing.
-    'worker-message': (_app, _session, data) => {
-      workerManager.handleWorkerMessageFromWS(data);
-    },
-
-    // Op-tagged conversation-list diff from the server. The session's sync
-    // reducer owns the op vocabulary and applies each one idempotently, so the
-    // originator's echo is a no-op (model/conversation-sync-reducer.js).
-    'conversations-changed': (_app, session, data) => {
-      void session.sync.apply(data);
-    },
-
-    // A server-side background task reporting something the user would
-    // otherwise never see (an auto-name that gave up). Purely informational —
-    // show it and move on.
-    'notice': (_app, _session, data) => {
-      const text = noticeText(data);
-      if (text) showNotice(text);
-    },
-
-    // Targeted session metadata patch. Apply locally without a full
-    // session refresh so permission changes sync instantly across conversations.
-    'session-metadata-changed': (_app, session, data) => {
-      session.applySessionMetadataPatch(data.metadata || {}, { remote: true });
-    },
-
-    // Session-level metadata (messageHistory, metadata flags) updated
-    // by another viewer's PUT /session. Conversation-list changes
-    // travel via conversations-changed above; this is a small refresh.
-    'session-changed': (app, session) => {
-      app._handleSessionChanged(session);
-    }
-  };
-
-  /**
    * Handle server message
    * @param {any} data - Server message data
    * @private
@@ -705,9 +665,12 @@ class JugglerApp {
     const session = this._requireSession('handle message');
     if (!session) return;
 
-    const sessionHandler = JugglerApp.SESSION_MESSAGE_HANDLERS[data.type];
+    // Session-scoped frames carry no conversationId; they are handled before
+    // the lookup below. The table is typed per key; the frame is not yet.
+    const sessionHandlers = /** @type {Record<string, ((session: import('./model/session.js').default, data: any) => void)|undefined>} */ (SESSION_MESSAGE_HANDLERS);
+    const sessionHandler = sessionHandlers[data.type];
     if (sessionHandler) {
-      sessionHandler(this, session, data);
+      sessionHandler(session, data);
       return;
     }
 
@@ -764,15 +727,6 @@ class JugglerApp {
       console.error('[Juggler] Unexpected message format from server:', data);
       conversation.handleError(markUntranslated('Received unexpected message format from server'));
     }
-  }
-
-  /**
-   * Handle session-level changes from other views
-   * @param {import('./model/session.js').default} session
-   * @private
-   */
-  _handleSessionChanged(session) {
-    session.persistence.refreshFromServer();
   }
 
   /**

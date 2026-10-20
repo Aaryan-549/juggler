@@ -204,9 +204,9 @@ func TestHandleReloadExtensions(t *testing.T) {
 
 	select {
 	case msg := <-client.send:
-		m, ok := msg.json.(map[string]any)
+		m, ok := frameMap(msg.json)
 		if !ok {
-			t.Fatalf("expected map message, got %T", msg.json)
+			t.Fatalf("expected a JSON object, got %T", msg.json)
 		}
 		if m["type"] != "plugin-changed" {
 			t.Errorf("broadcast type = %v, want plugin-changed", m["type"])

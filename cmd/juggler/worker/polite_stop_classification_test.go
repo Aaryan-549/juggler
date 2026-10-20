@@ -30,7 +30,7 @@ import (
 // one-shot needsStrategyRun the pickup runs on, and rested — leaving the history
 // behind a tile with no summary and nothing anywhere able to ask for one.
 //
-// This test makes the question unskippable. Every op in the dispatch switch that
+// This test makes the question unskippable. Every op in the dispatch table that
 // starts work must either lift, or be listed below with a reason. Adding an op
 // that does neither fails here, naming the op and both ways out.
 //
@@ -100,7 +100,7 @@ func TestEveryWorkStartingOpClassifiesItselfAgainstThePause(t *testing.T) {
 	// above is skipped for an op that looks like it starts no work, so a parse
 	// that finds nothing would report a clean sheet for a rule it never read.
 	if starters < 6 {
-		t.Fatalf("only %d ops look like they start work, out of %d in the dispatch switch — "+
+		t.Fatalf("only %d ops look like they start work, out of %d in the dispatch table — "+
 			"the call-graph walk has stopped seeing them, and this test now passes by not looking",
 			starters, len(ops))
 	}
@@ -127,7 +127,7 @@ func TestEveryWorkStartingOpClassifiesItselfAgainstThePause(t *testing.T) {
 	}
 }
 
-// workerOp pairs a dispatch-switch case with the handler it calls.
+// workerOp pairs a dispatch-table entry with the handler it calls.
 type workerOp struct {
 	op      string
 	handler string
@@ -135,7 +135,7 @@ type workerOp struct {
 
 // parseWorkerDispatch reads the package's own sources and returns the call graph
 // (function name → the names it calls, including inside closures) together with
-// every op in the run loop's dispatch switch.
+// every op in the run loop's dispatch table (workerInbound).
 //
 // Keyed by name rather than by receiver: two methods sharing a name would be
 // conflated, which can only make this test more willing to believe an op lifts.
@@ -151,6 +151,8 @@ func parseWorkerDispatch(t *testing.T) (map[string]map[string]bool, []workerOp) 
 	calls := map[string]map[string]bool{}
 	var ops []workerOp
 
+	var sources []*ast.File
+	msgTypes := map[string]string{} // wireMsgType constant → the type it names
 	for _, file := range files {
 		if strings.HasSuffix(file, "_test.go") {
 			continue
@@ -159,7 +161,26 @@ func parseWorkerDispatch(t *testing.T) (map[string]map[string]bool, []workerOp) 
 		if err != nil {
 			t.Fatalf("parse %s: %v", file, err)
 		}
+		sources = append(sources, parsed)
+		ast.Inspect(parsed, func(n ast.Node) bool {
+			vs, ok := n.(*ast.ValueSpec)
+			if !ok {
+				return true
+			}
+			if typ, ok := vs.Type.(*ast.Ident); ok && typ.Name == "wireMsgType" {
+				for i, name := range vs.Names {
+					if i < len(vs.Values) {
+						if lit, ok := vs.Values[i].(*ast.BasicLit); ok && lit.Kind == token.STRING {
+							msgTypes[name.Name] = strings.Trim(lit.Value, `"`)
+						}
+					}
+				}
+			}
+			return true
+		})
+	}
 
+	for _, parsed := range sources {
 		for _, decl := range parsed.Decls {
 			fn, ok := decl.(*ast.FuncDecl)
 			if !ok || fn.Body == nil {
@@ -181,36 +202,45 @@ func parseWorkerDispatch(t *testing.T) (map[string]map[string]bool, []workerOp) 
 		}
 
 		ast.Inspect(parsed, func(n ast.Node) bool {
-			sw, ok := n.(*ast.SwitchStmt)
-			if !ok || !isSelector(sw.Tag, "msg", "Type") {
+			vs, ok := n.(*ast.ValueSpec)
+			if !ok || len(vs.Names) != 1 || vs.Names[0].Name != "workerInbound" || len(vs.Values) != 1 {
 				return true
 			}
-			for _, stmt := range sw.Body.List {
-				clause, ok := stmt.(*ast.CaseClause)
+			table, ok := vs.Values[0].(*ast.CompositeLit)
+			if !ok {
+				return false
+			}
+			for _, elt := range table.Elts {
+				kv, ok := elt.(*ast.KeyValueExpr)
 				if !ok {
 					continue
 				}
-				for _, expr := range clause.List {
-					lit, ok := expr.(*ast.BasicLit)
-					if !ok || lit.Kind != token.STRING {
-						continue
-					}
-					name := strings.Trim(lit.Value, `"`)
-					for _, s := range clause.Body {
-						if h := firstHandlerCall(s); h != "" {
-							ops = append(ops, workerOp{op: name, handler: h})
-							break
-						}
+				key, ok := kv.Key.(*ast.Ident)
+				if !ok {
+					continue
+				}
+				name, known := msgTypes[key.Name]
+				if !known {
+					t.Fatalf("workerInbound key %s is not a wireMsgType constant", key.Name)
+				}
+				fn, ok := kv.Value.(*ast.FuncLit)
+				if !ok {
+					continue
+				}
+				for _, s := range fn.Body.List {
+					if h := firstHandlerCall(s); h != "" {
+						ops = append(ops, workerOp{op: name, handler: h})
+						break
 					}
 				}
 			}
-			return true
+			return false
 		})
 	}
 
 	if len(ops) == 0 {
-		t.Fatal("found no ops in the run loop's dispatch switch — this test reads that switch to " +
-			"know what to check, so it is now checking nothing")
+		t.Fatal("found no ops in the run loop's dispatch table (workerInbound) — this test reads " +
+			"that table to know what to check, so it is now checking nothing")
 	}
 	return calls, ops
 }
@@ -242,16 +272,6 @@ func calleeName(call *ast.CallExpr) string {
 		return fun.Sel.Name
 	}
 	return ""
-}
-
-// isSelector reports whether expr is exactly `x.sel`.
-func isSelector(expr ast.Expr, x, sel string) bool {
-	s, ok := expr.(*ast.SelectorExpr)
-	if !ok || s.Sel.Name != sel {
-		return false
-	}
-	id, ok := s.X.(*ast.Ident)
-	return ok && id.Name == x
 }
 
 // reachesCall reports whether start, or anything it calls within maxHops, calls

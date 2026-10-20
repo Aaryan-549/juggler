@@ -869,7 +869,7 @@ func (r *run) shrinkOversizedTrailingToolResults(limitErr *provider.ContextLimit
 		// result.fullResult, so replacing the field wholesale would leave a
 		// finished tool call rendering as though it were still running.
 		resultBlob["content"] = recoveryShrunkResultMarker + shrunk.Summary
-		if err := r.updateTargetItemByID(item.ItemID, "result", resultBlob); err != nil {
+		if err := r.updateTargetItemByID(item.ItemID, keyResult, resultBlob); err != nil {
 			return &BoundedCompactionError{
 				Reason: BoundedCompactionSourceChanged, Message: "tool result disappeared during context recovery: " + err.Error(),
 				Calls: shrunk.Calls, Spend: shrunk.EstimatedSpend, Window: reducer.budget.window, Usage: shrunk.Usage,

@@ -76,12 +76,32 @@ func (ops *SearchOperations) Execute(ctx context.Context, operation string, para
 	}
 }
 
+// grepParams are grep's params. Pattern and Include are pointers because an
+// empty one is still the caller's choice: an empty pattern is refused by the
+// pattern check, and an empty include still wins over filePattern.
+type grepParams struct {
+	Pattern           *string  `param:"pattern"`
+	IgnoreCase        *bool    `param:"ignoreCase"`
+	UserInitiated     bool     `param:"userInitiated"`
+	OutOfRootApproved bool     `param:"outOfRootApproved"`
+	Path              string   `param:"path"`
+	MaxCount          *float64 `param:"maxCount"`
+	MaxResults        *float64 `param:"maxResults"`
+	Include           *string  `param:"include"`
+	FilePattern       string   `param:"filePattern"`
+	NoIgnore          bool     `param:"noIgnore"`
+}
+
 // grep performs a grep search using native Go (no external dependencies)
 func (ops *SearchOperations) grep(ctx context.Context, params map[string]any) (any, error) {
-	pattern, ok := params["pattern"].(string)
-	if !ok {
+	p, err := decodeParams[grepParams](params)
+	if err != nil {
+		return nil, err
+	}
+	if p.Pattern == nil {
 		return nil, fmt.Errorf("missing or invalid 'pattern' parameter")
 	}
+	pattern := *p.Pattern
 
 	// SECURITY: Validate pattern (prevent ReDoS)
 	if err := ValidateSearchPattern(pattern); err != nil {
@@ -90,12 +110,11 @@ func (ops *SearchOperations) grep(ctx context.Context, params map[string]any) (a
 
 	// ignoreCase defaults to true, like grep -i.
 	ignoreCase := true
-	if ic, ok := params["ignoreCase"].(bool); ok {
-		ignoreCase = ic
+	if p.IgnoreCase != nil {
+		ignoreCase = *p.IgnoreCase
 	}
 
 	var re *regexp.Regexp
-	var err error
 	if ignoreCase {
 		re, err = regexp.Compile("(?i)" + pattern) // (?i) = case insensitive
 	} else {
@@ -107,11 +126,9 @@ func (ops *SearchOperations) grep(ctx context.Context, params map[string]any) (a
 
 	// Get search path (default to working directory)
 	// Supports glob patterns like "src/**/*.go"
-	userInitiated, _ := params["userInitiated"].(bool)
-	approved, _ := params["outOfRootApproved"].(bool)
 	searchPath := ""
 	pathIsGlob := false
-	if path, ok := params["path"].(string); ok && path != "" {
+	if path := p.Path; path != "" {
 		if containsGlobChars(path) {
 			// A glob path is expanded via doublestar over DirFS(Root()) below, so
 			// it is inherently confined to the project and needs no containment
@@ -123,7 +140,7 @@ func (ops *SearchOperations) grep(ctx context.Context, params map[string]any) (a
 			// ResolveRead honours a user-initiated pin and the JS out-of-root
 			// approval, so an approved out-of-project search resolves instead of
 			// being rejected.
-			absPath, err := ops.scope.ResolveRead(path, userInitiated, approved)
+			absPath, err := ops.scope.ResolveRead(path, p.UserInitiated, p.OutOfRootApproved)
 			if err != nil {
 				return nil, fmt.Errorf("invalid path: %w", err)
 			}
@@ -135,28 +152,23 @@ func (ops *SearchOperations) grep(ctx context.Context, params map[string]any) (a
 
 	// Get max results limit (support both old and new param names)
 	maxResults := 100
-	if mc, ok := params["maxCount"].(float64); ok && mc > 0 {
-		maxResults = int(mc)
-	} else if mr, ok := params["maxResults"].(float64); ok && mr > 0 {
-		maxResults = int(mr)
+	if p.MaxCount != nil && *p.MaxCount > 0 {
+		maxResults = int(*p.MaxCount)
+	} else if p.MaxResults != nil && *p.MaxResults > 0 {
+		maxResults = int(*p.MaxResults)
 	}
 	if maxResults > 1000 {
 		maxResults = 1000 // Hard cap
 	}
 
 	// Get file pattern filter (support both old and new param names)
-	filePattern := ""
-	if fp, ok := params["include"].(string); ok {
-		filePattern = fp
-	} else if fp, ok := params["filePattern"].(string); ok {
-		filePattern = fp
+	filePattern := p.FilePattern
+	if p.Include != nil {
+		filePattern = *p.Include
 	}
 
 	// Get noIgnore parameter (when true, don't respect .gitignore)
-	noIgnore := false
-	if ni, ok := params["noIgnore"].(bool); ok {
-		noIgnore = ni
-	}
+	noIgnore := p.NoIgnore
 
 	// Build a gitignore matcher unless opted out. A nil matcher means filtering
 	// is off; every walking helper threads the single pointer. A glob path is
@@ -429,11 +441,21 @@ func countUniqueFiles(matches []map[string]any) int {
 }
 
 // findSymbol finds a symbol (function, class, etc.) using native Go search
+// findSymbolParams are findSymbol's params.
+type findSymbolParams struct {
+	Symbol   *string `param:"symbol"`
+	NoIgnore bool    `param:"noIgnore"`
+}
+
 func (ops *SearchOperations) findSymbol(ctx context.Context, params map[string]any) (any, error) {
-	symbol, ok := params["symbol"].(string)
-	if !ok {
+	p, err := decodeParams[findSymbolParams](params)
+	if err != nil {
+		return nil, err
+	}
+	if p.Symbol == nil {
 		return nil, fmt.Errorf("missing or invalid 'symbol' parameter")
 	}
+	symbol := *p.Symbol
 
 	// Validate symbol name
 	if err := validateSymbolName(symbol); err != nil {
@@ -456,12 +478,8 @@ func (ops *SearchOperations) findSymbol(ctx context.Context, params map[string]a
 	maxResults := 100
 
 	// Respect .gitignore unless the caller opts out (matches grep's param).
-	noIgnore := false
-	if ni, ok := params["noIgnore"].(bool); ok {
-		noIgnore = ni
-	}
 	var ign *gitignore.Matcher
-	if !noIgnore {
+	if !p.NoIgnore {
 		ign = gitignore.NewMatcher(ops.scope.Root())
 	}
 

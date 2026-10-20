@@ -45,35 +45,35 @@ func yMapToReducerItem(m *ycrdt.YMap) ConversationItem {
 // yMapToReducerItemShallow is yMapToReducerItem without the nested transcript.
 func yMapToReducerItemShallow(m *ycrdt.YMap) ConversationItem {
 	item := ConversationItem{
-		Type:              yMapString(m, "type"),
-		ItemID:            yMapString(m, "itemId"),
-		ToolUseID:         yMapString(m, "toolUseId"),
-		ToolName:          yMapString(m, "toolName"),
-		State:             yMapString(m, "state"),
-		IsError:           yMapBool(m, "isError"),
-		Cancelled:         yMapBool(m, "cancelled"),
-		Goal:              yMapString(m, "goal"),
-		BoundedCompaction: yMapBool(m, "boundedCompaction"),
-		SessionName:       yMapString(m, "sessionName"),
-		AliasOf:           yMapString(m, "aliasOf"),
-		RunToolUseID:      yMapString(m, "runToolUseId"),
-		RunToolName:       yMapString(m, "runToolName"),
-		RunToolInput:      yMapRawJSON(m, "runToolInput"),
-		RunGoal:           yMapString(m, "runGoal"),
-		RunStatus:         yMapString(m, "runStatus"),
-		RunResult:         yMapString(m, "runResult"),
-		Continuation:      yMapBool(m, "continuation"),
-		RunItemID:         yMapString(m, "runItemId"),
-		RecoversError:     yMapBool(m, "recoversError"),
-		RunResultFed:      yMapBool(m, "runResultFed"),
-		TransactionID:     yMapString(m, "transactionId"),
+		Type:              yMapString(m, keyType),
+		ItemID:            yMapString(m, keyItemID),
+		ToolUseID:         yMapString(m, keyToolUseID),
+		ToolName:          yMapString(m, keyToolName),
+		State:             yMapString(m, keyState),
+		IsError:           yMapBool(m, keyIsError),
+		Cancelled:         yMapBool(m, keyCancelled),
+		Goal:              yMapString(m, keyGoal),
+		BoundedCompaction: yMapBool(m, keyBoundedCompaction),
+		SessionName:       yMapString(m, keySessionName),
+		AliasOf:           yMapString(m, keyAliasOf),
+		RunToolUseID:      yMapString(m, keyRunToolUseID),
+		RunToolName:       yMapString(m, keyRunToolName),
+		RunToolInput:      yMapRawJSON(m, keyRunToolInput),
+		RunGoal:           yMapString(m, keyRunGoal),
+		RunStatus:         yMapString(m, keyRunStatus),
+		RunResult:         yMapString(m, keyRunResult),
+		Continuation:      yMapBool(m, keyContinuation),
+		RunItemID:         yMapString(m, keyRunItemID),
+		RecoversError:     yMapBool(m, keyRecoversError),
+		RunResultFed:      yMapBool(m, keyRunResultFed),
+		TransactionID:     yMapString(m, keyTransactionID),
 	}
 	// A thread's result is its run summary, which hasThreadResult reads; any
 	// other item's result is tool output, which nothing here does.
 	if item.Type == ItemTypeThread {
-		item.Result = yMapRawJSON(m, "result")
+		item.Result = yMapRawJSON(m, keyResult)
 	}
-	if raw := yMapRawJSON(m, "foldedRuns"); raw != nil {
+	if raw := yMapRawJSON(m, keyFoldedRuns); raw != nil {
 		var runs []FoldedRun
 		if json.Unmarshal(raw, &runs) == nil {
 			item.FoldedRuns = runs
@@ -85,7 +85,7 @@ func yMapToReducerItemShallow(m *ycrdt.YMap) ConversationItem {
 // reducerTranscriptJSON returns a thread's nested items in reducer form as the
 // JSON ConversationItem.Items holds, or nil when it has none.
 func reducerTranscriptJSON(threadYMap *ycrdt.YMap) json.RawMessage {
-	nested, ok := threadYMap.Get("items").(*ycrdt.YArray)
+	nested, ok := yMapArray(threadYMap, keyItems)
 	if !ok || nested == nil || nested.GetLength() == 0 {
 		return nil
 	}

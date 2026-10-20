@@ -49,7 +49,8 @@ package worker
 //
 // Which one an op picks is its own business; that it picks at all is not.
 // TestEveryWorkStartingOpClassifiesItselfAgainstThePause reads the dispatch
-// switch and fails on any op that starts work while saying neither.
+// table (workerInbound) and fails on any op that starts work while saying
+// neither.
 //
 // The second answer carries an obligation. Work committed to the document under
 // a mark must still be drivable once the mark is lifted, and the trap is

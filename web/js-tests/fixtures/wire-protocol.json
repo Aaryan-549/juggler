@@ -82,7 +82,7 @@
     },
 
     "docKeys": {
-      "$comment": "Y.Map keys the worker reads or writes. `item` must equal ConversationItem's json tags exactly; every other group must equal what the worker source actually uses.",
+      "$comment": "Y.Map keys the worker reads or writes, each named in Go by a key constant (doc_keys.go, or a meta* one beside its feature). `item` must equal ConversationItem's json tags exactly; every other group must equal what the worker source actually uses.",
       "item": [
         "type", "itemId", "content", "source", "summary", "timestamp", "toolUseId", "toolName", "toolInput",
         "state", "category", "approvalOptions", "displayData", "isError", "data", "cancelled", "result", "hooks",
@@ -90,20 +90,21 @@
         "needsStrategyRun", "noAutoSelect", "noContextSeed", "forceTool", "handoffPromote", "foldedRuns",
         "preventUserDeletion", "isNew", "error", "runToolUseId", "runToolName", "runToolInput", "runGoal",
         "runStatus", "runResult", "continuation", "runItemId", "recoversError", "runResultFed", "transactionId",
-        "providerData", "attachments", "heldAssets", "taskSource"
+        "providerData", "attachments", "heldAssets", "taskSource", "llmCreated", "strategyCreated",
+        "canSpawnThreads", "delegated", "readOnly", "resultSpec", "draft", "executor"
       ],
       "itemUntyped": {
         "$comment": "Keys the worker reads or writes on item maps that ConversationItem does not declare.",
         "keys": [
-          "canSpawnThreads", "compactionAccounting", "compactionUnsummarized", "contextTokens", "delegated", "draft",
-          "executor", "llmCreated", "readOnly", "resultFedTurn", "resultSpec", "resultTokens", "runningEpoch",
-          "runningStartedAt"
+          "compactionAccounting", "compactionUnsummarized", "contextTokens", "resultFedTurn", "resultTokens",
+          "runningEpoch", "runningStartedAt"
         ]
       },
       "modelConfig": ["model", "provider", "serviceTier", "thinking"],
       "metadata": [
-        "activatedStrategyId", "completedTurns", "created", "currentStrategyId", "defaultModelConfig", "modelConfig",
-        "nextSteps", "pendingItems", "processingState", "undoState"
+        "activatedStrategyId", "completedTurns", "created", "currentStrategyId", "defaultModelConfig", "forkParked",
+        "hasAutoNamed", "isProvisionalName", "modelConfig", "nextSteps", "pendingItems", "pendingRequests",
+        "processingState", "spendNewInputTokens", "spendOutputTokens", "undoState", "workspaceId"
       ],
       "pendingItem": [
         "id", "kind", "status", "cancelRequested", "completedAt", "threadItemId", "itemsBefore", "request", "goal",
@@ -124,7 +125,7 @@
       "viewer-relay", "one-shot-result", "session-changed", "worker-message"
     ],
 
-    "$outboundComment": "handledBy: routes = WebSocketService.TYPED_MESSAGE_ROUTES; handshake = websocket.js's session branch; session-handlers = App.SESSION_MESSAGE_HANDLERS (app.js); engine = the engine realm.",
+    "$outboundComment": "handledBy: routes = WebSocketService.TYPED_MESSAGE_ROUTES; handshake = websocket.js's session branch; session-handlers = SESSION_MESSAGE_HANDLERS (js/protocol/session-message-handlers.js); engine = the engine realm.",
     "outbound": [
       { "type": "__juggler_dc_chunk", "handledBy": "routes" },
       { "type": "file-change", "handledBy": "routes" },

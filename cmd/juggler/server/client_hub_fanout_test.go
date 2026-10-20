@@ -79,7 +79,7 @@ func TestClientHub_WedgedClientDoesNotDelayBroadcast(t *testing.T) {
 	// result above the mailboxes working rather than a lucky iteration order.
 	select {
 	case msg := <-wedged.send:
-		m, ok := msg.json.(map[string]any)
+		m, ok := frameMap(msg.json)
 		if !ok || m["type"] != "clients-changed" {
 			t.Fatalf("wedged client was past its first message: %#v", msg.json)
 		}
@@ -212,7 +212,7 @@ func TestClientHub_ShutdownNoticeReachesClients(t *testing.T) {
 	for {
 		select {
 		case msg := <-c.send:
-			if m, ok := msg.json.(map[string]any); ok && m["type"] == "server-shutdown" {
+			if m, ok := frameMap(msg.json); ok && m["type"] == "server-shutdown" {
 				sawNotice = true
 			}
 			continue

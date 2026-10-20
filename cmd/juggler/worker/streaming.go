@@ -278,14 +278,14 @@ func (r *run) resetStreamingThinking() {
 // and records what the document now holds.
 func (r *run) writeStreamingText() {
 	// Update content using messageId lookup - avoids expensive GetItems() JSON conversion
-	r.updateRunItem(r.t.streaming.textMsgID, "content", r.t.streaming.textContent)
+	r.updateRunItem(r.t.streaming.textMsgID, keyContent, r.t.streaming.textContent)
 	r.t.streaming.textWrittenLen = len(r.t.streaming.textContent)
 	r.t.streaming.lastTextWriteMs = time.Now().UnixMilli()
 }
 
 // writeStreamingThinking is writeStreamingText's counterpart for thinking blocks.
 func (r *run) writeStreamingThinking() {
-	r.updateRunItem(r.t.streaming.thinkingMsgID, "content", r.t.streaming.thinkingContent)
+	r.updateRunItem(r.t.streaming.thinkingMsgID, keyContent, r.t.streaming.thinkingContent)
 	r.t.streaming.thinkingWrittenLen = len(r.t.streaming.thinkingContent)
 	r.t.streaming.lastThinkingWriteMs = time.Now().UnixMilli()
 }
@@ -379,9 +379,9 @@ func (r *run) extractPlanTag() {
 		// column reads its own plan and concurrent threads never share one slot.
 		// The root thread has no Y.Map, so its plan lives on conversation metadata.
 		if r.t.thread.itemID == "" {
-			r.doc.SetMetadata("nextSteps", plan)
+			r.doc.SetMetadata(keyNextSteps, plan)
 		} else {
-			r.doc.SetThreadField(r.t.thread.itemID, "nextSteps", plan)
+			r.doc.SetThreadField(r.t.thread.itemID, keyNextSteps, plan)
 		}
 	}
 }
@@ -439,7 +439,7 @@ func (r *run) processThinkingChunk(chunk StreamChunk) {
 	// block, so the content goes in alongside it whatever the throttle says.
 	if len(chunk.Metadata) > 0 {
 		r.flushStreamingThinking()
-		r.updateRunItem(r.t.streaming.thinkingMsgID, "providerData", chunk.Metadata)
+		r.updateRunItem(r.t.streaming.thinkingMsgID, keyProviderData, chunk.Metadata)
 		return
 	}
 

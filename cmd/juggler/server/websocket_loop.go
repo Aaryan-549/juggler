@@ -172,12 +172,7 @@ func (s *Server) streamShell(ctx context.Context, resolve workspace.ResolveFunc,
 		// Refuse to the requester in the shape it is waiting for: a done chunk
 		// carrying the reason, so the engine's shellStreaming settles with
 		// the refusal instead of sitting at `running` until its safety timeout.
-		requester.Send(map[string]any{
-			"type":    "shell-output",
-			"shellId": req.ShellID,
-			"done":    true,
-			"error":   err.Error(),
-		})
+		requester.Send(shellRefusedFrame(req.ShellID, err.Error()))
 		return
 	}
 
@@ -192,33 +187,10 @@ func (s *Server) streamShell(ctx context.Context, resolve workspace.ResolveFunc,
 	// Forward chunks to the requesting engine (see func doc for why not the
 	// viewer group).
 	for chunk := range outputChan {
-		msg := map[string]any{
-			"type":    "shell-output",
-			"shellId": chunk.ShellID,
-			"data":    chunk.Data,
-			"done":    chunk.Done,
-		}
 		// Status chunks (awaiting-permission / running) explain why a silent
-		// command is still running. They are non-Done with empty Data.
-		if chunk.Status != "" {
-			msg["status"] = chunk.Status
-			if chunk.Hint != "" {
-				msg["hint"] = chunk.Hint
-			}
-		}
-		if chunk.Done {
-			msg["exitCode"] = chunk.ExitCode
-			if chunk.Error != "" {
-				msg["error"] = chunk.Error
-			}
-			// Full-output spill accounting, present only when output was spilled.
-			if chunk.OutputFile != "" {
-				msg["outputFile"] = chunk.OutputFile
-				msg["outputBytes"] = chunk.OutputBytes
-				msg["truncated"] = chunk.Truncated
-			}
-		}
-		requester.Send(msg)
+		// command is still running; a done chunk carries its exit, and the
+		// spill accounting when the output was spilled (shellOutputFrameOf).
+		requester.Send(shellOutputFrameOf(chunk))
 	}
 }
 

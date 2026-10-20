@@ -394,13 +394,18 @@ func (w *ConversationWorker) beginStop() {
 
 // stopping reports whether the worker's stop has begun. A turn reads it as it
 // unwinds: what ends a run during a stop is the stop, not anything the run did.
+//
+// A cancelled lifetime context is a stop that has begun, whether or not the run
+// loop has reached beginStop yet: every provider call derives from that
+// context, so its cancellation ends the call at once, and the turn unwinding
+// from it can get here before the loop has closed done.
 func (w *ConversationWorker) stopping() bool {
 	select {
 	case <-w.done:
 		return true
 	default:
-		return false
 	}
+	return w.lifetime != nil && w.lifetime.Err() != nil
 }
 
 // StopForRemoval tears the worker down when its conversation is being removed
@@ -839,132 +844,77 @@ func (r *run) dispatchMessage(msg workerMessage) {
 		return
 	}
 
-	// An op added here that starts work — requestLLM, setThreadNeedsStrategyRun,
-	// checkForNewThreads — owes an answer to the pause: it either lifts the marks
-	// covering the thread it runs on (a human asked for it) or leaves them
-	// standing and waits (the conversation carrying on by itself). The
-	// classification is in polite_stop.go; the choice is enforced by
-	// TestEveryWorkStartingOpClassifiesItselfAgainstThePause, which reads this
-	// switch to find the ops.
-	switch msg.Type {
-	case "init":
-		r.handleInit(msg.Payload)
-
-	case "send-message":
-		r.handleSendMessage(msg.Payload)
-
-	case "inject-thread-message":
-		r.handleInjectThreadMessage(msg.Payload)
-
-	case "delivery-ended":
-		r.handleDeliveryEnded(msg.Payload)
-
-	case "cancel":
-		r.handleCancel(cancelReasonFromPayload(msg.Payload))
-
-	case "pause":
-		r.handlePause(threadItemIDFromPayload(msg.Payload))
-
-	case "unpause":
-		r.handleUnpause(threadItemIDFromPayload(msg.Payload))
-
-	case "provider-turn":
-		r.handleProviderTurn(msg.Payload)
-
-	case "render-context-items-response":
-		r.handleRenderContextItemsResponse(msg.Payload)
-
-	case "tools-result":
-		r.handleToolsResult(msg.Payload)
-
-	case "strategy-hook-response":
-		r.handleStrategyHookResponse(msg.Payload)
-
-	case "build-subthread-spec-response":
-		r.handleBuildSubthreadSpecResponse(msg.Payload)
-
-	case "yjs-sync":
-		r.handleYjsSync(msg.Payload)
-
-	case "undo":
-		r.handleUndo(msg.Payload)
-
-	case "redo":
-		r.handleRedo(msg.Payload)
-
-	case "clear-history":
-		r.handleClearHistory()
-
-	case "stop-undo-capturing":
-		// Browser-driven mutations bypass the OperationTracker, so the
-		// UndoManager only auto-closes its capture window on the 250 ms
-		// timeout. Multiple browser actions issued within that window get
-		// merged into one undo group — undoing then unexpectedly reverses
-		// all of them. The browser sends this message at user-action
-		// boundaries (slash commands, context-item add/remove, etc.) to
-		// force a fresh undo group.
-		r.tracker.StopCapturing()
-
-	case "begin-undo-coalesce":
-		r.handleBeginUndoCoalesce()
-
-	case "end-undo-coalesce":
-		r.handleEndUndoCoalesce(msg.Payload)
-
-	case "retry-tool-approval":
-		r.handleRetryToolApproval(msg.Payload)
-
-	case "retry-tool-action":
-		r.handleRetryToolAction(msg.Payload)
-
-	case "update-tool-action-for-retry":
-		r.handleUpdateToolActionForRetry(msg.Payload)
-
-	case "background-task-snapshot":
-		r.handleBackgroundTaskSnapshot(msg.Payload)
-
-	case "create-thread":
-		r.handleCreateThread(msg.Payload)
-
-	case "resummarize-compaction-thread":
-		r.handleResummarizeCompactionThread(msg.Payload)
-
-	case "request-full-state":
-		r.broadcastFullState()
-
-	case "resync-request":
-		r.handleResyncRequest(msg.Payload)
-
-	case "resync-to-origin":
-		r.handleResyncToOrigin()
-
-	case "tool-execution-report":
-		r.handleToolExecutionReport(msg.Payload, msg.OriginClient)
-
-	case "engine-trace":
-		r.handleEngineTrace(msg.Payload)
-
-	case "rename-log":
-		r.handleRenameLog()
-
-	case "request-auto-name":
-		r.handleRequestAutoName(msg.Payload)
-
-	case "clear-undo-stacks":
-		r.handleClearUndoStacks(msg.Payload)
-
-	case "get-transaction":
-		r.handleGetTransaction(msg.Payload)
-
-	case "flush-persistence":
-		r.handleFlushPersistence(msg.Payload)
-
-	case "compact":
-		r.handleCompact(msg.Payload)
-
-	default:
+	handle, ok := workerInbound[wireMsgType(msg.Type)]
+	if !ok {
 		r.log.Error("Unknown message type: %s", msg.Type)
+		return
 	}
+	handle(r, msg)
+}
+
+// inboundHandler runs one inbound message on the run loop.
+type inboundHandler func(r *run, msg workerMessage)
+
+// workerInbound is every message a client may send the worker, by type. Each
+// handler decodes its own payload, once; TestWireParityWorkerInbound holds the
+// keys to allWorkerInbound and the wire manifest.
+//
+// An op added here that starts work — requestLLM, setThreadNeedsStrategyRun,
+// checkForNewThreads — owes an answer to the pause: it either lifts the marks
+// covering the thread it runs on (a human asked for it) or leaves them standing
+// and waits (the conversation carrying on by itself). The classification is in
+// polite_stop.go; the choice is enforced by
+// TestEveryWorkStartingOpClassifiesItselfAgainstThePause, which reads this
+// table to find the ops.
+var workerInbound = map[wireMsgType]inboundHandler{
+	msgInit:                func(r *run, m workerMessage) { r.handleInit(m.Payload) },
+	msgSendMessage:         func(r *run, m workerMessage) { r.handleSendMessage(m.Payload) },
+	msgInjectThreadMessage: func(r *run, m workerMessage) { r.handleInjectThreadMessage(m.Payload) },
+	msgDeliveryEnded:       func(r *run, m workerMessage) { r.handleDeliveryEnded(m.Payload) },
+	msgCancel:              func(r *run, m workerMessage) { r.handleCancel(cancelReasonFromPayload(m.Payload)) },
+	msgPause:               func(r *run, m workerMessage) { r.handlePause(threadItemIDFromPayload(m.Payload)) },
+	msgUnpause:             func(r *run, m workerMessage) { r.handleUnpause(threadItemIDFromPayload(m.Payload)) },
+	msgProviderTurn:        func(r *run, m workerMessage) { r.handleProviderTurn(m.Payload) },
+
+	msgRenderContextItemsResponse: func(r *run, m workerMessage) { r.handleRenderContextItemsResponse(m.Payload) },
+	msgToolsResult:                func(r *run, m workerMessage) { r.handleToolsResult(m.Payload) },
+	msgStrategyHookResponse:       func(r *run, m workerMessage) { r.handleStrategyHookResponse(m.Payload) },
+	msgBuildSubthreadSpecResponse: func(r *run, m workerMessage) { r.handleBuildSubthreadSpecResponse(m.Payload) },
+
+	msgYjsSync:         func(r *run, m workerMessage) { r.handleYjsSync(m.Payload) },
+	msgUndo:            func(r *run, m workerMessage) { r.handleUndo(m.Payload) },
+	msgRedo:            func(r *run, m workerMessage) { r.handleRedo(m.Payload) },
+	msgClearHistory:    func(r *run, _ workerMessage) { r.handleClearHistory() },
+	msgClearUndoStacks: func(r *run, m workerMessage) { r.handleClearUndoStacks(m.Payload) },
+	// Browser-driven mutations bypass the OperationTracker, so the UndoManager
+	// only auto-closes its capture window on the 250 ms timeout. Multiple browser
+	// actions issued within that window get merged into one undo group — undoing
+	// then unexpectedly reverses all of them. The browser sends this message at
+	// user-action boundaries (slash commands, context-item add/remove, etc.) to
+	// force a fresh undo group.
+	msgStopUndoCapturing: func(r *run, _ workerMessage) { r.tracker.StopCapturing() },
+	msgBeginUndoCoalesce: func(r *run, _ workerMessage) { r.handleBeginUndoCoalesce() },
+	msgEndUndoCoalesce:   func(r *run, m workerMessage) { r.handleEndUndoCoalesce(m.Payload) },
+
+	msgRetryToolApproval:        func(r *run, m workerMessage) { r.handleRetryToolApproval(m.Payload) },
+	msgRetryToolAction:          func(r *run, m workerMessage) { r.handleRetryToolAction(m.Payload) },
+	msgUpdateToolActionForRetry: func(r *run, m workerMessage) { r.handleUpdateToolActionForRetry(m.Payload) },
+	msgBackgroundTaskSnapshot:   func(r *run, m workerMessage) { r.handleBackgroundTaskSnapshot(m.Payload) },
+	msgToolExecutionReport:      func(r *run, m workerMessage) { r.handleToolExecutionReport(m.Payload, m.OriginClient) },
+	msgEngineTrace:              func(r *run, m workerMessage) { r.handleEngineTrace(m.Payload) },
+
+	msgCreateThread:                func(r *run, m workerMessage) { r.handleCreateThread(m.Payload) },
+	msgResummarizeCompactionThread: func(r *run, m workerMessage) { r.handleResummarizeCompactionThread(m.Payload) },
+	msgCompact:                     func(r *run, m workerMessage) { r.handleCompact(m.Payload) },
+
+	msgRequestFullState: func(r *run, _ workerMessage) { r.broadcastFullState() },
+	msgResyncRequest:    func(r *run, m workerMessage) { r.handleResyncRequest(m.Payload) },
+	msgResyncToOrigin:   func(r *run, _ workerMessage) { r.handleResyncToOrigin() },
+
+	msgRenameLog:        func(r *run, _ workerMessage) { r.handleRenameLog() },
+	msgRequestAutoName:  func(r *run, m workerMessage) { r.handleRequestAutoName(m.Payload) },
+	msgGetTransaction:   func(r *run, m workerMessage) { r.handleGetTransaction(m.Payload) },
+	msgFlushPersistence: func(r *run, m workerMessage) { r.handleFlushPersistence(m.Payload) },
 }
 
 // handleClearUndoStacks wipes the conversation's undo/redo history. The browser
@@ -975,10 +925,7 @@ func (w *ConversationWorker) handleClearUndoStacks(payload json.RawMessage) {
 	ackID := w.ackIDOf("clear-undo-stacks", payload)
 
 	w.tracker.ClearHistory()
-	w.reply(map[string]any{
-		"type":  "ack",
-		"ackId": ackID,
-	})
+	w.reply(AckMessage{Type: msgAck, AckID: ackID})
 }
 
 // handleGetTransaction reads an LLM-round-trip blob from disk and returns it
@@ -991,7 +938,7 @@ func (w *ConversationWorker) handleGetTransaction(payload json.RawMessage) {
 		return
 	}
 
-	ack := AckMessage{Type: "ack", AckID: msg.AckID}
+	ack := AckMessage{Type: msgAck, AckID: msg.AckID}
 	if w.txnStore != nil && msg.TransactionID != "" {
 		data, err := w.txnStore.Load(w.conversationID, msg.TransactionID)
 		if err == nil {
@@ -1025,10 +972,7 @@ func (r *run) handleFlushPersistence(payload json.RawMessage) {
 	if err := r.flushNow(); err != nil {
 		r.log.Error("Failed to flush persistence: %v", err)
 	}
-	r.send(map[string]any{
-		"type":  "ack",
-		"ackId": ackID,
-	})
+	r.send(AckMessage{Type: msgAck, AckID: ackID})
 }
 
 // flushNow is the synchronous save behind both flush paths — the run loop's
@@ -1136,19 +1080,14 @@ func (r *run) sendStatusWithCode(status, message string, text *msg.Message, code
 	// resting status written while a sibling run is still live: that run's
 	// entry leaves the registry and the frame's top level is republished from
 	// the sibling, so the client takes notices (validation-error) from here.
-	wsMsg := map[string]any{
-		"type":         "status",
-		"status":       status,
-		"message":      message,
-		"threadItemId": r.t.thread.itemID,
-	}
-	if code != "" {
-		wsMsg["code"] = code
-	}
-	if text != nil {
-		wsMsg["text"] = *text
-	}
-	r.send(wsMsg)
+	r.send(StatusMessage{
+		Type:         msgStatus,
+		Status:       status,
+		Message:      message,
+		ThreadItemID: r.t.thread.itemID,
+		Code:         code,
+		Text:         text,
+	})
 }
 
 // updateElapsedAnchor maintains the in-memory base for the spinner's elapsed-time
@@ -1247,7 +1186,7 @@ func (r *run) bumpTurnCounterAtIdle() {
 	// startedAt, live token counts, status — are rebuilt from scratch on
 	// every load by handleInit). completedTurns is the one value read back
 	// across a load (the monotonic turn fence), so it gets a clean key.
-	r.doc.SetMetadata("completedTurns", next)
+	r.doc.SetMetadata(keyCompletedTurns, next)
 }
 
 // finishIdleTransition closes out a completed run: it collapses any in-flight
@@ -1284,19 +1223,11 @@ func (w *ConversationWorker) finishIdleTransition() {
 // init before the delta addressed to that peer has gone out, leaving it holding
 // an empty document it believes is loaded.
 func (w *ConversationWorker) sendReady() {
-	w.reply(map[string]any{
-		"type":                "ready",
-		"summarizationPrompt": DefaultSummarizationPrompt,
-	})
+	w.reply(ReadyMessage{Type: msgReady, SummarizationPrompt: DefaultSummarizationPrompt})
 }
 
 func (w *ConversationWorker) sendReadyWithMetadata(metadata map[string]any) {
-	msg := map[string]any{
-		"type":                "ready",
-		"metadata":            metadata,
-		"summarizationPrompt": DefaultSummarizationPrompt,
-	}
-	w.reply(msg)
+	w.reply(ReadyMessage{Type: msgReady, Metadata: metadata, SummarizationPrompt: DefaultSummarizationPrompt})
 }
 
 // sendError reports an error Juggler words itself into the run's own thread.
@@ -1337,7 +1268,7 @@ func (r *run) sendErrorTo(dest threadContext, message string, text *msg.Message,
 	r.appendMessageTo(dest, msg)
 
 	r.send(ErrorMessage{
-		Type:    "error",
+		Type:    msgError,
 		Message: message,
 		Summary: summary,
 		Stack:   stack,
@@ -1358,7 +1289,7 @@ func (w *ConversationWorker) sendUndoState(canUndo, canRedo bool) {
 	// (SCHEMA.md: undoState is {canUndo, canRedo, seq}): omitting it would
 	// erase the sequence the tracker's emitUndoState stamped, breaking every
 	// reader that keys on seq to tell "the stack moved" from a re-emit.
-	w.doc.SetMetadata("undoState", map[string]any{
+	w.doc.SetMetadata(keyUndoState, map[string]any{
 		"canUndo": canUndo,
 		"canRedo": canRedo,
 		"seq":     w.tracker.UndoSeq(),
@@ -1367,7 +1298,7 @@ func (w *ConversationWorker) sendUndoState(canUndo, canRedo bool) {
 
 func (w *ConversationWorker) sendRenderContextItemsRequest(requestID string, itemIDs []string) {
 	w.send(RenderContextItemsRequest{
-		Type:      "render-context-items-request",
+		Type:      msgRenderContextItemsRequest,
 		RequestID: requestID,
 		ItemIDs:   itemIDs,
 		SentAt:    time.Now().UnixMilli(),
@@ -1484,15 +1415,15 @@ func (r *run) checkForNewThreads() bool {
 				if !ok {
 					continue
 				}
-				if itemType, _ := threadYMap.Get("type").(string); itemType != ItemTypeThread {
+				if itemType := yMapString(threadYMap, keyType); itemType != ItemTypeThread {
 					continue
 				}
-				itemID, _ := threadYMap.Get("itemId").(string)
-				needsStrategyRun, _ := threadYMap.Get("needsStrategyRun").(bool)
+				itemID := yMapString(threadYMap, keyItemID)
+				needsStrategyRun := yMapBool(threadYMap, keyNeedsStrategyRun)
 				if itemID == "" || !needsStrategyRun || threadRunSettledLocked(threadYMap) {
 					continue
 				}
-				noAutoSelect, _ := threadYMap.Get("noAutoSelect").(bool)
+				noAutoSelect := yMapBool(threadYMap, keyNoAutoSelect)
 				candidates = append(candidates, rootThread{itemID: itemID, noAutoSelect: noAutoSelect})
 			}
 		}
@@ -1636,7 +1567,7 @@ func (w *ConversationWorker) setThreadNeedsStrategyRun(threadItemID string) {
 // summary, and reports whether the thread was such a fold. Decided and written
 // in one hold (setFlagOnUnfinishedFold); tracked like writeThreadNeedsStrategyRun.
 func (w *ConversationWorker) rearmPausedFold(threadItemID string) bool {
-	return w.doc.setFlagOnUnfinishedFold(threadItemID, "needsStrategyRun", w.doc.transactTracked)
+	return w.doc.setFlagOnUnfinishedFold(threadItemID, keyNeedsStrategyRun, w.doc.transactTracked)
 }
 
 // clearThreadNeedsStrategyRun consumes the one-shot trigger, so a run that is
@@ -1655,7 +1586,7 @@ func (w *ConversationWorker) clearThreadNeedsStrategyRun(threadItemID string) {
 // owns the one-hold resolve-and-write rule. The write is tracked (undoable)
 // because arming a run is a document edit, not display state.
 func (w *ConversationWorker) writeThreadNeedsStrategyRun(threadItemID string, needed bool) {
-	w.doc.setThreadFlag(threadItemID, "needsStrategyRun", needed, w.doc.transactTracked)
+	w.doc.setThreadFlag(threadItemID, keyNeedsStrategyRun, needed, w.doc.transactTracked)
 }
 
 // markFoldUnsummarized records that a folded-compaction thread's summarizer run
@@ -1677,13 +1608,13 @@ func (w *ConversationWorker) writeThreadNeedsStrategyRun(threadItemID string, ne
 // Written untracked, as is its clearing: this is derived state about a run's
 // outcome, not an edit the user made, so it must not be what an undo peels off.
 func (w *ConversationWorker) markFoldUnsummarized(threadItemID string) bool {
-	return w.doc.setFlagOnUnfinishedFold(threadItemID, "compactionUnsummarized", w.doc.transactInternal)
+	return w.doc.setFlagOnUnfinishedFold(threadItemID, keyCompactionUnsummarized, w.doc.transactInternal)
 }
 
 // clearCompactionUnsummarized drops the marker once a summary exists again, or
 // when one is about to be attempted.
 func (w *ConversationWorker) clearCompactionUnsummarized(threadItemID string) {
-	w.doc.setThreadFlag(threadItemID, "compactionUnsummarized", false, w.doc.transactInternal)
+	w.doc.setThreadFlag(threadItemID, keyCompactionUnsummarized, false, w.doc.transactInternal)
 }
 
 // hasIncompleteThreads returns true if any thread item in the current target

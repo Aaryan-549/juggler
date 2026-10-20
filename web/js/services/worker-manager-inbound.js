@@ -36,139 +36,41 @@ import { setBootstrapSummarizationPrompt } from '../utils/compaction-utils.js';
 // The messages, one shape per wire type
 // ============================================================================
 //
-// Each is the message's payload as the worker marshals it (cmd/juggler/worker,
-// messages.go and the map literals beside its senders). The conversation it is
-// about travels in the envelope around it, not in it. Go `[]byte` fields arrive
-// as base64 strings.
+// Each is the message as the worker's struct marshals it. The shapes are
+// generated from cmd/juggler/worker (protocol/worker-wire-types.gen.js) and held
+// to the structs by TestWireTypedefs, so a renamed or retyped field fails
+// checkJs here. The conversation a message is about travels in the envelope
+// around it, not in it. Go `[]byte` fields arrive as base64 strings.
+
+/** @typedef {import('../protocol/worker-wire-types.gen.js').ReadyMessage} ReadyMessage */
+/** @typedef {import('../protocol/worker-wire-types.gen.js').YjsSyncMessage} YjsSyncMessage */
+/** @typedef {import('../protocol/worker-wire-types.gen.js').ResyncOfferMessage} ResyncOfferMessage */
+/** @typedef {import('../protocol/worker-wire-types.gen.js').ResyncResponseMessage} ResyncResponseMessage */
+/** @typedef {import('../protocol/worker-wire-types.gen.js').RenderContextItemsRequest} RenderContextItemsRequestMessage */
+/** @typedef {import('../protocol/worker-wire-types.gen.js').RequestToolsMessage} RequestToolsMessage */
+/** @typedef {import('../protocol/worker-wire-types.gen.js').BuildSubthreadSpecRequest} BuildSubthreadSpecMessage */
+/** @typedef {import('../protocol/worker-wire-types.gen.js').RunStrategyHookRequest} RunStrategyHookMessage */
+/** @typedef {import('../protocol/worker-wire-types.gen.js').RunContextHookRequest} RunContextHookMessage */
+/** @typedef {import('../protocol/worker-wire-types.gen.js').EvaluateToolMessage} EvaluateToolMessage */
+/** @typedef {import('../protocol/worker-wire-types.gen.js').ExecuteToolMessage} ExecuteToolMessage */
+/** @typedef {import('../protocol/worker-wire-types.gen.js').CancelToolMessage} CancelToolMessage */
+/** @typedef {import('../protocol/worker-wire-types.gen.js').CancelStrategyExecutionMessage} CancelStrategyExecutionMessage */
+/** @typedef {import('../protocol/worker-wire-types.gen.js').CreateThreadResponse} CreateThreadResponseMessage */
 
 /**
- * A server-built message's words, for `serverText()`.
- * @typedef {{key?: unknown, params?: unknown, context?: unknown}} ServerTextField
- */
-
-/**
- * @typedef {object} ReadyMessage
- * @property {'ready'} type - Wire type
- * @property {string} [summarizationPrompt] - The worker's canonical summarization prompt
- * @property {object|null} [metadata] - Metadata read from the stored document, when it loaded one
- */
-
-/**
- * @typedef {object} YjsSyncMessage
- * @property {'yjs-sync'} type - Wire type
- * @property {string|null} bytes - A y-generic-sync message, base64
- * @property {boolean} [engineDerived] - Whether the update came from the engine
- */
-
-/**
- * @typedef {object} ResyncOfferMessage
- * @property {'resync-offer'} type - Wire type
- */
-
-/**
- * @typedef {object} ResyncResponseMessage
- * @property {'resync-response'} type - Wire type
- * @property {string|null} [bytes] - The ops this client lacks, base64
- * @property {string|null} [stateVector] - The worker's state vector, base64
- */
-
-/**
- * @typedef {object} RenderContextItemsRequestMessage
- * @property {'render-context-items-request'} type - Wire type
- * @property {string} requestId - Correlates the reply
- * @property {string[]} itemIds - Context items to render
- * @property {number} [sentAt] - Worker clock at send, ms, for the round-trip trace
- * @property {object} [contextParams] - Params for the render
- */
-
-/**
- * @typedef {object} RequestToolsMessage
- * @property {'request-tools'} type - Wire type
- * @property {string} requestId - Correlates the reply
- * @property {string} threadItemId - The thread asking; '' for the root
- * @property {number} [sentAt] - Worker clock at send, ms, for the round-trip trace
- */
-
-/**
- * @typedef {object} BuildSubthreadSpecMessage
- * @property {'build-subthread-spec'} type - Wire type
- * @property {string} requestId - Correlates the reply
- * @property {string} toolUseId - The delegating tool call
- * @property {string} toolName - Its tool
- * @property {unknown} toolInput - Its input
- */
-
-/**
- * @typedef {object} RunStrategyHookMessage
- * @property {'run-strategy-hook'} type - Wire type
- * @property {string} hook - Which hook
- * @property {string} strategyId - The strategy it belongs to
- * @property {string} [requestId] - Correlates the reply, when one is wanted
- * @property {string} [threadItemId] - The thread it runs for
- * @property {string} [previousStrategyId] - The strategy being replaced (activation)
- */
-
-/**
- * @typedef {object} RunContextHookMessage
- * @property {'run-context-hook'} type - Wire type
- * @property {string} hook - Which hook
- * @property {number} turnIndex - The turn it runs for
- */
-
-/**
- * The fields the three tool commands share.
- * @typedef {object} ToolCommandFields
- * @property {string} toolUseId - The tool call to act on
- * @property {number} [runningEpoch] - Execution generation the command is scoped to (cancel only)
- */
-
-/** @typedef {ToolCommandFields & {type: 'evaluate-tool'}} EvaluateToolMessage */
-/** @typedef {ToolCommandFields & {type: 'execute-tool'}} ExecuteToolMessage */
-/** @typedef {ToolCommandFields & {type: 'cancel-tool'}} CancelToolMessage */
-
-/**
- * @typedef {object} CancelStrategyExecutionMessage
- * @property {'cancel-strategy-execution'} type - Wire type
- */
-
-/**
- * Either `threadItemId` (the thread was made) or `error` (it was not).
- * @typedef {object} CreateThreadResponseMessage
- * @property {'create-thread-response'} type - Wire type
- * @property {string} requestId - The request it answers
- * @property {string} [threadItemId] - The new thread
- * @property {string} [result] - The thread's result
- * @property {string} [error] - Why it was not made
- * @property {boolean} [cancelled] - Whether that was a cancellation
- */
-
-/**
- * @typedef {object} ErrorMessage
- * @property {'error'} type - Wire type
- * @property {string} [message] - English text
- * @property {ServerTextField} [text] - The same, as a server message
- * @property {string} [summary] - A one-line form
- * @property {string} [stack] - Stack trace
+ * The worker's own error, or the one the server sends in a worker's place for
+ * a conversation it declined to open — which carries its words as a message
+ * too (`text`).
+ * @typedef {import('../protocol/worker-wire-types.gen.js').ErrorMessage|import('../protocol/server-wire-types.gen.js').ErrorFrame} ErrorMessage
  */
 
 /**
  * A transition of the worker's processing state, which itself syncs through
- * the document's metadata.
- * @typedef {object} StatusMessage
- * @property {'status'} type - Wire type
- * @property {string} status - The state entered
- * @property {string} [message] - English text
- * @property {string} [code] - Machine-readable reason
- * @property {ServerTextField} [text] - The message, as a server message
- * @property {string} [threadItemId] - The thread the transition was on; '' for the root
+ * the document's metadata. The mock LLM's pause names no thread.
+ * @typedef {import('../protocol/worker-wire-types.gen.js').StatusMessage|import('../protocol/worker-wire-types.gen.js').MockPausedStatusMessage} StatusMessage
  */
 
-/**
- * @typedef {object} AckMessage
- * @property {'ack'} type - Wire type
- * @property {string} ackId - The request it answers
- * @property {unknown} [result] - What the request produced, if anything
- */
+/** @typedef {import('../protocol/worker-wire-types.gen.js').AckMessage} AckMessage */
 
 /**
  * Any message a worker sends a client, told apart by `type`.
@@ -328,9 +230,9 @@ function onCancelStrategyExecution(wm, conversationId) {
 
 /** @type {HandlerFor<'create-thread-response'>} */
 function onCreateThreadResponse(wm, _conversationId, data) {
-  /** @type {{error: string, cancelled: boolean}|{threadItemId: string, result: string}} */
+  /** @type {{error: string}|{threadItemId: string, result: string}} */
   const outcome = data.error
-    ? { error: String(data.error), cancelled: !!data.cancelled }
+    ? { error: String(data.error) }
     : {
       threadItemId: /** @type {string} */ (data.threadItemId),
       result: /** @type {string} */ (data.result)
@@ -340,7 +242,7 @@ function onCreateThreadResponse(wm, _conversationId, data) {
 
 /** @type {HandlerFor<'error'>} */
 function onError(wm, conversationId, data) {
-  console.error(`[WorkerManager] Worker error for ${conversationId}:`, data.message, data.stack);
+  console.error(`[WorkerManager] Worker error for ${conversationId}:`, data.message, 'stack' in data ? data.stack : '');
   // An error arriving before ready IS the answer to the init: the worker
   // could not load the conversation and will send nothing further. Fail
   // the waiters now so the panel offers Retry, instead of leaving them to
@@ -348,7 +250,7 @@ function onError(wm, conversationId, data) {
   // After ready, the conversation carries its own errors through Yjs.
   // A server-built error carries its words as a message too (`text`).
   wm.failPendingReady(conversationId, data.message
-    ? serverText(data.text, String(data.message))
+    ? serverText('text' in data ? data.text : null, String(data.message))
     : `Worker error for ${conversationId}`);
 }
 

@@ -221,7 +221,7 @@ export async function runTests(_ctx) {
       `exactly the validation-error must reach the conversation, with its code and thread; got ${JSON.stringify(notices)}`);
   });
 
-  await run('create-thread-response settles its request, a cancelled one as an AbortError', async () => {
+  await run('create-thread-response settles its request, a refused one with the worker\'s reason; the caller\'s abort as an AbortError', async () => {
     const conv = 'conv_inbound_thread';
     const wm = managerWithEntry(conv);
     /** @type {any[]} */
@@ -229,16 +229,24 @@ export async function runTests(_ctx) {
     wm.sendToWorker = (/** @type {string} */ _id, /** @type {any} */ msg) => { sent.push(msg); return Promise.resolve(); };
 
     const ok = wm.createThread(conv, { goal: 'g', prompt: 'p' });
-    const cancelled = wm.createThread(conv, { goal: 'g', prompt: 'p' }).then(() => null, (/** @type {Error} */ e) => e);
-    assert(sent.length === 2, `expected two create-thread messages, got ${sent.length}`);
+    const refused = wm.createThread(conv, { goal: 'g', prompt: 'p' }).then(() => null, (/** @type {Error} */ e) => e);
+    const controller = new AbortController();
+    const aborted = wm.createThread(conv, { goal: 'g', prompt: 'p' }, controller.signal).then(() => null, (/** @type {Error} */ e) => e);
+    assert(sent.length === 3, `expected three create-thread messages, got ${sent.length}`);
 
-    routeWorkerMessage(wm, conv, /** @type {any} */ ({ type: 'create-thread-response', requestId: sent[0].requestId, threadItemId: 'T1', result: 'done' }));
-    routeWorkerMessage(wm, conv, /** @type {any} */ ({ type: 'create-thread-response', requestId: sent[1].requestId, error: 'stopped', cancelled: true }));
+    routeWorkerMessage(wm, conv, { type: 'create-thread-response', requestId: sent[0].requestId, threadItemId: 'T1', result: 'done' });
+    routeWorkerMessage(wm, conv, { type: 'create-thread-response', requestId: sent[1].requestId, error: 'no such parent' });
+    controller.abort();
+    // The worker's answer to an aborted request comes too late to matter.
+    routeWorkerMessage(wm, conv, { type: 'create-thread-response', requestId: sent[2].requestId, threadItemId: 'T3', result: 'late' });
 
     const value = await soon(ok, 'the answered thread');
     assert(value.threadItemId === 'T1' && value.result === 'done', `unexpected thread result ${JSON.stringify(value)}`);
-    const err = await soon(cancelled, 'the cancelled thread');
-    assert(err instanceof Error && err.name === 'AbortError', `a cancelled thread must reject as AbortError; got ${err && err.name}`);
+    const err = await soon(refused, 'the refused thread');
+    assert(err instanceof Error && err.name === 'Error' && err.message === 'no such parent',
+      `a refused thread must reject with the worker's reason; got ${err && `${err.name}: ${err.message}`}`);
+    const abortErr = await soon(aborted, 'the aborted thread');
+    assert(abortErr instanceof Error && abortErr.name === 'AbortError', `an aborted thread must reject as AbortError; got ${abortErr && abortErr.name}`);
   });
 
   await run('an ack settles its request with the worker\'s result', async () => {

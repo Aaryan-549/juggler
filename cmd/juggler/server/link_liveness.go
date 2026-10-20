@@ -100,7 +100,7 @@ type outboundIdler interface {
 
 // serverBeat is the beat itself: the smallest message that proves the link
 // still carries one. Shared and never mutated.
-var serverBeat = map[string]string{"type": "heartbeat"}
+var serverBeat = bareFrame{Type: frameHeartbeat}
 
 // linkSupervisor watches one client's link from inside that client's own message
 // loop. Every field is owned by that one goroutine, which is why plain fields

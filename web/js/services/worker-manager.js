@@ -223,7 +223,7 @@ export class WorkerManager {
   /**
    * Handle incoming worker message from WebSocket
    * Unwraps the envelope and routes to internal message handler
-   * @param {{type: string, conversationId: string, workerMsgType: string, payload: object}} envelope - Worker message envelope
+   * @param {import('../protocol/server-wire-types.gen.js').WorkerMessageFrame} envelope - Worker message envelope
    */
   handleWorkerMessageFromWS(envelope) {
     const { conversationId, payload } = envelope;
@@ -712,9 +712,9 @@ export class WorkerManager {
    * `create-thread-response` answers. A response for a request this client
    * did not make (the worker broadcasts them) or already settled is ignored.
    * @param {string} requestId - The request the response names
-   * @param {{error: string, cancelled: boolean}|{threadItemId: string, result: string}} outcome -
-   *   The thread's result, or why it has none. A cancelled thread rejects
-   *   with an AbortError, so callers can tell it from one that failed.
+   * @param {{error: string}|{threadItemId: string, result: string}} outcome -
+   *   The thread's result, or why the worker made none. A caller's own abort
+   *   never reaches here: it rejects with an AbortError where it is wired up.
    * @returns {void}
    */
   settleThreadRequest(requestId, outcome) {
@@ -722,9 +722,7 @@ export class WorkerManager {
     if (!pending) return;
     this._pendingThreadRequests.delete(requestId);
     if ('error' in outcome) {
-      const err = new Error(outcome.error);
-      if (outcome.cancelled) err.name = 'AbortError';
-      pending.reject(err);
+      pending.reject(new Error(outcome.error));
       return;
     }
     pending.resolve({ threadItemId: outcome.threadItemId, result: outcome.result });

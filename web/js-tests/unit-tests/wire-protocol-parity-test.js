@@ -11,7 +11,8 @@
  * holds the Go source to it; this half holds the JS tables to it:
  * `INBOUND_HANDLERS` against the worker's outbound types marked `jsHandler`,
  * `WebSocketService.TYPED_MESSAGE_ROUTES` against the server frames handled by
- * `routes`, `isRestingStatus` against each status's `holdsClaim`, which
+ * `routes`, `SESSION_MESSAGE_HANDLERS` against those handled by
+ * `session-handlers`, `isRestingStatus` against each status's `holdsClaim`, which
  * the Go half checks against `statusHoldsClaim`, and
  * `Conversation.handleValidationNotice` against each validation code's
  * `bounced`, which the Go half checks against where the worker raises it.
@@ -21,6 +22,7 @@
 import { assert } from '../utilities/test-helpers.js';
 import { INBOUND_HANDLERS } from '../../js/services/worker-manager-inbound.js';
 import { WebSocketService } from '../../js/services/websocket.js';
+import { SESSION_MESSAGE_HANDLERS } from '../../js/protocol/session-message-handlers.js';
 import { isRestingStatus } from '../../js/model/processing-status.js';
 import Conversation from '../../js/model/conversation.js';
 
@@ -105,6 +107,14 @@ export async function runTests(_ctx) {
     assertSameSet('server → viewer routed frame types',
       routes,
       m.server.outbound.filter((o) => o.handledBy === 'routes').map((o) => o.type));
+  });
+
+  run('SESSION_MESSAGE_HANDLERS covers exactly the server frames handled by session-handlers', () => {
+    const handlers = Object.keys(SESSION_MESSAGE_HANDLERS);
+    assert(handlers.length > 3, `SESSION_MESSAGE_HANDLERS has only ${handlers.length} entries`);
+    assertSameSet('server → viewer session-scoped frame types',
+      handlers,
+      m.server.outbound.filter((o) => o.handledBy === 'session-handlers').map((o) => o.type));
   });
 
   run('isRestingStatus agrees with holdsClaim (Go: statusHoldsClaim)', () => {

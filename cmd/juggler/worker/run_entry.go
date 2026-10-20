@@ -39,6 +39,60 @@ const (
 	runFieldCachedTokens         = "cachedTokens"
 )
 
+// runProjectedFields are the spinner fields a run owns: what it is doing, since
+// when, and how much has flowed. Each live run carries its own copy in its entry
+// — two runs streaming at once each describe themselves — and the projection
+// (projectInto) republishes the chosen run's copy at the top level for the
+// conversation-wide readers.
+var runProjectedFields = []string{
+	runFieldStatus, runFieldMessage, runFieldCode, runFieldStartedAt,
+	runFieldDescription, runFieldPhase, runFieldInputTokens, runFieldOutputTokens, runFieldCachedTokens,
+}
+
+// runEntryFromLegacy is the one run a frame describes through its top-level
+// projection alone (see runsView), or nil when that projection holds no claim.
+// claimedAt is carried across in whatever numeric kind the frame holds it.
+func runEntryFromLegacy(state map[string]any) runEntry {
+	activity, _ := state[runFieldActivity].(string)
+	if activity == ActivityNone {
+		return nil
+	}
+	threadItemID, _ := state[runFieldThreadItemID].(string)
+	e := runEntry{}
+	e.setActivity(activity)
+	e.setThreadItemID(threadItemID)
+	if claimedAt, ok := state[runFieldClaimedAt]; ok {
+		e[runFieldClaimedAt] = claimedAt
+	}
+	if explicit, _ := state[runFieldExplicitContinuation].(bool); explicit {
+		e.setExplicitContinuation()
+	}
+	return e
+}
+
+// projectInto republishes the entry at a frame's top level: its activity, each
+// runProjectedFields field it has (and the removal of each it lacks), its
+// thread, and its claim time. Values are copied as stored, so the top level
+// reads exactly as the entry does.
+func (e runEntry) projectInto(state map[string]any) {
+	state[runFieldActivity] = e.activity()
+	for _, field := range runProjectedFields {
+		if value, ok := e[field]; ok {
+			state[field] = value
+		} else {
+			delete(state, field)
+		}
+	}
+	if id, ok := e[runFieldThreadItemID].(string); ok {
+		state[runFieldThreadItemID] = id
+	}
+	if claimedAt, ok := e[runFieldClaimedAt]; ok {
+		state[runFieldClaimedAt] = claimedAt
+	} else {
+		delete(state, runFieldClaimedAt)
+	}
+}
+
 // runRegistry is processingState.runs decoded: run entries by runKey.
 type runRegistry map[string]runEntry
 
@@ -75,16 +129,8 @@ func (e runEntry) has(key string) bool {
 // docInt64 reads a number the doc stores. A value survives a JSON round trip
 // through toYcrdt, so it can come back as any numeric kind.
 func docInt64(v any) int64 {
-	switch n := v.(type) {
-	case int64:
-		return n
-	case float64:
-		return int64(n)
-	case int:
-		return int64(n)
-	default:
-		return 0
-	}
+	n, _ := yNumberInt64(v)
+	return n
 }
 
 // threadItemID is the thread the entry belongs to ("" for the root).

@@ -233,10 +233,10 @@ func (r *run) spendCeilingStopsRun() bool {
 	if threadItemID == "" {
 		return false
 	}
-	if !r.doc.threadFlag(threadItemID, "llmCreated") {
+	if !r.doc.threadFlag(threadItemID, keyLLMCreated) {
 		return false
 	}
-	if r.doc.threadFlag(threadItemID, "canSpawnThreads") {
+	if r.doc.threadFlag(threadItemID, keyCanSpawnThreads) {
 		return false
 	}
 	return r.spendCeilingReached()

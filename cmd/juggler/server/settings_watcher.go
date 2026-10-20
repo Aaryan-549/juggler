@@ -51,10 +51,7 @@ func settingsRevision(gs core.GlobalSettings) string {
 // There is no origin to exclude: the window that made the change needs the stored
 // document too, since the save normalises what it posted.
 func (s *Server) broadcastSettingsChanged(gs core.GlobalSettings) {
-	s.broadcastToAll(map[string]any{
-		"type":     "settings-changed",
-		"settings": gs,
-	})
+	s.broadcastToAll(settingsChangedFrame{Type: frameSettingsChanged, Settings: gs})
 }
 
 // adoptExternalSettings re-reads the document and, when it differs from the one

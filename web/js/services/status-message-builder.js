@@ -56,14 +56,6 @@ const RESTATE_AFTER_MS = Object.freeze({
  */
 
 /**
- * @typedef {object} RetryStatusData
- * @property {number} attempt - Current retry attempt
- * @property {number} maxRetries - Maximum retry attempts
- * @property {string} [reason] - Reason for retry (timeout, network, etc.)
- * @property {number} [elapsedTime] - Elapsed time in milliseconds
- */
-
-/**
  * @typedef {object} UploadingStatusData
  * @property {number} payloadSize - Payload size in bytes
  * @property {number} [elapsedTime] - Elapsed time in milliseconds
@@ -271,25 +263,6 @@ export class StatusMessageBuilder {
    */
   static buildExecutingActionStatus(data = {}) {
     return this._withElapsed(t('Running action'), data);
-  }
-
-  /**
-   * Builds status message for retry attempts
-   * @param {RetryStatusData} data - Retry status information
-   * @returns {string} Formatted status message
-   */
-  static buildRetryStatus(data) {
-    return this._withElapsed(t('Retrying (attempt\u00A0{attempt} of\u00A0{maxRetries})',
-      { attempt: formatNumber(data.attempt), maxRetries: formatNumber(data.maxRetries) }), data);
-  }
-
-  /**
-   * Builds status message for errors
-   * @param {string} message - Error message
-   * @returns {string} Formatted error status message
-   */
-  static buildErrorStatus(message) {
-    return t('Error: {message}', { message });
   }
 
   /**

@@ -222,7 +222,7 @@ func (r *run) announceMockPause(threadItemID string) {
 		entryHoldsClaim,
 		func(entry runEntry, _ map[string]any) { entry.setStatus(statusMockPaused) },
 	)
-	r.send(map[string]any{"type": "status", "status": "mock-paused", "message": ""})
+	r.send(mockPausedStatus{Type: msgStatus, Status: "mock-paused", Message: ""})
 }
 
 // callLLMMock is the mock branch of callLLM. Returns the next scripted

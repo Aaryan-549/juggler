@@ -16,14 +16,11 @@ const cancelFrame = typeof cancelAnimationFrame === 'function'
 
 /**
  * @typedef {object} StatusData
- * @property {string} type - Status type (streaming, preparing, waiting, processing_tools, executing_action, retry, error, cancelled, uploading, custom)
+ * @property {string} type - Status type (streaming, preparing, waiting, processing_tools, executing_action, cancelled, uploading, custom)
  * @property {number} [inputTokens] - Tokens sent to LLM
  * @property {number} [outputTokens] - Tokens received from LLM
  * @property {number} [cachedTokens] - Prompt tokens served from cache (OpenAI)
- * @property {number} [attempt] - Current retry attempt
- * @property {number} [maxRetries] - Maximum retry attempts
- * @property {string} [reason] - Reason for retry
- * @property {string} [message] - Error or custom message
+ * @property {string} [message] - Custom message
  * @property {number} [payloadSize] - Payload size in bytes (for uploading status)
  * @property {string} [phase] - Provider-emitted retry, cache, or notice status
  * @property {string} [description] - Current provider activity snapshot
@@ -488,7 +485,7 @@ class LLMState {
   /**
    * Update status for one of a conversation's runs and update UI
    * @param {string} conversationId - Conversation ID
-   * @param {string} statusType - Type of status (streaming, preparing, waiting, processing_tools, retry, error, cancelled, empty, uploading, custom)
+   * @param {string} statusType - Type of status (streaming, preparing, waiting, processing_tools, cancelled, empty, uploading, custom)
    * @param {Partial<StatusData>} [data] - Additional status data
    * @param {string|null} [threadItemId] - Thread the status describes; omitted targets the projected run
    */
@@ -574,10 +571,6 @@ class LLMState {
         return StatusMessageBuilder.buildProcessingToolsStatus(data);
       case 'executing_action':
         return StatusMessageBuilder.buildExecutingActionStatus(data);
-      case 'retry':
-        return StatusMessageBuilder.buildRetryStatus((/** @type {any} */ (data)));
-      case 'error':
-        return StatusMessageBuilder.buildErrorStatus(data.message || t('Unknown error'));
       case 'cancelled':
         return StatusMessageBuilder.buildCancelledStatus();
       case 'custom':
@@ -667,10 +660,6 @@ class LLMState {
         phase: statusData.phase,
         description: statusData.description,
         elapsedTime: elapsedTime,
-        // Preserve retry-specific fields
-        attempt: statusData.attempt,
-        maxRetries: statusData.maxRetries,
-        reason: statusData.reason,
         // Preserve custom message (required for 'custom' status type)
         message: statusData.message
       }, key);

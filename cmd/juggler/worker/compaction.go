@@ -254,7 +254,7 @@ func providerMessages(messages []map[string]any) ([]provider.Message, error) {
 
 // threadHasResult reports whether the thread already carries a committed result.
 func (w *ConversationWorker) threadHasResult(threadID string) bool {
-	return w.doc.threadString(threadID, "result") != ""
+	return w.doc.threadString(threadID, keyResult) != ""
 }
 
 // validateCompactionModel returns the pinned model config or a typed
@@ -327,11 +327,11 @@ func (r *run) runReducer(kind string, pinnedModel ModelConfig, budget boundedCom
 // summarizer runs tool-free, so nothing about a fold's identity is carried by a
 // tool name.
 func (w *ConversationWorker) isBoundedCompactionThread(threadID string) bool {
-	return w.doc.threadFlag(threadID, "boundedCompaction")
+	return w.doc.threadFlag(threadID, keyBoundedCompaction)
 }
 
 func (w *ConversationWorker) compactionPromptItemID(threadID string) string {
-	return w.doc.threadString(threadID, "compactionPromptItemId")
+	return w.doc.threadString(threadID, keyCompactionPromptItemID)
 }
 
 // resolveCompactionPromptItemID returns the thread's summarization-prompt item
@@ -392,19 +392,19 @@ func (w *ConversationWorker) writeBoundedCompactionResult(threadID string, resul
 	if m == nil {
 		return false
 	}
-	if existing, _ := m.Get("result").(string); existing != "" {
+	if existing := yMapString(m, keyResult); existing != "" {
 		return true
 	}
 	accounting := convertToYcrdt(compactionAccountingMap(result))
-	unsummarized, _ := m.Get("compactionUnsummarized").(bool)
+	unsummarized := yMapBool(m, keyCompactionUnsummarized)
 	w.doc.transactTracked(func(_ *ycrdt.Transaction) {
-		m.Set("result", result.Summary)
-		m.Set("compactionAccounting", accounting)
+		m.Set(keyResult, result.Summary)
+		m.Set(keyCompactionAccounting, accounting)
 		// A summary exists again, so any marker left by an earlier failed or
 		// cancelled attempt goes with it, in the same transaction that made it
 		// untrue.
 		if unsummarized {
-			m.Delete("compactionUnsummarized")
+			m.Delete(keyCompactionUnsummarized)
 		}
 	})
 	return true
@@ -426,7 +426,7 @@ func (r *run) handleCompact(payload json.RawMessage) {
 	if !r.decodePayload("compact", payload, &msg) {
 		return
 	}
-	ack := AckMessage{Type: "ack", AckID: msg.AckID}
+	ack := AckMessage{Type: msgAck, AckID: msg.AckID}
 	// Busy means BOTH the run state and the doc-native LLM claim, matching every
 	// other intake (handleSendMessage, task delivery). State alone is not enough:
 	// a turn can leave state Idle while still holding the claim, and folding then

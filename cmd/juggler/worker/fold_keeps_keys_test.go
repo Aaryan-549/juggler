@@ -13,11 +13,12 @@ import (
 
 // TestCompactionFoldKeepsEveryKeyOfWhatItFolds pins what a compaction fold
 // moves. A fold relocates history into a summary thread; it must not edit it.
-// Items carry keys ConversationItem does not declare — a thread's llmCreated,
-// delegated and readOnly stamps, its unsent draft, a tool action's executor and
-// running epoch, whatever a plugin wrote — and keys it declares but does not
-// read back, such as a notice's source. Every one of them, and the Y type each
-// value had, must come through the fold at every depth. The one deliberate
+// Items carry keys ConversationItem does not declare — a tool action's running
+// epoch, whatever a plugin wrote — and keys it declares whose Y type the struct
+// would not keep, such as a thread's unsent draft (a Y.Map), beside its
+// llmCreated, delegated and readOnly stamps, a tool action's executor and a
+// notice's source. Every one of them, and the Y type each value had, must come
+// through the fold at every depth. The one deliberate
 // exception is a prior summarized fold, which sheds its run-control fields
 // (condenseForRefold).
 func TestCompactionFoldKeepsEveryKeyOfWhatItFolds(t *testing.T) {

@@ -179,7 +179,7 @@ func TestLinkSupervisor_BeatsOnlyOnAQuietLink(t *testing.T) {
 	if quiet.sentCount() != 1 {
 		t.Fatalf("a quiet link must be given something to measure itself by; sent=%d", quiet.sentCount())
 	}
-	msg, ok := quiet.nextSent(t).(map[string]string)
+	msg, ok := frameMap(quiet.nextSent(t))
 	if !ok || msg["type"] != "heartbeat" {
 		t.Fatalf("the beat must be the heartbeat message the client watches for; got %#v", quiet.nextSent(t))
 	}

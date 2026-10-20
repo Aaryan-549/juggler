@@ -136,7 +136,7 @@ func (r *run) spawnThread(spec threadSpec, call toolSpawn) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return r.insertThread(spec, call, parent, "llmCreated")
+	return r.insertThread(spec, call, parent, keyLLMCreated)
 }
 
 // dispatchThread opens a thread nobody's turn asked for (see the comment above
@@ -172,7 +172,7 @@ func (r *run) dispatchThread(spec threadSpec) (string, error) {
 		r.fireAutoName(spec.Prompt, mc.Provider, mc.Model, mc.Thinking, false)
 	}
 
-	threadItemID, err := r.insertThread(spec, toolSpawn{}, parent, "strategyCreated")
+	threadItemID, err := r.insertThread(spec, toolSpawn{}, parent, keyStrategyCreated)
 	if err != nil {
 		return "", err
 	}
@@ -221,29 +221,29 @@ func (r *run) insertThread(spec threadSpec, call toolSpawn, parent threadContext
 		Seed: !spec.IsContinuation,
 		Stamp: func(m *ycrdt.YMap) {
 			if spec.ResultSpec != "" {
-				m.Set("resultSpec", spec.ResultSpec)
+				m.Set(keyResultSpec, spec.ResultSpec)
 			}
 			if call.SessionName != "" {
-				m.Set("sessionName", call.SessionName)
+				m.Set(keySessionName, call.SessionName)
 			}
 			m.Set(createdBy, true)
 			// Optional per-thread strategy/model overrides (user-defined
 			// subthread commands). Stamped so getEffectiveStrategyId /
 			// ResolveEffectiveModelConfig resolve them on the new thread.
 			if spec.StrategyID != "" {
-				m.Set("currentStrategyId", spec.StrategyID)
+				m.Set(keyCurrentStrategyID, spec.StrategyID)
 			}
 			if spec.ModelConfigJSON != "" {
 				var mc map[string]any
 				if err := json.Unmarshal([]byte(spec.ModelConfigJSON), &mc); err == nil && len(mc) > 0 {
-					m.Set("modelConfig", convertToYcrdt(mc))
+					m.Set(keyModelConfig, convertToYcrdt(mc))
 				}
 			}
 			if call.Delegated {
-				m.Set("delegated", true)
+				m.Set(keyDelegated, true)
 			}
 			if call.ReadOnly {
-				m.Set("readOnly", true)
+				m.Set(keyReadOnly, true)
 			}
 			if call.ToolUseID == "" {
 				return
@@ -254,22 +254,22 @@ func (r *run) insertThread(spec threadSpec, call toolSpawn, parent threadContext
 				// session appends its own alias item carrying its own selector,
 				// so each parent item answers for one run and the wire emits
 				// each call's pair where the call was made.
-				m.Set("runToolUseId", call.ToolUseID)
-				m.Set("runToolName", call.ToolName)
+				m.Set(keyRunToolUseID, call.ToolUseID)
+				m.Set(keyRunToolName, call.ToolName)
 				if call.RunGoal != "" {
-					m.Set("runGoal", call.RunGoal)
+					m.Set(keyRunGoal, call.RunGoal)
 				}
 				if input := structuredToolInput(call.ToolInput); input != nil {
-					m.Set("runToolInput", input)
+					m.Set(keyRunToolInput, input)
 				}
 				return
 			}
 			// No invocation message to select: the coordinates live on the
 			// thread itself and describe the single invocation they always did.
-			m.Set("toolUseId", call.ToolUseID)
-			m.Set("toolName", call.ToolName)
+			m.Set(keyToolUseID, call.ToolUseID)
+			m.Set(keyToolName, call.ToolName)
 			if input := structuredToolInput(call.ToolInput); input != nil {
-				m.Set("toolInput", input)
+				m.Set(keyToolInput, input)
 			}
 		},
 	}
@@ -324,14 +324,14 @@ func (w *ConversationWorker) promoteThreadSpawnCapable(threadItemID string) {
 	if m == nil {
 		return
 	}
-	if delegated, _ := m.Get("delegated").(bool); delegated {
+	if delegated := yMapBool(m, keyDelegated); delegated {
 		return // delegated subthread: never promote
 	}
-	if already, _ := m.Get("canSpawnThreads").(bool); already {
+	if already := yMapBool(m, keyCanSpawnThreads); already {
 		return // already spawn-capable (e.g. a /thread-created thread)
 	}
 	w.doc.transactTracked(func(_ *ycrdt.Transaction) {
-		m.Set("canSpawnThreads", true)
+		m.Set(keyCanSpawnThreads, true)
 	})
 	w.log.Info("[worker] promoted thread %s to spawn-capable (user-steered)", threadItemID)
 }
@@ -511,16 +511,8 @@ func (r *run) handleCreateThread(payload json.RawMessage) {
 		ParentThreadItemID: msg.ThreadItemID,
 	})
 	if err != nil {
-		r.send(map[string]any{
-			"type":      "create-thread-response",
-			"requestId": msg.RequestID,
-			"error":     err.Error(),
-		})
+		r.send(CreateThreadResponse{Type: msgCreateThreadResponse, RequestID: msg.RequestID, Error: err.Error()})
 		return
 	}
-	r.send(map[string]any{
-		"type":         "create-thread-response",
-		"requestId":    msg.RequestID,
-		"threadItemId": threadItemID,
-	})
+	r.send(CreateThreadResponse{Type: msgCreateThreadResponse, RequestID: msg.RequestID, ThreadItemID: threadItemID})
 }

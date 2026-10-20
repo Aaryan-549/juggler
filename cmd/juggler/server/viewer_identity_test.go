@@ -15,14 +15,6 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-// sessionFrame is the connect message's shape, as much of it as identity needs.
-type sessionFrame struct {
-	Type     string `json:"type"`
-	ClientID string `json:"clientId"`
-	ViewerID string `json:"viewerId"`
-	BootID   string `json:"bootId"`
-}
-
 // dialViewerAs opens a real viewer WebSocket presenting the given viewer id
 // (verbatim, so a malformed one reaches the server as written) and returns the
 // connect frame.

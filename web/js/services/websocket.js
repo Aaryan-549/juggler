@@ -96,7 +96,55 @@ const RECONNECT_JITTER = 0.25;
 const LINK_STABLE_AFTER_MS = 10000;
 
 /**
- * @typedef {'open'|'close'|'error'|'message'|'session'|'file-change'|'project-changed'|'plugin-changed'|'retry'|'streaming-error'|'providers-update'|'providers-ready'|'shell-output'|'reconnect-attempt'|'engine-bridge'|'update-status'|'clients-changed'|'pinboard-changed'|'pinboard-reveal'|'viewer-relay'|'workspaces-changed'|'settings-changed'|'server-full'} WSEventType
+ * @typedef {'open'|'close'|'error'|'message'|'session'|'file-change'|'project-changed'|'plugin-changed'|'providers-update'|'providers-ready'|'shell-output'|'reconnect-attempt'|'engine-bridge'|'update-status'|'clients-changed'|'pinboard-changed'|'pinboard-reveal'|'viewer-relay'|'workspaces-changed'|'settings-changed'|'server-full'} WSEventType
+ */
+
+/**
+ * An engine-bridge frame: relayed by the server as the bytes the engine wrote,
+ * so it has no server struct, and its shape is whatever the engine sent.
+ * @typedef {object} EngineBridgeFrame
+ * @property {'engine-bridge'} type - Wire type
+ * @property {unknown} [channel] - The BroadcastChannel it is replayed on
+ * @property {unknown} [payload] - The event, opaque to the transport
+ */
+
+/**
+ * Any frame the server sends, told apart by `type`. The shapes are generated
+ * from cmd/juggler/server (protocol/server-wire-types.gen.js) and held to its
+ * frame structs by TestWireTypedefs, so a renamed field fails checkJs where it
+ * is read.
+ * @typedef {import('../protocol/server-wire-types.gen.js').DataChannelChunkFrame
+ *   |import('../protocol/server-wire-types.gen.js').FileChangeFrame
+ *   |import('../protocol/server-wire-types.gen.js').ProjectChangedFrame
+ *   |import('../protocol/server-wire-types.gen.js').PluginChangedFrame
+ *   |import('../protocol/server-wire-types.gen.js').SettingsChangedFrame
+ *   |import('../protocol/server-wire-types.gen.js').PinboardChangedFrame
+ *   |import('../protocol/server-wire-types.gen.js').PinboardRevealFrame
+ *   |import('../protocol/server-wire-types.gen.js').WorkspacesChangedFrame
+ *   |import('../protocol/server-wire-types.gen.js').ViewerRelayFrame
+ *   |import('../protocol/server-wire-types.gen.js').ProvidersUpdateFrame
+ *   |import('../protocol/server-wire-types.gen.js').UpdateStatusFrame
+ *   |import('../protocol/server-wire-types.gen.js').ClientsChangedFrame
+ *   |import('../protocol/server-wire-types.gen.js').ShellOutputFrame
+ *   |import('../protocol/server-wire-types.gen.js').HeartbeatFrame
+ *   |import('../protocol/server-wire-types.gen.js').SessionFrame
+ *   |import('../protocol/server-wire-types.gen.js').WorkerMessageFrame
+ *   |import('../protocol/server-wire-types.gen.js').ConversationsChangedFrame
+ *   |import('../protocol/server-wire-types.gen.js').ConversationsReorderedFrame
+ *   |import('../protocol/server-wire-types.gen.js').NoticeFrame
+ *   |import('../protocol/server-wire-types.gen.js').SessionMetadataChangedFrame
+ *   |import('../protocol/server-wire-types.gen.js').SessionChangedFrame
+ *   |import('../protocol/server-wire-types.gen.js').RunOneShotFrame
+ *   |import('../protocol/server-wire-types.gen.js').ErrorFrame
+ *   |import('../protocol/server-wire-types.gen.js').ServerFullFrame
+ *   |import('../protocol/server-wire-types.gen.js').ServerShutdownFrame
+ *   |EngineBridgeFrame} ServerFrame
+ */
+
+/**
+ * A route for one frame type, against that frame's shape.
+ * @template {ServerFrame['type']} K
+ * @typedef {(ws: WebSocketService, data: Extract<ServerFrame, {type: K}>) => (boolean|void)} RouteFor
  */
 
 /**
@@ -254,8 +302,6 @@ class WebSocketService {
       'file-change': [],
       'project-changed': [],
       'plugin-changed': [],
-      retry: [],
-      'streaming-error': [],
       'providers-update': [],
       'providers-ready': [],
       'shell-output': [],
@@ -662,10 +708,10 @@ class WebSocketService {
    * Inbound messages that are identified by their `type`, keyed by that type.
    * Each route translates one wire message into the service events subscribers
    * listen for, and is dispatched by {@link WebSocketService#_handleMessageData}
-   * before the shape-matched cases (retry, streaming-error) and the generic
-   * 'message' emit. Returning `false` declines the message so it falls through to
-   * those cases — only engine-bridge does that, for a malformed channel.
-   * @type {Record<string, (ws: WebSocketService, data: any) => boolean|void>}
+   * before the generic 'message' emit. Returning `false` declines the message so
+   * it falls through to that emit — only engine-bridge does that, for a malformed
+   * channel.
+   * @type {{[K in ServerFrame['type']]?: RouteFor<K>}}
    */
   static TYPED_MESSAGE_ROUTES = {
     [WEBRTC_CHUNK_TYPE]: (ws, data) => {
@@ -859,24 +905,12 @@ class WebSocketService {
 
       // Messages identified by `type` route through the table above. A route
       // returning false declined the message (see engine-bridge), so it falls
-      // through to the shape-matched cases below.
-      const route = WebSocketService.TYPED_MESSAGE_ROUTES[data.type];
+      // through to the generic path below, as a frame of no known type does. The
+      // table is typed per key; the frame is not yet, so look it up as the
+      // untyped row it is at this point.
+      const routes = /** @type {Record<string, ((ws: WebSocketService, data: any) => boolean|void)|undefined>} */ (WebSocketService.TYPED_MESSAGE_ROUTES);
+      const route = routes[data.type];
       if (route && route(this, data) !== false) return;
-
-      // Handle retry notifications ONLY (has retry:true and attempt/maxRetries fields)
-      if (data.retry === true && data.attempt !== undefined && data.maxRetries !== undefined) {
-        this._emit('retry', data);
-        return;
-      }
-
-      // Handle retryable error notifications - these are INFO, not fatal errors
-      // Backend sends these when an error occurs but will retry
-      // Emit as 'streaming-error' event so UI can show the actual error details
-      if (data.error && data.message && !data.chunk && !data.response) {
-        console.warn('[WebSocket] Streaming error received:', data.message);
-        this._emit('streaming-error', data);
-        return;
-      }
 
       // Record every inbound WS message in the event tape so the
       // failure dump can correlate JS-side reception with worker-side

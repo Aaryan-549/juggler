@@ -28,22 +28,33 @@ const (
 // spend as a sentinel.
 const noDeadlineTimeoutMs = -1
 
-// timeoutFromParams reads an optional "timeout" (milliseconds) from params,
-// falling back to defaultMs when absent, and caps the result at maxExecTimeoutMs.
-func timeoutFromParams(params map[string]any, defaultMs int) time.Duration {
+// shellParams are the params execute and startBackground read. Code and
+// Command are pointers because an empty one is still the caller's choice: an
+// empty code runs as Python, and only a missing command is the error.
+type shellParams struct {
+	Timeout   *float64 `param:"timeout"`
+	Code      *string  `param:"code"`
+	Command   *string  `param:"command"`
+	Cwd       string   `param:"cwd"`
+	ConvID    string   `param:"convId"`
+	ToolUseID string   `param:"toolUseId"`
+}
+
+// timeoutFrom is the optional "timeout" (milliseconds), defaultMs when absent,
+// capped at maxExecTimeoutMs.
+func timeoutFrom(timeout *float64, defaultMs int) time.Duration {
 	timeoutMs := defaultMs
-	if t, ok := params["timeout"].(float64); ok {
-		timeoutMs = int(t)
+	if timeout != nil {
+		timeoutMs = int(*timeout)
 	}
 	return capTimeout(timeoutMs)
 }
 
-// wantsNoDeadline reports whether params asked for a task that runs until it is
-// stopped. Only startBackground can honour it; the foreground paths refuse it
-// with errNoDeadlineForeground.
-func wantsNoDeadline(params map[string]any) bool {
-	t, ok := params["timeout"].(float64)
-	return ok && int(t) == noDeadlineTimeoutMs
+// wantsNoDeadline reports whether the timeout asked for a task that runs until
+// it is stopped. Only startBackground can honour it; the foreground paths
+// refuse it with errNoDeadlineForeground.
+func wantsNoDeadline(timeout *float64) bool {
+	return timeout != nil && int(*timeout) == noDeadlineTimeoutMs
 }
 
 // errNoDeadlineForeground is what a foreground command asking for no deadline
@@ -94,10 +105,14 @@ func exitCodeOf(err error) (int, bool) {
 
 // startBackground starts a command in the background and returns immediately
 func (ops *ShellOperations) startBackground(params map[string]any) (any, error) {
-	command, ok := params["command"].(string)
-	if !ok || command == "" {
+	p, err := decodeParams[shellParams](params)
+	if err != nil {
+		return nil, err
+	}
+	if p.Command == nil || *p.Command == "" {
 		return nil, fmt.Errorf("missing command parameter")
 	}
+	command := *p.Command
 
 	// Normalize newlines to && — LLMs sometimes use \n to separate commands
 	command = normalizeCommandNewlines(command)
@@ -109,12 +124,11 @@ func (ops *ShellOperations) startBackground(params map[string]any) (any, error) 
 	// Get timeout from params (default: the 20-minute cap for background tasks).
 	// Read even for a task that will not have one, because it is what names the
 	// deadline in the failure message — which only a task that has one can reach.
-	noDeadline := wantsNoDeadline(params)
-	timeout := timeoutFromParams(params, maxExecTimeoutMs)
+	noDeadline := wantsNoDeadline(p.Timeout)
+	timeout := timeoutFrom(p.Timeout, maxExecTimeoutMs)
 
 	// Extract conversation/tool-use tracking params (optional)
-	convID, _ := params["convId"].(string)
-	toolUseID, _ := params["toolUseId"].(string)
+	convID, toolUseID := p.ConvID, p.ToolUseID
 
 	// Generate unique shell ID
 	shellID := fmt.Sprintf("bg-%d", time.Now().UnixNano())
@@ -320,20 +334,24 @@ func (ops *ShellOperations) startBackground(params map[string]any) (any, error) 
 //
 // WARNING: Both modes execute arbitrary code and are security risks.
 func (ops *ShellOperations) execute(ctx context.Context, params map[string]any) (any, error) {
-	if wantsNoDeadline(params) {
+	p, err := decodeParams[shellParams](params)
+	if err != nil {
+		return nil, err
+	}
+	if wantsNoDeadline(p.Timeout) {
 		return nil, errNoDeadlineForeground
 	}
 
 	// Check if this is Python code execution (code param) or shell command
-	if code, ok := params["code"].(string); ok {
+	if p.Code != nil {
 		// Python code execution - pass via stdin to python3
-		return ops.executePythonCode(ctx, code, params)
+		return ops.executePythonCode(ctx, *p.Code, p)
 	}
 
-	command, ok := params["command"].(string)
-	if !ok {
+	if p.Command == nil {
 		return nil, fmt.Errorf("missing 'command' or 'code' parameter")
 	}
+	command := *p.Command
 
 	// Normalize newlines to && — LLMs sometimes use \n to separate commands
 	// in JSON, which works with sh -c but displays poorly and loses fail-fast semantics.
@@ -344,11 +362,11 @@ func (ops *ShellOperations) execute(ctx context.Context, params map[string]any) 
 	}
 
 	// Get timeout from params (defaults to defaultExecTimeoutMs, capped at maxExecTimeoutMs)
-	timeout := timeoutFromParams(params, defaultExecTimeoutMs)
+	timeout := timeoutFrom(p.Timeout, defaultExecTimeoutMs)
 
 	// Get working directory from params (default: session's project path)
 	workingDir := ops.scope.Root()
-	if cwd, ok := params["cwd"].(string); ok && cwd != "" {
+	if cwd := p.Cwd; cwd != "" {
 		resolved, err := validateCwd(ops.scope.Root(), cwd)
 		if err != nil {
 			return nil, err
@@ -368,7 +386,7 @@ func (ops *ShellOperations) execute(ctx context.Context, params map[string]any) 
 	setProcGroup(cmd)
 	cmd.Dir = workingDir
 
-	convID, _ := params["convId"].(string)
+	convID := p.ConvID
 	spillID := fmt.Sprintf("exec-%d", time.Now().UnixNano())
 	output := newCappedBuffer(outputHeadLimit, outputTailLimit).
 		withSpill(ops.scope.Root(), newSpillFile(spillDirFor(ops.scope.ProjectRoot(), convID), spillID))
@@ -445,9 +463,9 @@ func (ops *ShellOperations) execute(ctx context.Context, params map[string]any) 
 // Why stdin instead of the -c flag: the code is passed as pure string data,
 // never parsed by a shell, so it sidesteps all shell escaping issues (quotes,
 // backslashes, newlines) and shell argument-length limits.
-func (ops *ShellOperations) executePythonCode(ctx context.Context, code string, params map[string]any) (any, error) {
+func (ops *ShellOperations) executePythonCode(ctx context.Context, code string, p shellParams) (any, error) {
 	// Get timeout from params (defaults to defaultExecTimeoutMs, capped at maxExecTimeoutMs)
-	timeout := timeoutFromParams(params, defaultExecTimeoutMs)
+	timeout := timeoutFrom(p.Timeout, defaultExecTimeoutMs)
 
 	// Create context with timeout, derived from the caller's context so a
 	// cancelled request stops the python process too.
@@ -461,7 +479,7 @@ func (ops *ShellOperations) executePythonCode(ctx context.Context, code string, 
 	cmd.Dir = ops.scope.Root()
 	cmd.Stdin = strings.NewReader(code)
 
-	convID, _ := params["convId"].(string)
+	convID := p.ConvID
 	spillID := fmt.Sprintf("pyexec-%d", time.Now().UnixNano())
 	output := newCappedBuffer(outputHeadLimit, outputTailLimit).
 		withSpill(ops.scope.Root(), newSpillFile(spillDirFor(ops.scope.ProjectRoot(), convID), spillID))

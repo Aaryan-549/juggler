@@ -42,7 +42,7 @@ func countNotices(t *testing.T, c *WSClient) int {
 	for {
 		select {
 		case msg := <-c.send:
-			m, ok := msg.json.(map[string]any)
+			m, ok := frameMap(msg.json)
 			if !ok {
 				continue
 			}

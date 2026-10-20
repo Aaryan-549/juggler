@@ -22,7 +22,7 @@ func namingOps(t *testing.T, c *WSClient) []string {
 	for {
 		select {
 		case msg := <-c.send:
-			m, ok := msg.json.(map[string]any)
+			m, ok := frameMap(msg.json)
 			if !ok || m["type"] != "conversations-changed" {
 				continue
 			}

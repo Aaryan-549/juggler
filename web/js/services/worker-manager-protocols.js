@@ -223,7 +223,7 @@ export function __resetToolExecutionReporterForTest() {
  * setOnContextRequest in session-worker-callbacks.js).
  * @param {any} wm - WorkerManager instance
  * @param {string} conversationId
- * @param {any} data - Worker message payload
+ * @param {import('./worker-manager-inbound.js').RenderContextItemsRequestMessage} data - Worker message payload
  * @returns {Promise<void>}
  */
 export async function handleRenderContextItemsRequest(wm, conversationId, data) {
@@ -282,7 +282,7 @@ export function sendRenderContextItemsResponse(wm, conversationId, requestId, co
  * reload, which first waits for running turns, this one included.
  * @param {any} wm
  * @param {string} conversationId
- * @param {any} data
+ * @param {import('./worker-manager-inbound.js').RequestToolsMessage} data - Worker message payload
  * @returns {Promise<void>}
  */
 export async function handleRequestTools(wm, conversationId, data) {
@@ -319,7 +319,7 @@ export function sendToolsResult(wm, conversationId, requestId, tools) {
  * callback can resolve the tool's item (mirrors handleRenderContextItemsRequest).
  * @param {any} wm
  * @param {string} conversationId
- * @param {any} data - {requestId, toolUseId, toolName, toolInput}
+ * @param {import('./worker-manager-inbound.js').BuildSubthreadSpecMessage} data - Worker message payload
  * @returns {Promise<void>}
  */
 export async function handleBuildSubthreadSpec(wm, conversationId, data) {
@@ -360,7 +360,7 @@ export function sendBuildSubthreadSpecResponse(wm, conversationId, requestId, sp
  * the engine role is hard-asserted here.
  * @param {any} wm - WorkerManager instance
  * @param {string} conversationId
- * @param {any} data - {hook, strategyId, threadItemId?, requestId?, previousStrategyId?}
+ * @param {import('./worker-manager-inbound.js').RunStrategyHookMessage} data - Worker message payload
  * @returns {Promise<void>} Resolves once the hook has run (and, for onActivate, the response is sent)
  */
 export async function handleRunStrategyHook(wm, conversationId, data) {
@@ -495,7 +495,7 @@ const _contextHookAborters = new Map();
  * Engine-only, like all session-wide flow — hard-asserted here.
  * @param {any} wm - WorkerManager instance
  * @param {string} conversationId
- * @param {any} data - {hook, turnIndex}
+ * @param {import('./worker-manager-inbound.js').RunContextHookMessage} data - Worker message payload
  * @returns {Promise<void>} Resolves once every type's hook has run
  */
 export async function handleRunContextHook(wm, conversationId, data) {

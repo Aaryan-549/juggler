@@ -166,14 +166,89 @@ func truncateLineForContext(line string) string {
 	return fmt.Sprintf("%s… [line truncated: %d of %d characters shown]", line[:cut], shown, total)
 }
 
+// loadFileParams are loadFile's params. Of the modes, the first one present
+// wins: tail, head, around, lineRange, then the whole file.
+type loadFileParams struct {
+	Path              string               `param:"path,required,max=4096"`
+	UserInitiated     bool                 `param:"userInitiated"`
+	OutOfRootApproved bool                 `param:"outOfRootApproved"`
+	Raw               bool                 `param:"raw"`
+	Tail              *float64             `param:"tail"`
+	Head              *float64             `param:"head"`
+	Around            *loadAroundParams    `param:"around"`
+	LineRange         *loadLineRangeParams `param:"lineRange"`
+	MaxLines          *float64             `param:"maxLines"`
+}
+
+type loadAroundParams struct {
+	Line    *float64 `param:"line"`
+	Context *float64 `param:"context"`
+}
+
+type loadLineRangeParams struct {
+	Start *float64 `param:"start"`
+	End   *float64 `param:"end"`
+}
+
+// writeFileParams are writeFile's params.
+type writeFileParams struct {
+	Path              string `param:"path,required,max=4096,wrapped"`
+	Content           string `param:"content,max=10485760,wrapped"` // 10MB
+	DryRun            bool   `param:"dryRun"`
+	OutOfRootApproved bool   `param:"outOfRootApproved"`
+	ExpectedHash      string `param:"expectedHash"`
+}
+
+// editFileParams are editFile's params.
+type editFileParams struct {
+	Path              string `param:"path,required,max=4096,wrapped"`
+	OldStr            string `param:"old_str,required,max=10485760,wrapped"`
+	NewStr            string `param:"new_str,max=10485760,wrapped"`
+	DryRun            bool   `param:"dryRun"`
+	ReplaceAll        bool   `param:"replace_all"`
+	ExpectedHash      string `param:"expectedHash"`
+	OutOfRootApproved bool   `param:"outOfRootApproved"`
+}
+
+// editFileLinesParams are editFileLines' params. StartLine is checked by the
+// handler, whose words for a missing one are its own.
+type editFileLinesParams struct {
+	Path              string   `param:"path,required,max=4096,wrapped"`
+	StartLine         *float64 `param:"startLine"`
+	NewContent        string   `param:"newContent,max=10485760,wrapped"`
+	DryRun            bool     `param:"dryRun"`
+	ContextLine       *float64 `param:"contextLine"`
+	ContextText       string   `param:"contextText"`
+	ExpectedHash      string   `param:"expectedHash"`
+	EndLine           *float64 `param:"endLine"`
+	OutOfRootApproved bool     `param:"outOfRootApproved"`
+}
+
+// pathParams are the params of an op that takes a path alone (getFileHash).
+type pathParams struct {
+	Path string `param:"path,required,max=4096"`
+}
+
+// statParams are stat's params.
+type statParams struct {
+	Path          string `param:"path,required,max=4096"`
+	UserInitiated bool   `param:"userInitiated"`
+}
+
+// mkdirParams are mkdir's params.
+type mkdirParams struct {
+	Path      string `param:"path,required,max=4096"`
+	Recursive bool   `param:"recursive"`
+}
+
 // loadFile loads a file's content with various modes
 // Supports: full file, line range, tail (last N lines), head (first N lines), around (lines around a specific line)
 func (ops *FileOperations) loadFile(params map[string]any) (any, error) {
-	// Validate path parameter
-	path, err := ValidateStringParam(params["path"], "path", true, 4096)
+	p, err := decodeParams[loadFileParams](params)
 	if err != nil {
 		return nil, err
 	}
+	path := p.Path
 
 	// User-initiated reads (e.g. an @-mention or file-picker pin) may reference
 	// paths outside the project — relative (../sibling) or absolute. Resolve
@@ -181,9 +256,7 @@ func (ops *FileOperations) loadFile(params map[string]any) (any, error) {
 	// restricted to the working directory unless outOfRootApproved is set, which
 	// the JS approval flow adds only after the user OK'd this specific read
 	// (mirroring the write tool's out-of-scope approval).
-	userInitiated, _ := params["userInitiated"].(bool)
-	approved, _ := params["outOfRootApproved"].(bool)
-	absPath, err := ops.scope.ResolveRead(path, userInitiated, approved)
+	absPath, err := ops.scope.ResolveRead(path, p.UserInitiated, p.OutOfRootApproved)
 	if err != nil {
 		return nil, err
 	}
@@ -305,7 +378,7 @@ func (ops *FileOperations) loadFile(params map[string]any) (any, error) {
 	// LLM prompt would instead corrupt the data (a truncated line + an injected
 	// truncation marker makes JSON.parse fail at the cut point). Only the
 	// LLM-facing read tool wants the trimmed view.
-	raw, _ := params["raw"].(bool)
+	raw := p.Raw
 
 	// Truncate over-long lines (keeps minified/generated files from flooding the
 	// context). truncateLineForContext cuts on a UTF-8 rune boundary — a raw
@@ -330,9 +403,9 @@ func (ops *FileOperations) loadFile(params map[string]any) (any, error) {
 	// Determine read mode and extract content
 	// Priority: tail > head > around > lineRange > full
 
-	if tail, ok := params["tail"].(float64); ok && tail > 0 {
+	if p.Tail != nil && *p.Tail > 0 {
 		// Tail mode: last N lines
-		tailCount := int(tail)
+		tailCount := int(*p.Tail)
 		readMode = fmt.Sprintf("Last %d lines", tailCount)
 
 		if tailCount >= totalLines {
@@ -345,9 +418,9 @@ func (ops *FileOperations) loadFile(params map[string]any) (any, error) {
 			lineCount = tailCount
 		}
 
-	} else if head, ok := params["head"].(float64); ok && head > 0 {
+	} else if p.Head != nil && *p.Head > 0 {
 		// Head mode: first N lines
-		headCount := int(head)
+		headCount := int(*p.Head)
 		readMode = fmt.Sprintf("First %d lines", headCount)
 
 		if headCount >= totalLines {
@@ -360,21 +433,18 @@ func (ops *FileOperations) loadFile(params map[string]any) (any, error) {
 			lineCount = headCount
 		}
 
-	} else if aroundParam, ok := params["around"].(map[string]any); ok {
+	} else if p.Around != nil {
 		// Around mode: lines around a specific line
-		line, lineOk := aroundParam["line"].(float64)
-		context, contextOk := aroundParam["context"].(float64)
-
-		if !lineOk || line <= 0 {
+		if p.Around.Line == nil || *p.Around.Line <= 0 {
 			return nil, fmt.Errorf("around mode requires a valid 'line' parameter")
 		}
 
 		contextLines := 10 // default
-		if contextOk && context > 0 {
-			contextLines = int(context)
+		if p.Around.Context != nil && *p.Around.Context > 0 {
+			contextLines = int(*p.Around.Context)
 		}
 
-		targetLine := int(line)
+		targetLine := int(*p.Around.Line)
 		startIdx := targetLine - contextLines - 1
 		endIdx := targetLine + contextLines
 
@@ -390,14 +460,12 @@ func (ops *FileOperations) loadFile(params map[string]any) (any, error) {
 		lineOffset = startIdx + 1 // Convert 0-indexed to 1-indexed
 		lineCount = endIdx - startIdx
 
-	} else if lineRange, ok := params["lineRange"].(map[string]any); ok {
+	} else if p.LineRange != nil {
 		// Line range mode: specific range of lines
-		start, startOk := lineRange["start"].(float64)
-		end, endOk := lineRange["end"].(float64)
-
-		if !startOk || !endOk || start <= 0 || end <= 0 {
+		if p.LineRange.Start == nil || p.LineRange.End == nil || *p.LineRange.Start <= 0 || *p.LineRange.End <= 0 {
 			return nil, fmt.Errorf("lineRange requires valid 'start' and 'end' parameters")
 		}
+		start, end := *p.LineRange.Start, *p.LineRange.End
 
 		if start > end {
 			return nil, fmt.Errorf("invalid line range: start (%d) must be <= end (%d)", int(start), int(end))
@@ -428,8 +496,8 @@ func (ops *FileOperations) loadFile(params map[string]any) (any, error) {
 		// LLM-facing read wants. Over-long lines are still truncated either
 		// way: only raw mode returns them whole.
 		maxLines := DefaultMaxLines
-		if requested, ok := params["maxLines"].(float64); ok && requested >= 0 {
-			maxLines = int(requested)
+		if p.MaxLines != nil && *p.MaxLines >= 0 {
+			maxLines = int(*p.MaxLines)
 		}
 		if !raw && maxLines > 0 && totalLines > maxLines {
 			// Truncate to first maxLines lines
@@ -469,22 +537,16 @@ func (ops *FileOperations) loadFile(params map[string]any) (any, error) {
 
 // writeFile writes content to a file (creates or overwrites)
 func (ops *FileOperations) writeFile(params map[string]any) (any, error) {
-	// Validate path parameter
-	path, err := ValidateStringParam(params["path"], "path", true, 4096)
+	p, err := decodeParams[writeFileParams](params)
 	if err != nil {
-		return nil, fmt.Errorf("invalid path parameter: %w", err)
+		return nil, err
 	}
-
-	// Validate content parameter
-	content, err := ValidateStringParam(params["content"], "content", false, 10*1024*1024) // 10MB max
-	if err != nil {
-		return nil, fmt.Errorf("invalid content parameter: %w", err)
-	}
+	path, content := p.Path, p.Content
 
 	// Optional: dryRun mode - validate everything but don't write. Used by the
 	// plugin to fail fast before opening the approval modal for an impossible
 	// write (mirrors editFile's dryRun).
-	dryRun, _ := params["dryRun"].(bool)
+	dryRun := p.DryRun
 
 	// The JS approval flow is the policy gate; the backend just sanitises.
 	absPath, err := ops.scope.Sanitize(path)
@@ -558,8 +620,7 @@ func (ops *FileOperations) writeFile(params map[string]any) (any, error) {
 	// directory and every allowed root is refused unless the request is
 	// explicitly marked user-approved. The JS approval flow is the primary gate;
 	// this ensures a JS bug can't silently write anywhere on disk.
-	approved, _ := params["outOfRootApproved"].(bool)
-	if err := ops.scope.AuthorizeOutOfScopeWrite(absPath, path, "write", approved); err != nil {
+	if err := ops.scope.AuthorizeOutOfScopeWrite(absPath, path, "write", p.OutOfRootApproved); err != nil {
 		return nil, err
 	}
 
@@ -569,7 +630,7 @@ func (ops *FileOperations) writeFile(params map[string]any) (any, error) {
 	// preview and this write, so the approved diff no longer describes what
 	// would be destroyed. A file deleted in the interim is not an error — the
 	// write then simply creates it with the approved content.
-	if expectedHash, _ := params["expectedHash"].(string); expectedHash != "" && fileExists {
+	if expectedHash := p.ExpectedHash; expectedHash != "" && fileExists {
 		raw, readErr := os.ReadFile(absPath)
 		if readErr != nil {
 			return nil, fmt.Errorf("failed to read file '%s' for change detection: %w", path, readErr)
@@ -627,23 +688,11 @@ func (ops *FileOperations) writeFile(params map[string]any) (any, error) {
 
 // editFile modifies an existing file using search-and-replace
 func (ops *FileOperations) editFile(params map[string]any) (any, error) {
-	// Validate path parameter
-	path, err := ValidateStringParam(params["path"], "path", true, 4096)
+	p, err := decodeParams[editFileParams](params)
 	if err != nil {
-		return nil, fmt.Errorf("invalid path parameter: %w", err)
+		return nil, err
 	}
-
-	// Validate old_str parameter (normalized from various aliases)
-	oldStr, err := ValidateStringParam(params["old_str"], "old_str", true, 10*1024*1024)
-	if err != nil {
-		return nil, fmt.Errorf("invalid old_str parameter: %w", err)
-	}
-
-	// Validate new_str parameter (normalized from various aliases)
-	newStr, err := ValidateStringParam(params["new_str"], "new_str", false, 10*1024*1024)
-	if err != nil {
-		return nil, fmt.Errorf("invalid new_str parameter: %w", err)
-	}
+	path, oldStr, newStr := p.Path, p.OldStr, p.NewStr
 
 	// Reject a no-op edit: old_str and new_str are identical, so the replace
 	// would rewrite the file with unchanged content and report success — a
@@ -655,18 +704,18 @@ func (ops *FileOperations) editFile(params map[string]any) (any, error) {
 	}
 
 	// Optional: dryRun mode - validate everything but don't write
-	dryRun, _ := params["dryRun"].(bool)
+	dryRun := p.DryRun
 
 	// Optional: replace_all mode - replace every exact occurrence instead of
 	// requiring old_str to be unique. This is deliberately limited to exact
 	// matching so flexible fallback edits remain surgical and unambiguous.
-	replaceAll, _ := params["replace_all"].(bool)
+	replaceAll := p.ReplaceAll
 
 	// Optional: expectedHash - the caller's staleness baseline (the contentHash
 	// its approved dryRun preview reported). When present, the edit is refused
 	// if the file's current bytes hash differently: the file changed between
 	// the preview the user approved and this write.
-	expectedHash, _ := params["expectedHash"].(string)
+	expectedHash := p.ExpectedHash
 
 	// Sanitise, lock, and read the existing file (see openForMutation).
 	absPath, fileInfo, currentContentStr, usedCRLF, currentHash, unlock, err := ops.openForMutation(path)
@@ -768,8 +817,7 @@ func (ops *FileOperations) editFile(params map[string]any) (any, error) {
 	// Defence in depth: refuse an out-of-scope edit unless explicitly approved
 	// (see writeFile and AuthorizeOutOfScopeWrite). Runs only on the real write —
 	// the dryRun feasibility probe above already returned.
-	approved, _ := params["outOfRootApproved"].(bool)
-	if err := ops.scope.AuthorizeOutOfScopeWrite(absPath, path, "edit", approved); err != nil {
+	if err := ops.scope.AuthorizeOutOfScopeWrite(absPath, path, "edit", p.OutOfRootApproved); err != nil {
 		return nil, err
 	}
 
@@ -807,45 +855,36 @@ func (ops *FileOperations) editFile(params map[string]any) (any, error) {
 
 // editFileLines modifies an existing file by replacing a range of lines
 func (ops *FileOperations) editFileLines(params map[string]any) (any, error) {
-	// Validate path parameter
-	path, err := ValidateStringParam(params["path"], "path", true, 4096)
+	p, err := decodeParams[editFileLinesParams](params)
 	if err != nil {
-		return nil, fmt.Errorf("invalid path parameter: %w", err)
+		return nil, err
 	}
+	path, newContent := p.Path, p.NewContent
 
-	// Validate startLine parameter
-	startLineFloat, ok := params["startLine"].(float64)
-	if !ok {
+	if p.StartLine == nil {
 		return nil, fmt.Errorf("missing or invalid startLine parameter (must be a number)")
 	}
-	startLine := int(startLineFloat)
+	startLine := int(*p.StartLine)
 	if startLine <= 0 {
 		return nil, fmt.Errorf("startLine must be greater than 0")
 	}
 
 	var endLine int
 
-	// Validate newContent parameter (normalized from aliases)
-	newContent, err := ValidateStringParam(params["newContent"], "newContent", false, 10*1024*1024)
-	if err != nil {
-		return nil, fmt.Errorf("invalid newContent parameter: %w", err)
-	}
-
 	// Optional: dryRun mode - validate everything but don't write
-	dryRun, _ := params["dryRun"].(bool)
+	dryRun := p.DryRun
 
-	// Optional: contextLine for validation (line number that should contain specific text)
+	// Optional: contextLine for validation (line number that should contain
+	// specific text). contextText is read only beside it.
 	var contextLine int
 	var contextText string
-	if contextLineFloat, ok := params["contextLine"].(float64); ok {
-		contextLine = int(contextLineFloat)
-		if contextTextParam, ok := params["contextText"].(string); ok {
-			contextText = contextTextParam
-		}
+	if p.ContextLine != nil {
+		contextLine = int(*p.ContextLine)
+		contextText = p.ContextText
 	}
 
 	// Optional: expectedHash - staleness baseline, as in editFile.
-	expectedHash, _ := params["expectedHash"].(string)
+	expectedHash := p.ExpectedHash
 
 	// Sanitise, lock, and read the existing file (see openForMutation).
 	absPath, fileInfo, currentContentStr, usedCRLF, currentHash, unlock, err := ops.openForMutation(path)
@@ -864,8 +903,8 @@ func (ops *FileOperations) editFileLines(params map[string]any) (any, error) {
 	// Determine endLine: optional. If not provided, defaults to totalLines. If provided, must be > 0.
 	// Always capped at totalLines if the provided value is too large.
 	endLine = totalLines // Default to end of file
-	if endLineFloat, ok := params["endLine"].(float64); ok {
-		parsedEndLine := int(endLineFloat)
+	if p.EndLine != nil {
+		parsedEndLine := int(*p.EndLine)
 		if parsedEndLine <= 0 {
 			return nil, fmt.Errorf("provided endLine (%d) must be greater than 0, or omit endLine to replace to the end of the file", parsedEndLine)
 		}
@@ -968,8 +1007,7 @@ func (ops *FileOperations) editFileLines(params map[string]any) (any, error) {
 	// Defence in depth: refuse an out-of-scope edit unless explicitly approved
 	// (see writeFile and AuthorizeOutOfScopeWrite). Runs only on the real write —
 	// the dryRun feasibility probe above already returned.
-	approved, _ := params["outOfRootApproved"].(bool)
-	if err := ops.scope.AuthorizeOutOfScopeWrite(absPath, path, "edit", approved); err != nil {
+	if err := ops.scope.AuthorizeOutOfScopeWrite(absPath, path, "edit", p.OutOfRootApproved); err != nil {
 		return nil, err
 	}
 
@@ -1232,11 +1270,11 @@ func findApproximateLocation(oldStr, fileContent string) string {
 // getFileHash returns the SHA-256 hash of a file for cheap staleness detection
 // This is much faster than reading the entire file content
 func (ops *FileOperations) getFileHash(params map[string]any) (any, error) {
-	// Validate path parameter
-	path, err := ValidateStringParam(params["path"], "path", true, 4096)
+	p, err := decodeParams[pathParams](params)
 	if err != nil {
 		return nil, err
 	}
+	path := p.Path
 
 	// Validate path security
 	pathResult, err := ops.scope.Resolve(path)
@@ -1282,15 +1320,15 @@ func (ops *FileOperations) getFileHash(params map[string]any) (any, error) {
 
 // stat returns file/directory metadata without reading content
 func (ops *FileOperations) stat(params map[string]any) (any, error) {
-	path, err := ValidateStringParam(params["path"], "path", true, 4096)
+	p, err := decodeParams[statParams](params)
 	if err != nil {
 		return nil, err
 	}
+	path := p.Path
 
 	// User-initiated metadata checks accompany @-mention/file-picker pins, which
 	// may refer to paths outside the project. LLM file operations remain scoped.
-	userInitiated, _ := params["userInitiated"].(bool)
-	absPath, err := ops.scope.ResolveUserInitiated(path, userInitiated)
+	absPath, err := ops.scope.ResolveUserInitiated(path, p.UserInitiated)
 	if err != nil {
 		return nil, err
 	}
@@ -1318,20 +1356,17 @@ func (ops *FileOperations) stat(params map[string]any) (any, error) {
 
 // mkdir creates a directory (and parents if recursive)
 func (ops *FileOperations) mkdir(params map[string]any) (any, error) {
-	path, err := ValidateStringParam(params["path"], "path", true, 4096)
+	p, err := decodeParams[mkdirParams](params)
 	if err != nil {
 		return nil, err
 	}
 
-	pathResult, err := ops.scope.Resolve(path)
+	pathResult, err := ops.scope.Resolve(p.Path)
 	if err != nil {
 		return nil, err
 	}
 
-	recursive := false
-	if r, ok := params["recursive"].(bool); ok {
-		recursive = r
-	}
+	recursive := p.Recursive
 
 	if recursive {
 		err = os.MkdirAll(pathResult.AbsPath, 0755)
@@ -1343,6 +1378,6 @@ func (ops *FileOperations) mkdir(params map[string]any) (any, error) {
 	}
 
 	return map[string]any{
-		"path": path,
+		"path": p.Path,
 	}, nil
 }

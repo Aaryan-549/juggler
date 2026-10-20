@@ -10,6 +10,8 @@ import (
 	"sort"
 
 	ycrdt "github.com/skyterra/y-crdt"
+
+	"juggler/internal/jlog"
 )
 
 // SyncThrottleMs is the minimum interval between Yjs sync broadcasts.
@@ -70,7 +72,7 @@ type ConversationDocument struct {
 
 	doc      *ycrdt.Doc
 	root     *ycrdt.YMap
-	items    *ycrdt.YArray // cached ref to root.Get("items")
+	items    *ycrdt.YArray // cached ref to root.Get(keyItems)
 	metadata *ycrdt.YMap
 	authors  *ycrdt.YMap
 
@@ -251,7 +253,7 @@ func (cd *ConversationDocument) getItems() *ycrdt.YArray {
 	if cd.items != nil {
 		return cd.items
 	}
-	if arr, ok := cd.root.Get("items").(*ycrdt.YArray); ok {
+	if arr, ok := yMapArray(cd.root, keyItems); ok {
 		cd.items = arr
 		return arr
 	}
@@ -265,7 +267,7 @@ func (cd *ConversationDocument) ensureItems() *ycrdt.YArray {
 	}
 	items := ycrdt.NewYArray()
 	cd.doc.Transact(func(_ *ycrdt.Transaction) {
-		cd.root.Set("items", items)
+		cd.root.Set(keyItems, items)
 	}, cd.txOrigin())
 	cd.items = items
 	return items
@@ -336,7 +338,7 @@ func (cd *ConversationDocument) insertMessage(index int, messages ...Conversatio
 				stripped.Items = nil
 				ymap := conversationItemToYMap(stripped)
 				yarr := ycrdt.NewYArray()
-				ymap.Set("items", yarr)
+				ymap.Set(keyItems, yarr)
 				ymaps[i] = ymap
 				pending = append(pending, pendingNested{yarr, msg.Items})
 			} else {
@@ -349,14 +351,29 @@ func (cd *ConversationDocument) insertMessage(index int, messages ...Conversatio
 		// indices; a Push before integration inserts at 0 (see
 		// conversationItemToYMap).
 		for _, p := range pending {
-			var nested []ConversationItem
-			if err := json.Unmarshal(p.items, &nested); err == nil {
-				for j, item := range nested {
-					p.yarr.Insert(ycrdt.Number(j), ycrdt.ArrayAny{conversationItemToYMap(item)})
-				}
-			}
+			insertNestedItems(p.yarr, p.items)
 		}
 	}, origin)
+}
+
+// insertNestedItems fills a thread's LIVE nested array from its items JSON, one
+// item at a time at explicit indices. Each item goes through nestedItemYMap, so
+// one that does not fit ConversationItem is kept as written instead of costing
+// the thread its whole transcript. Callers must be inside an active Transact
+// and hold ycrdtMu.
+func insertNestedItems(yarr *ycrdt.YArray, items json.RawMessage) {
+	var raws []json.RawMessage
+	if err := json.Unmarshal(items, &raws); err != nil {
+		jlog.Error("[doc] a thread's items are not a JSON array (%v); inserted none", err)
+		return
+	}
+	j := 0
+	for _, raw := range raws {
+		if m, ok := nestedItemYMap(raw); ok {
+			yarr.Insert(ycrdt.Number(j), ycrdt.ArrayAny{m})
+			j++
+		}
+	}
 }
 
 // insertItemWithNested inserts a single message into the LIVE Y.Array arr at
@@ -376,16 +393,9 @@ func insertItemWithNested(arr *ycrdt.YArray, index int, msg ConversationItem) {
 	stripped.Items = nil
 	ymap := conversationItemToYMap(stripped)
 	yarr := ycrdt.NewYArray()
-	ymap.Set("items", yarr)
+	ymap.Set(keyItems, yarr)
 	arr.Insert(ycrdt.Number(index), ycrdt.ArrayAny{ymap})
-
-	var nested []ConversationItem
-	if err := json.Unmarshal(msg.Items, &nested); err != nil {
-		return
-	}
-	for j, item := range nested {
-		yarr.Insert(ycrdt.Number(j), ycrdt.ArrayAny{conversationItemToYMap(item)})
-	}
+	insertNestedItems(yarr, msg.Items)
 }
 
 // DeleteMessages deletes messages at specific indices.
@@ -540,7 +550,7 @@ func insertFoldSummary(arr *ycrdt.YArray, index int, summary ConversationItem, f
 	ymap := conversationItemToYMap(stripped)
 	arr.Insert(ycrdt.Number(index), ycrdt.ArrayAny{ymap})
 	nested := ycrdt.NewYArray()
-	ymap.Set("items", nested)
+	ymap.Set(keyItems, nested)
 	for _, n := range folded {
 		appendYNode(nested, n)
 	}
@@ -662,7 +672,7 @@ func (cd *ConversationDocument) replaceMessage(index int, message ConversationIt
 func (cd *ConversationDocument) UpdateItemID(index int, newID string) error {
 	ycrdtMu.Lock()
 	defer ycrdtMu.Unlock()
-	return cd.updateMessage(index, "itemId", newID)
+	return cd.updateMessage(index, keyItemID, newID)
 }
 
 // UpdateItemByID finds an item by itemId and updates a field via direct Y.Map .Set().
@@ -695,7 +705,7 @@ func (cd *ConversationDocument) findIndexByItemID(itemID string) int {
 	for i := length - 1; i >= 0; i-- {
 		raw := arr.Get(ycrdt.Number(i))
 		if m, ok := raw.(*ycrdt.YMap); ok {
-			if id, _ := m.Get("itemId").(string); id == itemID {
+			if id := yMapString(m, keyItemID); id == itemID {
 				return i
 			}
 		}
@@ -745,7 +755,7 @@ func (cd *ConversationDocument) insertThreadCore(arr *ycrdt.YArray, index int, g
 	}
 	ymap := conversationItemToYMap(item)
 	yarr := ycrdt.NewYArray()
-	ymap.Set("items", yarr)
+	ymap.Set(keyItems, yarr)
 	arr.Insert(ycrdt.Number(index), ycrdt.ArrayAny{ymap})
 	return ymap, yarr
 }
@@ -834,7 +844,7 @@ func (cd *ConversationDocument) updateItemByIDInArray(arr *ycrdt.YArray, itemID,
 	for i := length - 1; i >= 0; i-- {
 		raw := arr.Get(ycrdt.Number(i))
 		if m, ok := raw.(*ycrdt.YMap); ok {
-			if id, _ := m.Get("itemId").(string); id == itemID {
+			if id := yMapString(m, keyItemID); id == itemID {
 				cd.doc.Transact(func(_ *ycrdt.Transaction) {
 					m.Set(field, convertToYcrdt(value))
 				}, cd.txOrigin())
@@ -857,7 +867,7 @@ func (cd *ConversationDocument) updateItemByToolUseIDInArray(arr *ycrdt.YArray, 
 	for i := length - 1; i >= 0; i-- {
 		raw := arr.Get(ycrdt.Number(i))
 		if m, ok := raw.(*ycrdt.YMap); ok {
-			if id, _ := m.Get("toolUseId").(string); id == toolUseID {
+			if id := yMapString(m, keyToolUseID); id == toolUseID {
 				cd.doc.Transact(func(_ *ycrdt.Transaction) {
 					m.Set(field, convertToYcrdt(value))
 				}, cd.txOrigin())
@@ -942,7 +952,7 @@ func (cd *ConversationDocument) GetContextItemIDsForThread(threadItemID string) 
 		}
 		for _, raw := range arr.ToArray() {
 			if m, ok := raw.(*ycrdt.YMap); ok {
-				id, _ := m.Get("itemId").(string)
+				id := yMapString(m, keyItemID)
 				if id != "" && !seen[id] {
 					seen[id] = true
 					ids = append(ids, id)
@@ -982,47 +992,46 @@ func collectSeedItemMaps(arr *ycrdt.YArray) []*ycrdt.YMap {
 		if !ok {
 			continue
 		}
-		if prevent, _ := m.Get("preventUserDeletion").(bool); prevent {
+		if prevent := yMapBool(m, keyPreventUserDeletion); prevent {
 			// System prompt (and any other sticky item) — position-independent.
 			maps = append(maps, m)
 			continue
 		}
-		itemType, _ := m.Get("type").(string)
+		itemType := yMapString(m, keyType)
 		if isConversationalItemType(itemType) {
 			// First conversational item ends the starting-context run.
 			inLeadingRun = false
 			continue
 		}
-		if inLeadingRun && m.Get("toolUseId") == nil {
+		if inLeadingRun && m.Get(keyToolUseID) == nil {
 			maps = append(maps, m)
 		}
 	}
 	return maps
 }
 
-// threadContextSeededField marks a thread whose starting context has been
-// cloned from its parent. It is the idempotency key for seeding, and it is a
-// field on the thread rather than a property of its items because the seed set
-// is only ever as complete as the parent: a conversation whose root owns no
-// system-prompt item seeds its children without one, so item-shape evidence
-// answers "has this thread been seeded" with a permanent no, and the lazy
-// backstop re-clones the whole starting context on every turn.
-const threadContextSeededField = "contextSeeded"
-
-// markThreadSeededInTx stamps threadContextSeededField on a thread container,
-// tolerating a nil container so callers that seed a bare array (tests, callers
-// with no handle on the thread Y.Map) need no special case. Callers MUST hold
-// ycrdtMu and be inside a Transact, so the mark commits with the clone it
-// describes — a seed that is undone takes its mark with it.
+// markThreadSeededInTx stamps keyContextSeeded on a thread container: the mark
+// of a thread whose starting context has been cloned from its parent. It is the
+// idempotency key for seeding, and it is a field on the thread rather than a
+// property of its items because the seed set is only ever as complete as the
+// parent: a conversation whose root owns no system-prompt item seeds its
+// children without one, so item-shape evidence answers "has this thread been
+// seeded" with a permanent no, and the lazy backstop re-clones the whole
+// starting context on every turn.
+//
+// A nil container is tolerated so callers that seed a bare array (tests,
+// callers with no handle on the thread Y.Map) need no special case. Callers
+// MUST hold ycrdtMu and be inside a Transact, so the mark commits with the
+// clone it describes — a seed that is undone takes its mark with it.
 func markThreadSeededInTx(threadYMap *ycrdt.YMap) {
 	if threadYMap != nil {
-		threadYMap.Set(threadContextSeededField, true)
+		threadYMap.Set(keyContextSeeded, true)
 	}
 }
 
 // threadArrayHasSystemPromptItem reports whether arr already contains a
 // system-prompt-typed context item. This is the evidence of seeding for threads
-// written before threadContextSeededField existed: they carry a cloned system
+// written before the keyContextSeeded mark existed: they carry a cloned system
 // prompt but no mark, so SeedThreadIfUnseeded stamps them instead of re-seeding.
 // Callers MUST hold ycrdtMu.
 func threadArrayHasSystemPromptItem(arr *ycrdt.YArray) bool {
@@ -1031,7 +1040,7 @@ func threadArrayHasSystemPromptItem(arr *ycrdt.YArray) bool {
 	}
 	for _, raw := range arr.ToArray() {
 		if m, ok := raw.(*ycrdt.YMap); ok {
-			if t, _ := m.Get("type").(string); t == ItemTypeSystemPrompt {
+			if t := yMapString(m, keyType); t == ItemTypeSystemPrompt {
 				return true
 			}
 		}
@@ -1055,7 +1064,7 @@ func threadArrayHasRunTurns(arr *ycrdt.YArray) bool {
 		if !ok {
 			continue
 		}
-		switch t, _ := m.Get("type").(string); t {
+		switch t := yMapString(m, keyType); t {
 		case ItemTypeAssistant, ItemTypeThinking, ItemTypeProviderState, ItemTypeToolAction,
 			ItemTypeMetaToolResult, ItemTypeThread, ItemTypeCompactionSummary:
 			return true
@@ -1119,7 +1128,7 @@ func (cd *ConversationDocument) SeedThreadFromParent(parentArr, childArr *ycrdt.
 // /thread command, plugin API) and legacy docs from before seeds were copied at
 // creation. Runs on every turn (llm_request.go), so its idempotency is what
 // stands between a sub-thread and a fresh copy of its starting context per turn:
-// it is keyed on threadContextSeededField, with a cloned system prompt accepted
+// it is keyed on keyContextSeeded, with a cloned system prompt accepted
 // as the legacy evidence of seeding and stamped so the mark answers thereafter.
 // No-op at root, or when the thread/parent array is missing. Callers must NOT
 // hold ycrdtMu.
@@ -1137,7 +1146,7 @@ func (cd *ConversationDocument) SeedThreadIfUnseeded(threadItemID string) {
 	if threadYMap == nil {
 		return
 	}
-	if seeded, _ := threadYMap.Get(threadContextSeededField).(bool); seeded {
+	if yMapBool(threadYMap, keyContextSeeded) {
 		return
 	}
 	// Threads populated by RELOCATING a parent's existing items into them opt
@@ -1150,10 +1159,10 @@ func (cd *ConversationDocument) SeedThreadIfUnseeded(threadItemID string) {
 	// and /handoff are today's callers, but any future op that moves items into a
 	// sub-thread sets the same flag. Freshly-delegated sub-threads (LLM
 	// create_thread, /thread, plugins) do NOT set it and are seeded normally.
-	if noSeed, _ := threadYMap.Get("noContextSeed").(bool); noSeed {
+	if noSeed := yMapBool(threadYMap, keyNoContextSeed); noSeed {
 		return
 	}
-	childArr, _ := threadYMap.Get("items").(*ycrdt.YArray)
+	childArr, _ := yMapArray(threadYMap, keyItems)
 	if childArr == nil {
 		return
 	}
@@ -1264,10 +1273,10 @@ func (cd *ConversationDocument) setFlagOnUnfinishedFold(threadItemID, key string
 	if m == nil {
 		return false
 	}
-	if fold, _ := m.Get("boundedCompaction").(bool); !fold {
+	if fold := yMapBool(m, keyBoundedCompaction); !fold {
 		return false
 	}
-	if result, _ := m.Get("result").(string); result != "" {
+	if result := yMapString(m, keyResult); result != "" {
 		return false
 	}
 	if current, _ := m.Get(key).(bool); !current {

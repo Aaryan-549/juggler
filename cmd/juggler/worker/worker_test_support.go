@@ -51,11 +51,7 @@ func (w *ConversationWorker) handleGetYjsState(payload json.RawMessage) {
 	ackID := w.ackIDOf("get-yjs-state", payload)
 
 	state := w.doc.ToState()
-	w.send(map[string]any{
-		"type":   "ack",
-		"ackId":  ackID,
-		"result": state,
-	})
+	w.send(AckMessage{Type: msgAck, AckID: ackID, Result: state})
 }
 
 // handlePing is a test synchronization barrier. The worker processes
@@ -76,14 +72,11 @@ func (w *ConversationWorker) handlePing(payload json.RawMessage) {
 	w.tracker.StopCapturing()
 	w.batcher.Flush()
 	if ackID != "" {
-		w.send(map[string]any{
-			"type":  "ack",
-			"ackId": ackID,
-		})
+		w.send(AckMessage{Type: msgAck, AckID: ackID})
 		return
 	}
 	// Callers that don't supply an ackId get the pong frame instead.
-	w.send(map[string]any{"type": "pong"})
+	w.send(bareMessage{Type: msgPong})
 }
 
 // handleSetMockResponses enables mock mode and sets scripted LLM responses.
@@ -102,7 +95,7 @@ func (w *ConversationWorker) handleSetMockResponses(payload json.RawMessage) {
 
 	if msg.AckID != "" {
 		w.send(AckMessage{
-			Type:   "ack",
+			Type:   msgAck,
 			AckID:  msg.AckID,
 			Result: true,
 		})
@@ -124,7 +117,7 @@ func (w *ConversationWorker) handleQueueMocksForName(payload json.RawMessage) {
 	pendingMocks.Store(msg.Name, msg.Responses)
 	jlog.Info("[queue-mocks-for-name] via=%s name=%q count=%d", w.conversationID, msg.Name, len(msg.Responses))
 	if msg.AckID != "" {
-		w.send(AckMessage{Type: "ack", AckID: msg.AckID, Result: true})
+		w.send(AckMessage{Type: msgAck, AckID: msg.AckID, Result: true})
 	}
 }
 

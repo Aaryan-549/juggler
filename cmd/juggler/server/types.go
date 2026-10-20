@@ -22,29 +22,29 @@ type ToolDefinition struct {
 // records a server that did its job. The engine reports its own faults the same
 // way (see engine-worker-runtime.js); this is the viewer's half.
 type ViewerFault struct {
-	Type    string `json:"type"`             // "viewer-fault"
-	Source  string `json:"source"`           // What was running, e.g. "observe:tool-action-message"
-	Message string `json:"message"`          // The error's message
-	Stack   string `json:"stack,omitempty"`  // Stack trace, when the throw carried one
-	ConvID  string `json:"convId,omitempty"` // Conversation it happened under, when known
-	Detail  string `json:"detail,omitempty"` // Anything else that narrows it down
+	Type    frameType `json:"type"`             // "viewer-fault"
+	Source  string    `json:"source"`           // What was running, e.g. "observe:tool-action-message"
+	Message string    `json:"message"`          // The error's message
+	Stack   string    `json:"stack,omitempty"`  // Stack trace, when the throw carried one
+	ConvID  string    `json:"convId,omitempty"` // Conversation it happened under, when known
+	Detail  string    `json:"detail,omitempty"` // Anything else that narrows it down
 }
 
 // ShellStartRequest represents a request to start a streaming shell command
 type ShellStartRequest struct {
-	Type        string `json:"type"`                  // "shell-start"
-	ShellID     string `json:"shellId"`               // Unique ID for this shell execution
-	ConvId      string `json:"convId,omitempty"`      // Conversation that owns this shell (spill-file bucket)
-	Command     string `json:"command"`               // Shell command to execute
-	Cwd         string `json:"cwd,omitempty"`         // Working directory
-	Timeout     int    `json:"timeout,omitempty"`     // Timeout in milliseconds
-	WorkspaceID string `json:"workspaceId,omitempty"` // Where to run it; empty is the project, as every shell meant before workspaces existed
+	Type        frameType `json:"type"`                  // "shell-start"
+	ShellID     string    `json:"shellId"`               // Unique ID for this shell execution
+	ConvId      string    `json:"convId,omitempty"`      // Conversation that owns this shell (spill-file bucket)
+	Command     string    `json:"command"`               // Shell command to execute
+	Cwd         string    `json:"cwd,omitempty"`         // Working directory
+	Timeout     int       `json:"timeout,omitempty"`     // Timeout in milliseconds
+	WorkspaceID string    `json:"workspaceId,omitempty"` // Where to run it; empty is the project, as every shell meant before workspaces existed
 }
 
 // ShellCancelRequest represents a request to cancel a running shell command
 type ShellCancelRequest struct {
-	Type    string `json:"type"`    // "shell-cancel"
-	ShellID string `json:"shellId"` // ID of shell to cancel
+	Type    frameType `json:"type"`    // "shell-cancel"
+	ShellID string    `json:"shellId"` // ID of shell to cancel
 }
 
 // ViewerRelay is one viewer addressing another by viewer id.
@@ -57,7 +57,7 @@ type ShellCancelRequest struct {
 // be another one. Nothing is persisted and nothing is queued for a viewer that
 // is not connected; a relay to an absent or unknown id is dropped.
 type ViewerRelay struct {
-	Type    string          `json:"type"`    // "viewer-relay"
+	Type    frameType       `json:"type"`    // "viewer-relay"
 	To      string          `json:"to"`      // Viewer id to deliver to
 	Payload json.RawMessage `json:"payload"` // Opaque to the server
 }
