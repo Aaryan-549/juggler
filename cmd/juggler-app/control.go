@@ -138,8 +138,11 @@ var windowActions = map[string]windowAction{
 	"pick-file": func(a *appState, w http.ResponseWriter, r *http.Request, e *winEntry) {
 		a.controlPickPath(w, r, e, "pick-file")
 	},
-	"save-file": (*appState).controlSaveFile,
-	"updater":   (*appState).handleUpdaterControl,
+	"save-file":    (*appState).controlSaveFile,
+	"updater":      (*appState).handleUpdaterControl,
+	"connect":      (*appState).controlConnect,
+	"retry-server": (*appState).controlRetryServer,
+	"open-local":   (*appState).controlOpenLocal,
 }
 
 // handleWindowControl dispatches /win/<id>/<action>, for a request

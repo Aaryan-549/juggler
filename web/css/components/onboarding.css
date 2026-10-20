@@ -75,17 +75,18 @@ no-project-overlay .onboarding-link:hover {
     text-decoration: underline;
 }
 
-/* The three ways into a project, given as buttons rather than as links inside a
+/* The ways into a project, given as buttons rather than as links inside a
    sentence: this is the one screen where the reader may not yet know that the
-   coloured words are clickable. */
+   coloured words are clickable. Stacked in one column, every button as wide as
+   the widest, so two or three of them read as one list of choices rather than
+   a row that wraps unevenly. */
 
 /* Vertical rhythm here is padding, not margin: the markdown pattern layer
    resets the margins of a scope's first and last child, and it sits below this
    one, so a margin set here is a margin that stops working the day one of these
    panels renders inside a markdown scope. Padding is not part of that reset. */
 no-project-overlay .np-actions {
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
     justify-content: center;
     gap: 0.5rem;
     padding: 1.5rem 0 0.75rem;

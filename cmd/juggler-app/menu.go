@@ -34,7 +34,8 @@ type menuNode struct {
 var menuSeparator = menuNode{separator: true}
 
 // installAppMenu builds the native application menu. Session ▸ Open… asks the
-// focused window's page to show the project picker; Session ▸ New Tab creates a
+// focused window's page to show the project picker, and Session ▸ Connect to
+// Server… the server-address panel; Session ▸ New Tab creates a
 // conversation in the focused window (mirrors the in-app Cmd+N shortcut);
 // Session ▸ New Window opens another in-process window (no project → picker);
 // View carries dev-only reload/devtools plus Toggle Full Screen; Help ▸ Learn
@@ -78,6 +79,9 @@ func menuSpec(a *appState, devMode bool, goos string) []menuNode {
 
 	session := menuNode{label: msg.New("Session"), children: []menuNode{
 		{label: msg.New("Open..."), accel: "CmdOrCtrl+o", onClick: dispatch("juggler:open-project")},
+		// Asks the page for the address, as Open… asks it for the folder; the
+		// page posts it back to the control endpoint (controlConnect).
+		{label: msg.New("Connect to Server..."), onClick: dispatch("juggler:connect-server")},
 		// New Tab owns Cmd+N (the browser new-tab key most people reach for) and
 		// creates a conversation in the focused window by dispatching the same
 		// event the in-app Cmd+N shortcut fires. The native menu accelerator

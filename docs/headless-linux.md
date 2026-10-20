@@ -55,6 +55,24 @@ The server prints its URL and a QR code. It is localhost-only by default —
 press `p` in its terminal (or start with `--public`) to allow other devices on
 your network to connect. The default port is 3939 (`--port` overrides).
 
+## Connecting from the desktop app
+
+On the machine you work at, choose **Session ▸ Connect to Server…** (or
+**Connect to a server URL…** in an empty window) and enter the server's address,
+such as `http://devbox:3939`. The app opens a window onto that server and,
+like a project window, reopens it each time it starts — so a normal launch
+goes straight to the headless server.
+
+If the server isn't answering when the app starts, the window says so and
+offers **Try again** or **Open a local window instead**; the second one also
+stops the app reopening that server. The server must accept connections from
+other devices (see above), and an address it doesn't recognise as local, such
+as a public DNS name, must be listed under `connectivity.allowedHosts` in its
+settings.
+
+`juggler-app --url <address>` opens a one-off window onto a server, which the
+app doesn't reopen next time.
+
 ## Running one prompt and exiting
 
 `juggler run` does one prompt with nobody watching, then exits with a status —

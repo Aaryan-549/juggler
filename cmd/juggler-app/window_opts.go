@@ -105,6 +105,13 @@ type windowOpts struct {
 	// the paths that server offers belong to its machine, not this one.
 	external bool
 
+	// replaces is the id of a window this one takes the place of: it is closed
+	// once this one is up, never before, so the app is not left with no window
+	// (which quits it). Set by the control endpoint, never off the wire — the
+	// empty window a server was connected from, or an unreachable-server page
+	// being retried or traded for a local window.
+	replaces string
+
 	// panel is where the board was on screen in the window that asked, so the
 	// new window can open over it: a pop-out is the panel leaving the window,
 	// and a window that appeared somewhere else entirely would be a new one.

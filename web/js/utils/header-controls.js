@@ -322,6 +322,12 @@ export function setupHeaderControls(session) {
   // header path-display click above.
   window.addEventListener('juggler:open-project', openPicker);
 
+  // Session ▸ Connect to Server… arrives the same way.
+  window.addEventListener('juggler:connect-server', async () => {
+    const { openConnectServerPanel } = await import('../components/connect-server-panel.js');
+    await openConnectServerPanel();
+  });
+
   // Keyboard shortcuts (undo / redo) — bindings and platform handling live in the
   // KeyShortcutManager; here we only supply the behaviour. Each returns truthy
   // only when it actually acts, so the manager preventDefaults exactly then (and

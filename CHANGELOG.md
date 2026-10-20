@@ -5,6 +5,7 @@ of changes; this project follows semantic versioning.
 
 ## [Unreleased]
 
+- Session ▸ Connect to Server… opens a window onto another machine's server, reopened at launch
 - Long-pressing text on Android no longer opens a Copy menu over the selection
 - Resizing a column no longer resizes every other column; widths are kept per depth
 - Double-tapping the composer's ⋮ or / button no longer opens two menus

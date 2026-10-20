@@ -47,26 +47,63 @@ func windowStateURL(serverURL, role string) string {
 // and ends the loop.
 //
 // serverURL is always one the app owns, from windowSpec.resolve: the address a
-// server it spawned printed, a verified instance lock's, or --url. A control
-// request reaches here only by naming a project folder, never a host.
+// server it spawned printed, a verified instance lock's, --url, or one the user
+// typed into Connect to Server. A control request reaches here by naming a
+// project folder, or — from a window on a server this app resolved itself, and
+// only after normaliseServerURL — the address the user typed (controlConnect).
 func fetchWindowState(serverURL, role string) (core.WindowState, bool) {
+	ws, ok, _ := readWindowState(context.Background(), serverURL, role)
+	return ws, ok
+}
+
+// remoteReachBudget is how long opening a window onto a server by URL waits for
+// that server to answer before showing the unreachable-server page instead. A
+// server by URL is already running or it is not — the retries in
+// readWindowState are for a local server still starting — and the budget is
+// what stops a host that never answers from costing every retry's own timeout,
+// with no window on screen.
+const remoteReachBudget = 5 * time.Second
+
+// readWindowState is fetchWindowState that also says whether the server
+// answered at all, and gives up when ctx does. reached is false only when no
+// response came back; a response of any status is the server answering.
+func readWindowState(ctx context.Context, serverURL, role string) (ws core.WindowState, hasState, reached bool) {
 	url := windowStateURL(serverURL, role)
 	const attempts = 30
 	for i := 0; i < attempts; i++ {
-		req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, url, nil) //nolint:gosec // app-owned server URL, see above
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil) //nolint:gosec // app-owned server URL, see fetchWindowState
 		if err != nil {
-			return core.WindowState{}, false
+			return core.WindowState{}, false, false
 		}
-		resp, err := windowStateHTTP.Do(req) //nolint:gosec // app-owned server URL, see above
+		resp, err := windowStateHTTP.Do(req) //nolint:gosec // app-owned server URL, see fetchWindowState
 		if err != nil {
-			// Server not accepting yet — back off and retry.
-			time.Sleep(100 * time.Millisecond)
+			// Server not accepting yet — back off and retry, unless the caller has
+			// stopped waiting.
+			select {
+			case <-ctx.Done():
+				return core.WindowState{}, false, false
+			case <-time.After(100 * time.Millisecond):
+			}
 			continue
 		}
 		ws, ok := decodeWindowState(resp)
-		return ws, ok
+		return ws, ok, true
 	}
-	return core.WindowState{}, false
+	return core.WindowState{}, false, false
+}
+
+// openingState reads the saved geometry a window onto spec opens with, and
+// whether its server answered. A project's server is one this app just resolved
+// (spawned, or found by its lock), so it is waited for as long as a start takes
+// and counted as reached; a server by URL gets remoteReachBudget.
+func openingState(spec windowSpec, serverURL, role string) (ws core.WindowState, hasState, reached bool) {
+	if !spec.isURL() {
+		ws, hasState = fetchWindowState(serverURL, role)
+		return ws, hasState, true
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), remoteReachBudget)
+	defer cancel()
+	return readWindowState(ctx, serverURL, role)
 }
 
 func decodeWindowState(resp *http.Response) (core.WindowState, bool) {

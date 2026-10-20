@@ -284,8 +284,10 @@
 
 /* The folder-name field in the new-project panel. Matched to the path field
    above it: the two are read as one answer, and a name in a different typeface
-   from the path it lands in reads as a different kind of thing. */
-.pp-body .pp-name-input {
+   from the path it lands in reads as a different kind of thing. The server
+   address in the connect panel is the same kind of typed location. */
+.pp-body .pp-name-input,
+.pp-body .pp-address-input {
     display: block;
     width: 100%;
     box-sizing: border-box;

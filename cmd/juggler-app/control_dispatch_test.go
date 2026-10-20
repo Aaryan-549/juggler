@@ -39,6 +39,8 @@ func TestWindowControlRouting(t *testing.T) {
 		{"drafts-flushed always answers 204", "/win/w1/drafts-flushed?token=stale", http.StatusNoContent},
 		{"updater rejects an unknown op", "/win/w1/updater?op=frobnicate", http.StatusBadRequest},
 		{"save-file refuses an empty body", "/win/w1/save-file?name=a.html", http.StatusBadRequest},
+		{"connect refuses an address with no host", "/win/w1/connect?url=http%3A%2F%2F", http.StatusBadRequest},
+		{"retry-server refuses a window that is not the unreachable page", "/win/w1/retry-server", http.StatusConflict},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -56,6 +58,7 @@ func TestWindowControlActionTable(t *testing.T) {
 	want := []string{
 		"theme", "title", "locale", "folder-dropped", "control", "attention", "zoom",
 		"drafts-flushed", "pick-directory", "pick-file", "save-file", "updater",
+		"connect", "retry-server", "open-local",
 	}
 	if len(windowActions) != len(want) {
 		t.Fatalf("windowActions has %d entries, want %d: %v", len(windowActions), len(want), want)

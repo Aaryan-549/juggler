@@ -25,16 +25,41 @@ import (
 // windowSpec identifies what a window views: a local project (possibly "" for a
 // no-project window, whose server we spawn) or an explicit external server URL.
 // It is the single source of a window's geometry key and its workspace entry.
+//
+// A URL comes from one of two places, and connected says which. A server the
+// user connected to by typing its address (Session ▸ Connect to Server…) is
+// one they mean to come back to, so it is restored like a project. A --url
+// launch is a one-shot connection to an address someone else supplied — most
+// often the server's own 'w' key, naming a local port valid for that run only —
+// so restoring it would open a window onto a dead server.
 type windowSpec struct {
-	project string
-	url     string
+	project   string
+	url       string
+	connected bool
 }
 
 func (s windowSpec) isURL() bool { return s.url != "" }
 
-// entry is the persisted form of a spec.
+// restorable reports whether a next launch should bring this window back: a
+// project window (which re-spawns or re-discovers its server) or a connected
+// server, never a --url one.
+func (s windowSpec) restorable() bool { return !s.isURL() || s.connected }
+
+// sameView reports whether two specs show the same thing. How a URL window came
+// to be open is not part of what it shows, so a --url launch finds a connected
+// window onto the same server.
+func (s windowSpec) sameView(o windowSpec) bool {
+	return s.project == o.project && s.url == o.url
+}
+
+// entry is the persisted form of a spec. A connected server is filed under its
+// own key, so an address under "url" can always be read as a --url window and
+// dropped (see load).
 func (s windowSpec) entry() workspaceEntry {
-	if s.isURL() {
+	switch {
+	case s.connected:
+		return workspaceEntry{Server: s.url}
+	case s.isURL():
 		return workspaceEntry{URL: s.url}
 	}
 	return workspaceEntry{Project: s.project}
@@ -58,10 +83,14 @@ func (s windowSpec) resolve() (string, *serverProc, error) {
 type workspaceEntry struct {
 	Project string `json:"project,omitempty"`
 	URL     string `json:"url,omitempty"`
+	Server  string `json:"server,omitempty"`
 }
 
 func (e workspaceEntry) spec() windowSpec {
-	if e.URL != "" {
+	switch {
+	case e.Server != "":
+		return windowSpec{url: e.Server, connected: true}
+	case e.URL != "":
 		return windowSpec{url: e.URL}
 	}
 	return windowSpec{project: e.Project}
@@ -172,12 +201,10 @@ func (w *workspaceStore) load() []windowSpec {
 	specs := make([]windowSpec, 0, len(f.Windows))
 	for _, e := range f.Windows {
 		s := e.spec()
-		// Never restore a URL window: a --url launch is a one-shot connection to
-		// an externally-supplied address that won't be valid next launch, so
-		// restoring it just opens a window onto a dead server. Only project windows
-		// are restorable — they re-spawn or re-discover a server. Skipping URL
-		// entries here also clears any stale ones from workspace.json.
-		if s.isURL() {
+		// Never restore a --url window (see windowSpec): its address is not
+		// expected to be valid next launch. Skipping such entries here also clears
+		// any stale ones from workspace.json.
+		if !s.restorable() {
 			continue
 		}
 		specs = append(specs, s)

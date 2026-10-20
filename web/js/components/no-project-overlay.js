@@ -5,8 +5,8 @@
 /**
  * <no-project-overlay> — full-area placeholder shown when no project is
  * loaded. It is the first thing a new user sees, so it carries the ways into a
- * project (open an existing folder, create a new one, drop one on the window),
- * the recents a returning user actually came back for, and a live statement of
+ * project (open an existing folder, create a new one, drop one on the window,
+ * or — in the desktop app — connect to a server on another computer), the recents a returning user actually came back for, and a live statement of
  * whether an AI provider is connected — the one prerequisite that otherwise
  * fails silently at the first message.
  *
@@ -27,6 +27,7 @@ import { escapeHtml } from '../../sdk/lib/html.js';
 import { hasNativeHost, reportFolderDropped } from '../../sdk/lib/window-control.js';
 import { showAlert } from './modal-dialog.js';
 import { openProjectInWindow } from './project-opening.js';
+import { canConnectToServer, openConnectServerPanel } from './connect-server-panel.js';
 
 /** How many recent folders the panel offers before it stops being a shortlist. */
 const RECENTS_SHOWN = 5;
@@ -219,6 +220,9 @@ class NoProjectOverlay extends JugglerElement {
     // remote client would be advertising something that silently does nothing,
     // and on a remote client the folder is on the wrong machine entirely.
     const canDropFolders = hasNativeHost();
+    // A project can also live on another computer's server — again a window
+    // only the desktop app can open (see connect-server-panel.js).
+    const canConnect = canConnectToServer();
     const product = 'Juggler'; // i18n-ignore: the product name, which the logo spells out
     const welcome = escapeHtml(t('Welcome to Juggler'));
     const footnoteMarkup = {
@@ -234,6 +238,7 @@ class NoProjectOverlay extends JugglerElement {
         <div class="np-actions">
           <button type="button" class="np-action btn-primary np-open">${escapeHtml(t('Open an existing folder…'))}</button>
           <button type="button" class="np-action np-new">${escapeHtml(t('Create a new folder to work in…'))}</button>
+          ${canConnect ? `<button type="button" class="np-action np-connect-server">${escapeHtml(t('Connect to a server URL…'))}</button>` : ''}
         </div>
 
         ${canDropFolders ? `<p class="np-drop-hint">${escapeHtml(t('Or drag a folder onto this window.'))}</p>` : ''}
@@ -257,6 +262,8 @@ class NoProjectOverlay extends JugglerElement {
       const { openNewProjectPanel } = await import('./project-picker.js');
       openNewProjectPanel(this._recents);
     });
+
+    this._on('.np-connect-server', () => openConnectServerPanel());
 
     this._on('.np-shortcuts', () => openSettings('shortcuts'));
 

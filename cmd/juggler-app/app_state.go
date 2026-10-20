@@ -534,7 +534,8 @@ func (a *appState) run(specs []windowSpec) error {
 // tryBuildInitial resolves spec's server and builds a window for it, returning
 // the entry on success or nil when the project can't be resolved (logged and
 // skipped). A locked project resolves to a locked-project placeholder window,
-// which is still a non-nil entry.
+// and a server by URL that does not answer to an unreachable-server one; both
+// are still non-nil entries.
 func (a *appState) tryBuildInitial(spec windowSpec) *winEntry {
 	serverURL, proc, err := spec.resolve()
 	if err != nil {
@@ -544,7 +545,10 @@ func (a *appState) tryBuildInitial(spec windowSpec) *winEntry {
 		logf("restore: skipping %+v: %v", spec.entry(), err)
 		return nil
 	}
-	saved, hasSaved := fetchWindowState(serverURL, roleMain)
+	saved, hasSaved, reached := openingState(spec, serverURL, roleMain)
+	if !reached {
+		return a.buildUnreachableServerWindow(spec, "")
+	}
 	return a.buildWindow(spec, serverURL, proc, saved, hasSaved, windowOpts{})
 }
 
@@ -651,7 +655,7 @@ func (a *appState) focusWindowBySpec(spec windowSpec) bool {
 			if isBoardRole(w.role) {
 				continue
 			}
-			if w.spec == spec {
+			if w.spec.sameView(spec) {
 				match = w
 				break
 			}
@@ -692,6 +696,7 @@ func (a *appState) openWindow(spec windowSpec, opts windowOpts) {
 					// and the static page has no theme mode to seed either.
 					e := a.buildLockedProjectWindow(spec, a.lockedMessage(locked), opts.theme)
 					a.showWindow(e)
+					a.closeReplaced(opts.replaces)
 					go a.warnIfWindowNeverVisible(e, "opened locked project")
 				})
 				return
@@ -707,14 +712,32 @@ func (a *appState) openWindow(spec windowSpec, opts windowOpts) {
 		if spec.project != "" {
 			a.rememberRecentProject(spec.project)
 		}
-		saved, hasSaved := fetchWindowState(serverURL, opts.role())
+		saved, hasSaved, reached := openingState(spec, serverURL, opts.role())
 		application.InvokeAsync(func() {
-			e := a.buildWindow(spec, serverURL, proc, saved, hasSaved, opts)
+			var e *winEntry
+			if reached {
+				e = a.buildWindow(spec, serverURL, proc, saved, hasSaved, opts)
+			} else {
+				e = a.buildUnreachableServerWindow(spec, opts.theme)
+			}
 			a.showWindow(e)
+			a.closeReplaced(opts.replaces)
 			// Don't let a dynamically-opened window fail to appear silently.
 			go a.warnIfWindowNeverVisible(e, "opened dynamically")
 		})
 	}()
+}
+
+// closeReplaced closes the window a new one was opened in place of, if it is
+// still open. Must run on the main thread, after the new window is registered,
+// so the app never passes through having no window at all.
+func (a *appState) closeReplaced(id string) {
+	if id == "" {
+		return
+	}
+	if old := a.window(id); old != nil && old.win != nil {
+		old.win.Close()
+	}
 }
 
 // openWindowForProject opens a window onto a project. Used by "New Window" and
@@ -1071,6 +1094,17 @@ func (a *appState) rememberRecentProject(project string) {
 // recovery explanation when an OS-level project lock cannot be verified. It has
 // no server or spawned process, so closing it cannot affect another session.
 func (a *appState) buildLockedProjectWindow(spec windowSpec, message, inheritedTheme string) *winEntry {
+	page := lockedProjectPage(a.tr(lockedPageTitle), message)
+	return a.buildPlaceholderWindow(spec, a.tr(lockedWindowTitle), func(string) string { return page }, inheritedTheme)
+}
+
+// buildPlaceholderWindow opens a native window onto a static page standing in
+// for the one spec would show, when there is no server to show it from. The
+// window is registered under spec, so it keeps its place in the workspace set
+// for as long as it is open, with no server and no spawned process — closing it
+// cannot affect another session. page renders the window's URL from its id, for
+// a page whose buttons address this window's control endpoint.
+func (a *appState) buildPlaceholderWindow(spec windowSpec, title string, page func(id string) string, inheritedTheme string) *winEntry {
 	id := <-a.ids
 	startupTheme := normaliseTheme(inheritedTheme)
 	if startupTheme == "" {
@@ -1080,10 +1114,9 @@ func (a *appState) buildLockedProjectWindow(spec windowSpec, message, inheritedT
 	if bgTheme == "" {
 		bgTheme = "dark"
 	}
-	page := lockedProjectPage(a.tr(lockedPageTitle), message)
 	win := a.app.Window.NewWithOptions(application.WebviewWindowOptions{
-		Title:            a.tr(lockedWindowTitle),
-		URL:              page,
+		Title:            title,
+		URL:              page(id),
 		Width:            defaultWindowWidth,
 		Height:           defaultWindowHeight,
 		MinWidth:         minWindowWidth,
@@ -1097,7 +1130,7 @@ func (a *appState) buildLockedProjectWindow(spec windowSpec, message, inheritedT
 		Windows:          application.WindowsWindow{DisableFramelessWindowDecorations: false},
 	})
 	if win == nil {
-		fatalf("Window.NewWithOptions returned nil for locked project %s", id)
+		fatalf("Window.NewWithOptions returned nil for placeholder window %s (%+v)", id, spec.entry())
 	}
 	e := &winEntry{id: id, win: win, spec: spec, role: roleMain, currentTheme: startupTheme, geom: windowgeom.NewTracker(core.WindowState{}, a.app.Screen.GetAll), saves: windowgeom.NewDebouncer(), stopSave: make(chan struct{})}
 	a.reg(func(st *regState) { st.windows[id] = e })
@@ -1650,18 +1683,19 @@ func (a *appState) persistWorkspaceSync() { a.persistWorkspaceTo(true) }
 // restorableSpecs is the open windows, in open order, that a next launch should
 // bring back.
 //
-// Two kinds are left out. A URL window points at an externally-supplied or
-// ephemeral address that won't be valid next launch (load() ignores them too).
-// And a window is remembered as the project it views, which is not what a
-// detached board is: two boards on two conversations of one project are one
-// entry, and neither of them is the pin it was opened on. There is nothing here
-// to restore a board from, rather than a preference not to.
+// Two kinds are left out. A --url window points at an externally-supplied or
+// ephemeral address that won't be valid next launch (see windowSpec; load()
+// ignores them too) — a server the user connected to is kept. And a window is
+// remembered as the project it views, which is not what a detached board is:
+// two boards on two conversations of one project are one entry, and neither of
+// them is the pin it was opened on. There is nothing here to restore a board
+// from, rather than a preference not to.
 //
 // Must run on the registry goroutine.
 func restorableSpecs(st *regState) []windowSpec {
 	var specs []windowSpec
 	for _, w := range sortedWindows(st) {
-		if isBoardRole(w.role) || w.spec.isURL() {
+		if isBoardRole(w.role) || !w.spec.restorable() {
 			continue
 		}
 		specs = append(specs, w.spec)
