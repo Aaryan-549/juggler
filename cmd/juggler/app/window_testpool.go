@@ -388,8 +388,9 @@ func runTestPoolWindowApp(srv *server.Server, devMode bool, headless bool, testI
 	// Pick the page the WebKit window should load:
 	//  - production / terminal: the production app at /?window=1
 	//  - --test --test-iframes=N: the tiled iframe pool host
-	//  - --test (no iframes): the production app, which sees
-	//    JUGGLER_TEST_MODE=true and self-redirects to /headless-test
+	//  - --test (no iframes): the production app, whose page a test server
+	//    serves with the test-mode module (js-tests/utilities/app-test-mode.js),
+	//    which self-redirects to /headless-test
 	//  - --test --test-window-url=U: U — the production app served from
 	//    elsewhere, e.g. this server's session behind a machine server's proxy
 	mainURL := "http://" + srv.GetAddr() + "/?window=1"

@@ -1740,7 +1740,7 @@ class WebSocketService {
    * Closes the connection without triggering auto-reconnect.
    * @returns {Promise<void>}
    */
-  async simulateDisconnect() {
+  async __simulateDisconnectForTests() {
     this._intentionalDisconnect = true;
     if (this._transport) {
       this._transport.close();
@@ -1751,11 +1751,11 @@ class WebSocketService {
   }
 
   /**
-   * Reconnect WebSocket for testing (after simulateDisconnect).
+   * Reconnect WebSocket for testing (after __simulateDisconnectForTests).
    * Re-establishes connection.
    * @returns {Promise<void>}
    */
-  async reconnect() {
+  async __reconnectForTests() {
     // Reset intentional disconnect flag
     this._intentionalDisconnect = false;
 

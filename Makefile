@@ -860,6 +860,7 @@ lint-types: node-deps
 ## that follows it meaningless.
 lint-js: node-deps
 	@NODE_NO_WARNINGS=1 node tooling/eslint-rules/no-raw-ui-string.test.js
+	@NODE_NO_WARNINGS=1 node tooling/eslint-rules/test-hooks-in-tests-only.test.js
 	@NODE_NO_WARNINGS=1 $(NPM_BIN)/eslint --config tooling/eslint.config.js --max-warnings 0 --ignore-pattern 'web/js/vendor/**' 'web/js/**/*.js' 'web/sdk/**/*.js' 'web/extensions/**/*.js' 'web/machine/**/*.js' 'web/js-tests/**/*.js'
 
 ## lint-css: Run the CSS linters — stylelint (rem units, no px), then

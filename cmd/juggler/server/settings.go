@@ -439,7 +439,7 @@ func (s *Server) handleManualUpdateCheck(w http.ResponseWriter, r *http.Request)
 		handlers.WriteJSON(w, r, 0, updatecheck.Status{CurrentVersion: core.Version})
 		return
 	}
-	if s.testMode {
+	if s.test.offlineUpdates {
 		handlers.WriteJSON(w, r, 0, s.updateChecker.Current())
 		return
 	}
@@ -460,7 +460,7 @@ func (s *Server) handleManualUpdateCheck(w http.ResponseWriter, r *http.Request)
 // when the mode flips off→on). It respects the gate — which is now on — and is
 // a no-op in test mode.
 func (s *Server) kickUpdateCheck() {
-	if s.updateChecker == nil || s.testMode {
+	if s.updateChecker == nil || s.test.offlineUpdates {
 		return
 	}
 	go func() {

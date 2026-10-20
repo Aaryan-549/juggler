@@ -694,7 +694,9 @@ export function initAttention(sess) {
 }
 
 /**
- * Test/debug seam. Not part of the supported API.
+ * Test seam. Not part of the supported API. Tests import it; a test server's
+ * app page also publishes it as `window.__attention`
+ * (js-tests/utilities/app-test-mode.js).
  * @type {{alertCount: number, lastAlert: any, alertsFor: (convId: string) => number, setFocusedForTest: (v: boolean|null) => void, isFlagged: (convId: string) => boolean, flashForTest: (convId: string) => void, clearForTest: (convId: string) => void}}
  */
 export const __attention = {
@@ -712,5 +714,3 @@ export const __attention = {
   // raises one on a conversation it invented has to put it back itself.
   clearForTest(/** @type {string} */ convId) { clearFlash(convId); },
 };
-// @ts-ignore — expose for integration tests to assert alert firing.
-if (typeof window !== 'undefined') window.__attention = __attention;

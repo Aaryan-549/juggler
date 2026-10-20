@@ -123,7 +123,10 @@ func TestIndexUILocaleParamOnlyInTestMode(t *testing.T) {
 	t.Cleanup(mgr.Shutdown)
 
 	for _, testMode := range []bool{false, true} {
-		s := &Server{router: mux.NewRouter(), settings: newSettingsStore(), testMode: testMode}
+		s := &Server{router: mux.NewRouter(), settings: newSettingsStore()}
+		if testMode {
+			s.test = testCapabilities{pageUILocale: true, frameableIndex: true}
+		}
 		s.projectState.Store(&projectState{sessionManager: mgr, projectPath: t.TempDir()})
 		if err := s.loadIndexTemplate(); err != nil {
 			t.Fatalf("loadIndexTemplate: %v", err)
@@ -140,14 +143,14 @@ func TestIndexUILocaleParamOnlyInTestMode(t *testing.T) {
 		page := rec.Body.String()
 		ancestors := directive(rec.Header().Get("Content-Security-Policy"), "frame-ancestors")
 		if testMode {
-			if !strings.Contains(page, `<html lang="en-XA" data-ui-locale="en-XA">`) || !strings.Contains(page, "juggler-ui-catalog") {
+			if !strings.Contains(page, `<html lang="en-XA" data-ui-locale="en-XA" data-ui-locale-pinned="1">`) || !strings.Contains(page, "juggler-ui-catalog") {
 				t.Fatalf("test mode: ?uiLocale=en-XA was not honoured: %.200q", page)
 			}
 			if ancestors != "frame-ancestors 'self'" {
 				t.Fatalf("test mode: %q, want frame-ancestors 'self'", ancestors)
 			}
 		} else {
-			if !strings.Contains(page, `<html lang="en">`) || strings.Contains(page, "juggler-ui-catalog") {
+			if !strings.Contains(page, `<html lang="en">`) || strings.Contains(page, "juggler-ui-catalog") || strings.Contains(page, "data-ui-locale-pinned") {
 				t.Fatalf("outside test mode ?uiLocale must be ignored: %.200q", page)
 			}
 			if ancestors != "frame-ancestors 'none'" {
@@ -312,6 +315,37 @@ func TestUILocalesRoute(t *testing.T) {
 	for _, tag := range body.Locales {
 		if tag == "en" || tag == "en-XA" {
 			t.Fatalf("%s is offered as a language: %q", tag, body.Locales)
+		}
+	}
+}
+
+// The test-mode module (js-tests/utilities/app-test-mode.js) is in the app page
+// only when the server was given harnessPage; nothing else in the page says it
+// is under test.
+func TestIndexLoadsTheTestModeModuleOnlyForTheHarness(t *testing.T) {
+	userpathstest.Isolate(t)
+	mgr, err := core.NewSessionManagerForPath(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewSessionManagerForPath: %v", err)
+	}
+	t.Cleanup(mgr.Shutdown)
+
+	for _, harness := range []bool{false, true} {
+		s := &Server{router: mux.NewRouter(), settings: newSettingsStore(), test: testCapabilities{harnessPage: harness}}
+		s.projectState.Store(&projectState{sessionManager: mgr, projectPath: t.TempDir()})
+		if err := s.loadIndexTemplate(); err != nil {
+			t.Fatalf("loadIndexTemplate: %v", err)
+		}
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.RemoteAddr = localViewerAddr
+		s.serveIndex(rec, req)
+		page := rec.Body.String()
+		if got := strings.Contains(page, "/js-tests/utilities/app-test-mode.js"); got != harness {
+			t.Errorf("harnessPage=%v: page loads the test-mode module = %v", harness, got)
+		}
+		if strings.Contains(page, "JUGGLER_TEST_MODE") {
+			t.Errorf("harnessPage=%v: page still sets JUGGLER_TEST_MODE", harness)
 		}
 	}
 }

@@ -18,7 +18,7 @@ import '../../js/components/conversation-area.js';
 import {
   areReplySuggestionsEnabled,
   isReplySuggestionsSettingSeeded,
-  resetReplySuggestionsSettingForTests,
+  __resetReplySuggestionsSettingForTests,
   setReplySuggestionsEnabledCached,
 } from '../../js/services/reply-suggestions-setting.js';
 import { MESSAGE_TYPES } from '../../sdk/lib/message.js';
@@ -174,7 +174,7 @@ export async function runTests() {
       });
     } finally {
       if (wasSeeded) setReplySuggestionsEnabledCached(wasEnabled);
-      else resetReplySuggestionsSettingForTests();
+      else __resetReplySuggestionsSettingForTests();
     }
   });
 

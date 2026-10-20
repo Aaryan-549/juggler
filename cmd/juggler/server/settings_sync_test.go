@@ -152,8 +152,8 @@ func TestExternalSettingsEditReachesEveryClient(t *testing.T) {
 }
 
 // newSettingsRefreshServer stands up a server whose provider refresh actor is
-// running against a stub compute, so a queued refresh is observable. testMode is
-// off: it makes RefreshProviders a no-op that only opens the readiness gate.
+// running against a stub compute, so a queued refresh is observable. test.offlineProviders
+// is off: it makes RefreshProviders a no-op that only opens the readiness gate.
 func newSettingsRefreshServer(t *testing.T) (*Server, chan struct{}) {
 	t.Helper()
 	userpathstest.Isolate(t)

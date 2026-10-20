@@ -55,7 +55,7 @@ func (s *Server) newUpdateChecker() *updatecheck.Checker {
 // suite must never reach the network) — in which case /api/update-status still
 // answers with the seeded "no update" status.
 func (s *Server) startUpdateChecker() {
-	if s.testMode {
+	if s.test.offlineUpdates {
 		return
 	}
 	if s.updateChecker == nil {

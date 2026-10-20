@@ -2,6 +2,8 @@
 //     ██ ██ ██ ██ ▄▄ ██ ▄▄ ██    ██▄▄  ██▄█▄   Copyright (c) 2026 Julian Storer
 //   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
 
+//go:build !production
+
 package server
 
 import (
@@ -12,15 +14,6 @@ import (
 
 	"juggler/cmd/juggler/server/handlers"
 	"juggler/internal/jlog"
-)
-
-// Names of the routes that create or tear down a conversation. The test-mode
-// ownership guard finds them by name, so the session handlers carry nothing
-// of it.
-const (
-	routeConversationCreate = "conversation-create"
-	routeConversationDelete = "conversation-delete"
-	routeConversationBin    = "conversation-bin"
 )
 
 // convOwnershipLedger is the testing package's ConvOwnership ledger as the

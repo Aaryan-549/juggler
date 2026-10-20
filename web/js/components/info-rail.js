@@ -77,27 +77,6 @@ const MIN_CLIPPED_REVEAL_REM = 3;
 const MAX_CARDS = 3;
 
 /**
- * Whether the rail may mount under {@link __allowInfoRailInTests}.
- * @type {boolean}
- */
-let allowedInTests = false;
-
-/**
- * Test seam. The rail keeps out of automated UI runs entirely (see `_reconcile`),
- * which is why nothing pinned its geometry for so long — so the one suite that
- * does pin it switches it back on around its own fixture.
- *
- * Realm-global, like the module it lives in, and a lane runs several suites in one
- * realm: a caller MUST turn it off again, or the next suite gets cards mounted
- * into its sidebar.
- * @param {boolean} allowed - Whether the rail may mount while JUGGLER_TEST_MODE is set.
- * @returns {void}
- */
-export function __allowInfoRailInTests(allowed) {
-  allowedInTests = Boolean(allowed);
-}
-
-/**
  * The runtime shape of a mounted card — an {@link import('juggler/info-card-type').default}
  * instance. Cards expose their manifest metadata as instance getters (id, name,
  * eyebrow) alongside the lifecycle methods.
@@ -320,17 +299,6 @@ class InfoRail extends JugglerElement {
     if (!this.isConnected || this._reconciling) return;
     this._reconciling = true;
     try {
-      // Never intrude during automated UI tests (matches the old tip-rail), unless
-      // it is the rail itself under test (see __allowInfoRailInTests).
-      if (/** @type {any} */ (window).JUGGLER_TEST_MODE && !allowedInTests) {
-        this._teardownAll();
-        this._stopWatches();
-        this.removeAttribute('data-clipped');
-        this.hidden = true;
-        return;
-      }
-      if (this.hidden) this.hidden = false;
-
       // The count limit, applied before anything is built: providers() is already
       // sorted by descending priority, so this keeps the cards worth the room and
       // the rest are never mounted at all. Geometry then trims what's left.

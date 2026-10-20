@@ -56,11 +56,6 @@ interface Window {
 	testComplete?: boolean;
 
 	/**
-	 * Set by server when running in test mode; causes app.js to poll for pending tests.
-	 */
-	JUGGLER_TEST_MODE?: boolean;
-
-	/**
 	 * Project session's saved UI zoom (root font-size %), injected pre-paint by
 	 * the server. 0/absent when the session has none (see zoom-manager.js).
 	 */

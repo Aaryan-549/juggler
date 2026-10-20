@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="{{.HTMLLang}}"{{if .UILocale}} data-ui-locale="{{.UILocale}}"{{end}}{{if .FixedProject}} data-fixed-project="1"{{end}}>
+<html lang="{{.HTMLLang}}"{{if .UILocale}} data-ui-locale="{{.UILocale}}"{{end}}{{if .UILocalePinned}} data-ui-locale-pinned="1"{{end}}{{if .FixedProject}} data-fixed-project="1"{{end}}>
 <head>
     <meta charset="UTF-8">
     {{if .UICatalog}}<!-- The UI language's catalogue, read by web/sdk/lib/i18n.js when it
@@ -316,7 +316,6 @@
     <!-- Asset prefix injected by server -->
     <script nonce="{{.CSPNonce}}">
         window.__assetPrefix = '{{.BasePath}}/v{{.StaticVersion}}';
-        {{if .IsTestMode}}window.JUGGLER_TEST_MODE = true;{{end}}
         // Per-instance session token (see cmd/juggler/server/api_auth.go). It is
         // readable only by this same-origin page; a hostile cross-origin site
         // cannot read it and so cannot forge /api calls. Attach it to every
@@ -675,6 +674,10 @@
 
     <!-- Main app -->
     <script type="module" src="{{.BasePath}}/v{{.StaticVersion}}/js/app.js"></script>
+    <!-- Served only by a test server: drives a pool slot and publishes the
+         hooks the harness reads from a hosted shell. The app itself never asks
+         whether it is under test. -->
+    {{if .HarnessPage}}<script type="module" src="{{.BasePath}}/v{{.StaticVersion}}/js-tests/utilities/app-test-mode.js"></script>{{end}}
 
     <!-- About Modal (shows when clicking the logo) -->
     <about-modal></about-modal>

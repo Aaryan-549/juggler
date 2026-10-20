@@ -7,11 +7,16 @@ import jsdoc from 'eslint-plugin-jsdoc';
 import stylistic from '@stylistic/eslint-plugin';
 import noAbsoluteApiUrl from './eslint-rules/no-absolute-api-url.js';
 import noRawUiString from './eslint-rules/no-raw-ui-string.js';
+import testHooksInTestsOnly from './eslint-rules/test-hooks-in-tests-only.js';
 
 // Juggler's own rules, as one plugin object: flat config refuses a second,
 // different object under the same plugin name, and both blocks below use it.
 const jugglerPlugin = {
-  rules: { 'no-absolute-api-url': noAbsoluteApiUrl, 'no-raw-ui-string': noRawUiString },
+  rules: {
+    'no-absolute-api-url': noAbsoluteApiUrl,
+    'no-raw-ui-string': noRawUiString,
+    'test-hooks-in-tests-only': testHooksInTestsOnly,
+  },
 };
 
 // UI source: every file a user can see text from. Tests and vendored code are not.
@@ -306,6 +311,20 @@ export default [
     plugins: { juggler: jugglerPlugin },
     rules: {
       'juggler/no-absolute-api-url': 'error',
+    },
+  },
+  // ===================================================================
+  // Test hooks are reached only from tests (juggler/test-hooks-in-tests-only)
+  // ===================================================================
+  // A module's test seams ship with it — `__…` exports, `…ForTests` methods —
+  // so nothing but a test may call one. The tests are web/js-tests/ and each
+  // extension's _tests/.
+  {
+    files: ['web/js/**/*.js', 'web/sdk/**/*.js', 'web/extensions/**/*.js', 'web/machine/**/*.js'],
+    ignores: ['web/extensions/**/_tests/**/*.js'],
+    plugins: { juggler: jugglerPlugin },
+    rules: {
+      'juggler/test-hooks-in-tests-only': 'error',
     },
   },
   // ===================================================================

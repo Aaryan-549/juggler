@@ -92,6 +92,6 @@ export async function refreshReplySuggestionsSetting() {
  * Reset the cache to unseeded. Tests only — production seeds once per page and
  * never goes back.
  */
-export function resetReplySuggestionsSettingForTests() {
+export function __resetReplySuggestionsSettingForTests() {
   cachedEnabled = null;
 }

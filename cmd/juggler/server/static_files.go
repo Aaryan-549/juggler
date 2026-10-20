@@ -289,87 +289,6 @@ func (s *Server) serveEngine(w http.ResponseWriter, r *http.Request) {
 	}, func() { setHTMLSecurityHeaders(w, nonce) })
 }
 
-// serveHeadlessTest serves the headless test page (only registered by RegisterTestRoutes)
-func (s *Server) serveHeadlessTest(w http.ResponseWriter, r *http.Request) {
-	// With assets-from-disk, read from disk so edits take effect without
-	// rebuilding. juggler-test runs with --assets-from-disk, so tests never use
-	// baked-in files.
-	content, err := s.readWebAsset("js-tests/headless-test.html", web.TestFiles)
-	if err != nil {
-		http.Error(w, "Headless test runner not found", http.StatusNotFound)
-		return
-	}
-
-	nonce := generateCSPNonce()
-	serveTemplatedHTML(w, string(content), map[string]string{
-		"StaticVersion": s.staticVersion,
-		"CSPNonce":      nonce,
-		// Safe to substitute unescaped: requestBasePath admits only plain
-		// path segments.
-		"BasePath": requestBasePath(r),
-		// Allow same-origin framing so the /test-pool host page can tile N copies
-		// of this page in iframes.
-	}, func() { setHTMLSecurityHeadersFramed(w, nonce, true, "") })
-}
-
-// serveTestPool serves a tiling host page that mounts N copies of
-// /headless-test in cross-origin-style iframes laid out in a grid. The Wails
-// window loads this page in test-iframe mode; each iframe is an independent
-// test client that polls /api/test/pending for work.
-func (s *Server) serveTestPool(w http.ResponseWriter, r *http.Request) {
-	n := r.URL.Query().Get("n")
-	if n == "" {
-		n = "4"
-	}
-	nonce := generateCSPNonce()
-	page := `<!DOCTYPE html>
-<html>
-<head>
-<meta charset="UTF-8">
-<title>Juggler Test Pool</title>
-<style>
-  html, body { margin: 0; padding: 0; height: 100%; background: #0d1117; color: #e6edf3; font-family: monospace; }
-  #grid { display: grid; gap: 1px; width: 100vw; height: 100vh; background: #30363d; }
-  iframe { width: 100%; height: 100%; border: 0; background: #0d1117; }
-</style>
-</head>
-<body>
-<div id="grid"></div>
-<script nonce="` + nonce + `">
-(() => {
-  const n = parseInt(new URLSearchParams(location.search).get('n') || '` + n + `', 10) || 4;
-  // Square-ish grid: cols = ceil(sqrt(n)), rows = ceil(n/cols).
-  const cols = Math.ceil(Math.sqrt(n));
-  const rows = Math.ceil(n / cols);
-  const grid = document.getElementById('grid');
-  // Each lane is given a page of its own, floored at the size the host window
-  // is built from (600x450 per lane — runTestPoolWindowApp, cmd/juggler/app),
-  // so a lane lays out in the same page on every platform and a test that
-  // measures something measures it in the size the pool was built for rather
-  // than in whatever the window ended up with.
-  //
-  // The floor is a minimum, not the size: the window is sized to hold exactly
-  // this grid, and the tracks take the rest as 1fr. It stays a floor because a
-  // lane must not collapse — a lane with no size measures every rect as empty,
-  // and the tests that measure something then pass vacuously.
-  grid.style.gridTemplateColumns = 'repeat(' + cols + ', minmax(600px, 1fr))';
-  grid.style.gridTemplateRows = 'repeat(' + rows + ', minmax(450px, 1fr))';
-  for (let i = 0; i < n; i++) {
-    const f = document.createElement('iframe');
-    f.src = '` + requestBasePath(r) + `/headless-test?lane=' + i;
-    f.setAttribute('data-lane', String(i));
-    grid.appendChild(f);
-  }
-})();
-</script>
-</body>
-</html>`
-	setHTMLSecurityHeadersFramed(w, nonce, false, "")
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-cache, must-revalidate")
-	_, _ = w.Write([]byte(page))
-}
-
 // serveSandbox serves the host sandbox page (juggler/sandbox). The page runs
 // untrusted code inside a sandboxed iframe with its own CSP, isolating it from
 // the host page. See setSandboxSecurityHeaders for the served CSP.
@@ -459,7 +378,7 @@ func (s *Server) serveIndex(w http.ResponseWriter, r *http.Request) {
 	nonce := generateCSPNonce()
 	// A test server lets a browser test host the whole shell in a same-origin
 	// frame (see testPageUILocale); every other server lets nothing frame it.
-	setHTMLSecurityHeadersFramed(w, nonce, s.testMode, nativeControlOrigin(r))
+	setHTMLSecurityHeadersFramed(w, nonce, s.test.frameableIndex, nativeControlOrigin(r))
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache, must-revalidate")
 
@@ -495,7 +414,8 @@ func (s *Server) serveIndex(w http.ResponseWriter, r *http.Request) {
 	// viewer gets the same one. With none chosen the page is plain English and
 	// carries no catalogue at all.
 	uiLocale := s.uiLocale()
-	if pinned, ok := s.testPageUILocale(r); ok {
+	pinned, uiLocalePinned := s.testPageUILocale(r)
+	if uiLocalePinned {
 		uiLocale = pinned
 	}
 	htmlLang := webui.SourceLocale
@@ -507,7 +427,7 @@ func (s *Server) serveIndex(w http.ResponseWriter, r *http.Request) {
 
 	data := struct {
 		StaticVersion    string
-		IsTestMode       bool
+		HarnessPage      bool
 		IsDevMode        bool
 		IsWindowMode     bool
 		CSPNonce         string
@@ -517,13 +437,14 @@ func (s *Server) serveIndex(w http.ResponseWriter, r *http.Request) {
 		InitialThemeMode string
 		HTMLLang         string
 		UILocale         string
+		UILocalePinned   bool
 		UICatalog        map[string]string
 		ProjectKey       string
 		ICEServers       []webrtc.ICEServer
 		FixedProject     bool
 	}{
 		StaticVersion: s.staticVersion,
-		IsTestMode:    s.testMode,
+		HarnessPage:   s.test.harnessPage,
 		IsDevMode:     s.devMode,
 		APIToken:      s.apiToken,
 		// Where the client mounted this server: "" directly, /s/<id> behind
@@ -533,7 +454,9 @@ func (s *Server) serveIndex(w http.ResponseWriter, r *http.Request) {
 		InitialThemeMode: initialThemeMode,
 		HTMLLang:         htmlLang,
 		UILocale:         uiLocale,
-		UICatalog:        uiCatalog,
+		// The page keeps this language when the setting changes (app.js).
+		UILocalePinned: uiLocalePinned,
+		UICatalog:      uiCatalog,
 		// Namespaces the viewer's localStorage so a cached zoom/theme belongs to
 		// the project it was set in, whichever origin the viewer arrived on.
 		ProjectKey: projectStorageKey(s.ProjectPath()),

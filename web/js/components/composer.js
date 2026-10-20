@@ -298,10 +298,14 @@ class Composer extends JugglerElement {
     /** @type {Promise<any>|null} */
     this._lastMentionPromise = null;
 
-    // Test-only override for the touch-composer decision (matchMedia is
-    // undrivable from the headless harness). undefined = use matchMedia.
-    /** @type {boolean|undefined} @private */
-    this._touchComposerOverride = undefined;
+    /**
+     * Whether the pointer is coarse with no hover — the environment the
+     * touch-composer decision reads (see _isTouchComposer). A dependency rather
+     * than a direct matchMedia call so a host that cannot drive the media query
+     * (the headless test page) can supply the answer.
+     * @type {() => boolean}
+     */
+    this.isCoarsePointer = () => window.matchMedia?.(COARSE_POINTER_QUERY).matches === true;
 
     /** @type {boolean} @private */
     this._cacheImpactWarning = false;
@@ -998,16 +1002,12 @@ class Composer extends JugglerElement {
    * behaviour and the layout cannot disagree. A narrow DESKTOP window (fine
    * pointer) keeps Enter-to-send.
    *
-   * Tests can't drive `matchMedia`, so an explicit `_touchComposerOverride`
-   * (true/false) wins when set — that is the only way the harness flips this.
+   * The pointer comes from `isCoarsePointer`.
    * @returns {boolean} True when the composer should treat Enter as newline.
    * @private
    */
   _isTouchComposer() {
-    if (typeof this._touchComposerOverride === 'boolean') {
-      return this._touchComposerOverride;
-    }
-    return window.matchMedia?.(COARSE_POINTER_QUERY).matches === true;
+    return this.isCoarsePointer();
   }
 
   /**

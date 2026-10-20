@@ -94,7 +94,7 @@ const appPhase = {
    * reached `ready` refuses every later move, so a suite that cannot reset it
    * can only be run once.
    */
-  resetForTests() {
+  __resetForTests() {
     _phase = 'starting';
     _subscribers.clear();
   }

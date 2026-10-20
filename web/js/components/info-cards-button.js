@@ -15,8 +15,7 @@
  * a card (gate 1) stays in the Extensions catalog.
  *
  * The button shows whenever at least one gate-1 enabled card exists, so it is an
- * always-available manage entry point. It stays out of the way in automated UI
- * tests (JUGGLER_TEST_MODE), matching the rail.
+ * always-available manage entry point.
  *
  * The menu is a standard `.dropdown-menu` surface presented by
  * {@link module:utils/popup-surface|presentPopup} — same as the model/strategy
@@ -92,13 +91,11 @@ class InfoCardsButton extends JugglerElement {
 
   /**
    * Reconcile visibility (and any open menu) with the current enabled-card set.
-   * Shown whenever ≥1 gate-1 enabled card exists; hidden in test mode.
+   * Shown whenever ≥1 gate-1 enabled card exists.
    * @private
    */
   _reconcile() {
-    const testMode = !!(/** @type {any} */ (window).JUGGLER_TEST_MODE);
-    const hasCards = providers().length > 0;
-    this.hidden = testMode || !hasCards;
+    this.hidden = providers().length === 0;
     if (this.hidden) {
       this._closeMenu();
     } else if (this._open) {

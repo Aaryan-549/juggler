@@ -45,7 +45,7 @@ function mountComposer({ touch = false } = {}) {
   const container = document.createElement('div');
   container.style.cssText = 'position:absolute;left:-9999px;top:-9999px;width:480px;height:600px;';
   const box = /** @type {any} */ (document.createElement('composer-box'));
-  if (touch) box._touchComposerOverride = true;
+  if (touch) box.isCoarsePointer = () => true;
   container.appendChild(box);
   document.body.appendChild(container);
   box.setupListeners();

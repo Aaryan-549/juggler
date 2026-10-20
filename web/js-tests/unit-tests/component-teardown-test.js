@@ -968,7 +968,7 @@ export async function runTests() {
       unobserveMetadata: (/** @type {Function} */ fn) => { metadata.delete(fn); },
     };
     const box = /** @type {any} */ (document.createElement('composer-box'));
-    box._touchComposerOverride = false;
+    box.isCoarsePointer = () => false;
     const elsewhere = document.createElement('div');
     document.body.appendChild(elsewhere);
     try {

@@ -891,11 +891,11 @@ export async function runTests(_ctx) {
       );
       const bootIdBefore = wsService.serverBootId;
 
-      await wsService.simulateDisconnect();
-      // simulateDisconnect is a clean teardown, so it leaves the attempt counter
+      await wsService.__simulateDisconnectForTests();
+      // __simulateDisconnectForTests is a clean teardown, so it leaves the attempt counter
       // at zero. A real drop does not — set it, so this reconnects as one.
       wsService._reconnectAttempts = 1;
-      await wsService.reconnect();
+      await wsService.__reconnectForTests();
 
       assert(reloaded === 0, `an unchanged boot id must not reload; got ${reloaded}`);
       assert(wsService.serverBootId === bootIdBefore, 'still talking to the same server');

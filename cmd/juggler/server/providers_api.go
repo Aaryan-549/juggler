@@ -387,7 +387,7 @@ func (s *Server) fetchUsageStats(ctx context.Context, providerName string, cred 
 // request, including while a computation is in flight. A request accepted during
 // a computation remains queued for the actor's next pass.
 func (s *Server) RefreshProviders() {
-	if s.testMode {
+	if s.test.offlineProviders {
 		// Tests mock the provider list; nothing will ever populate the cache, so
 		// open the readiness gate immediately to keep default-model lookups from
 		// waiting out the full timeout.
@@ -455,7 +455,7 @@ func (s *Server) providersReadyNow() bool {
 // timeout inside its create request, since the handler resolves the default
 // model before it seeds the doc.
 func (s *Server) awaitProvidersReady(ctx context.Context) {
-	if s.testMode {
+	if s.test.offlineProviders {
 		s.markProvidersReady()
 		return
 	}
@@ -939,7 +939,7 @@ func (s *Server) handleProviderUsageStats(w http.ResponseWriter, r *http.Request
 	// In test mode, fetching usage would make real upstream HTTPS calls per
 	// credentialed provider — the same flake vector that bit /api/providers.
 	// The model-selector menu requests this on open, so short-circuit here.
-	if s.testMode {
+	if s.test.offlineProviders {
 		handlers.WriteJSON(w, r, 0, map[string]any{
 			"usage":  []provider.UsageStats{},
 			"errors": map[string]string{},

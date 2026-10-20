@@ -103,6 +103,28 @@ var testLogDir string
 // plus credentials and settings, from the developer's real Juggler profile.
 var testConfigDir string
 
+// seededTestSettings is the settings.json every pool subprocess starts from: a
+// user who has already declined the first-run walkthrough, so an app shell a
+// test hosts never opens it over the page under test. The shell takes the same
+// path a real user's does; nothing in the app checks for a test.
+const seededTestSettings = `{"ui":{"onboardingDismissed":true}}` + "\n"
+
+// seedTestSettings writes seededTestSettings into configDir unless a settings
+// file is already there (a fixture restarted within one run keeps its own).
+func seedTestSettings(configDir string) error {
+	path := filepath.Join(configDir, "settings.json")
+	if _, err := os.Stat(path); err == nil {
+		return nil
+	}
+	if err := os.MkdirAll(configDir, 0o700); err != nil {
+		return fmt.Errorf("seed test settings: %w", err)
+	}
+	if err := os.WriteFile(path, []byte(seededTestSettings), 0o600); err != nil {
+		return fmt.Errorf("seed test settings: %w", err)
+	}
+	return nil
+}
+
 // testSkillsDir is an empty throwaway directory the pool points every
 // subprocess's user-scoped skill discovery at (via JUGGLER_SKILLS_USER_DIR), so
 // a server — which inherits the developer's real $HOME — never discovers their
@@ -392,6 +414,9 @@ func startJugglerSubprocess(binary, fixture string, iframes int) (testServerEntr
 	// from the developer's profile.
 	if testConfigDir != "" {
 		configDir := filepath.Join(testConfigDir, filepath.Base(fixture))
+		if err := seedTestSettings(configDir); err != nil {
+			return testServerEntry{}, err
+		}
 		cmd.Env = envWithOverride(cmd.Env, "JUGGLER_CONFIG_DIR", configDir)
 	}
 	// Point user-scoped skill discovery at an empty throwaway dir (see

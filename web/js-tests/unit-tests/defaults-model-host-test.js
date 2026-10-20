@@ -29,7 +29,7 @@ import { underPseudoLocale, assertPseudoLocalized } from '../utilities/pseudo-lo
 import strategyRegistry from '../../js/registries/strategy-registry.js';
 import {
   areReplySuggestionsEnabled,
-  resetReplySuggestionsSettingForTests,
+  __resetReplySuggestionsSettingForTests,
 } from '../../js/services/reply-suggestions-setting.js';
 
 /**
@@ -389,7 +389,7 @@ export async function runTests(_ctx) {
 
   await run('the reply-suggestions toggle persists the disabled bool and updates the cache', async () => {
     const h = makeTab();
-    resetReplySuggestionsSettingForTests();
+    __resetReplySuggestionsSettingForTests();
     try {
       h.tab.config = {};
       h.tab.renderReplySuggestionsSettings();
@@ -411,13 +411,13 @@ export async function runTests(_ctx) {
       assert(!areReplySuggestionsEnabled(),
         'the cache is what gates the generator, so it must follow the switch without a re-fetch');
     } finally {
-      resetReplySuggestionsSettingForTests();
+      __resetReplySuggestionsSettingForTests();
       h.restore();
     }
   });
 
   await run('an unseeded setting reads as off, so nothing runs before we have looked', () => {
-    resetReplySuggestionsSettingForTests();
+    __resetReplySuggestionsSettingForTests();
     assert(!areReplySuggestionsEnabled(),
       'the feature is on by default, but not before /api/config has answered — otherwise '
       + 'a user who turned it off gets one round of it on every startup');
@@ -593,7 +593,7 @@ export async function runTests(_ctx) {
       window.fetch = originalFetch;
       win.showModal = originalShowModal;
       globals.jugglerApp = originalApp;
-      resetReplySuggestionsSettingForTests();
+      __resetReplySuggestionsSettingForTests();
       document.querySelectorAll('.model-picker').forEach(node => node.remove());
       host.remove();
     }

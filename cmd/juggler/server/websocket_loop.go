@@ -47,7 +47,7 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	// Remote ingress is exempt: those are the user's explicit remote grants
 	// (possession of the unguessable URL), authorized exactly like the LAN gate
 	// authorizes them, and their transport need not thread the token through
-	// the WS handshake. Skipped entirely in test mode, where the headless
+	// the WS handshake. Skipped entirely on a test server (test.authDisabled), where the headless
 	// harness drives many synthetic viewers without a token.
 	//
 	// A missing token is refused before the upgrade: no page this server serves
@@ -57,7 +57,7 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	// socket that opens and closes before the session frame is the only signal
 	// that its page is stale, and the page reloads on it
 	// (websocket.js _onTransportClosed).
-	viewerGated := role == ClientRoleViewer && !s.testMode && !isRemoteIngress(r)
+	viewerGated := role == ClientRoleViewer && !s.test.authDisabled && !isRemoteIngress(r)
 	if viewerGated && token == "" {
 		jlog.Debug("Rejected viewer WS upgrade from %s: no session token", r.RemoteAddr)
 		http.Error(w, "missing session token", http.StatusForbidden)

@@ -211,10 +211,10 @@ type Server struct {
 
 	router          *mux.Router
 	addr            string
-	listener        net.Listener // Bound listener (set after BindPort())
-	devMode         bool         // Inspector / right-click menu + front-end JUGGLER_DEV_MODE (no source checkout needed)
-	assetsFromDisk  bool         // Serve web assets from the on-disk web/ tree with live reload (requires a source checkout)
-	testMode        bool         // Set when test routes are registered; disables network calls in provider listing
+	listener        net.Listener     // Bound listener (set after BindPort())
+	devMode         bool             // Inspector / right-click menu + front-end JUGGLER_DEV_MODE (no source checkout needed)
+	assetsFromDisk  bool             // Serve web assets from the on-disk web/ tree with live reload (requires a source checkout)
+	test            testCapabilities // What a test server does differently; all off unless RegisterTestRoutes completed
 	bootProjectPath string
 
 	indexTemplate *template.Template // Template for index.html with cache busting

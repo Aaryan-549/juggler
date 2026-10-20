@@ -259,7 +259,7 @@ func TestHandlePutSettingsHiddenModelsRoundTrip(t *testing.T) {
 	})
 	s := &Server{
 		settings:        newSettingsStore(),
-		testMode:        true,
+		test:            testCapabilities{offlineProviders: true},
 		providerRefresh: providerRefresh{providersReady: make(chan struct{})},
 	}
 
@@ -300,7 +300,7 @@ func TestHandlePutSettingsHiddenModelsMergePreservesOtherSections(t *testing.T) 
 	})
 	s := &Server{
 		settings:        newSettingsStore(),
-		testMode:        true,
+		test:            testCapabilities{offlineProviders: true},
 		providerRefresh: providerRefresh{providersReady: make(chan struct{})},
 	}
 
@@ -324,7 +324,7 @@ func TestHandlePutSettingsUnknownProviderRejected(t *testing.T) {
 	})
 	s := &Server{
 		settings:        newSettingsStore(),
-		testMode:        true,
+		test:            testCapabilities{offlineProviders: true},
 		providerRefresh: providerRefresh{providersReady: make(chan struct{})},
 	}
 	putSettings(t, s, `{"models":{"hidden":{"`+providerName+`":["a-model"]}}}`, http.StatusOK)
@@ -348,7 +348,7 @@ func TestHandlePutSettingsModelLimitsRoundTrip(t *testing.T) {
 	})
 	s := &Server{
 		settings:        newSettingsStore(),
-		testMode:        true,
+		test:            testCapabilities{offlineProviders: true},
 		providerRefresh: providerRefresh{providersReady: make(chan struct{})},
 	}
 
@@ -396,7 +396,7 @@ func TestHandlePutSettingsModelLimitsMergePreservesOtherSections(t *testing.T) {
 	})
 	s := &Server{
 		settings:        newSettingsStore(),
-		testMode:        true,
+		test:            testCapabilities{offlineProviders: true},
 		providerRefresh: providerRefresh{providersReady: make(chan struct{})},
 	}
 
@@ -423,7 +423,7 @@ func TestHandlePutSettingsModelLimitsRejected(t *testing.T) {
 	})
 	s := &Server{
 		settings:        newSettingsStore(),
-		testMode:        true,
+		test:            testCapabilities{offlineProviders: true},
 		providerRefresh: providerRefresh{providersReady: make(chan struct{})},
 	}
 	putSettings(t, s, `{"models":{"limits":{"`+providerName+`":{"a-model":{"contextWindow":250000}}}}}`, http.StatusOK)
@@ -452,7 +452,7 @@ func TestHandlePutSettingsErrorCarriesMessage(t *testing.T) {
 	})
 	s := &Server{
 		settings:        newSettingsStore(),
-		testMode:        true,
+		test:            testCapabilities{offlineProviders: true},
 		providerRefresh: providerRefresh{providersReady: make(chan struct{})},
 	}
 	cases := []struct {
@@ -523,7 +523,7 @@ func TestHandlePutSettingsStaleUnknownProviderDoesNotBlockPut(t *testing.T) {
 	}
 	s := &Server{
 		settings:        newSettingsStore(),
-		testMode:        true,
+		test:            testCapabilities{offlineProviders: true},
 		providerRefresh: providerRefresh{providersReady: make(chan struct{})},
 	}
 	if got := s.settings.get().Models.Hidden["deleted-instance"]; len(got) != 1 {

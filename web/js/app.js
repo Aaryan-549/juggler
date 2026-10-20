@@ -16,7 +16,6 @@ import UIEventManager from './services/ui-event-manager.js';
 import StrategySwitcher from './services/strategy-switcher.js';
 import { ModelCycler, ThinkingCycler } from './services/model-cycler.js';
 import wsService from './services/websocket.js';
-import { fetchJson } from './services/http.js';
 import { openSettings } from './services/settings-launcher.js';
 import { startSetupWizard, ONBOARDING_DISMISSED_PREF } from './components/onboarding/setup-wizard.js';
 import { getUserPref, setUserPref } from './services/prefs.js';
@@ -57,7 +56,6 @@ import { markUntranslated } from '../sdk/lib/i18n.js';
 import { openCommandManager } from './components/command-editor-dialog.js';
 import { exportConversation } from './components/conversation-export-dialog.js';
 import { setFaultSink, reportFault } from './utils/fault-report.js';
-import { apiUrl, serverPath } from './utils/api-url.js';
 import { startWordOfMouth, noteComposerSend } from './components/word-of-mouth.js';
 
 /**
@@ -311,12 +309,12 @@ class JugglerApp {
         void this._flushDraftsForClose().finally(() => window.location.reload());
       },
     });
-    // A test server serves a page in the language its URL names (?uiLocale=,
-    // serveIndex), whatever the setting says; that page keeps it.
-    const localePinnedByTest = !!(/** @type {any} */ (window).JUGGLER_TEST_MODE)
-      && new URLSearchParams(window.location.search).has('uiLocale');
+    // A page served in the language its URL names (?uiLocale=, which only a
+    // test server honours — serveIndex) keeps that language whatever the
+    // setting says; the server marks such a page data-ui-locale-pinned.
+    const localePinned = document.documentElement.hasAttribute('data-ui-locale-pinned');
     wsService.on('settings-changed', (/** @type {any} */ settings) => {
-      if (localePinnedByTest) return;
+      if (localePinned) return;
       localeReloader.update(typeof settings?.uiLocale === 'string' ? settings.uiLocale : '');
     });
 
@@ -535,8 +533,8 @@ class JugglerApp {
       registerConversationShortcuts(session);
 
       // Count days of use and, once, ask the user to spread the word
-      // (components/word-of-mouth.js). Not under automated tests.
-      if (!(/** @type {any} */ (window).JUGGLER_TEST_MODE)) void startWordOfMouth();
+      // (components/word-of-mouth.js).
+      void startWordOfMouth();
     }
 
     // Wire global header controls (undo/redo + project path)
@@ -605,10 +603,6 @@ class JugglerApp {
    * @private
    */
   async _maybeShowOnboarding() {
-    // The integration harness never broadcasts a providers-update (RefreshProviders
-    // is a no-op in test mode), so onboarding has no meaningful signal and a modal
-    // would only interfere with tests. Skip it entirely.
-    if (/** @type {any} */ (window).JUGGLER_TEST_MODE) return;
     try {
       // Wait for the SETTLED provider list, not the connect seed: the seed arrives
       // before the server has computed availability, so gating on it would misread a
@@ -1146,25 +1140,3 @@ const app = new JugglerApp();
 
 // Export for debugging
 window.jugglerApp = app;
-
-// Test mode: poll for pending tests and navigate to headless-test.html to run them.
-// A shell in a frame is one a browser test is hosting, not a pool slot, so it
-// takes nothing off the queue.
-if (window.JUGGLER_TEST_MODE && window.top === window) {
-  setInterval(async () => {
-    try {
-      const entry = await fetchJson(apiUrl('/test/pending'));
-      if (!entry) return; // 204 — nothing queued
-      if (entry.name === '__list__') {
-        window.location.href = serverPath('/headless-test?list=1');
-      } else if (entry.taskId) {
-        let url = serverPath('/headless-test') + `?task=${encodeURIComponent(entry.taskId)}&projectPath=${encodeURIComponent(entry.projectPath)}&quiet=true`;
-        if (entry.model) url += `&model=${encodeURIComponent(entry.model)}`;
-        if (entry.provider) url += `&provider=${encodeURIComponent(entry.provider)}`;
-        window.location.href = url;
-      } else {
-        window.location.href = serverPath('/headless-test') + `?test=${encodeURIComponent(entry.name)}&projectPath=${encodeURIComponent(entry.projectPath)}`;
-      }
-    } catch (_) { /* ignore fetch errors */ }
-  }, 200);
-}

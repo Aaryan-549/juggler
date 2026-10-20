@@ -29,7 +29,7 @@ func HandleHealth(w http.ResponseWriter, r *http.Request) {
 // HandleClientReport is the frontend → application-log bridge. The desktop app's
 // WebView console (and the engine's hidden worker WebView console) can't be read
 // in a shipped build, so a fault a real user hits would otherwise vanish — this
-// endpoint lands it in the app log they can send us. Two callers use it:
+// endpoint lands it in the app log they can send us. Three callers use it:
 //   - the worker-backed engine runtime (web/js/engine-worker-runtime.js), which
 //     reports its boot outcome; it predates the generic bridge, so an omitted (or
 //     "engine") source keeps its original, descriptive wording.
@@ -37,6 +37,9 @@ func HandleHealth(w http.ResponseWriter, r *http.Request) {
 //     rare untoward audio events (a wedged/rebuilt context, a resume that never
 //     recovers, a fresh context that comes up interrupted, no Web Audio at all)
 //     tagged source "chime".
+//   - the engine's conversation loader (web/js/services/conversation-loader.js),
+//     which reports a conversation it failed to auto-load, tagged source
+//     "engine-autoload".
 //
 // Body: {source?, event?, message?, stack?}. event "error" logs at Error,
 // "ready" at Info, anything else at Debug. Callers send only untoward events, so

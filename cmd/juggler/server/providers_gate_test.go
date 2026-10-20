@@ -27,7 +27,7 @@ func TestTestModeNeverWaitsOnTheProvidersGate(t *testing.T) {
 		providerRefresh: providerRefresh{providersReady: make(chan struct{})},
 		shutdownChan:    make(chan struct{}),
 	}
-	s.testMode = true
+	s.test.offlineProviders = true
 
 	start := time.Now()
 	s.awaitProvidersReady(context.Background())

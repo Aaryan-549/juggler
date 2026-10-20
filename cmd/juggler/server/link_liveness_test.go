@@ -203,14 +203,14 @@ func TestLinkCheckIntervalTracksTheBeat(t *testing.T) {
 }
 
 // newViewerSocketServer stands up the production WebSocket handler with just
-// enough Server state for a viewer upgrade to complete. testMode waives the
-// per-instance token, which is a separate concern from liveness.
+// enough Server state for a viewer upgrade to complete. test.authDisabled
+// waives the per-instance token, which is a separate concern from liveness.
 func newViewerSocketServer(t *testing.T) (*Server, *httptest.Server) {
 	t.Helper()
 	s := newTestServerState(t)
 	s.workerManager = worker.NewManager()
 	s.upgrader = websocket.Upgrader{}
-	s.testMode = true
+	s.test.authDisabled = true
 	s.apiToken = testSocketToken
 	ts := httptest.NewServer(http.HandlerFunc(s.handleWebSocket))
 	t.Cleanup(ts.Close)

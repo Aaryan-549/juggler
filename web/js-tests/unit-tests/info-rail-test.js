@@ -31,7 +31,7 @@ import { assert } from '../utilities/test-helpers.js';
 import { underPseudoLocale, shownStrings } from '../utilities/pseudo-locale.js';
 import { pseudoLocalize, isPseudoLocalized } from '../../sdk/lib/i18n.js';
 import infoCardRegistry from '../../js/registries/info-card-registry.js';
-import { __allowInfoRailInTests } from '../../js/components/info-rail.js';
+import '../../js/components/info-rail.js';
 import '../../js/components/conversation-bar.js';
 
 /**
@@ -156,7 +156,6 @@ export async function runTests(_ctx) {
     }
   };
 
-  __allowInfoRailInTests(true);
   try {
     await run('a short column keeps its share for the tabs and drops cards from the tail', () => {
       registerStubs(3);
@@ -358,9 +357,8 @@ export async function runTests(_ctx) {
       assert(raw.length === 0, `plain English under en-XA: ${JSON.stringify(raw)}`);
     });
   } finally {
-    // Realm-global, both of them: leave the rail switched off and the registry as
-    // this suite found it, or the next suite in this lane inherits stub cards.
-    __allowInfoRailInTests(false);
+    // Realm-global: leave the registry as this suite found it, or the next suite
+    // in this lane inherits stub cards.
     infoCardRegistry.reset();
   }
 

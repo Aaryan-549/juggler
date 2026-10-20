@@ -92,8 +92,8 @@ var exemptRoutes = map[string][]string{
 // The exempt set is exactly those paths: nothing is admitted by prefix. The
 // test harness (/api/test/*) and the engine's status endpoint (/api/engine/*)
 // need no exemption of their own, because the only server that serves them is
-// one RegisterTestRoutes has run against — and that sets testMode, which takes
-// this gate out of the request path altogether.
+// one RegisterTestRoutes has run against — and that sets test.authDisabled,
+// which takes this gate out of the request path altogether.
 func apiAuthExempt(method, path string) bool {
 	methods, ok := exemptRoutes[path]
 	return ok && (methods == nil || slices.Contains(methods, method))
@@ -215,7 +215,8 @@ func fileTreeToken(r *http.Request) string {
 }
 
 // apiAuthMiddleware enforces the per-instance token and Host allowlist on the
-// sensitive /api surface (§S.1 + §S.2). It is a no-op in test mode — the browser
+// sensitive /api surface (§S.1 + §S.2). It is a no-op on a test server
+// (test.authDisabled) — the browser
 // integration harness drives the server headlessly over many synthetic origins
 // and iframes, and the token path is covered separately by a Go test — and only
 // engages for real /api/* paths that are not on the bootstrap exempt list.
@@ -226,7 +227,7 @@ func fileTreeToken(r *http.Request) string {
 func (s *Server) apiAuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
-		if s.testMode || !strings.HasPrefix(path, "/api/") {
+		if s.test.authDisabled || !strings.HasPrefix(path, "/api/") {
 			next.ServeHTTP(w, r)
 			return
 		}

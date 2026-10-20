@@ -25,8 +25,7 @@
  *
  * The touch decision normally reads `matchMedia('(hover: none) and
  * (pointer: coarse)')`, which the headless harness cannot drive. So the test
- * forces it via the `_touchComposerOverride` escape hatch the component exposes
- * for exactly this purpose.
+ * supplies the answer through the component's `isCoarsePointer` dependency.
  * @module unit-tests/mobile-composer-test
  */
 
@@ -51,7 +50,7 @@ function mountTouchComposer() {
   container.style.cssText = 'position:absolute;left:-9999px;top:-9999px;width:360px;height:600px;';
   const box = document.createElement('composer-box');
   // Force the touch-composer code path (matchMedia is undrivable headless).
-  /** @type {any} */ (box)._touchComposerOverride = true;
+  /** @type {any} */ (box).isCoarsePointer = () => true;
   container.appendChild(box); // connectedCallback → render() writes the DOM now
   document.body.appendChild(container);
 
@@ -136,7 +135,7 @@ export async function runTests() {
   {
     const { box, textarea, container, sent } = mountTouchComposer();
     try {
-      /** @type {any} */ (box)._touchComposerOverride = false; // desktop
+      /** @type {any} */ (box).isCoarsePointer = () => false; // desktop
       textarea.value = 'desktop send';
       textarea.selectionStart = textarea.selectionEnd = textarea.value.length;
       pressKey(textarea, { key: 'Enter' });
@@ -339,7 +338,7 @@ export async function runTests() {
     const container = document.createElement('div');
     container.style.cssText = 'position:absolute;left:0;top:0;width:390px;';
     const box = document.createElement('composer-box');
-    /** @type {any} */ (box)._touchComposerOverride = true;
+    /** @type {any} */ (box).isCoarsePointer = () => true;
     container.appendChild(box);
     document.body.appendChild(container);
     try {

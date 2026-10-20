@@ -536,23 +536,20 @@ export class ConversationLoader {
           `[ConversationLoader] Failed to auto-load conversation ${conversationId} (attempt ${failures}, next no sooner than ${this.autoLoadRetryDelayMs(failures)}ms):`,
           err
         );
-        // The engine's console is invisible in headless runs, and a repeated
-        // auto-load failure means no tool execution for the conversation —
-        // worth a server-side trace. The endpoint only exists in test mode, so
-        // gate the call behind the test flag rather than firing a request that
-        // 404s in production (over the studio tunnel that 404 is a visible
-        // console line). Fire-and-forget.
-        if (/** @type {any} */ (globalThis).JUGGLER_TEST_MODE) {
-          void fetchJson(apiUrl('/test/debug-log'), {
-            method: 'POST',
-            body: {
-              where: 'engine-auto-load-failed',
-              conversationId,
-              error: extractErrorMessage(err)
-            },
-            fallback: null,
-          });
-        }
+        // The engine's console is invisible in a shipped build and in headless
+        // runs alike, and a repeated auto-load failure means no tool execution
+        // for the conversation — worth a line in the server's application log
+        // (handlers.HandleClientReport). Fire-and-forget.
+        void fetchJson(apiUrl('/client/report'), {
+          method: 'POST',
+          body: {
+            source: 'engine-autoload',
+            event: 'error',
+            // i18n-ignore: an application-log line, never shown in the UI
+            message: `conv=${conversationId} attempt=${failures}: ${extractErrorMessage(err)}`,
+          },
+          fallback: null,
+        });
         // The first failure is usually a race: the worker's first-init
         // 'ready' (triggered by whichever client booted the worker) lands in
         // our entry before the worker has processed *our* init, so we get a

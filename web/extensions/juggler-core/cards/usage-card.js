@@ -17,11 +17,14 @@
  */
 
 import InfoCardType from 'juggler/info-card-type';
+import { translator } from 'juggler/i18n';
 import defaultModelCache from '../../../js/services/default-model-cache.js';
 import providersCache from '../../../js/services/providers-cache.js';
 import usageStatsCache from '../../../js/services/usage-stats-cache.js';
 import { escapeHtml } from '../../../sdk/lib/html.js';
 import { formatPlan, renderUsageRow } from '../../../js/utils/usage-renderer.js';
+
+const t = translator('@juggler/core');
 
 // Re-render/retry tick. Live network fetches are governed by the usage cache's
 // own per-provider debounce (aligned to the upstream ~5-minute refresh), so this
@@ -77,8 +80,8 @@ function providerLabel(providerName) {
  * @returns {string} Short user-facing error.
  */
 function usageErrorLabel(error) {
-  if (/sign-in not yet confirmed|not logged in/i.test(error)) return 'Not logged in';
-  return 'Couldn’t get usage';
+  if (/sign-in not yet confirmed|not logged in/i.test(error)) return t('Not logged in');
+  return t('Couldn’t get usage');
 }
 
 /**
@@ -133,8 +136,8 @@ export default class UsageCard extends InfoCardType {
       const body = hasStats
         ? stats.map(renderUsageRow).join('')
         : error
-          ? `<p class="info-card__body" title="${escapeHtml(error)}">${usageErrorLabel(error)}</p>`
-          : '<p class="info-card__body">No usage data</p>';
+          ? `<p class="info-card__body" title="${escapeHtml(error)}">${escapeHtml(usageErrorLabel(error))}</p>`
+          : `<p class="info-card__body">${escapeHtml(t('No usage data'))}</p>`;
       const html = `${subtitle}${body}`;
       if (html !== lastHTML) {
         contentEl.innerHTML = html;

@@ -1280,7 +1280,7 @@ export class IntegrationTestHarness {
       throw new Error('Conversation not initialized');
     }
 
-    await wsService.simulateDisconnect();
+    await wsService.__simulateDisconnectForTests();
 
     // Wait before allowing reconnection
     if (reconnectMs > 0) {
@@ -1288,7 +1288,7 @@ export class IntegrationTestHarness {
     }
 
     // Trigger reconnection
-    await wsService.reconnect();
+    await wsService.__reconnectForTests();
   }
 
   /**

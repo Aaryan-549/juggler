@@ -527,11 +527,11 @@ func TestAPIAuthIgnoresNonAPIPaths(t *testing.T) {
 	}
 }
 
-// TestAPIAuthTestModeBypass confirms the gate is inert in test mode so the
+// TestAPIAuthTestModeBypass confirms the gate is inert with test.authDisabled so the
 // browser integration harness (many synthetic origins) is unaffected.
 func TestAPIAuthTestModeBypass(t *testing.T) {
 	s, reached := newAuthTestServer(t)
-	s.testMode = true
+	s.test.authDisabled = true
 
 	req := httptest.NewRequest(http.MethodPost, "/api/ops/call", nil)
 	req.Host = "attacker.com"
@@ -545,7 +545,7 @@ func TestAPIAuthTestModeBypass(t *testing.T) {
 
 // TestServedEngineCarriesTokenForWorkerAPIFetches guards the production-only
 // regression where /engine booted a module worker with no token. Browser tests
-// run with s.testMode=true (auth disabled), so they still passed while real
+// run with s.test.authDisabled, so they still passed while real
 // engine-side registry/config and fallback/background bash ops hit /api without
 // X-Juggler-Token and wedged the tool lifecycle.
 func TestServedEngineCarriesTokenForWorkerAPIFetches(t *testing.T) {
@@ -610,9 +610,9 @@ func TestHostAllowedRemoteIngressBypass(t *testing.T) {
 // assets carry no token and stay ungated.
 func TestPageHostMiddlewareRefusesRebindingHosts(t *testing.T) {
 	gated := []string{"/", "/index.html", "/engine", "/headless-test", "/test-pool", apipaths.WebSocket}
-	for _, testMode := range []bool{false, true} {
+	for _, authDisabled := range []bool{false, true} {
 		var reached bool
-		s := &Server{router: mux.NewRouter(), apiToken: testAPIToken, testMode: testMode}
+		s := &Server{router: mux.NewRouter(), apiToken: testAPIToken, test: testCapabilities{authDisabled: authDisabled}}
 		s.router.Use(s.pageHostMiddleware)
 		hit := func(w http.ResponseWriter, _ *http.Request) {
 			reached = true
@@ -638,20 +638,20 @@ func TestPageHostMiddlewareRefusesRebindingHosts(t *testing.T) {
 		for _, p := range gated {
 			for _, host := range []string{"attacker.com:8317", "localhost.attacker.com:8317", "notlocalhost.com:8317"} {
 				if code, ran := serve(p, host, false); code != http.StatusForbidden || ran {
-					t.Errorf("testMode=%v GET %s Host %s: got %d reached=%v, want 403 unreached", testMode, p, host, code, ran)
+					t.Errorf("authDisabled=%v GET %s Host %s: got %d reached=%v, want 403 unreached", authDisabled, p, host, code, ran)
 				}
 			}
 			for _, host := range []string{"127.0.0.1:8317", "localhost:8317", "myproject.localhost:8317", "192.168.1.5:8317", "[::1]:8317"} {
 				if code, ran := serve(p, host, false); code != http.StatusOK || !ran {
-					t.Errorf("testMode=%v GET %s Host %s: got %d reached=%v, want 200 reached", testMode, p, host, code, ran)
+					t.Errorf("authDisabled=%v GET %s Host %s: got %d reached=%v, want 200 reached", authDisabled, p, host, code, ran)
 				}
 			}
 			if code, ran := serve(p, "abc123.trycloudflare.com", true); code != http.StatusOK || !ran {
-				t.Errorf("testMode=%v GET %s from remote ingress: got %d reached=%v, want 200 reached", testMode, p, code, ran)
+				t.Errorf("authDisabled=%v GET %s from remote ingress: got %d reached=%v, want 200 reached", authDisabled, p, code, ran)
 			}
 		}
 		if code, ran := serve("/v1/js/app.js", "attacker.com:8317", false); code != http.StatusOK || !ran {
-			t.Errorf("testMode=%v static asset under a DNS-name Host: got %d reached=%v, want 200 reached", testMode, code, ran)
+			t.Errorf("authDisabled=%v static asset under a DNS-name Host: got %d reached=%v, want 200 reached", authDisabled, code, ran)
 		}
 	}
 }

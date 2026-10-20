@@ -43,13 +43,14 @@ const SETTINGS_TABS = [
  * - `.ppd-path`: the project directory.
  * - `.user-message-text`: what the user typed; `.markdown`: what the model wrote.
  * - `.model-name`: the model's own display name.
+ * - `.info-card__usage-sub`: the usage card's provider name and plan.
  * - `.properties-panel-filepath`: a file's path on disk.
  * - `#auto-name-instruction-input`: its placeholder is the built-in prompt sent
  *   to the model, which stays in English whatever the UI language.
  * - `.plugin-version`, `.plugin-author`: an extension's manifest fields.
  * - `code`, `pre`: tool arguments, paths and file content.
  */
-const DATA = '.ppd-path, .user-message-text, .markdown, .model-name, '
+const DATA = '.ppd-path, .user-message-text, .markdown, .model-name, .info-card__usage-sub, '
   + '#auto-name-instruction-input, .plugin-version, .plugin-author, .properties-panel-filepath, code, pre';
 
 /**
@@ -298,6 +299,12 @@ export const appPseudoLocaleWalkTest = {
         || win.getComputedStyle(doc.querySelector('[data-loading-overlay="startup"]')).display === 'none',
       'the startup overlay to go', 10000).catch((e) => findings.push(String(e.message)));
 
+      // The shell under test is the one a user gets: nothing in it knows a test
+      // server served it, so the info rail mounts here as it does for them, and
+      // the conversation-bar check below reads its cards too.
+      const rail = /** @type {HTMLElement|null} */ (doc.querySelector('conversation-bar info-rail'));
+      if (!rail || rail.hidden) findings.push(`the hosted shell's info rail is ${rail ? 'hidden' : 'missing'} — it is mounted for users`);
+      if ('JUGGLER_TEST_MODE' in win) findings.push('the hosted shell was told it is under test (window.JUGGLER_TEST_MODE)');
       check(doc.querySelector('.app-header'), 'header');
       check(doc.querySelector('conversation-bar'), 'conversation bar');
       check(tab, 'conversation (transcript, composer, footer)');

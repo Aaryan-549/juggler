@@ -43,7 +43,7 @@ function forceHidden(hidden) {
  * @returns {StartupOverlay} A mounted overlay, ticked only on demand.
  */
 function mountOverlay(phase) {
-  appPhase.resetForTests();
+  appPhase.__resetForTests();
   setAppPhase(phase);
   const overlay = new StartupOverlay();
   overlay.show();
@@ -204,7 +204,7 @@ export async function runTests(_ctx) {
     });
 
     await test('the overlay painted before the scripts ran is the one that is used', () => {
-      appPhase.resetForTests();
+      appPhase.__resetForTests();
       setAppPhase('extensions');
       // What index.html serves: the dimmed window, already on screen, waiting to
       // be taken over rather than replaced.
@@ -235,7 +235,7 @@ export async function runTests(_ctx) {
     });
   } finally {
     if (overlay) /** @type {StartupOverlay} */ (overlay).hide();
-    appPhase.resetForTests();
+    appPhase.__resetForTests();
     if (hiddenDescriptor) {
       Object.defineProperty(document, 'hidden', hiddenDescriptor);
     } else {
