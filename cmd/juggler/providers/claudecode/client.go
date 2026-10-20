@@ -194,6 +194,8 @@ func (c *Client) reapIdleCLI(idle, parked time.Duration) {
 	s.tearDownLiveCLI() // free the OS process; the resumable record survives
 }
 
+var _ provider.ConversationProvider = (*Client)(nil)
+
 // OpenConversation returns a native claudecode Conversation handle. The
 // handle binds this *Client (which carries model + workingDir + the
 // lazily-populated activeSession) to convID. One Client per Conversation;

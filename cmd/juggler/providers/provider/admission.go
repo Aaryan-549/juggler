@@ -335,15 +335,37 @@ type admissionProvider struct {
 	contract     BudgetContract
 }
 
-// Unwrap exposes the wrapped provider so As can reach its other capabilities.
+// Unwrap exposes the wrapped provider so As can reach the capabilities that
+// need no admission check, such as UsageStatsProvider.
 func (p *admissionProvider) Unwrap() Provider { return p.Provider }
 
-func (p *admissionProvider) OpenConversation(ctx context.Context, convID string) (Conversation, error) {
-	inner, ok := As[ConversationProvider](p.Provider)
-	if !ok {
-		return nil, fmt.Errorf("provider %q does not support conversations", p.Name())
+// AsCapability supplies the capabilities whose requests must be checked
+// against the model's context window, and only when the provider underneath
+// has them. A capability that sends model requests belongs here: one that is
+// left out is found by As on the unchecked provider instead.
+func (p *admissionProvider) AsCapability(target any) bool {
+	if t, ok := target.(*ConversationProvider); ok {
+		inner, ok := As[ConversationProvider](p.Provider)
+		if !ok {
+			return false
+		}
+		*t = admissionConversationProvider{inner: inner, capabilities: p.capabilities, contract: p.contract}
+		return true
 	}
-	cv, err := inner.OpenConversation(ctx, convID)
+	return false
+}
+
+// admissionConversationProvider is the ConversationProvider admission control
+// hands out: every conversation it opens checks each request against the
+// model's context window before it reaches the provider.
+type admissionConversationProvider struct {
+	inner        ConversationProvider
+	capabilities ModelCapabilities
+	contract     BudgetContract
+}
+
+func (p admissionConversationProvider) OpenConversation(ctx context.Context, convID string) (Conversation, error) {
+	cv, err := p.inner.OpenConversation(ctx, convID)
 	if err != nil {
 		return nil, err
 	}

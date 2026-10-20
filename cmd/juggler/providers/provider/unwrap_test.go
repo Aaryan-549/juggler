@@ -49,21 +49,31 @@ func TestAsReportsMissingCapability(t *testing.T) {
 	}
 }
 
-func TestAsConversationProviderReturnsAdmissionWrapper(t *testing.T) {
-	wrapped := &admissionProvider{Provider: chatProvider{}}
-	cp, ok := AsConversationProvider(wrapped)
-	if !ok {
-		t.Fatal("wrapped chat provider not found")
+// requireAdmissionChecked fails unless cp opens conversations that check each
+// request against the context window — the guarantee As must not unwrap past.
+func requireAdmissionChecked(t *testing.T, cp ConversationProvider) {
+	t.Helper()
+	conv, err := cp.OpenConversation(context.Background(), "c")
+	if err != nil {
+		t.Fatal(err)
 	}
-	if cp != ConversationProvider(wrapped) {
-		t.Fatalf("AsConversationProvider returned %T, want the admission wrapper", cp)
+	if _, checked := conv.(*admissionConversation); !checked {
+		t.Fatalf("opened %T, want an admission-checked conversation", conv)
 	}
 }
 
-func TestOpenConversationRejectsNonChatProvider(t *testing.T) {
+func TestAsConversationProviderIsAdmissionChecked(t *testing.T) {
+	cp, ok := As[ConversationProvider](&admissionProvider{Provider: chatProvider{}})
+	if !ok {
+		t.Fatal("As did not find ConversationProvider under the wrapper")
+	}
+	requireAdmissionChecked(t, cp)
+}
+
+func TestAsReportsNoConversationsForNonChatProvider(t *testing.T) {
 	wrapped := &admissionProvider{Provider: baseOnlyProvider{}}
-	if _, ok := AsConversationProvider(wrapped); ok {
-		t.Fatal("non-chat provider reported as conversation provider")
+	if _, ok := As[ConversationProvider](wrapped); ok {
+		t.Fatal("As found ConversationProvider on a provider that cannot chat")
 	}
 	if _, err := OpenConversation(context.Background(), wrapped, "c"); err == nil {
 		t.Fatal("OpenConversation succeeded on a provider that cannot chat")
@@ -84,13 +94,11 @@ func TestInitializeProviderExposesUsageStatsAndConversations(t *testing.T) {
 	if _, ok := As[UsageStatsProvider](initialized); !ok {
 		t.Fatal("usage stats not reachable through the admission wrapper")
 	}
-	cp, ok := AsConversationProvider(initialized)
+	cp, ok := As[ConversationProvider](initialized)
 	if !ok {
 		t.Fatal("conversations not reachable through the admission wrapper")
 	}
-	if _, isWrapper := cp.(*admissionProvider); !isWrapper {
-		t.Fatalf("conversation provider is %T, want the admission wrapper", cp)
-	}
+	requireAdmissionChecked(t, cp)
 }
 
 type usageChatProvider struct{ baseOnlyProvider }

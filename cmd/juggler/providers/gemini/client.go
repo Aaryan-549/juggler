@@ -403,6 +403,8 @@ func convertMessagesToGeminiContents(messages []provider.Message, allowImages bo
 	return contents, nil
 }
 
+var _ provider.ConversationProvider = (*Client)(nil)
+
 // OpenConversation returns a native gemini Conversation handle. gemini
 // is stateless from the conversation's view — every turn is one HTTP
 // request that carries its full history — so the handle just owns the

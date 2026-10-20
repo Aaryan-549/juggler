@@ -345,6 +345,8 @@ type openAICompatClient struct {
 
 func (c *openAICompatClient) Name() string { return c.desc.Name }
 
+var _ provider.ConversationProvider = (*openAICompatClient)(nil)
+
 // OpenConversation returns a native Conversation handle. openaibase-
 // derived providers are stateless from the conversation's point of view
 // (every turn is one HTTP request that carries its own history) so the

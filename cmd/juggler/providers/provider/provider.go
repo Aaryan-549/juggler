@@ -647,16 +647,28 @@ type Unwrapper interface {
 	Unwrap() Provider
 }
 
-// As reports whether p, or any provider it wraps, implements T, and returns the
-// outermost match. It walks the Unwrap chain the way errors.As does, so a
-// wrapper never needs a type of its own per optional capability.
-//
-// Capabilities that must pass through admission control are the exception: the
-// wrapper claims them whether or not the provider under it has them, so look
-// those up with their own helper (AsConversationProvider), not with As.
+// CapabilityWrapper is implemented by a Provider wrapper that hands out its own
+// version of some capabilities, the way an error's As method lets errors.As
+// substitute a value. AsCapability sets *target and returns true when the
+// wrapper supplies that capability; target is a non-nil pointer to an
+// interface type such as *ConversationProvider.
+type CapabilityWrapper interface {
+	AsCapability(target any) bool
+}
+
+// As reports whether p, or any provider it wraps, has capability T, and returns
+// the outermost match. It walks the Unwrap chain the way errors.As does: at each
+// level it takes the provider itself if it implements T, then asks a
+// CapabilityWrapper, then unwraps. A wrapper that must see every call of a
+// capability — admission control, for ConversationProvider — answers for it
+// itself, so As never hands out the unchecked provider underneath.
 func As[T any](p Provider) (T, bool) {
+	var t T
 	for p != nil {
-		if t, ok := p.(T); ok {
+		if found, ok := p.(T); ok {
+			return found, true
+		}
+		if w, ok := p.(CapabilityWrapper); ok && w.AsCapability(&t) {
 			return t, true
 		}
 		u, ok := p.(Unwrapper)
@@ -665,26 +677,12 @@ func As[T any](p Provider) (T, bool) {
 		}
 		p = u.Unwrap()
 	}
-	var zero T
-	return zero, false
-}
-
-// AsConversationProvider returns the ConversationProvider for p. When p is
-// wrapped by admission control the wrapper is returned, not the provider under
-// it, so callers cannot open a conversation that skips the context-window check.
-func AsConversationProvider(p Provider) (ConversationProvider, bool) {
-	if a, ok := p.(*admissionProvider); ok {
-		if _, ok := As[ConversationProvider](a.Provider); !ok {
-			return nil, false
-		}
-		return a, true
-	}
-	return As[ConversationProvider](p)
+	return t, false
 }
 
 // OpenConversation opens a conversation on p, or fails if p cannot chat.
 func OpenConversation(ctx context.Context, p Provider, convID string) (Conversation, error) {
-	cp, ok := AsConversationProvider(p)
+	cp, ok := As[ConversationProvider](p)
 	if !ok {
 		return nil, fmt.Errorf("provider %q does not support conversations", p.Name())
 	}

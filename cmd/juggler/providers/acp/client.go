@@ -82,6 +82,8 @@ func (c *Client) ListModelsWithInfo(_ context.Context) ([]provider.ModelInfo, er
 	return models, nil
 }
 
+var _ provider.ConversationProvider = (*Client)(nil)
+
 // OpenConversation returns a fresh ACP conversation handle bound to this
 // client. The agent is resolved from config and spawned lazily on the first
 // Submit, so an unknown/misconfigured agent surfaces as a clear turn error

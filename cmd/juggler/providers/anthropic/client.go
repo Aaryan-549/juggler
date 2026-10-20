@@ -968,6 +968,8 @@ func (c *Client) finalizeCurrentBlock(
 	return block
 }
 
+var _ provider.ConversationProvider = (*Client)(nil)
+
 // OpenConversation returns a native anthropic Conversation handle.
 // anthropic is stateless from the conversation's view (one HTTP request
 // per turn carries its own history) so the handle just owns the model
