@@ -30,7 +30,8 @@ import {
   initializeRegistries,
   createTestSession,
   createTestConversation,
-  assert
+  assert,
+  waitFor
 } from '../utilities/test-helpers.js';
 import pinboardItemRegistry from '../../js/registries/pinboard-item-registry.js';
 import PinboardItemType from 'juggler/pinboard-item-type';
@@ -97,24 +98,6 @@ const activeContext = (conversation, threadId) => ({
   conversation: conversation ? { id: conversation.id, title: conversation.name } : null,
   thread: conversation ? { id: threadId } : null,
 });
-
-/**
- * Wait for something to become true, rather than for a length of time: a lane
- * shares one browser with every other, so a fixed delay is a coin toss.
- * @param {() => any} check - Returns something truthy once the wait is over.
- * @param {string|(() => string)} what - The complaint if it never happens.
- * @param {number} [timeout] - How long to give it.
- * @returns {Promise<any>} Whatever `check` returned.
- */
-async function waitFor(check, what, timeout = 5000) {
-  const deadline = Date.now() + timeout;
-  for (;;) {
-    const value = check();
-    if (value) return value;
-    if (Date.now() >= deadline) throw new Error(typeof what === 'function' ? what() : what);
-    await new Promise((resolve) => { setTimeout(resolve, 20); });
-  }
-}
 
 /**
  * What a promise did, without the throwing.

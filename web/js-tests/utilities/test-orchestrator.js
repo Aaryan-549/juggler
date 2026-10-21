@@ -17,7 +17,7 @@
 
 import TestExecutor from './test-executor.js';
 import UnitTestExecutor from './unit-test-executor.js';
-import { runTestByName } from './integration-test-executor.js';
+import { runTestByName, suiteVerdict } from './integration-test-executor.js';
 import logger from './test-logger.js';
 import providersCache from '../../js/services/providers-cache.js';
 import { apiUrl } from '../../js/utils/api-url.js';
@@ -91,18 +91,19 @@ class TestOrchestrator {
           }
           console.warn(`[ESSENTIAL] repeat ${i + 1}/${repeat}: ${failed === 0 ? 'PASS' : 'FAIL'}`);
         }
+        const verdict = suiteVerdict(singleTestName, { passed: totalPassed, failed: totalFailed, errors: allErrors });
 
         const testResult = {
           taskId: 'single-test',
           category: 'integration-tests',
-          score: totalFailed === 0 ? 1.0 : 0,
-          passed: totalFailed === 0,
-          details: allErrors.length > 0 ? allErrors.join('\n') : 'OK',
-          errors: allErrors,
+          score: verdict.passed ? 1.0 : 0,
+          passed: verdict.passed,
+          details: verdict.errors.length > 0 ? verdict.errors.join('\n') : 'OK',
+          errors: verdict.errors,
           duration: 0,
           testsPassed: totalPassed,
           testsTotal: totalPassed + totalFailed,
-          error: allErrors.length > 0 ? allErrors[0] : undefined
+          error: verdict.errors.length > 0 ? verdict.errors[0] : undefined
         };
         this.results.push(testResult);
         return; // finally block sets window.testComplete

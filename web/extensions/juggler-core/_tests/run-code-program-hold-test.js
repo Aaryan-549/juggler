@@ -165,9 +165,15 @@ export async function runTests(_ctx) {
       const { conversation, mt, item } = await setup(code, { strategy: 'default', timeout: 4000 });
       const id = item.toolUseId;
       await assertParks(conversation, mt, command);
+      const started = Date.now();
       const finished = startAsAction(conversation, mt, id);
       await waitHeld(mt, id, 'bash');
-      await new Promise((resolve) => setTimeout(resolve, 4500));
+      // The duration here is the subject, not a guess: the answer must come
+      // after the program's own 4s timeout would have fired had the hold been
+      // counted. Measured from the start, so a slow run up to the hold already
+      // counts towards it.
+      const pastTimeoutMs = 4000 + 500 - (Date.now() - started);
+      if (pastTimeoutMs > 0) await new Promise((resolve) => setTimeout(resolve, pastTimeoutMs));
       answerHeld(conversation, mt, id, 'yes');
       const done = await finished;
       assert(done.state === 'completed' && done.result?.content === 'done',

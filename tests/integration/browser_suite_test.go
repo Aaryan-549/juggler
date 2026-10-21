@@ -7,6 +7,7 @@ package integration_test
 import (
 	"bytes"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"net/http"
@@ -62,8 +63,9 @@ const listDiscoveryTimeout = 60 * time.Second
 // TestBrowser runs all browser-side tests in parallel. Each JS test becomes a
 // subtest addressable via -run, e.g. go test -run 'TestBrowser/integration:glob-go-files'.
 //
-// Each test acquires an isolated Wails subprocess+fixture from testServerPool so
-// concurrent tests cannot interfere with each other's session state.
+// Each test acquires a lane on a Wails subprocess+fixture from the pool poolFor
+// names — the unit pool for a `unit:` suite, testServerPool for the rest — and
+// shares that subprocess's session only with the lanes of its own pool.
 //
 // Reading the timings: `--- PASS: TestBrowser (20s)` is NOT what this test
 // costs. Go stops a parent's clock before it waits on its parallel subtests, so
@@ -108,6 +110,21 @@ func TestBrowser(t *testing.T) {
 		exclusiveSet[p] = true
 	}
 
+	// selected counts the subtests -run let through. A subtest's function is
+	// entered synchronously by t.Run — a parallel one runs up to t.Parallel()
+	// before t.Run returns — so the count is complete once both loops below have
+	// registered everything. A filter that selects none would otherwise leave
+	// TestBrowser passing with nothing run: the usual cause is a name given
+	// without its `unit:`/`integration:` prefix.
+	selected := 0
+	defer func() {
+		if selected == 0 && !t.Failed() {
+			t.Fatalf("-run %q selected none of the %d browser tests; a browser test is "+
+				"TestBrowser/unit:<name> or TestBrowser/integration:<name>",
+				flag.Lookup("test.run").Value.String(), len(names))
+		}
+	}()
+
 	// Phase 1: tests that need the whole pool to themselves, one at a time with
 	// no other test in flight. Two kinds qualify, both because they contend on
 	// something the lanes share and cannot namespace per-test:
@@ -134,11 +151,13 @@ func TestBrowser(t *testing.T) {
 		}
 		name := name
 		t.Run(name, func(t *testing.T) {
+			selected++
 			resetAllFixtures(t)
 
-			srv := <-testServerPool
+			pool := poolFor(name)
+			srv := <-pool
 			defer func() {
-				testServerPool <- srv
+				pool <- srv
 			}()
 
 			runOneBrowserTest(t, srv)
@@ -159,11 +178,13 @@ func TestBrowser(t *testing.T) {
 		}
 		name := name
 		t.Run(name, func(t *testing.T) {
+			selected++ // before t.Parallel(), while t.Run is still waiting on it
 			t.Parallel()
 
-			srv := <-testServerPool
+			pool := poolFor(name)
+			srv := <-pool
 			defer func() {
-				testServerPool <- srv
+				pool <- srv
 			}()
 
 			runOneBrowserTest(t, srv)
@@ -171,22 +192,42 @@ func TestBrowser(t *testing.T) {
 	}
 }
 
-// resetAllFixtures POSTs /api/test/reset-fixture to every pool slot, wiping
-// any files left over from a prior `-count` iteration. Drains the pool, hits
-// each slot's reset endpoint, then re-fills the pool — runs while no tests
-// are in flight so it's safe to clobber the shared fixture dir.
-func resetAllFixtures(t *testing.T) {
-	t.Helper()
-	slots := make([]testServerEntry, 0, cap(testServerPool))
-	for {
-		select {
-		case s := <-testServerPool:
-			slots = append(slots, s)
-		default:
-			goto drained
+// pooledEntry is a slot token taken out of its pool, with the pool to put it
+// back in.
+type pooledEntry struct {
+	testServerEntry
+	pool chan testServerEntry
+}
+
+// drainAllPools takes every slot token out of every pool. It is for passes that
+// run while no test is in flight, so every token is in its pool and none is
+// waited for; the caller returns them with returnToPools.
+func drainAllPools() []pooledEntry {
+	var slots []pooledEntry
+	for _, pool := range allPools() {
+		for len(pool) > 0 {
+			slots = append(slots, pooledEntry{<-pool, pool})
 		}
 	}
-drained:
+	return slots
+}
+
+// returnToPools puts drained slot tokens back where they came from.
+func returnToPools(slots []pooledEntry) {
+	for _, s := range slots {
+		s.pool <- s.testServerEntry
+	}
+}
+
+// resetAllFixtures POSTs /api/test/reset-fixture to every pool slot, wiping
+// any files left over from a prior `-count` iteration. Drains the pools, hits
+// each slot's reset endpoint, then re-fills them — runs while no tests are in
+// flight so it's safe to clobber the shared fixture dirs. The tokens go back
+// on the way out even when a reset fails, or the next test would wait forever.
+func resetAllFixtures(t *testing.T) {
+	t.Helper()
+	slots := drainAllPools()
+	defer returnToPools(slots)
 	seen := make(map[string]bool, len(slots))
 	for _, s := range slots {
 		// Each (addr, fixture) pair shares one SessionManager — reset once per pair.
@@ -205,7 +246,6 @@ drained:
 				t.Fatalf("reset-fixture %s returned %d", s.addr, resp.StatusCode)
 			}
 		}
-		testServerPool <- s
 	}
 }
 
@@ -217,16 +257,8 @@ drained:
 // the server log identify the leaking test.
 func reportLeakedConversations(t *testing.T) {
 	t.Helper()
-	slots := make([]testServerEntry, 0, cap(testServerPool))
-	for {
-		select {
-		case s := <-testServerPool:
-			slots = append(slots, s)
-		default:
-			goto drained
-		}
-	}
-drained:
+	slots := drainAllPools()
+	defer returnToPools(slots)
 	seen := make(map[string]bool, len(slots))
 	for _, s := range slots {
 		if !seen[s.addr] {
@@ -268,7 +300,6 @@ drained:
 				resp.Body.Close()
 			}
 		}
-		testServerPool <- s
 	}
 }
 

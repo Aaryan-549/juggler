@@ -230,7 +230,7 @@
     <!-- Test entry point -->
     <script type="module" nonce="{{.CSPNonce}}">
         import TestOrchestrator from '{{.BasePath}}/v{{.StaticVersion}}/js-tests/utilities/test-orchestrator.js';
-        import { listTests, listExclusiveTests, runTestByName, ensureExtensionSuitesLoaded } from '{{.BasePath}}/v{{.StaticVersion}}/js-tests/utilities/integration-test-executor.js';
+        import { listTests, listExclusiveTests, runTestByName, suiteVerdict, ensureExtensionSuitesLoaded } from '{{.BasePath}}/v{{.StaticVersion}}/js-tests/utilities/integration-test-executor.js';
         import { apiUrl, serverPath } from '{{.BasePath}}/v{{.StaticVersion}}/js/utils/api-url.js';
 
         // Register extension-owned suites (discovered from each extension's
@@ -299,8 +299,7 @@
             let passed = false, details = '', errors = [];
             try {
                 const result = await runTestByName(name, { fixtureDir: projectPath });
-                passed = result.failed === 0;
-                errors = result.errors || [];
+                ({ passed, errors } = suiteVerdict(name, result));
                 details = errors.length > 0 ? errors.join('\n') : 'OK';
             } catch (err) {
                 errors = [String(err)];

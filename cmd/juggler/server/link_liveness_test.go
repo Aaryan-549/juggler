@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"juggler/cmd/juggler/worker"
+	"juggler/internal/machineload"
 
 	"github.com/gorilla/websocket"
 )
@@ -340,7 +341,7 @@ func TestViewerSocket_BeatingViewerKeepsItsSocket(t *testing.T) {
 			}
 			select {
 			case werr := <-writeErr:
-				t.Skipf("this viewer's own beats stopped reaching the socket, so the close "+
+				machineload.Skip(t, "this viewer's own beats stopped reaching the socket, so the close "+
 					"says nothing about liveness: %v (socket: %v)", werr, err)
 			default:
 			}
@@ -351,7 +352,7 @@ func TestViewerSocket_BeatingViewerKeepsItsSocket(t *testing.T) {
 				gap = open
 			}
 			if gap > silenceWindow {
-				t.Skipf("this process went %v without getting a beat out — longer than the %v "+
+				machineload.Skip(t, "this process went %v without getting a beat out — longer than the %v "+
 					"window it is asking the server to honour — so the close is unattributable: %v",
 					gap.Round(time.Millisecond), silenceWindow, err)
 			}

@@ -24,7 +24,7 @@
  * @module unit-tests/pinboard-satellite-test
  */
 
-import { assert, styledProbeFrame } from '../utilities/test-helpers.js';
+import { assert, styledProbeFrame, waitFor } from '../utilities/test-helpers.js';
 import pinboardStore from '../../js/services/pinboard-store.js';
 import pinboardView from '../../js/services/pinboard-view.js';
 import pinboardItemRegistry from '../../js/registries/pinboard-item-registry.js';
@@ -532,23 +532,6 @@ function stubWindowOpen({ blocked = false } = {}) {
  */
 function tabLabels(shell) {
   return [...shell.querySelectorAll('.pinboard-tab__label')].map((/** @type {any} */ el) => el.textContent);
-}
-
-/**
- * Wait for a condition rather than for a duration, and say what was expected
- * when it never comes.
- * @param {() => boolean} predicate - What must become true.
- * @param {string} what - Named in the failure.
- * @param {number} [timeout] - How long to allow.
- * @returns {Promise<void>}
- */
-async function waitFor(predicate, what, timeout = 2000) {
-  const deadline = Date.now() + timeout;
-  while (Date.now() < deadline) {
-    if (predicate()) return;
-    await settle();
-  }
-  throw new Error(`timed out waiting for ${what}`);
 }
 
 /**

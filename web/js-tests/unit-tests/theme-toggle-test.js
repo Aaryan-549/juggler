@@ -81,6 +81,9 @@ export async function runTests(_ctx) {
   const originalMatchMedia = window.matchMedia;
   const originalProjectKey = window.__projectKey;
   const originalTheme = document.documentElement.getAttribute('data-theme');
+  // Painting a theme also writes an inline background on <html>; the lane runs
+  // every later suite under whatever is left there.
+  const originalBackground = document.documentElement.style.background;
   const originalSystemRecord = localStorage.getItem(SYSTEM_THEME_KEY);
   // Namespace this suite's stored mode away from any other lane sharing the
   // origin; the OS record below is deliberately device-wide, so it is saved and
@@ -213,6 +216,7 @@ export async function runTests(_ctx) {
     window.matchMedia = originalMatchMedia;
     window.__projectKey = originalProjectKey;
     if (originalTheme) document.documentElement.setAttribute('data-theme', originalTheme);
+    document.documentElement.style.background = originalBackground;
     if (originalSystemRecord === null) localStorage.removeItem(SYSTEM_THEME_KEY);
     else localStorage.setItem(SYSTEM_THEME_KEY, originalSystemRecord);
   }

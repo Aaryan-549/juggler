@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"juggler/cmd/juggler/worker"
+	"juggler/internal/machineload"
 
 	"github.com/gorilla/websocket"
 )
@@ -170,7 +171,7 @@ func (b *engineBeater) blameTheDrop(t *testing.T, verdict string) {
 	// failed is this process losing its own grip on the beat.
 	select {
 	case err := <-b.writeErr:
-		t.Skipf("this engine's own beats stopped reaching the socket, so the drop "+
+		machineload.Skip(t, "this engine's own beats stopped reaching the socket, so the drop "+
 			"says nothing about liveness: %v", err)
 	default:
 	}
@@ -181,7 +182,7 @@ func (b *engineBeater) blameTheDrop(t *testing.T, verdict string) {
 		gap = open
 	}
 	if gap > livenessWindowUnderBeats {
-		t.Skipf("this process went %v without getting a beat out — longer than the %v "+
+		machineload.Skip(t, "this process went %v without getting a beat out — longer than the %v "+
 			"window it is asking the server to honour — so the drop is unattributable",
 			gap.Round(time.Millisecond), livenessWindowUnderBeats)
 	}

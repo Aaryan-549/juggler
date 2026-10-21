@@ -26,21 +26,7 @@
 import { textResponse } from '../utilities/integration-test-runner.js';
 import { normalizeAttachments } from '../../js/utils/attachments.js';
 import { tabFor } from '../utilities/conversation-tab-lookup.js';
-
-/**
- * Poll for a predicate to become true (image-attachment rewind test).
- * @param {() => boolean} predicate
- * @param {number} [timeoutMs]
- * @param {string} [label]
- */
-async function waitFor(predicate, timeoutMs = 2000, label = 'condition') {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (predicate()) return;
-    await new Promise((r) => setTimeout(r, 10));
-  }
-  throw new Error(`waitFor timeout: ${label}`);
-}
+import { waitFor } from '../utilities/test-helpers.js';
 
 /**
  * Push the standard two-provider list (one image-capable, one text-only)
@@ -206,8 +192,8 @@ export const rewindRestoresAttachmentsTest = {
           const name = chip && chip.querySelector('.attachment-name');
           return !!name && name.textContent === 'pixel.png';
         },
-        2000,
-        'attachment chip rendered after rewind'
+        'attachment chip rendered after rewind',
+        2000
       );
 
       // 4. Re-send (text already set, attachment already staged): the new user

@@ -23,6 +23,33 @@ const jugglerPlugin = {
 const UI_FILES = ['web/js/**/*.js', 'web/sdk/**/*.js', 'web/extensions/**/*.js', 'web/machine/**/*.js'];
 const NOT_UI = ['web/js/vendor/**', 'web/extensions/**/_tests/**/*.js'];
 
+// Test files: raw console.log calls must go through the logger with a proper
+// prefix. This catches the misuse like "console.log('[TestScorer] Scoring
+// task:')" without the actual data.
+const TEST_CONSOLE_SELECTORS = [
+  {
+    selector: "CallExpression[callee.object.name='console'][callee.property.name='log'][arguments.0.type='BinaryExpression']",
+    message: 'Do not use console.log with concatenation. Import logger from test-logger.js and use logger.info(), logger.debug(), or logger.essential() with template literals instead.'
+  },
+  {
+    selector: "CallExpression[callee.object.name='console'][callee.property.name='log'][arguments.length>1]",
+    message: 'Do not use console.log with multiple arguments. Import logger from test-logger.js and use logger methods with template literals for proper formatting.'
+  },
+  {
+    selector: "CallExpression[callee.object.name='console'][callee.property.name='log'][arguments.0.type='Literal'][arguments.0.value=/^\\[(?!ESSENTIAL|INFO|DEBUG|LLM)/]",
+    message: 'Do not use console.log with custom prefixes. Import logger from test-logger.js and use logger.info(), logger.debug(), or logger.essential() instead. The logger will add proper prefixes.'
+  }
+];
+
+// Test files: one polling wait, the shared one. A private `waitFor` polls a bare
+// wall clock, so it fails on a busy machine that the shared helper — which asks
+// the machine for more time before giving up — would have waited out.
+const LOCAL_WAITFOR_MESSAGE = 'Do not declare a local waitFor. Import waitFor from js-tests/utilities/test-helpers.js: it takes (predicate, description, timeoutMs) or (predicate, options), returns the predicate\'s value, and is load-aware where a private copy is not.';
+const TEST_LOCAL_WAITFOR_SELECTORS = [
+  { selector: "FunctionDeclaration[id.name='waitFor']", message: LOCAL_WAITFOR_MESSAGE },
+  { selector: "VariableDeclarator[id.name='waitFor']", message: LOCAL_WAITFOR_MESSAGE },
+];
+
 export default [
   js.configs.recommended,
   jsdoc.configs['flat/recommended'],
@@ -537,24 +564,15 @@ export default [
         allow: ['error', 'warn'] // Allow console.error and console.warn for critical issues
       }],
 
-      // Enforce that raw console.log calls include proper prefixes
-      // This catches the misuse like "console.log('[TestScorer] Scoring task:')"
-      // without the actual data
-      'no-restricted-syntax': [
-        'error',
-        {
-          selector: "CallExpression[callee.object.name='console'][callee.property.name='log'][arguments.0.type='BinaryExpression']",
-          message: 'Do not use console.log with concatenation. Import logger from test-logger.js and use logger.info(), logger.debug(), or logger.essential() with template literals instead.'
-        },
-        {
-          selector: "CallExpression[callee.object.name='console'][callee.property.name='log'][arguments.length>1]",
-          message: 'Do not use console.log with multiple arguments. Import logger from test-logger.js and use logger methods with template literals for proper formatting.'
-        },
-        {
-          selector: "CallExpression[callee.object.name='console'][callee.property.name='log'][arguments.0.type='Literal'][arguments.0.value=/^\\[(?!ESSENTIAL|INFO|DEBUG|LLM)/]",
-          message: 'Do not use console.log with custom prefixes. Import logger from test-logger.js and use logger.info(), logger.debug(), or logger.essential() instead. The logger will add proper prefixes.'
-        }
-      ],
+      'no-restricted-syntax': ['error', ...TEST_CONSOLE_SELECTORS, ...TEST_LOCAL_WAITFOR_SELECTORS],
+    },
+  },
+  // The shared waitFor is declared here, so this one file keeps only the
+  // console rules (a later block's rule replaces an earlier one's outright).
+  {
+    files: ['web/js-tests/utilities/test-helpers.js'],
+    rules: {
+      'no-restricted-syntax': ['error', ...TEST_CONSOLE_SELECTORS],
     },
   },
 ];

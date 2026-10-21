@@ -28,7 +28,7 @@ import pinboardStore from '../../../js/services/pinboard-store.js';
 import pinboardView from '../../../js/services/pinboard-view.js';
 import { writeFile, mkdir } from '../../../js/services/ops-api.js';
 import { describePin } from '../../../js/components/pinboard-content.js';
-import { assert } from '../../../js-tests/utilities/test-helpers.js';
+import { assert, waitFor } from '../../../js-tests/utilities/test-helpers.js';
 import { underPseudoLocale, shownStrings } from '../../../js-tests/utilities/pseudo-locale.js';
 import { budgetFor } from '../../../js-tests/utilities/test-deadline.js';
 import { isPseudoLocalized } from '../../../sdk/lib/i18n.js';
@@ -212,13 +212,8 @@ export async function runTests(ctx) {
    * @param {number} [timeout] - How long to give it.
    * @returns {Promise<void>} When it happened.
    */
-  async function waitFor(check, what, body, timeout = 5000) {
-    const deadline = Date.now() + timeout;
-    while (Date.now() < deadline) {
-      if (check()) return;
-      await new Promise((r) => { setTimeout(r, 20); });
-    }
-    throw new Error(`timed out waiting for ${what} — showed [${namesOf(body).join(', ')}]`);
+  async function waitForPin(check, what, body, timeout = 5000) {
+    await waitFor(check, () => `${what} — showed [${namesOf(body).join(', ')}]`, timeout);
   }
 
   /**
@@ -226,7 +221,7 @@ export async function runTests(ctx) {
    * @param {HTMLElement} body - The pin's body.
    * @returns {Promise<void>} When every read in flight has landed.
    */
-  const settled = (body) => waitFor(
+  const settled = (body) => waitForPin(
     // Waiting for the absence of "Reading…" is not enough on its own: a read
     // that beats the grace period never says it is reading, so an empty body
     // and a finished one would look the same.
@@ -349,7 +344,7 @@ export async function runTests(ctx) {
 
       const folder = /** @type {HTMLElement} */ (mounted.body.querySelector('.project-files-pin__row'));
       folder.click();
-      await waitFor(() => namesOf(mounted.body).includes('inner.txt'),
+      await waitForPin(() => namesOf(mounted.body).includes('inner.txt'),
         'the opened folder to show its contents', mounted.body);
 
       const rows = rowsOf(mounted.body);
@@ -378,7 +373,7 @@ export async function runTests(ctx) {
       // beneath it twice on the way.
       assert(!(mounted.body.textContent || '').includes('Reading…'),
         `a folder opening has no children yet, and says nothing, got "${mounted.body.textContent}"`);
-      await waitFor(() => namesOf(mounted.body).includes('inner.txt'),
+      await waitForPin(() => namesOf(mounted.body).includes('inner.txt'),
         'the children to arrive anyway', mounted.body);
     } finally {
       mounted.teardown();
@@ -408,7 +403,7 @@ export async function runTests(ctx) {
     try {
       await settled(mounted.body);
       /** @type {HTMLElement} */ (mounted.body.querySelector('.project-files-pin__row')).click();
-      await waitFor(() => (mounted.body.textContent || '').includes('Empty'),
+      await waitForPin(() => (mounted.body.textContent || '').includes('Empty'),
         'the empty folder to say so', mounted.body);
       assert(rowsOf(mounted.body).length === 1, 'and to add no rows of its own');
     } finally {
@@ -419,7 +414,7 @@ export async function runTests(ctx) {
   await test('a folder that cannot be read says why, in the op\'s own words', async () => {
     const mounted = mount(native(`${base}/never-made`));
     try {
-      await waitFor(() => (mounted.body.textContent || '').includes("Couldn't read this folder."),
+      await waitForPin(() => (mounted.body.textContent || '').includes("Couldn't read this folder."),
         'the failure to be reported', mounted.body);
       const said = mounted.body.textContent || '';
       // The lead goes above the error text, never in place of it: which of the
@@ -480,11 +475,11 @@ export async function runTests(ctx) {
     try {
       await settled(first.body);
       /** @type {HTMLElement} */ (first.body.querySelector('.project-files-pin__row')).click();
-      await waitFor(() => namesOf(first.body).includes('deep'), 'the folder to open', first.body);
+      await waitForPin(() => namesOf(first.body).includes('deep'), 'the folder to open', first.body);
       const deep = [...first.body.querySelectorAll('.project-files-pin__row')]
         .find((row) => /** @type {HTMLElement} */ (row).dataset.filePath === native(`${root}/zed/deep`));
       /** @type {HTMLElement} */ (deep).click();
-      await waitFor(() => namesOf(first.body).includes('leaf.txt'), 'the inner folder to open', first.body);
+      await waitForPin(() => namesOf(first.body).includes('leaf.txt'), 'the inner folder to open', first.body);
       assert(JSON.stringify(first.saved()?.expanded) === '["zed","zed/deep"]',
         `both levels are remembered, got ${JSON.stringify(first.saved())}`);
     } finally {
@@ -493,7 +488,7 @@ export async function runTests(ctx) {
 
     const second = mount(root, /** @type {any} */ ({ expanded: ['zed', 'zed/deep'] }));
     try {
-      await waitFor(() => namesOf(second.body).includes('leaf.txt'),
+      await waitForPin(() => namesOf(second.body).includes('leaf.txt'),
         'the remembered tree to reopen all the way down', second.body);
       const rows = rowsOf(second.body);
       assert(rows.map((r) => r.name).join(',') === 'zed,deep,leaf.txt,inner.txt',
@@ -509,7 +504,7 @@ export async function runTests(ctx) {
     const root = await makeTree('stale', ['here'], ['here/one.txt']);
     const mounted = mount(root, /** @type {any} */ ({ expanded: ['here', 'gone/for/good'] }));
     try {
-      await waitFor(() => namesOf(mounted.body).includes('one.txt'),
+      await waitForPin(() => namesOf(mounted.body).includes('one.txt'),
         'the folder that is still there to open', mounted.body);
       assert(namesOf(mounted.body).join(',') === 'here,one.txt',
         `a folder nobody can find contributes no rows, got [${namesOf(mounted.body).join(', ')}]`);
@@ -530,7 +525,7 @@ export async function runTests(ctx) {
       for (const row of [...mounted.body.querySelectorAll('.project-files-pin__row')]) {
         /** @type {HTMLElement} */ (row).click();
       }
-      await waitFor(() => {
+      await waitForPin(() => {
         const names = namesOf(mounted.body);
         return names.includes('one.txt') && names.includes('two.txt');
       }, 'both folders to open', mounted.body);
@@ -542,7 +537,7 @@ export async function runTests(ctx) {
       await writeFile({ path: native(`${root}/b/added.txt`), content: 'b\n' });
       mounted.fireChange([{ path: native(`${root}/a/added.txt`), event: 'create' }]);
 
-      await waitFor(() => namesOf(mounted.body).includes('added.txt'),
+      await waitForPin(() => namesOf(mounted.body).includes('added.txt'),
         'the changed folder to be read again', mounted.body);
       assert(namesOf(mounted.body).filter((n) => n === 'added.txt').length === 1,
         'the folder nobody mentioned must not have been read');
@@ -566,7 +561,7 @@ export async function runTests(ctx) {
         `the toolbar offers exactly Refresh, got ${JSON.stringify(actions.map((/** @type {any} */ a) => a.id))}`);
       actions[0].run();
 
-      await waitFor(() => namesOf(mounted.body).includes('second.txt'),
+      await waitForPin(() => namesOf(mounted.body).includes('second.txt'),
         'Refresh to pick up the new file', mounted.body);
     } finally {
       mounted.teardown();
@@ -628,7 +623,7 @@ export async function runTests(ctx) {
         `a folder's second click opens it again, it does not pin it — got ${JSON.stringify(board.pins)}`);
 
       /** @type {HTMLElement} */ (file).dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
-      await waitFor(() => board.pins.length === 1, 'the file to reach the board', mounted.body);
+      await waitForPin(() => board.pins.length === 1, 'the file to reach the board', mounted.body);
       assert(board.pins[0].type === 'file',
         `a file double-clicked is a File pin, got "${board.pins[0].type}"`);
       assert(board.pins[0].config.path === native(`${root}/apple.txt`),
@@ -686,7 +681,7 @@ export async function runTests(ctx) {
       assert(active() === 'zed', `up goes back, got "${active()}"`);
 
       press(list, 'ArrowRight');
-      await waitFor(() => namesOf(mounted.body).includes('inner.txt'),
+      await waitForPin(() => namesOf(mounted.body).includes('inner.txt'),
         'right to open the folder', mounted.body);
       assert(active() === 'zed', 'opening a folder does not leave it');
 

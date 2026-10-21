@@ -26,23 +26,7 @@
 import { textResponse } from '../utilities/integration-test-runner.js';
 import providersCache from '../../js/services/providers-cache.js';
 import { tabFor } from '../utilities/conversation-tab-lookup.js';
-
-/**
- * Poll for a predicate to become true. The footer fetches the
- * transaction blob asynchronously and re-renders when it lands —
- * poll until satisfied or time out.
- * @param {() => boolean} predicate
- * @param {number} [timeoutMs]
- * @param {string} [label]
- */
-async function waitFor(predicate, timeoutMs = 2000, label = 'condition') {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (predicate()) return;
-    await new Promise(r => setTimeout(r, 10));
-  }
-  throw new Error(`waitFor timeout: ${label}`);
-}
+import { waitFor } from '../utilities/test-helpers.js';
 
 /**
  * Locate the `<token-display>` element rendered for this conversation.
@@ -143,8 +127,8 @@ export const footerShowsBlobTokensTest = {
     if (!td) return; // headless
 
     forceContextWindow(conversation, 200000);
-    await waitFor(() => /\bcached\b/.test(td.textContent || ''), 3000,
-      'token-display renders cached count from blob');
+    await waitFor(() => /\bcached\b/.test(td.textContent || ''),
+      'token-display renders cached count from blob', 3000);
   }
 };
 
@@ -179,8 +163,8 @@ export const footerHidesAfterRewindTest = {
     if (!td) return; // headless
 
     forceContextWindow(conversation, 200000);
-    await waitFor(() => /\bcached\b/.test(td.textContent || ''), 3000,
-      'footer renders cached count initially');
+    await waitFor(() => /\bcached\b/.test(td.textContent || ''),
+      'footer renders cached count initially', 3000);
 
     // Delete the user message — range-delete cleans up the trailing
     // assistant too, leaving no item with a transactionId.
@@ -191,8 +175,8 @@ export const footerHidesAfterRewindTest = {
     conversation.deleteRangeWithCleanup(root, firstUserIdx);
 
     // No anchor → element collapses to empty innerHTML.
-    await waitFor(() => (td.textContent || '').trim() === '', 2000,
-      'token-display hides entirely once no anchor remains');
+    await waitFor(() => (td.textContent || '').trim() === '',
+      'token-display hides entirely once no anchor remains', 2000);
   }
 };
 
@@ -483,8 +467,8 @@ export const footerFallsBackPastUnmeasuredTurnTest = {
 
     // The second turn's blob has no count. The first turn's has 3000, which
     // formats as "3k" — that is what the pill must settle on.
-    await waitFor(() => /\b3k\b/.test(td.textContent || ''), 4000,
-      'footer falls back to the last round-trip that reported its input tokens');
+    await waitFor(() => /\b3k\b/.test(td.textContent || ''),
+      'footer falls back to the last round-trip that reported its input tokens', 4000);
   }
 };
 
@@ -532,8 +516,8 @@ export const footerHoldsLiveCountThroughGapTest = {
     forceContextWindow(conversation, 200000);
 
     // Settle on the finished turn's blob: 3000 → "3k".
-    await waitFor(() => /\b3k\b/.test(td.textContent || ''), 4000,
-      'footer settles on the completed turn\'s blob before the next turn starts');
+    await waitFor(() => /\b3k\b/.test(td.textContent || ''),
+      'footer settles on the completed turn\'s blob before the next turn starts', 4000);
 
     // A turn on a provider that reports authoritative per-step usage.
     const conv = /** @type {any} */ (conversation);
@@ -601,8 +585,8 @@ export const footerHoldsLiveCountAcrossRebindTest = {
     if (!td || !footer) return; // headless
 
     forceContextWindow(conversation, 200000);
-    await waitFor(() => /\b3k\b/.test(td.textContent || ''), 4000,
-      'footer settles on the completed turn\'s blob');
+    await waitFor(() => /\b3k\b/.test(td.textContent || ''),
+      'footer settles on the completed turn\'s blob', 4000);
 
     const conv = /** @type {any} */ (conversation);
     conv.isThreadProcessing = () => true;
@@ -630,8 +614,8 @@ export const footerHoldsLiveCountAcrossRebindTest = {
     // render from and leaves the display alone — the count only moves once the
     // re-fetch lands. Wait for that rather than for a fixed delay: the flip is
     // asynchronous, and asserting before it is asserting nothing.
-    await waitFor(() => footer._blobTokenCache.size > 0, 4000,
-      'the rebuild\'s blob re-fetch resolves');
+    await waitFor(() => footer._blobTokenCache.size > 0,
+      'the rebuild\'s blob re-fetch resolves', 4000);
     footer._updateTokenDisplay();
 
     if (!/\b250k\b/.test(td.textContent || '')) {
@@ -762,8 +746,8 @@ export const footerMetersThreadOwnModelTest = {
     if (!td || !footer) return; // headless
 
     forceContextWindow(conversation, 200000);
-    await waitFor(() => /\b3k\b/.test(td.textContent || ''), 4000,
-      'footer settles on the completed turn\'s blob');
+    await waitFor(() => /\b3k\b/.test(td.textContent || ''),
+      'footer settles on the completed turn\'s blob', 4000);
 
     const originalGet = providersCache.get;
     const thread = footer._messageThread;

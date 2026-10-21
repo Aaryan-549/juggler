@@ -24,7 +24,7 @@ import LLMState from '../../js/services/llm-state.js';
 // The side-effect import registers the custom element.
 import { __resetDropBudgetForTests } from '../../js/components/juggler-spinner.js';
 import { underPseudoLocale, shownStrings } from '../utilities/pseudo-locale.js';
-import { assert } from '../utilities/test-helpers.js';
+import { assert, waitFor } from '../utilities/test-helpers.js';
 import { isPseudoLocalized } from '../../sdk/lib/i18n.js';
 
 /**
@@ -204,8 +204,9 @@ export async function runTests() {
     el.clubs = 3;
     if (el.clubs !== 6)
       throw new Error(`shrink should be deferred, but count changed to ${el.clubs} immediately`);
-    await new Promise(r => setTimeout(r, 700));
-    if (el.clubs !== 3) throw new Error(`expected 3 after the quiet period, got ${el.clubs}`);
+    // The shrink lands once the quiet period has passed: wait for it, not for
+    // a guess at how long a loaded lane takes to run the timer.
+    await waitFor(() => el.clubs === 3, () => `the deferred shrink to 3 (still ${el.clubs})`, 3000);
     passed++;
   } catch (e) { failed++; errors.push(`shrink is deferred: ${e.message}`); }
 
@@ -216,7 +217,13 @@ export async function runTests() {
     el.clubs = 6;
     el.clubs = 4;      // arms the deferred shrink
     el.clubs = 6;      // back up before it fires — must cancel it
-    await new Promise(r => setTimeout(r, 700));
+    // A control armed just after it, and left to fire: once the control has
+    // shrunk, the cancelled shrink's quiet period has passed too, however long
+    // this lane's timers took to get there.
+    const control = mount(true); mounted.push(control);
+    control.clubs = 6;
+    control.clubs = 4;
+    await waitFor(() => control.clubs === 4, () => `the control's deferred shrink to 4 (still ${control.clubs})`, 3000);
     if (el.clubs !== 6)
       throw new Error(`expected the pending shrink to be cancelled, got ${el.clubs}`);
     passed++;

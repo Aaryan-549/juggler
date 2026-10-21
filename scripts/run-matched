@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# run-matched — fails a narrowed test run (RUN='<regex>') that tested nothing.
+#
+#   scripts/run-matched '<RUN regex>' <log>...
+#
+# A `go test -run` pattern that selects nothing is not an error to Go: every
+# package reports `ok … [no tests to run]` and the run exits 0. With the
+# Makefiles' QUIET_UNMATCHED filter removing exactly those lines, a typo in RUN
+# — or a browser test named without its `unit:`/`integration:` prefix — would
+# print nothing and then a green verdict. The logs passed here are the -v output
+# of every layer the run went through; this reads them as one.
+#
+# The run counts as having tested something only if some test reports
+# `--- PASS` or `--- FAIL`. When RUN names a subtest level (it contains `/`, which
+# `go test` splits on), the reporting test must itself be a subtest: `-run
+# 'TestBrowser/nomatch'` still runs TestBrowser, which passes with no subtests.
+# A run whose matched tests all SKIPPED tested nothing either, and says which.
+set -uo pipefail
+
+run=$1
+shift
+
+want='^ *--- (PASS|FAIL): [^ ]+'
+case $run in */*) want='^ *--- (PASS|FAIL): [^ /]+/[^ ]+' ;; esac
+
+if cat -- "$@" 2>/dev/null | grep -qE "$want"; then
+	exit 0
+fi
+
+skipped=$(cat -- "$@" 2>/dev/null | sed -nE 's/^ *--- SKIP: ([^ ]+).*/\1/p' | sort -u | head -10)
+if [ -n "$skipped" ]; then
+	echo "✗ RUN='$run' matched only tests that SKIPPED, so nothing was tested:"
+	printf '%s\n' "$skipped" | sed 's/^/    /'
+else
+	echo "✗ RUN='$run' matched no tests in any layer, so nothing was tested."
+	echo "  It is a \`go test -run\` pattern over test names; a browser test is"
+	echo "  TestBrowser/unit:<name> or TestBrowser/integration:<name>."
+fi
+exit 1

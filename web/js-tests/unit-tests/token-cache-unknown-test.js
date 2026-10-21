@@ -16,10 +16,9 @@
  * @module unit-tests/token-cache-unknown-test
  */
 
-import { assert } from '../utilities/test-helpers.js';
+import { assert, waitFor } from '../utilities/test-helpers.js';
 import '../../js/components/conversation-footer.js';
 import '../../js/components/token-display.js';
-import { budgetFor } from '../utilities/test-deadline.js';
 
 const BUDGET = 200000;
 
@@ -39,22 +38,6 @@ function anchoredItems(txnId) {
     item({ itemId: 'MSG_1', type: 'user', content: 'hello' }),
     item({ itemId: 'MSG_2', type: 'assistant', content: 'OK.', transactionId: txnId }),
   ];
-}
-
-/**
- * Poll until a predicate holds. The footer fetches the transaction blob
- * asynchronously and re-renders when it lands.
- * @param {() => boolean} predicate - Condition to wait for
- * @param {string} label - What is being waited for, for the timeout message
- * @returns {Promise<void>} Resolves once the predicate holds
- */
-async function waitFor(predicate, label) {
-  const deadline = Date.now() + budgetFor(2000);
-  while (Date.now() < deadline) {
-    if (predicate()) return;
-    await new Promise(r => setTimeout(r, 10));
-  }
-  throw new Error(`timed out waiting for ${label}`);
 }
 
 /**

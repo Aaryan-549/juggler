@@ -92,6 +92,28 @@ func (p *poolProc) status() string {
 // Each browser test acquires an entry, runs with full isolation, then returns it.
 var testServerPool chan testServerEntry
 
+// unitServerPool is the same for the `unit:` suites, on subprocesses of their
+// own (see poolConfig.unitWindows). Nil when the unit suites share
+// testServerPool; poolFor is the one place that decides.
+var unitServerPool chan testServerEntry
+
+// poolFor is the pool a browser test runs on: a `unit:` suite on the unit pool
+// when there is one, everything else on testServerPool.
+func poolFor(name string) chan testServerEntry {
+	if unitServerPool != nil && strings.HasPrefix(name, "unit:") {
+		return unitServerPool
+	}
+	return testServerPool
+}
+
+// allPools is every pool in use, for the passes that must reach every server.
+func allPools() []chan testServerEntry {
+	if unitServerPool != nil {
+		return []chan testServerEntry{testServerPool, unitServerPool}
+	}
+	return []chan testServerEntry{testServerPool}
+}
+
 // testLogDir is a throwaway directory the pool points every subprocess's logs
 // at (via JUGGLER_LOG_DIR), so a test run never writes browser-test-*.log into
 // the user's real application-log directory. Created in TestMain, removed on
@@ -136,8 +158,9 @@ var testSkillsDir string
 
 // poolConfig controls the test-pool topology.
 //
-//   - JUGGLER_TEST_WINDOWS=N: number of Wails-window subprocesses (default 3).
-//     Each subprocess is fully isolated — its own SessionManager, engine,
+//   - JUGGLER_TEST_WINDOWS=N: number of Wails-window subprocesses for every
+//     test that is not a `unit:` suite (default 2; the unit suites have their
+//     own, below). Each subprocess is fully isolated — its own SessionManager, engine,
 //     WebSocket server, and its own WebKit content process. Cranking this up
 //     gives perfect isolation but burns more memory and WebKit helper startup
 //     time.
@@ -149,8 +172,12 @@ var testSkillsDir string
 //     thread. Iframes stress-test the server-side concurrency that
 //     windows-only topologies hide.
 //
-// Total parallel-test slots = WINDOWS × IFRAMES. The defaults give 9 slots,
-// which benchmarking puts at the knee of the curve: TestBrowser measured ~58s
+// Total parallel-test slots = (WINDOWS + UNIT_WINDOWS) × IFRAMES. The defaults
+// give 12: two windows each way, because the unit suites are the larger half of
+// the work (984s of lane time against 802s for the rest, measured 2026-10-20),
+// and 2+2 ran the suite in the time the shared 3×3 did (322s against 335s on
+// macOS 27) where 3+1 took 399–421s, its three unit lanes finishing last. With
+// one pool, 9 slots was the knee of the curve: TestBrowser measured ~58s
 // at 9 lanes, ~59s at 12 (as 4x3 and as 3x4 alike) and ~61s at 15, so more
 // lanes buy nothing and eventually cost. What saturates has changed, though,
 // and the distinction matters to anyone re-tuning this: lanes used to sit idle
@@ -160,7 +187,7 @@ var testSkillsDir string
 // is the host's CPU — 10 cores here. So this is a knee for THIS machine, not a
 // universal one, and a box with many more cores may well want more lanes.
 //
-// How those 9 are SHAPED matters as much as how many there are, and 3×3 beats
+// How the lanes are SHAPED matters as much as how many there are, and 3×3 beats
 // 1×9 on the same slot count: 46s and clean against 141–214s and 5–34 arbitrary
 // failures. Lanes sharing a subprocess share its content process, so their
 // heaps are one heap. Test pages accumulate what their tests do not release,
@@ -174,13 +201,33 @@ var testSkillsDir string
 //
 // Three lanes per subprocess still puts several tabs on one server, which is
 // what the iframe topology is for.
+//
+//   - JUGGLER_TEST_UNIT_WINDOWS=N: subprocesses that run only the `unit:` suites
+//     (default 2), each with JUGGLER_TEST_IFRAMES lanes and its own project and
+//     settings.json, on a pool of their own (unitServerPool). 0 puts the unit
+//     suites back on the shared pool.
+//
+// The unit suites are separated because what they share with integration tests
+// is not namespaced per test: a lane's project is the fixture its subprocess was
+// given, and its settings.json is that subprocess's config dir. An integration
+// test fills the project with conversations and files and writes settings as a
+// user would; a unit suite asserting on a count in the project, or on a settings
+// broadcast, then reads a sibling's work (`unit:project-folder`,
+// `unit:updates-settings` — both closed in scratch/flaky-tests.md). Unit lanes
+// still share among themselves, and all lanes in one window still share focus;
+// the exclusive phase in TestBrowser remains the answer to that. A unit lane's
+// realm also now runs nothing but unit suites, so one that leaves document-wide
+// state behind meets more of them before the lane recycles; the unit runner
+// fails a suite that leaves `<html>`/`<body>` changed (restoreDocumentState in
+// web/js-tests/utilities/integration-test-executor.js).
 type poolConfig struct {
-	windows int
-	iframes int
+	windows     int
+	iframes     int
+	unitWindows int
 }
 
 func loadPoolConfig() poolConfig {
-	cfg := poolConfig{windows: 3, iframes: 3}
+	cfg := poolConfig{windows: 2, iframes: 3, unitWindows: 2}
 	if v := os.Getenv("JUGGLER_TEST_WINDOWS"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			cfg.windows = n
@@ -189,6 +236,11 @@ func loadPoolConfig() poolConfig {
 	if v := os.Getenv("JUGGLER_TEST_IFRAMES"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			cfg.iframes = n
+		}
+	}
+	if v := os.Getenv("JUGGLER_TEST_UNIT_WINDOWS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			cfg.unitWindows = n
 		}
 	}
 	return cfg
@@ -288,41 +340,51 @@ func TestMain(m *testing.M) {
 		os.Exit(130)
 	}()
 
-	// Start cfg.windows subprocesses; each hosts cfg.iframes iframe lanes.
-	// One fixture dir per subprocess, passed to it as --project: all iframes
-	// inside a subprocess share its SessionManager+engine+WS, so they share
-	// that fixture too, and every slot token for the subprocess carries it.
-	// Tests collaborate on the shared root by prefixing their filenames; a
-	// suite that cannot is declared exclusive and scheduled alone (see
-	// listExclusiveTests in web/js-tests/utilities/integration-test-executor.js).
-	for w := 0; w < cfg.windows; w++ {
-		fixtureDir, err := os.MkdirTemp("", "browser-test-*")
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "cannot create fixture dir: %v\n", err)
-			startedPool.shutdown()
-			os.Exit(1)
-		}
+	if cfg.unitWindows > 0 {
+		unitServerPool = make(chan testServerEntry, cfg.unitWindows*cfg.iframes)
+	}
 
-		if err := copyDir(srcFixture, fixtureDir); err != nil {
-			fmt.Fprintf(os.Stderr, "cannot copy fixture: %v\n", err)
-			os.RemoveAll(fixtureDir)
-			startedPool.shutdown()
-			os.Exit(1)
-		}
+	// Start the subprocesses; each hosts cfg.iframes iframe lanes. One fixture
+	// dir per subprocess, passed to it as --project: all iframes inside a
+	// subprocess share its SessionManager+engine+WS, so they share that fixture
+	// too, and every slot token for the subprocess carries it. Tests
+	// collaborate on the shared root by prefixing their filenames; a suite that
+	// cannot is declared exclusive and scheduled alone (see listExclusiveTests
+	// in web/js-tests/utilities/integration-test-executor.js).
+	pools := []struct {
+		windows int
+		pool    chan testServerEntry
+	}{{cfg.windows, testServerPool}, {cfg.unitWindows, unitServerPool}}
+	for _, p := range pools {
+		for w := 0; w < p.windows; w++ {
+			fixtureDir, err := os.MkdirTemp("", "browser-test-*")
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "cannot create fixture dir: %v\n", err)
+				startedPool.shutdown()
+				os.Exit(1)
+			}
 
-		entry, err := startJugglerSubprocess(binary, fixtureDir, cfg.iframes)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "cannot start juggler subprocess: %v\n", err)
-			os.RemoveAll(fixtureDir)
-			startedPool.shutdown()
-			os.Exit(1)
-		}
+			if err := copyDir(srcFixture, fixtureDir); err != nil {
+				fmt.Fprintf(os.Stderr, "cannot copy fixture: %v\n", err)
+				os.RemoveAll(fixtureDir)
+				startedPool.shutdown()
+				os.Exit(1)
+			}
 
-		startedPool.add(entry)
-		// One slot token per iframe lane: tests acquire a token to enter
-		// the semaphore (capped at totalSlots concurrent in-flight tests).
-		for i := 0; i < cfg.iframes; i++ {
-			testServerPool <- entry
+			entry, err := startJugglerSubprocess(binary, fixtureDir, cfg.iframes)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "cannot start juggler subprocess: %v\n", err)
+				os.RemoveAll(fixtureDir)
+				startedPool.shutdown()
+				os.Exit(1)
+			}
+
+			startedPool.add(entry)
+			// One slot token per iframe lane: tests acquire a token to enter
+			// the semaphore (capped at the pool's lanes in flight at once).
+			for i := 0; i < cfg.iframes; i++ {
+				p.pool <- entry
+			}
 		}
 	}
 

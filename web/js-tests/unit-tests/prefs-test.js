@@ -273,9 +273,12 @@ export async function runTests(_ctx) {
       eq(await getUserPref(name, false), false, 'first read');
       eq(localStorage.getItem(name), null, 'the fallback was cached');
       eq(await getUserPref(name, false), false, 'second read');
-      // Past the write queue's delay, so a promotion would have been sent.
-      await new Promise((r) => setTimeout(r, 600));
-      eq(calls.filter((c) => c.method === 'PUT').map((c) => c.body), [], 'writes');
+      // A write of our own joins the realm's batch and resolves once that batch
+      // is sent, so a promotion queued by either read went out with it or
+      // before it: the PUTs then hold the control alone, with no sleep needed.
+      const control = uniqueName();
+      await setUserPref(control, 'sent');
+      eq(calls.filter((c) => c.method === 'PUT').map((c) => c.body), [{ ui: { [control]: 'sent' } }], 'writes');
     });
 
     await run('the realm is asked for once however many preferences want it', async () => {

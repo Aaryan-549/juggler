@@ -18,7 +18,7 @@ import {
 } from '../../js/components/composer-attachments.js';
 import apiService from '../../js/services/api.js';
 import { isPseudoLocalized } from '../../sdk/lib/i18n.js';
-import { assert } from '../utilities/test-helpers.js';
+import { assert, waitFor } from '../utilities/test-helpers.js';
 import { underPseudoLocale, assertPseudoLocalized } from '../utilities/pseudo-locale.js';
 
 /**
@@ -53,19 +53,6 @@ function fileWithSize(name, type, size) {
   const file = new window.File(['1'], name, { type });
   Object.defineProperty(file, 'size', { value: size, configurable: true });
   return file;
-}
-
-/**
- * Poll until `pred` holds or a generous deadline passes.
- * @param {() => boolean} pred
- * @returns {Promise<boolean>} Whether it held.
- */
-async function waitFor(pred) {
-  for (let i = 0; i < 200; i++) {
-    if (pred()) return true;
-    await new Promise((resolve) => { setTimeout(resolve, 10); });
-  }
-  return pred();
 }
 
 /**
@@ -133,7 +120,7 @@ export async function runTests() {
       {
         const { composer, warnings } = fakeComposer();
         handleTextFiles(composer, [new window.File(['1\u00002'], '6', { type: '' })]);
-        assert(await waitFor(() => warnings.length === 1), `binary refusal: ${JSON.stringify(warnings)}`);
+        await waitFor(() => warnings.length === 1, () => `binary refusal: ${JSON.stringify(warnings)}`);
         notices.push(...warnings);
       }
       // A read that fails.
@@ -155,7 +142,7 @@ export async function runTests() {
         window.FileReader = /** @type {any} */ (FailingReader);
         try {
           handleTextFiles(composer, [new window.File(['1'], '7', { type: 'text/plain' })]);
-          assert(await waitFor(() => warnings.length === 1), `read failure: ${JSON.stringify(warnings)}`);
+          await waitFor(() => warnings.length === 1, () => `read failure: ${JSON.stringify(warnings)}`);
         } finally {
           window.FileReader = RealReader;
         }

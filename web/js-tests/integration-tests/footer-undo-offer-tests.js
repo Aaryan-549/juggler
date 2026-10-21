@@ -16,22 +16,7 @@
 
 import { textResponse } from '../utilities/integration-test-runner.js';
 import { tabFor } from '../utilities/conversation-tab-lookup.js';
-
-/**
- * Poll for a predicate to become true. The delete, the undo and the undoState
- * frame that arms the offer all round-trip through the worker.
- * @param {() => boolean} predicate
- * @param {number} [timeoutMs]
- * @param {string} [label]
- */
-async function waitFor(predicate, timeoutMs = 3000, label = 'condition') {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (predicate()) return;
-    await new Promise(r => setTimeout(r, 10));
-  }
-  throw new Error(`waitFor timeout: ${label}`);
-}
+import { waitFor } from '../utilities/test-helpers.js';
 
 /**
  * Locate the root column's `<conversation-footer>`.
@@ -123,7 +108,7 @@ export const footerOffersUndoAfterSpanDeleteTest = {
       throw new Error(`Expected 3 items removed, got ${removed}`);
     }
 
-    await waitFor(() => offerVisible(footer), 1000, 'undo offer appears');
+    await waitFor(() => offerVisible(footer), 'undo offer appears', 1000);
     const text = footer.querySelector('.footer-undo-text')?.textContent || '';
     if (!text.includes('3 items removed')) {
       throw new Error(`Expected offer to name the count; got ${JSON.stringify(text)}`);
@@ -142,8 +127,8 @@ export const footerOffersUndoAfterSpanDeleteTest = {
     // The delete's own undoState frame arms the offer — it must not retire it.
     // Waited on by seq, because the frame itself drives a rebuild: canUndo was
     // already true from the turns above, so waiting on it waits for nothing.
-    await waitFor(() => undoSeq(conversation) !== seqBefore, 3000,
-      'worker emits the delete\'s undoState frame');
+    await waitFor(() => undoSeq(conversation) !== seqBefore,
+      'worker emits the delete\'s undoState frame', 3000);
     await new Promise(r => setTimeout(r, 0));
     if (!offerVisible(footer)) {
       throw new Error('Undo offer retired on its own undoState frame');
@@ -154,7 +139,7 @@ export const footerOffersUndoAfterSpanDeleteTest = {
 
     /** @type {HTMLElement|null} */ (footer.querySelector('.footer-undo-btn'))?.click();
 
-    await waitFor(() => root.items.length === countBefore, 3000, 'undo restores every deleted item');
+    await waitFor(() => root.items.length === countBefore, 'undo restores every deleted item', 3000);
     if (offerVisible(footer)) {
       throw new Error('Undo offer still showing after being taken');
     }
@@ -201,7 +186,7 @@ export const footerUndoOfferForSingleItemTest = {
       throw new Error(`Expected 1 item removed, got ${removed}`);
     }
 
-    await waitFor(() => offerVisible(footer), 1000, 'undo offer appears for one item');
+    await waitFor(() => offerVisible(footer), 'undo offer appears for one item', 1000);
     const text = footer.querySelector('.footer-undo-text')?.textContent || '';
     if (text !== '1 item removed') {
       throw new Error(`Expected "1 item removed", got ${JSON.stringify(text)}`);
@@ -251,7 +236,7 @@ export const footerUndoOfferSurvivesRewindOverRunningTurnTest = {
     const removed = conversation.deleteRangeWithCleanup(root, 1);
     if (removed < 2) throw new Error(`Expected a span removed, got ${removed}`);
 
-    await waitFor(() => status() === 'idle', 5000, 'the stopped turn settles');
+    await waitFor(() => status() === 'idle', 'the stopped turn settles', 5000);
     // Let the settle's own frames — status, undoState — reach the footer.
     await new Promise(r => setTimeout(r, 300));
     if (!offerVisible(footer)) {

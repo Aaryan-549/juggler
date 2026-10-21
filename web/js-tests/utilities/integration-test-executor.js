@@ -163,6 +163,8 @@ import { runTests as runWSChunkTests } from '../unit-tests/ws-chunk-test.js';
 import { runTests as runRenderScalingTests } from '../unit-tests/render-scaling-tests.js';
 import { runTests as runTestBudgetTests } from '../unit-tests/test-budget-test.js';
 import { runTests as runExclusiveTestFlagsTests } from '../unit-tests/exclusive-test-flags-test.js';
+import { runTests as runSuiteVerdictTests } from '../unit-tests/suite-verdict-test.js';
+import { runTests as runSuiteDocumentIsolationTests } from '../unit-tests/suite-document-isolation-test.js';
 import { runTests as runSuitePopupIsolationTests } from '../unit-tests/suite-popup-isolation-test.js';
 import { runTests as runEngineAutoloadTests } from '../unit-tests/engine-autoload-test.js';
 import { runTests as runSyncBatchBackoffTests } from '../unit-tests/sync-batch-backoff-test.js';
@@ -688,6 +690,8 @@ const UNIT_TEST_SUITES = [
   { name: 'unit:render-scaling', run: runRenderScalingTests },
   { name: 'unit:test-budget', run: runTestBudgetTests },
   { name: 'unit:exclusive-test-flags', run: runExclusiveTestFlagsTests },
+  { name: 'unit:suite-verdict', run: runSuiteVerdictTests },
+  { name: 'unit:suite-document-isolation', run: runSuiteDocumentIsolationTests },
   { name: 'unit:suite-popup-isolation', run: runSuitePopupIsolationTests },
   { name: 'unit:engine-autoload', run: runEngineAutoloadTests },
   { name: 'unit:sync-batch-backoff', run: runSyncBatchBackoffTests },
@@ -1118,6 +1122,66 @@ export async function runTests(ctx) {
 const UNIT_SUITE_BUDGET_MS = 45000;
 
 /**
+ * The document-wide state a suite can change for every suite after it: the
+ * attributes of `<html>` and `<body>` (classes, `data-theme`, `data-view`,
+ * inline style). Product CSS keys whole regions off them — `body.no-project`
+ * hides the conversation bar — and a lane's page outlives every suite it runs,
+ * so one left behind silently restyles the rest of the lane.
+ * @returns {{html: Map<string, string>, body: Map<string, string>}} The attributes, by name.
+ */
+export function snapshotDocumentState() {
+  /**
+   * @param {Element} el - The element to read.
+   * @returns {Map<string, string>} Its attributes, by name.
+   */
+  const attrs = (el) => new Map(Array.from(el.attributes, (a) => [a.name, a.value]));
+  return { html: attrs(document.documentElement), body: attrs(document.body) };
+}
+
+/**
+ * Put `<html>` and `<body>` back as {@link snapshotDocumentState} found them,
+ * and say what had changed.
+ * @param {{html: Map<string, string>, body: Map<string, string>}} before - The snapshot.
+ * @returns {string[]} One line per attribute that differed; empty when none did.
+ */
+export function restoreDocumentState(before) {
+  /** @type {string[]} */
+  const leaks = [];
+  for (const [tag, el, was] of /** @type {const} */ ([['html', document.documentElement, before.html], ['body', document.body, before.body]])) {
+    const now = new Map(Array.from(el.attributes, (a) => [a.name, a.value]));
+    for (const name of new Set([...was.keys(), ...now.keys()])) {
+      // A class toggled off and back on returns at the end of the list: same
+      // classes, so not a leak. An empty class or style attribute is none at
+      // all (setting and then clearing an inline style leaves `style=""`).
+      /**
+       * @param {string|undefined} v - The attribute's value, or undefined when absent.
+       * @returns {string|undefined} The value as compared.
+       */
+      const norm = (v) => {
+        if (name === 'class') return classSet(v);
+        if (name === 'style') return v || '';
+        return v;
+      };
+      const same = norm(was.get(name)) === norm(now.get(name));
+      if (same) continue;
+      leaks.push(`left <${tag}> ${name}=${JSON.stringify(now.get(name) ?? null)} (was ${JSON.stringify(was.get(name) ?? null)})`);
+      const value = was.get(name);
+      if (value === undefined) el.removeAttribute(name);
+      else el.setAttribute(name, value);
+    }
+  }
+  return leaks;
+}
+
+/**
+ * @param {string|undefined} value - A class attribute, or undefined when absent.
+ * @returns {string} Its classes, sorted and space-joined.
+ */
+function classSet(value) {
+  return (value || '').split(/\s+/).filter(Boolean).sort().join(' ');
+}
+
+/**
  * Run one unit suite, then permanently delete every conversation it created
  * (diffed via this lane's claim registry, which is lane-local and therefore
  * immune to sibling lanes' concurrent creations). Without this, unit tests
@@ -1158,6 +1222,7 @@ async function runUnitSuiteWithConvCleanup(suite, ctx) {
   // that it holds at all.
   neutralizeStrayOverlays();
   const before = snapshotOwnConversationIds();
+  const documentBefore = snapshotDocumentState();
   try {
     // A timeout is reported as a failed result rather than thrown, so one
     // wedged suite fails alone instead of ending the lane's whole run.
@@ -1181,6 +1246,12 @@ async function runUnitSuiteWithConvCleanup(suite, ctx) {
       };
     }
     const result = settled.value;
+    // Checked before the cleanup below, so what it finds is the suite's own.
+    const leaks = restoreDocumentState(documentBefore);
+    if (leaks.length > 0) {
+      result.failed++;
+      result.errors = [...result.errors, `${suite.name}: ${leaks.join('; ')} — put back what it changes, or every suite after it on this lane runs under it`];
+    }
     // Every lane shares one project, so how many conversations were in it is a
     // property of the run rather than of this suite — and a suite that fails
     // only under a full pool is the one case where that number is the evidence.
@@ -1198,6 +1269,9 @@ async function runUnitSuiteWithConvCleanup(suite, ctx) {
     // running under an expired one would give every wait in it a zero budget.
     clearTestDeadline();
     neutralizeStrayOverlays();
+    // Again for a suite the budget abandoned, which reported no result to
+    // charge a leak to but must not hand one on either.
+    restoreDocumentState(documentBefore);
     // A suite that saved a command, a skill or a plugin toggle left a registry
     // rebuild running behind it — those call sites deliberately don't await one
     // (see whenRegistriesSettled). The suites of a lane share one realm and
@@ -1341,6 +1415,25 @@ export async function runTestByName(testName, ctx) {
 }
 
 /**
+ * Turn a test's counts into the verdict the Go runner receives.
+ *
+ * Zero passed and zero failed is a test that asserted nothing — a case table
+ * that came out empty, a run() that returned before its first case — and it
+ * fails, naming itself, rather than reading as a pass.
+ * @param {string} name - The test's name, for the error line
+ * @param {{passed: number, failed: number, errors?: string[]}} result - Its counts
+ * @returns {{passed: boolean, errors: string[]}} The verdict and the errors to report
+ */
+export function suiteVerdict(name, result) {
+  const errors = [...(result.errors || [])];
+  if (result.failed === 0 && !(result.passed > 0)) {
+    errors.push(`${name}: NO TESTS RAN — it reported 0 passed and 0 failed, so it asserted nothing`);
+    return { passed: false, errors };
+  }
+  return { passed: result.failed === 0, errors };
+}
+
+/**
  * List all available tests (integration + unit suites).
  * @returns {string[]} Test names
  */
@@ -1382,8 +1475,9 @@ export function exclusiveNamesIn(...tables) {
  *   - it switches a plugin on or off in the project config, which changes the
  *     tools and system prompt every lane of that server is offered.
  *
- * The Go runner runs these after the parallel phase, with a fixture reset around
- * each. An extension suite declares the flag by exporting `needsExclusiveRun`;
+ * The Go runner runs these first, one at a time and before any parallel test is
+ * started, with a fixture reset before each (see TestBrowser in
+ * tests/integration/browser_suite_test.go). An extension suite declares the flag by exporting `needsExclusiveRun`;
  * everything else declares it on its table entry.
  * @returns {string[]} Names of tests that must run in isolation
  */

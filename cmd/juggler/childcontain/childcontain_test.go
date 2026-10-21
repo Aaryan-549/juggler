@@ -8,6 +8,7 @@ import (
 	"context"
 	"os"
 	"os/exec"
+	"reflect"
 	"runtime"
 	"testing"
 	"time"
@@ -86,13 +87,24 @@ func TestPrepareAdopt_NoError(t *testing.T) {
 	child.Cleanup()
 }
 
-// TestPrepare_Idempotent verifies that calling Prepare multiple times on the
-// same cmd does not panic or corrupt existing SysProcAttr fields.
+// TestPrepare_Idempotent verifies that calling Prepare twice on the same cmd
+// leaves exactly the SysProcAttr one call leaves: a second call neither
+// replaces the struct the first one filled nor changes any field of it.
 func TestPrepare_Idempotent(t *testing.T) {
-	cmd := exec.Command("true")
-	childcontain.Prepare(cmd)
-	childcontain.Prepare(cmd)
-	// No panic means pass.
+	once := exec.Command("true")
+	childcontain.Prepare(once)
+
+	twice := exec.Command("true")
+	childcontain.Prepare(twice)
+	first := twice.SysProcAttr
+	childcontain.Prepare(twice)
+
+	if twice.SysProcAttr != first {
+		t.Fatal("a second Prepare replaced the SysProcAttr the first one set")
+	}
+	if !reflect.DeepEqual(once.SysProcAttr, twice.SysProcAttr) {
+		t.Fatalf("Prepare twice gave SysProcAttr %+v, Prepare once gave %+v", twice.SysProcAttr, once.SysProcAttr)
+	}
 }
 
 // TestAdopt_BeforeStart verifies that Adopt returns an error when called

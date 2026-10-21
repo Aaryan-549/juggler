@@ -89,10 +89,14 @@ GOTEST_RUN=$(if $(RUN),-run "$(RUN)" -v)
 # an unnarrowed run's per-package `ok` lines are its progress feed.
 #
 # It sits BEFORE the tee, so the log and the terminal hold the same text and
-# there is never a reason to go and read the log instead. `go test`'s own status
-# is read from PIPESTATUS[0] in the recipes, so grep selecting nothing (exit 1)
-# cannot be mistaken for a test failure.
-QUIET_UNMATCHED=$(if $(RUN),| grep --line-buffered -vE "^(testing: warning: no tests to run|PASS)$$|\[no tests to run\]$$|\[no test files\]$$")
+# there is never a reason to go and read the log instead. The braces' `|| true`
+# stops a fully-filtered stream (grep exits 1 when it selects nothing) from
+# reading as a failure under pipefail; `go test`'s own status is the verdict.
+#
+# Silencing those lines also silences a RUN that matched nothing anywhere, so
+# `test` (and `test-go` run on its own) end with scripts/run-matched over the
+# layers' logs, which fails a narrowed run in which no test passed or failed.
+QUIET_UNMATCHED=$(if $(RUN),| { grep --line-buffered -vE "^(testing: warning: no tests to run|PASS)$$|\[no tests to run\]$$|\[no test files\]$$" || true; })
 GOGET=$(GOCMD) get
 GOFMT=$(GOCMD) fmt
 GOVET=$(GOCMD) vet
@@ -655,8 +659,9 @@ test: test-go test-wails-patches
 		export JUGGLER_TEST_SERVER="$(abspath $(TEST_SERVER_BIN))"; \
 		$(GOTEST) -count=1 $(RACE) -timeout 15m $(GOTEST_RUN) ./tests/integration/... 2>&1 $(QUIET_UNMATCHED) | tee $(BUILD_DIR)/test.log; \
 		rc=$${PIPESTATUS[0]}; \
-		if [ $$rc -eq 0 ]; then echo "✓ all tests passed"; else echo "✗ the integration + browser suite failed — its output is above"; fi; \
-		exit $$rc'
+		if [ $$rc -ne 0 ]; then echo "✗ the integration + browser suite failed — its output is above"; exit $$rc; fi; \
+		$(if $(RUN),scripts/run-matched "$(RUN)" $(BUILD_DIR)/test-go.log $(BUILD_DIR)/test-wails-run.log $(BUILD_DIR)/test.log || exit 1;) \
+		echo "✓ all tests passed"'
 
 ## test-go: Run Go package unit tests (claudecode provider, worker, etc.).
 ## Scope is every first-party tree — `./cmd/...`, `./internal/...`, `./web/...`
@@ -669,8 +674,9 @@ test-go: go-build test-build
 	@bash -c 'set -o pipefail; \
 		$(GOTEST) -count=1 $(RACE) -timeout 5m $(GOTEST_RUN) ./cmd/... ./internal/... ./web/... 2>&1 $(QUIET_UNMATCHED) | tee $(BUILD_DIR)/test-go.log; \
 		rc=$${PIPESTATUS[0]}; \
-		if [ $$rc -eq 0 ]; then echo "✓ Go package tests passed"; else echo "✗ the Go package tests failed — their output is above"; fi; \
-		exit $$rc'
+		if [ $$rc -ne 0 ]; then echo "✗ the Go package tests failed — their output is above"; exit $$rc; fi; \
+		$(if $(and $(RUN),$(filter test-go,$(MAKECMDGOALS))),scripts/run-matched "$(RUN)" $(BUILD_DIR)/test-go.log || exit 1;) \
+		echo "✓ Go package tests passed"'
 
 ## test-wails-patches: Run the Wails fork's own tests for the packages its
 ## local patches touch (docs/wails-fork.md is the ledger; keep this list in
@@ -686,12 +692,12 @@ ifeq ($(OS),Windows_NT)
 WAILS_PATCH_PKGS+=$(WAILS_PATCH_PKGS_WINDOWS)
 endif
 test-wails-patches:
+	@mkdir -p $(BUILD_DIR)
 	@echo "── Wails fork patch tests ──"
-	@# The verdict is go test's own exit status: with RUN set, QUIET_UNMATCHED's
-	@# grep can filter every line away and exit 1 on a run that passed.
-	@bash -c 'cd $(WAILS_V3) && \
-		GOTOOLCHAIN=local $(GOTEST) -count=1 $(RACE) -timeout 5m $(GOTEST_RUN) $(WAILS_PATCH_PKGS) 2>&1 $(QUIET_UNMATCHED); \
-		exit $${PIPESTATUS[0]}' \
+	@# The verdict is go test's own exit status. With RUN set the output is also
+	@# kept in test-wails-run.log, one of the logs `test` hands to run-matched.
+	@bash -c 'set -o pipefail; cd $(WAILS_V3) && \
+		GOTOOLCHAIN=local $(GOTEST) -count=1 $(RACE) -timeout 5m $(GOTEST_RUN) $(WAILS_PATCH_PKGS) 2>&1 $(QUIET_UNMATCHED) $(if $(RUN),| tee $(abspath $(BUILD_DIR))/test-wails-run.log)' \
 		|| { echo "✗ the Wails fork patch tests failed — their output is above"; exit 1; }
 ifneq ($(OS),Windows_NT)
 	@cd $(WAILS_V3) && GOTOOLCHAIN=local GOOS=windows GOARCH=amd64 $(GOCMD) vet -unsafeptr=false $(WAILS_PATCH_PKGS) $(WAILS_PATCH_PKGS_WINDOWS) \

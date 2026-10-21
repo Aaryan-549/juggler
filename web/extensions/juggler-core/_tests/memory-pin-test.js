@@ -22,7 +22,7 @@
 
 import MemoryPin from '../pins/memory-pin.js';
 import { writeFile } from '../../../js/services/ops-api.js';
-import { assert } from '../../../js-tests/utilities/test-helpers.js';
+import { assert, waitFor } from '../../../js-tests/utilities/test-helpers.js';
 import { underPseudoLocale, shownStrings } from '../../../js-tests/utilities/pseudo-locale.js';
 import { isPseudoLocalized } from '../../../sdk/lib/i18n.js';
 
@@ -428,15 +428,8 @@ export async function runTests(ctx) {
        * @param {string} selector - What to wait for.
        * @returns {Promise<Element>} The element.
        */
-      const waitFor = async (body, selector) => {
-        const deadline = Date.now() + 5000;
-        while (Date.now() < deadline) {
-          const el = body.querySelector(selector);
-          if (el) return el;
-          await new Promise((r) => { setTimeout(r, 20); });
-        }
-        throw new Error(`never drew ${selector}: ${JSON.stringify(body.textContent)}`);
-      };
+      const drawn = (body, selector) => waitFor(() => body.querySelector(selector),
+        () => `${selector} drawn, but the pin shows ${JSON.stringify(body.textContent)}`);
       /** @type {Record<string, string>} */
       const shown = {};
       try {
@@ -444,19 +437,19 @@ export async function runTests(ctx) {
         shown['tab title'] = String(pin.describe({}, /** @type {any} */ ({ project: { path: '/1' } })).title);
 
         const empty = mount('/1/2.md');
-        const line = await waitFor(empty.body, '.pin-empty');
+        const line = await drawn(empty.body, '.pin-empty');
         shown['empty state'] = (line.textContent || '').replace('.juggler/MEMORY.md', '');
         empty.teardown();
 
         content = '# Memory\n\n- [2026-06-14] 1\n';
         const full = mount('/1/3.md');
-        await waitFor(full.body, '.memory-entry');
+        await drawn(full.body, '.memory-entry');
         shownStrings(full.body, '.memory-date, .memory-text')
           .forEach((s, i) => { shown[`entry ${i}`] = s; });
         // The shared path-pin controller's one action, drawn by the host toolbar.
         shown['refresh action'] = String(full.controller.getActions()[0]?.label);
         /** @type {HTMLButtonElement} */ (full.body.querySelector('.memory-delete')).click();
-        const error = await waitFor(full.body, '.memory-pin__error');
+        const error = await drawn(full.body, '.memory-pin__error');
         shown['delete error'] = String(error.textContent);
         full.teardown();
       } finally {

@@ -11,6 +11,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"juggler/internal/machineload"
 )
 
 // A force-kill names a whole process TREE by one pid, and that pid means what
@@ -113,7 +115,7 @@ func TestStreamingCancelDoesNotForceKillAReapedPid(t *testing.T) {
 	// ExecuteStreaming returns once cmd.Wait has, so this is what the reap took.
 	reapTook := time.Since(<-cancelled)
 	if reapTook >= shellOps.killGrace {
-		t.Skipf("the process was still un-reaped %v after the cancel, with its escalation due at %v: taking the group there is correct, so there is nothing to assert",
+		machineload.Skip(t, "the process was still un-reaped %v after the cancel, with its escalation due at %v: taking the group there is correct, so there is nothing to assert",
 			reapTook, shellOps.killGrace)
 	}
 
@@ -206,7 +208,7 @@ func TestKilledBackgroundTaskIsNotForceKilledAfterItIsReaped(t *testing.T) {
 	select {
 	case <-reaped:
 	case <-time.After(killEscalationGrace):
-		t.Skipf("the killed task was still un-reaped when its escalation fell due after %v: taking the group there is correct, so there is nothing to assert",
+		machineload.Skip(t, "the killed task was still un-reaped when its escalation fell due after %v: taking the group there is correct, so there is nothing to assert",
 			killEscalationGrace)
 	}
 
@@ -255,7 +257,7 @@ func TestStopBackgroundTasksDoesNotForceKillReapedPids(t *testing.T) {
 	select {
 	case <-reaped:
 	default:
-		t.Skip("the task was still un-reaped when the stop's grace expired: taking its group there is correct, so there is nothing to assert")
+		machineload.Skip(t, "the task was still un-reaped when the stop's grace expired: taking its group there is correct, so there is nothing to assert")
 	}
 	if n := escalations(); n != 0 {
 		t.Fatalf("stopped task was force-killed %d time(s) after its process had been reaped; that pid can name something else by then", n)

@@ -17,7 +17,7 @@
  * @module unit-tests/reply-suggestions-test
  */
 
-import { assert } from '../utilities/test-helpers.js';
+import { assert, waitFor } from '../utilities/test-helpers.js';
 import {
   buildSuggestionsPrompt,
   parseSuggestions,
@@ -179,28 +179,6 @@ function makeController({
  */
 function settle(ms = 5) {
   return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-/**
- * Wait until something is true, or give up loudly.
- *
- * For anything driven by the stillness poll. A fixed sleep is a bet on how much
- * CPU this lane gets — the poll here ticks every 5ms, and a lane sharing a
- * machine with the rest of the suite can lose a dozen of those ticks in a row,
- * which makes the difference between "the feature never fired" and "the feature
- * had not fired yet" invisible. Waiting on the condition tells them apart.
- * @param {() => boolean} predicate - What we are waiting for.
- * @param {string} what - Named in the failure, so a timeout says what never happened.
- * @param {number} [timeoutMs] - How long to allow.
- * @returns {Promise<void>} Resolves once true; rejects on timeout.
- */
-async function waitFor(predicate, what, timeoutMs = 3000) {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (predicate()) return;
-    await settle();
-  }
-  throw new Error(`timed out waiting for ${what}`);
 }
 
 /**

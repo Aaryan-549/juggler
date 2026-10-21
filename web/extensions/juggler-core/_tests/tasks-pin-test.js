@@ -20,7 +20,7 @@
  */
 
 import TasksPin from '../pins/tasks-pin.js';
-import { assert } from '../../../js-tests/utilities/test-helpers.js';
+import { assert, waitFor } from '../../../js-tests/utilities/test-helpers.js';
 import { underPseudoLocale, shownStrings } from '../../../js-tests/utilities/pseudo-locale.js';
 import { isPseudoLocalized } from '../../../sdk/lib/i18n.js';
 
@@ -61,21 +61,6 @@ export async function runTests(_ctx) {
     } catch (/** @type {any} */ e) {
       failed++;
       errors.push(`${name}: ${e.message}`);
-    }
-  }
-
-  /**
-   * Wait for a condition rather than for a duration: the pin re-renders off a
-   * promise, and a fixed delay is either a flake or a waste.
-   * @param {() => boolean} condition - What must become true.
-   * @param {string} what - Named in the failure, so a timeout says what never happened.
-   * @returns {Promise<void>} Resolves once it holds.
-   */
-  async function waitFor(condition, what) {
-    const deadline = Date.now() + 2000;
-    while (!condition()) {
-      if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`);
-      await new Promise((resolve) => setTimeout(resolve, 5));
     }
   }
 

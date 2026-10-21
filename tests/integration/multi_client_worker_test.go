@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"juggler/cmd/juggler/worker"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -181,7 +182,9 @@ func TestWorker_AddRemoveCallback(t *testing.T) {
 	w.RemoveCallback("client2")
 }
 
-// TestWorker_SendWithNoCallbacks verifies that sendWS doesn't crash with empty callback list.
+// TestWorker_SendWithNoCallbacks verifies that a worker whose broadcasts reach
+// no callback at all — an init processed with nobody connected — is still
+// serving afterwards: the first client to attach gets a pong to its ping.
 func TestWorker_SendWithNoCallbacks(t *testing.T) {
 	w := worker.NewConversationWorker("test-conv", "user:main")
 	w.Start(context.Background())
@@ -204,57 +207,74 @@ func TestWorker_SendWithNoCallbacks(t *testing.T) {
 	initBytes, _ := json.Marshal(initMsg)
 	w.Send("init", initBytes)
 
-	// Give it time to process
-	time.Sleep(100 * time.Millisecond)
-
-	// If we got here without panic, test passes
+	// Messages are handled in order, so a pong to a ping sent after the init
+	// is proof the init — and every broadcast it made to nobody — went through.
+	expectPong(t, w, "late-client")
 }
 
-// TestWorker_CallbackThreadSafety verifies concurrent add/remove/send operations don't race.
+// TestWorker_CallbackThreadSafety churns callbacks while messages are sent
+// concurrently. Under -race (test-all, CI) that is a data-race check on the
+// callback set; in every build it then requires the worker to still answer a
+// ping, so a churn that wedged or killed its loop fails here too.
 func TestWorker_CallbackThreadSafety(t *testing.T) {
 	w := worker.NewConversationWorker("test-conv", "user:main")
 	w.Start(context.Background())
 	defer w.Stop()
 
+	// A fixed amount of work rather than a wall-clock window, so a loaded
+	// machine runs the same interleavings more slowly instead of fewer of them.
+	const rounds = 500
 	var wg sync.WaitGroup
-	stopChan := make(chan struct{})
 
-	// Goroutine 1: Continuously add and remove callbacks
+	// Goroutine 1: add and remove callbacks
 	wg.Go(func() {
-		counter := 0
-		for {
-			select {
-			case <-stopChan:
-				return
-			default:
-				clientID := fmt.Sprintf("client-%d", counter)
-				counter++
-				w.SetCallback(clientID, func(msg []byte) {})
-				time.Sleep(1 * time.Millisecond)
-				w.RemoveCallback(clientID)
-			}
+		for i := range rounds {
+			clientID := fmt.Sprintf("client-%d", i)
+			w.SetCallback(clientID, func(msg []byte) {})
+			runtime.Gosched()
+			w.RemoveCallback(clientID)
 		}
 	})
 
-	// Goroutine 2: Continuously send messages
+	// Goroutine 2: send messages
 	wg.Go(func() {
-		for {
-			select {
-			case <-stopChan:
-				return
-			default:
-				w.Send("ping", nil)
-				time.Sleep(1 * time.Millisecond)
-			}
+		for range rounds {
+			w.Send("ping", nil)
+			runtime.Gosched()
 		}
 	})
 
-	// Run for 500ms
-	time.Sleep(500 * time.Millisecond)
-	close(stopChan)
 	wg.Wait()
+	expectPong(t, w, "after-churn")
+}
 
-	// If we got here without data race or panic, test passes
+// expectPong attaches a callback under clientID, sends a ping and requires a
+// pong back. The 10s bound only names a wedged worker; a live one answers in
+// microseconds, and the pings queued ahead of this one are answered first.
+func expectPong(t *testing.T, w *worker.ConversationWorker, clientID string) {
+	t.Helper()
+	ch := make(chan []byte, 1024)
+	w.SetCallback(clientID, func(msg []byte) {
+		select {
+		case ch <- msg:
+		default:
+		}
+	})
+	defer w.RemoveCallback(clientID)
+	w.Send("ping", nil)
+	deadline := time.After(10 * time.Second)
+	for {
+		select {
+		case msg := <-ch:
+			var parsed map[string]any
+			_ = json.Unmarshal(msg, &parsed)
+			if parsed["type"] == "pong" {
+				return
+			}
+		case <-deadline:
+			t.Fatalf("%s: the worker never answered a ping — its message loop is not running", clientID)
+		}
+	}
 }
 
 // Helper functions

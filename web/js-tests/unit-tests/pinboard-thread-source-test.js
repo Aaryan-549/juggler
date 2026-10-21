@@ -31,7 +31,8 @@ import {
   initializeRegistries,
   createTestSession,
   createApprovalTestConversation,
-  assert
+  assert,
+  waitFor
 } from '../utilities/test-helpers.js';
 import {
   createUserMessage,
@@ -76,26 +77,6 @@ class ContextProbePin extends PinboardItemType {
  */
 function settle() {
   return new Promise((resolve) => setTimeout(resolve, 0));
-}
-
-/**
- * Wait for something to become true. The column machinery answers a selection
- * across several turns and debounces the properties column's content, so a
- * single macrotask is a coin toss on a loaded pool where every lane shares one
- * browser — wait for the state itself instead of for a length of time.
- * @param {() => any} probe - Returns something truthy once the wait is over.
- * @param {string|(() => string)} what - The complaint if it never happens.
- * @param {number} [timeout] - How long to give it.
- * @returns {Promise<any>} Whatever `probe` returned.
- */
-async function waitFor(probe, what, timeout = 5000) {
-  const deadline = Date.now() + timeout;
-  for (;;) {
-    const value = probe();
-    if (value) return value;
-    if (Date.now() >= deadline) throw new Error(typeof what === 'function' ? what() : what);
-    await new Promise((resolve) => { setTimeout(resolve, 20); });
-  }
 }
 
 /**

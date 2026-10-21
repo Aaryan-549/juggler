@@ -897,14 +897,35 @@ export async function waitForPendingApproval(conversation, toolUseId, timeoutMs 
  * that question is answered "no" and this behaves exactly as it always did,
  * failing on the nominal — which is what keeps the 2026-09-05 measurement from
  * applying to it.
- * @param {() => boolean} predicate - Condition to wait for; polled until truthy.
- * @param {{timeoutMs?: number, intervalMs?: number, description?: string}} [opts]
- * @returns {Promise<void>} Resolves when predicate is truthy; rejects on timeout.
+ *
+ * This is the one polling wait for tests: a suite does not declare its own
+ * `waitFor` (lint forbids it in the test trees), because a private copy polls a
+ * bare wall clock and so fails on a busy machine that this one would wait out.
+ * The second argument is the options object or, as a shorthand, the
+ * description followed by an optional `timeoutMs`. A description may be a
+ * function, called only on failure, for a message built from the state at that
+ * moment.
+ * @template T
+ * @param {() => T} predicate - Condition to wait for; polled until truthy.
+ * @param {WaitForOptions | WaitForDescription} [optsOrWhat] - Options, or the description.
+ * @param {number} [timeoutMs] - With the description shorthand, the nominal timeout.
+ * @returns {Promise<T>} The predicate's truthy value; rejects on timeout.
  */
-export async function waitFor(predicate, { timeoutMs = 5000, intervalMs = 10, description = 'condition' } = {}) {
-  if (await pollPatiently(predicate, { nominalMs: timeoutMs, intervalMs })) return;
-  throw new Error(`Timeout after ${timeoutMs}ms waiting for ${description} — ${await whyGivingUp()}`);
+export async function waitFor(predicate, optsOrWhat = {}, timeoutMs = undefined) {
+  /** @type {WaitForOptions} */
+  const opts = (typeof optsOrWhat === 'string' || typeof optsOrWhat === 'function')
+    ? { description: optsOrWhat, timeoutMs }
+    : optsOrWhat;
+  const nominalMs = opts.timeoutMs ?? 5000;
+  const got = await pollPatiently(predicate, { nominalMs, intervalMs: opts.intervalMs ?? 10 });
+  if (got) return got;
+  const description = opts.description ?? 'condition';
+  const what = typeof description === 'function' ? description() : description;
+  throw new Error(`Timeout after ${nominalMs}ms waiting for ${what} — ${await whyGivingUp()}`);
 }
+
+/** @typedef {string | (() => string)} WaitForDescription */
+/** @typedef {{timeoutMs?: number, intervalMs?: number, description?: WaitForDescription}} WaitForOptions */
 
 /**
  * Create an orphaned approval message for testing.

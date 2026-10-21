@@ -123,6 +123,9 @@ export async function runTests() {
 
       // This page has no native host, so the empty window draws without the
       // button either.
+      // Drawing the empty window sets body.no-project, which hides the
+      // conversation bar for everything else this lane runs: put it back.
+      const hadNoProject = document.body.classList.contains('no-project');
       const overlay = /** @type {any} */ (document.createElement('no-project-overlay'));
       document.body.appendChild(overlay);
       try {
@@ -131,6 +134,7 @@ export async function runTests() {
         assert(!overlay.querySelector('.np-connect-server'), 'a browser tab was offered "Connect to a server…"');
       } finally {
         overlay.remove();
+        document.body.classList.toggle('no-project', hadNoProject);
       }
     });
 

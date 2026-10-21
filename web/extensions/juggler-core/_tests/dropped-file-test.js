@@ -25,7 +25,7 @@
 
 import DroppedFileContextItem from '../context-items/dropped-file-context-item.js';
 import { normalizeDraft, normalizeTextFiles } from '../../../js/utils/attachments.js';
-import { initializeRegistries, assert } from '../../../js-tests/utilities/test-helpers.js';
+import { initializeRegistries, assert, waitFor } from '../../../js-tests/utilities/test-helpers.js';
 import '../../../js/components/composer.js';
 import { underPseudoLocale, shownStrings } from '../../../js-tests/utilities/pseudo-locale.js';
 import { isPseudoLocalized } from '../../../sdk/lib/i18n.js';
@@ -94,20 +94,6 @@ function imageWithSize(name, size) {
  */
 function stubModel(box, provider) {
   box._messageThread = { getEffectiveModelConfig: () => ({ provider, model: 'm' }) };
-}
-
-/**
- * Wait until a predicate holds or a short deadline passes (FileReader.onload is
- * async). Returns whether the predicate became true.
- * @param {() => boolean} pred
- * @returns {Promise<boolean>} True if pred held before the deadline.
- */
-async function waitFor(pred) {
-  for (let i = 0; i < 50; i++) {
-    if (pred()) return true;
-    await new Promise((r) => setTimeout(r, 10));
-  }
-  return pred();
 }
 
 /**
@@ -206,8 +192,7 @@ export async function runTests() {
     const { box, container, warnings } = mountComposer();
     try {
       box._handleTextFiles([new window.File(['hello world\n'], 'notes.txt', { type: 'text/plain' })]);
-      const staged = await waitFor(() => box._pendingTextFiles.length === 1);
-      assert(staged, `expected 1 staged text file, got ${box._pendingTextFiles.length}`);
+      await waitFor(() => box._pendingTextFiles.length === 1, () => `expected 1 staged text file, got ${box._pendingTextFiles.length}`);
       assert(box._pendingTextFiles[0].filename === 'notes.txt', 'filename must be captured');
       assert(box._pendingTextFiles[0].content === 'hello world\n', 'content must be captured');
       assert(warnings.length === 0, `no warning expected, got ${JSON.stringify(warnings)}`);
@@ -222,8 +207,7 @@ export async function runTests() {
       // 2 GB reported size on a one-byte payload: the size gate must reject it
       // from file.size alone, never calling readAsText.
       box._handleTextFiles([fileWithSize('huge.log', 'x', 2 * 1024 * 1024 * 1024)]);
-      const warned = await waitFor(() => warnings.length === 1);
-      assert(warned, `expected a size warning, got ${JSON.stringify(warnings)}`);
+      await waitFor(() => warnings.length === 1, () => `expected a size warning, got ${JSON.stringify(warnings)}`);
       assert(/too large/i.test(warnings[0]), `warning should mention size: ${warnings[0]}`);
       assert(box._pendingTextFiles.length === 0, 'oversized file must not be staged');
     } finally {
@@ -236,8 +220,7 @@ export async function runTests() {
     try {
       // A NUL byte is decisive for looksBinary().
       box._handleTextFiles([new window.File(['abc\u0000def'], 'blob.bin', { type: '' })]);
-      const warned = await waitFor(() => warnings.length === 1);
-      assert(warned, `expected a binary warning, got ${JSON.stringify(warnings)}`);
+      await waitFor(() => warnings.length === 1, () => `expected a binary warning, got ${JSON.stringify(warnings)}`);
       assert(/text file/i.test(warnings[0]), `warning should mention text: ${warnings[0]}`);
       assert(box._pendingTextFiles.length === 0, 'binary file must not be staged');
     } finally {

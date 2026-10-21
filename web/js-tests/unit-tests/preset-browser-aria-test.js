@@ -18,7 +18,7 @@
  * @module unit-tests/preset-browser-aria-test
  */
 
-import { assert } from '../utilities/test-helpers.js';
+import { assert, withTimeout } from '../utilities/test-helpers.js';
 import { assertMenuShape } from '../utilities/menu-assertions.js';
 import { closeAllPopups, __resetPopupManagerForTests } from '../../js/utils/popup-manager.js';
 import { systemPromptRegistry } from '../../sdk/lib/system-prompt-registry.js';
@@ -181,10 +181,9 @@ async function enXACase() {
    * @param {string} kind
    * @returns {Promise<void>}
    */
-  const waitFor = (kind) => new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`${kind} was never shown`)), 10000);
-    notify = (k) => { if (k === kind) { clearTimeout(timer); resolve(); } };
-  });
+  const nextShown = (kind) => withTimeout(new Promise((resolve) => {
+    notify = (k) => { if (k === kind) resolve(undefined); };
+  }), 10000, `${kind} was never shown`);
 
   __resetPopupManagerForTests();
   const container = document.createElement('div');
@@ -217,18 +216,18 @@ async function enXACase() {
 
       // Set default → it fails, and says so.
       reply = () => true;
-      let seen = waitFor('showConfirm');
+      let seen = nextShown('showConfirm');
       /** @type {HTMLElement} */ (dropdown.querySelector('.sp-preset-setdefault-btn')).click();
       await seen;
 
       // Save → Update → the update fails.
       reply = (kind, args) => (kind === 'showChoice' ? args[1][0] : true);
-      seen = waitFor('showConfirm');
+      seen = nextShown('showConfirm');
       actions[0].click();
       await seen;
       // Save → Save as new → named → the save fails.
       reply = (kind, args) => (kind === 'showChoice' ? args[1][1] : kind === 'showPrompt' ? '5' : true);
-      seen = waitFor('showConfirm');
+      seen = nextShown('showConfirm');
       /** @type {HTMLElement} */ (document.querySelectorAll('.system-prompt-preset-dropdown .sp-preset-action')[0]).click();
       await seen;
 
@@ -239,7 +238,7 @@ async function enXACase() {
       shown.push(...shownStrings(manage, names));
       assert(!!manage.querySelector(names), 'the manage dialog lists no preset');
       reply = () => false;
-      seen = waitFor('showConfirm');
+      seen = nextShown('showConfirm');
       /** @type {HTMLElement} */ (manage.querySelector('.sp-preset-delete-btn')).click();
       await seen;
       // The delete confirmed → it fails, and says so: a second notice after the confirmation.
