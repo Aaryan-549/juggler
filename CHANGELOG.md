@@ -15,6 +15,7 @@ of changes; this project follows semantic versioning.
 - Extension ops `stat`, `mkdir`, `getTree`, `expandDirectory` and `fileHash` accept an AbortSignal
 - Extension shell ops take camelCase ids (`taskId`, `shellId`, `convId`); snake_case still works
 - Packagers can set `JUGGLER_UPDATES_MANAGED_BY` to hand updates to their package manager
+- WebSearch retries when DuckDuckGo rate-limits it, and says so if that persists
 
 ## [0.7.7] - 2026-10-17
 

@@ -102,12 +102,29 @@ func (ops *WebSearchOperations) search(ctx context.Context, params map[string]an
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("HTTP error: %d", resp.StatusCode)
+	return searchResponse(urlStr, resp.StatusCode, resp.Body)
+}
+
+// blockedSearchStatuses are how a search engine turns away a client it is
+// throttling: DuckDuckGo's HTML endpoint answers a burst with 202 and a
+// challenge page, and 403/429 are the conventional refusals. They come back
+// as a result with `blocked` set, not as an error, so the caller's retry
+// ladder sees them; every other non-200 is an error.
+var blockedSearchStatuses = map[int]bool{
+	http.StatusAccepted:        true,
+	http.StatusForbidden:       true,
+	http.StatusTooManyRequests: true,
+}
+
+// searchResponse turns a search engine's reply into the op's result: the raw
+// body and status, and whether the engine refused the request.
+func searchResponse(urlStr string, status int, body io.Reader) (any, error) {
+	blocked := blockedSearchStatuses[status]
+	if status != http.StatusOK && !blocked {
+		return nil, fmt.Errorf("HTTP error: %d", status)
 	}
 
-	// Read and return raw response
-	bodyBytes, truncated, err := readCappedBody(resp.Body, maxHTTPResponse)
+	bodyBytes, truncated, err := readCappedBody(body, maxHTTPResponse)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
@@ -115,7 +132,8 @@ func (ops *WebSearchOperations) search(ctx context.Context, params map[string]an
 	return map[string]any{
 		"url":       urlStr,
 		"content":   string(bodyBytes),
-		"status":    resp.StatusCode,
+		"status":    status,
+		"blocked":   blocked,
 		"truncated": truncated,
 	}, nil
 }

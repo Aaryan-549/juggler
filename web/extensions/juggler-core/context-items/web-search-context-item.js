@@ -119,6 +119,19 @@ class WebSearchContextItem extends ContextItem {
   }
 
   /**
+   * Fetch one results page through the backend proxy — the one place a
+   * search touches the network.
+   * @param {object} params - Proxy params from {@link buildDuckDuckGoParams}
+   * @returns {Promise<import('../../../js/services/ops-api.js').WebSearchProxyResponse>} Proxy response
+   */
+  fetchSearchPage(params) {
+    return webSearch(
+      /** @type {import('../../../js/services/ops-api.js').WebSearchParams} */ (params),
+      this.signal
+    );
+  }
+
+  /**
    * Abortable delay used for retry backoff. Rejects promptly if the search's
    * abort signal fires while waiting, so a cancelled search does not sit out
    * the backoff.
@@ -143,12 +156,14 @@ class WebSearchContextItem extends ContextItem {
   /**
    * Search using DuckDuckGo.
    *
-   * DuckDuckGo throttles bursts of requests from a single IP, returning a
-   * captcha/challenge page instead of results. Such a response parses to zero
-   * result blocks and carries no genuine "no results" marker; it is retried
-   * with exponential backoff + jitter up to {@link WebSearchContextItem.MAX_RETRIES}
-   * times before the captcha error is surfaced. A genuine empty result set
-   * (the `no-results` marker is present) returns successfully with zero results.
+   * DuckDuckGo throttles bursts of requests from a single IP, answering with
+   * HTTP 202 and a challenge page instead of results (the proxy reports that,
+   * and 403/429, as `blocked`). A blocked response, or a 200 page with zero
+   * result blocks and no genuine "no results" marker, is retried with
+   * exponential backoff + jitter up to {@link WebSearchContextItem.MAX_RETRIES}
+   * times before the error is surfaced. A genuine empty result set (the
+   * `no-results` marker on an unblocked page) returns successfully with zero
+   * results.
    * @param {string} query - Search query
    * @param {string[]} [allowedDomains] - Allowed domains
    * @param {string[]} [blockedDomains] - Blocked domains
@@ -161,20 +176,21 @@ class WebSearchContextItem extends ContextItem {
     /** @type {WebSearchResultItem[]} */
     let results = [];
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      const response = await webSearch(
-        /** @type {import('../../../js/services/ops-api.js').WebSearchParams} */ (ddgParams),
-        this.signal
-      );
+      const response = await this.fetchSearchPage(ddgParams);
 
-      results = parseDuckDuckGoResponse(response.content);
-      if (results.length > 0 || looksLikeNoResults(response.content)) {
+      const blocked = response.blocked === true;
+      results = blocked ? [] : parseDuckDuckGoResponse(response.content);
+      if (results.length > 0 || (!blocked && looksLikeNoResults(response.content))) {
         break; // got hits, or a genuine empty result set — either way, done
       }
 
-      // Zero result blocks and no "no results" marker: almost certainly a
-      // rate-limit/captcha page. Retry with backoff unless attempts are spent.
+      // Refused outright, or zero result blocks and no "no results" marker
+      // (almost certainly a captcha page). Retry with backoff unless attempts
+      // are spent.
       if (attempt === maxAttempts) {
-        throw new Error('No results found - may be blocked or need captcha');
+        throw new Error(blocked
+          ? `DuckDuckGo refused the search (HTTP ${response.status}) on all ${maxAttempts} attempts: it is rate-limiting this connection. Wait a minute or two before searching again.`
+          : 'No results found - may be blocked or need captcha');
       }
       const backoff = WebSearchContextItem.RETRY_BASE_MS * 2 ** (attempt - 1);
       const jitter = Math.floor(Math.random() * WebSearchContextItem.RETRY_BASE_MS);

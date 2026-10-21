@@ -274,6 +274,89 @@ function testEmptyResultsHandling() {
 }
 
 /**
+ * Build a WebSearch item whose page fetches are answered from `pages` in
+ * order, with no backoff wait, recording each request it makes.
+ * @param {any} session
+ * @param {any} conversation
+ * @param {Array<{content: string, status: number, blocked?: boolean}>} pages
+ * @returns {{action: WebSearchContextItem, calls: unknown[]}} Item and its request log
+ */
+function scriptedSearch(session, conversation, pages) {
+  const action = new WebSearchContextItem({ id: 'web-search', session, conversation, messageThread: conversation.rootMessageThread });
+  /** @type {unknown[]} */
+  const calls = [];
+  const queue = [...pages];
+  /** @type {any} */ (action).fetchSearchPage = async (/** @type {unknown} */ params) => {
+    calls.push(params);
+    const page = queue.shift();
+    if (!page) {
+      throw new Error('search fetched more pages than the test scripted');
+    }
+    return { url: WebSearchContextItem.DDG_URL, truncated: false, ...page };
+  };
+  /** @type {any} */ (action).delay = async () => {};
+  return { action, calls };
+}
+
+/**
+ * A blocked proxy response (DuckDuckGo's HTTP 202 rate-limit answer) is
+ * retried like a captcha page, and a later real page is returned as results.
+ * @param {any} session
+ * @param {any} conversation
+ * @returns {Promise<{passed: boolean, error?: string}>} Test result
+ */
+async function testBlockedStatusIsRetried(session, conversation) {
+  try {
+    const { action, calls } = scriptedSearch(session, conversation, [
+      { content: '', status: 202, blocked: true },
+      { content: DUCKDUCKGO_HTML_RESPONSE, status: 200 }
+    ]);
+    const result = await action.search('test query');
+    if (calls.length !== 2) {
+      throw new Error(`Expected 2 fetches (blocked, then retried), got ${calls.length}`);
+    }
+    if (result.results.length !== 3) {
+      throw new Error(`Expected the retried page's 3 results, got ${result.results.length}`);
+    }
+    return { passed: true };
+  } catch (e) {
+    const error = /** @type {Error} */ (e);
+    return { passed: false, error: error.message };
+  }
+}
+
+/**
+ * When every attempt is blocked, the error names the status and says the
+ * search was rate-limited, rather than a bare HTTP code.
+ * @param {any} session
+ * @param {any} conversation
+ * @returns {Promise<{passed: boolean, error?: string}>} Test result
+ */
+async function testBlockedEveryAttemptExplains(session, conversation) {
+  try {
+    const attempts = WebSearchContextItem.MAX_RETRIES + 1;
+    const pages = Array.from({ length: attempts }, () => ({ content: '', status: 202, blocked: true }));
+    const { action, calls } = scriptedSearch(session, conversation, pages);
+    let message = '';
+    try {
+      await action.search('test query');
+    } catch (e) {
+      message = /** @type {Error} */ (e).message;
+    }
+    if (calls.length !== attempts) {
+      throw new Error(`Expected ${attempts} fetches, got ${calls.length}`);
+    }
+    if (!message.includes('HTTP 202') || !message.includes('rate-limiting')) {
+      throw new Error(`Expected a rate-limit error naming HTTP 202, got "${message}"`);
+    }
+    return { passed: true };
+  } catch (e) {
+    const error = /** @type {Error} */ (e);
+    return { passed: false, error: error.message };
+  }
+}
+
+/**
  * @typedef {object} TestContext
  * @property {string} fixtureDir - Path to fixture directory
  */
@@ -302,7 +385,9 @@ export async function runTests(_ctx) {
     { name: 'Domain filtering (allowed)', fn: () => testDomainFilteringAllowed() },
     { name: 'Domain filtering (blocked)', fn: () => testDomainFilteringBlocked() },
     { name: 'DuckDuckGo params building', fn: () => testDuckDuckGoParamsBuilding(session, conversation) },
-    { name: 'Empty and blocked results handling', fn: () => testEmptyResultsHandling() }
+    { name: 'Empty and blocked results handling', fn: () => testEmptyResultsHandling() },
+    { name: 'Blocked status is retried', fn: () => testBlockedStatusIsRetried(session, conversation) },
+    { name: 'Blocked on every attempt explains', fn: () => testBlockedEveryAttemptExplains(session, conversation) }
   ];
 
   let passed = 0;
@@ -311,7 +396,7 @@ export async function runTests(_ctx) {
   const errors = [];
 
   for (const test of tests) {
-    const result = test.fn();
+    const result = await test.fn();
     if (result.passed) {
       passed++;
     } else {

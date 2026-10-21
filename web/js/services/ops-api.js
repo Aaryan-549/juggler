@@ -1317,6 +1317,8 @@ export async function webFetch(params, signal) {
  * @property {string} url - The URL that was fetched
  * @property {string} content - Raw response content (HTML or JSON)
  * @property {number} status - HTTP status code
+ * @property {boolean} [blocked] - The engine refused the request (202, 403 or
+ *   429 — how a throttled client is turned away); worth retrying after a wait
  * @property {boolean} truncated - Whether the body was cut at the size cap
  */
 

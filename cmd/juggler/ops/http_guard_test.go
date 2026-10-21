@@ -6,6 +6,7 @@ package ops
 
 import (
 	"context"
+	"net/http"
 	"strings"
 	"testing"
 )
@@ -65,6 +66,32 @@ func TestWebSearchValidation(t *testing.T) {
 	}
 	if _, err := handler.Execute(context.Background(), "other", nil); err == nil {
 		t.Fatal("expected unknown operation error")
+	}
+}
+
+// TestWebSearchBlockedStatus: the statuses a search engine answers a throttled
+// client with come back as a blocked result the caller can retry, not as an
+// error — any other non-200 is still an error.
+func TestWebSearchBlockedStatus(t *testing.T) {
+	respond := func(status int) (any, error) {
+		return searchResponse("https://search.example/", status, strings.NewReader("challenge"))
+	}
+	for _, status := range []int{http.StatusAccepted, http.StatusForbidden, http.StatusTooManyRequests} {
+		got, err := respond(status)
+		if err != nil {
+			t.Fatalf("status %d error = %v, want a blocked result", status, err)
+		}
+		result, _ := got.(map[string]any)
+		if result["blocked"] != true || result["status"] != status {
+			t.Fatalf("status %d result = %#v, want blocked with its status", status, got)
+		}
+	}
+	if _, err := respond(http.StatusInternalServerError); err == nil || !strings.Contains(err.Error(), "HTTP error: 500") {
+		t.Fatalf("status 500 error = %v, want HTTP error: 500", err)
+	}
+	got, err := respond(http.StatusOK)
+	if result, _ := got.(map[string]any); err != nil || result["blocked"] != false || result["content"] != "challenge" {
+		t.Fatalf("status 200 result = %#v err = %v", got, err)
 	}
 }
 
